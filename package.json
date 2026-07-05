@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "nuxt typecheck",
+    "postinstall": "node scripts/patch-vuetify-css-warning.mjs",
     "prepare": "husky"
   },
   "dependencies": {
