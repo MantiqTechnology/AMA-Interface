@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
@@ -29,6 +29,18 @@ export function getDefaultDbPath() {
 export function resolveDbPath(dbPath = getDefaultDbPath()) {
   if (dbPath === ':memory:') {
     return dbPath;
+  }
+
+  if (process.env.VERCEL) {
+    const filename = basename(dbPath);
+
+    if (!isAbsolute(dbPath)) {
+      return join('/tmp', filename);
+    }
+
+    if (dbPath.startsWith('/var/task/')) {
+      return join('/tmp', filename);
+    }
   }
 
   return resolve(process.cwd(), dbPath);
