@@ -24,14 +24,13 @@ async function login() {
 
         <div class="relative z-10 flex w-full flex-col justify-between">
           <div>
-            <div class="mb-10 flex items-center gap-3">
+            <div class="mb-10 flex items-center justify-start gap-4 text-left">
               <VImg
                 alt="PT AMA logo"
                 class="shrink-0"
-                cover
-                height="48"
+                height="72"
                 src="https://amapapua.com/files/ama-pt-logo-shaded4.png"
-                width="68"
+                width="96"
               />
               <div>
                 <div class="text-xl font-bold">PT AMA</div>
@@ -84,14 +83,13 @@ async function login() {
         <VCard border class="w-full max-w-110" elevation="0">
           <VCardText class="p-8">
             <div class="mb-8 lg:hidden">
-              <div class="mb-3 flex items-center gap-3">
+              <div class="mb-3 flex items-center justify-start gap-3 text-left">
                 <VImg
                   alt="PT AMA logo"
                   class="shrink-0"
-                  cover
-                  height="44"
+                  height="56"
                   src="https://amapapua.com/files/ama-pt-logo-shaded4.png"
-                  width="62"
+                  width="82"
                 />
                 <div>
                   <div class="text-xl font-bold text-brand-primary">PT AMA</div>
