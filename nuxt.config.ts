@@ -1,6 +1,37 @@
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 
+function patchVuetifySwitchCss() {
+  return {
+    name: 'patch-vuetify-switch-css',
+    enforce: 'pre' as const,
+    transform(code: string, id: string) {
+      if (!id.includes('vuetify') || !id.endsWith('/VSwitch/VSwitch.css')) return;
+
+      return code
+        .replaceAll('calc(16px / 24px)', '0.6666666667')
+        .replaceAll('calc(28px / 24px)', '1.1666666667');
+    }
+  };
+}
+
+type CssDeclaration = {
+  value: string;
+};
+
+function patchVuetifySwitchPostcss() {
+  return {
+    postcssPlugin: 'patch-vuetify-switch-postcss',
+    Declaration(decl: CssDeclaration) {
+      if (!decl.value.includes('calc(')) return;
+
+      decl.value = decl.value
+        .replaceAll('calc(16px / 24px)', '0.6666666667')
+        .replaceAll('calc(28px / 24px)', '1.1666666667');
+    }
+  };
+}
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-04',
   devtools: { enabled: true },
@@ -29,7 +60,12 @@ export default defineNuxtConfig({
     build: {
       cssMinify: 'lightningcss'
     },
-    plugins: [tailwindcss()]
+    css: {
+      postcss: {
+        plugins: [patchVuetifySwitchPostcss()]
+      }
+    },
+    plugins: [patchVuetifySwitchCss(), tailwindcss()]
   },
   vuetify: {
     vuetifyOptions: {
