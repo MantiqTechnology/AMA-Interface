@@ -1,0 +1,22 @@
+diff --git a/lib/components/VSwitch/VSwitch.css b/lib/components/VSwitch/VSwitch.css
+index deebafc678790cc918bd490f3b70275415b4caf1..7c3f842f675e31ffbfedd6416067bc94d3eeaa16 100644
+--- a/lib/components/VSwitch/VSwitch.css
++++ b/lib/components/VSwitch/VSwitch.css
+@@ -138,7 +138,7 @@
+     --v-elevation-overlay: color-mix(in srgb, var(--v-elevation-overlay-color) 0%, transparent);
+   }
+   .v-switch--inset .v-switch__thumb {
+-    transform: scale(var(--v-switch-inset-thumb-off-scale, calc(16px / 24px)));
++    transform: scale(var(--v-switch-inset-thumb-off-scale, 0.6666666667));
+   }
+   .v-switch--inset .v-switch__thumb--filled {
+     transform: none;
+@@ -165,7 +165,7 @@
+     color: color-mix(in srgb, rgb(var(--v-theme-surface-variant)) 90%, white);
+   }
+   .v-switch--inset-material .v-selection-control__input:active .v-switch__thumb {
+-    transform: scale(var(--v-switch-inset-thumb-pressed-scale, calc(28px / 24px)));
++    transform: scale(var(--v-switch-inset-thumb-pressed-scale, 1.1666666667));
+   }
+   .v-switch--inset-material .v-selection-control__input:before {
+     --v-hover-opacity: 0.08;
