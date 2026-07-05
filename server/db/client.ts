@@ -14,7 +14,19 @@ export type DbClient = {
 
 const clients = new Map<string, DbClient>();
 
-export function resolveDbPath(dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite') {
+export function getDefaultDbPath() {
+  if (process.env.AMA_DB_PATH) {
+    return process.env.AMA_DB_PATH;
+  }
+
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    return '/tmp/ama-demo.sqlite';
+  }
+
+  return './data/ama-demo.sqlite';
+}
+
+export function resolveDbPath(dbPath = getDefaultDbPath()) {
   if (dbPath === ':memory:') {
     return dbPath;
   }
@@ -22,7 +34,7 @@ export function resolveDbPath(dbPath = process.env.AMA_DB_PATH ?? './data/ama-de
   return resolve(process.cwd(), dbPath);
 }
 
-export function createDbClient(dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite'): DbClient {
+export function createDbClient(dbPath = getDefaultDbPath()): DbClient {
   const resolvedPath = resolveDbPath(dbPath);
 
   if (resolvedPath !== ':memory:') {
@@ -42,7 +54,7 @@ export function createDbClient(dbPath = process.env.AMA_DB_PATH ?? './data/ama-d
   };
 }
 
-export function getDbClient(dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite') {
+export function getDbClient(dbPath = getDefaultDbPath()) {
   const resolvedPath = resolveDbPath(dbPath);
   const cached = clients.get(resolvedPath);
 

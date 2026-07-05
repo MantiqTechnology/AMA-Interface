@@ -1,9 +1,17 @@
 import { getDbClient } from '../db/client';
 import { runMigrations } from '../db/migrate';
+import { seedDemoData } from '../db/seed';
 
-export default defineNitroPlugin(() => {
+export default defineNitroPlugin(async () => {
   const config = useRuntimeConfig();
-  const { sqlite } = getDbClient(config.dbPath);
+  const { db, sqlite } = getDbClient(config.dbPath);
 
   runMigrations(sqlite);
+
+  const { count } = sqlite.prepare('SELECT COUNT(*) as count FROM aircraft').get() as {
+    count: number;
+  };
+  if (count === 0) {
+    await seedDemoData(db);
+  }
 });

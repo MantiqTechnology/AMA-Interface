@@ -1,6 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 
+const defaultDbPath =
+  process.env.AMA_DB_PATH ??
+  (process.env.VERCEL || process.env.NODE_ENV === 'production'
+    ? '/tmp/ama-demo.sqlite'
+    : './data/ama-demo.sqlite');
+
 function patchVuetifySwitchCss() {
   return {
     name: 'patch-vuetify-switch-css',
@@ -45,7 +51,7 @@ export default defineNuxtConfig({
   },
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
-    dbPath: process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite',
+    dbPath: defaultDbPath,
     demoMode: process.env.DEMO_MODE ?? 'true',
     public: {
       demoMode: process.env.DEMO_MODE ?? 'true'
