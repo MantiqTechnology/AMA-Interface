@@ -25,15 +25,14 @@ async function login() {
         <div class="relative z-10 flex w-full flex-col justify-between">
           <div>
             <div class="mb-10 flex items-center justify-start gap-4 text-left">
-              <VImg
-                alt="PT AMA logo"
-                class="shrink-0"
-                height="72"
-                src="https://amapapua.com/files/ama-pt-logo-shaded4.png"
-                width="96"
-              />
               <div>
-                <div class="text-xl font-bold">PT AMA</div>
+                <VImg
+                  alt="PT AMA logo"
+                  class="shrink-0"
+                  height="72"
+                  src="https://amapapua.com/files/ama-pt-logo-shaded4.png"
+                  width="96"
+                />
                 <div class="text-sm uppercase text-white/70">Ops Interface</div>
               </div>
             </div>
