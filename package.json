@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": "22.x",
+    "pnpm": "10.17.1"
+  },
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
