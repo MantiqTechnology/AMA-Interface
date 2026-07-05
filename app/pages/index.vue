@@ -25,9 +25,14 @@ async function login() {
         <div class="relative z-10 flex w-full flex-col justify-between">
           <div>
             <div class="mb-10 flex items-center gap-3">
-              <div class="grid h-12 w-12 place-items-center rounded-lg bg-brand-secondary font-bold">
-                AMA
-              </div>
+              <VImg
+                alt="PT AMA logo"
+                class="shrink-0"
+                cover
+                height="48"
+                src="https://amapapua.com/files/ama-pt-logo-shaded4.png"
+                width="68"
+              />
               <div>
                 <div class="text-xl font-bold">PT AMA</div>
                 <div class="text-sm uppercase text-white/70">Ops Interface</div>
@@ -42,8 +47,8 @@ async function login() {
                 Operations control for demo flight readiness.
               </h1>
               <p class="mt-5 max-w-lg text-lg text-white/75">
-                Fixture-based command center for flight request, readiness, dispatch, following,
-                and closure scenarios.
+                Fixture-based command center for flight request, readiness, dispatch, following, and
+                closure scenarios.
               </p>
             </div>
           </div>
@@ -80,9 +85,14 @@ async function login() {
           <VCardText class="p-8">
             <div class="mb-8 lg:hidden">
               <div class="mb-3 flex items-center gap-3">
-                <div class="grid h-11 w-11 place-items-center rounded-lg bg-brand-secondary font-bold text-white">
-                  AMA
-                </div>
+                <VImg
+                  alt="PT AMA logo"
+                  class="shrink-0"
+                  cover
+                  height="44"
+                  src="https://amapapua.com/files/ama-pt-logo-shaded4.png"
+                  width="62"
+                />
                 <div>
                   <div class="text-xl font-bold text-brand-primary">PT AMA</div>
                   <div class="text-xs uppercase text-text-secondary">Ops Interface</div>
@@ -91,9 +101,7 @@ async function login() {
             </div>
 
             <div class="mb-8">
-              <VChip class="mb-4" color="accent-cenderawasih" variant="tonal">
-                Demo access
-              </VChip>
+              <VChip class="mb-4" color="accent-cenderawasih" variant="tonal"> Demo access </VChip>
               <h1 class="text-3xl font-bold text-brand-primary">Sign in</h1>
               <p class="mt-2 text-text-secondary">
                 Local demo login. Tombol masuk langsung membuka aplikasi tanpa autentikasi nyata.
