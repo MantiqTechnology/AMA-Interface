@@ -69,11 +69,14 @@ interface StationDetail {
 
 const store = useAmaDemoStore();
 
-const selectedDate = ref(store.data.value.meta.demoDate);
+const selectedOperationDate = ref<Date | string | null>(
+  dateFromKey(store.data.value.meta.demoDate)
+);
+const selectedDate = computed(() => dateKeyFromValue(selectedOperationDate.value));
 const selectedStation = ref('ALL');
 const selectedOperation = ref<OperationFilter>('ALL');
 const activeTab = ref<DashboardTab>('command');
-const controlPanelOpen = ref(true);
+const controlPanelOpen = ref(false);
 
 const sections = reactive<Record<SectionKey, boolean>>({
   kpis: true,
@@ -598,6 +601,21 @@ function getOperationCategory(request: FlightRequest): OperationFilter {
   return 'SCHEDULED';
 }
 
+function dateFromKey(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function dateKeyFromValue(value: Date | string | null | undefined) {
+  if (!value) return store.data.value.meta.demoDate;
+  if (typeof value === 'string') return value.slice(0, 10);
+
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function getReadiness(requestId: string): ReadinessCheck | undefined {
   return store.data.value.readinessChecks.find(
     (readiness) => readiness.flightRequestId === requestId
@@ -705,14 +723,13 @@ function resetSections() {
             <VSpacer />
 
             <VBtn
-              aria-label="Toggle dashboard controls"
+              aria-label="Open dashboard controls"
               color="primary"
-              :icon="controlPanelOpen ? 'mdi-tune-vertical' : undefined"
-              :prepend-icon="controlPanelOpen ? undefined : 'mdi-tune-vertical'"
+              prepend-icon="mdi-tune-vertical"
               variant="tonal"
-              @click="controlPanelOpen = !controlPanelOpen"
+              @click="controlPanelOpen = true"
             >
-              <span v-if="!controlPanelOpen">View Controls</span>
+              View Controls
             </VBtn>
           </div>
 
@@ -720,12 +737,15 @@ function resetSections() {
             <VCardText>
               <VRow density="compact">
                 <VCol cols="12" md="4">
-                  <VTextField
-                    v-model="selectedDate"
+                  <VDateInput
+                    v-model="selectedOperationDate"
+                    clearable
                     density="comfortable"
+                    display-format="fullDateWithWeekday"
                     hide-details
                     label="Tanggal operasi"
-                    type="date"
+                    prepend-icon=""
+                    prepend-inner-icon="mdi-calendar"
                     variant="outlined"
                   />
                 </VCol>
@@ -1201,68 +1221,86 @@ function resetSections() {
           </VWindowItem>
         </VWindow>
       </main>
-
-      <aside v-if="controlPanelOpen" class="dashboard-controls">
-        <VCard border>
-          <VCardTitle class="flex items-center justify-between gap-2">
-            <span>Dashboard Controls</span>
-            <VBtn
-              aria-label="Hide dashboard controls"
-              icon="mdi-close"
-              size="small"
-              variant="text"
-              @click="controlPanelOpen = false"
-            />
-          </VCardTitle>
-          <VDivider />
-          <VCardText>
-            <div class="grid gap-3">
-              <div v-for="control in sectionControls" :key="control.key" class="control-row">
-                <div class="min-w-0">
-                  <div class="font-medium text-text-primary">{{ control.label }}</div>
-                  <div class="text-xs text-text-secondary">{{ control.hint }}</div>
-                </div>
-                <VSwitch
-                  v-model="sections[control.key]"
-                  color="primary"
-                  density="compact"
-                  hide-details
-                />
-              </div>
-            </div>
-
-            <VBtn
-              block
-              class="mt-5"
-              color="primary"
-              prepend-icon="mdi-restore"
-              variant="tonal"
-              @click="resetSections"
-            >
-              Reset View
-            </VBtn>
-          </VCardText>
-        </VCard>
-      </aside>
     </div>
+
+    <VNavigationDrawer
+      v-model="controlPanelOpen"
+      border
+      class="dashboard-control-drawer"
+      location="right"
+      :scrim="false"
+      temporary
+      width="360"
+    >
+      <div class="drawer-header">
+        <div>
+          <div class="text-lg font-bold text-text-primary">Dashboard Controls</div>
+          <div class="text-xs text-text-secondary">Show or hide dashboard sections</div>
+        </div>
+        <VBtn
+          aria-label="Hide dashboard controls"
+          icon="mdi-close"
+          size="small"
+          variant="text"
+          @click="controlPanelOpen = false"
+        />
+      </div>
+      <VDivider />
+      <div class="drawer-content">
+        <div class="grid gap-3">
+          <div v-for="control in sectionControls" :key="control.key" class="control-row">
+            <div class="min-w-0">
+              <div class="font-medium text-text-primary">{{ control.label }}</div>
+              <div class="text-xs text-text-secondary">{{ control.hint }}</div>
+            </div>
+            <VSwitch
+              v-model="sections[control.key]"
+              color="primary"
+              density="compact"
+              hide-details
+            />
+          </div>
+        </div>
+
+        <VBtn
+          block
+          class="mt-5"
+          color="primary"
+          prepend-icon="mdi-restore"
+          variant="tonal"
+          @click="resetSections"
+        >
+          Reset View
+        </VBtn>
+      </div>
+    </VNavigationDrawer>
   </VContainer>
 </template>
 
 <style scoped>
 .dashboard-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 16px;
-  align-items: start;
+  min-width: 0;
 }
 
 .dashboard-main {
   min-width: 0;
 }
 
-.dashboard-controls {
-  position: sticky;
-  top: 88px;
+.dashboard-control-drawer {
+  top: 64px !important;
+  height: calc(100dvh - 64px) !important;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.drawer-content {
+  padding: 16px;
 }
 
 .priority-panel {
@@ -1387,19 +1425,13 @@ function resetSections() {
   font-weight: 600;
 }
 
-@media (max-width: 1260px) {
-  .dashboard-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .dashboard-controls {
-    position: static;
-  }
-}
-
 @media (max-width: 760px) {
   .fleet-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-control-drawer {
+    width: min(360px, 100vw) !important;
   }
 }
 </style>
