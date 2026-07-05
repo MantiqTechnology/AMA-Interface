@@ -91,88 +91,88 @@ function routeLabel(routeId: string) {
     </VRow>
 
     <VRow class="mt-1">
-        <VCol cols="12" lg="8">
-          <VCard border>
-            <VCardTitle class="flex items-center gap-3 text-text-primary">
-              Today's Flight Request Board
-              <VChip color="secondary" size="small" variant="tonal">Asia/Jayapura</VChip>
-            </VCardTitle>
-            <CommonTableExpanded
-              ref="requestTableRef"
-              density="comfortable"
-              fixed-header
-              hide-default-footer
-              hover
-              item-value="id"
-              :headers="requestHeaders"
-              :items="readableRequests"
-              :items-length="readableRequests.length"
-              :items-per-page="Math.max(readableRequests.length, 1)"
-              :fetch-detail="fetchFlightRequestDetail"
-              :cache-ttl="60_000"
-            >
-              <template #[`item.requestNumber`]="{ item }">
-                <NuxtLink
-                  class="font-semibold text-text-primary no-underline"
-                  :to="`/ops/flight-requests/${item.id}`"
-                >
-                  {{ item.requestNumber }}
-                </NuxtLink>
-                <div class="text-sm text-text-muted">{{ item.title }}</div>
-              </template>
+      <VCol cols="12" lg="8">
+        <VCard border>
+          <VCardTitle class="flex items-center gap-3 text-text-primary">
+            Today's Flight Request Board
+            <VChip color="secondary" size="small" variant="tonal">Asia/Jayapura</VChip>
+          </VCardTitle>
+          <CommonTableExpanded
+            ref="requestTableRef"
+            density="comfortable"
+            fixed-header
+            hide-default-footer
+            hover
+            item-value="id"
+            :headers="requestHeaders"
+            :items="readableRequests"
+            :items-length="readableRequests.length"
+            :items-per-page="Math.max(readableRequests.length, 1)"
+            :fetch-detail="fetchFlightRequestDetail"
+            :cache-ttl="60_000"
+          >
+            <template #[`item.requestNumber`]="{ item }">
+              <NuxtLink
+                class="font-semibold text-text-primary no-underline"
+                :to="`/ops/flight-requests/${item.id}`"
+              >
+                {{ item.requestNumber }}
+              </NuxtLink>
+              <div class="text-sm text-text-muted">{{ item.title }}</div>
+            </template>
 
-              <template #[`item.route`]="{ item }">
-                {{ routeLabel(item.routeId) }}
-              </template>
+            <template #[`item.route`]="{ item }">
+              {{ routeLabel(item.routeId) }}
+            </template>
 
-              <template #[`item.plannedDepartureAt`]="{ item }">
-                {{ formatJayapuraDateTime(item.plannedDepartureAt) }}
-              </template>
+            <template #[`item.plannedDepartureAt`]="{ item }">
+              {{ formatJayapuraDateTime(item.plannedDepartureAt) }}
+            </template>
 
-              <template #[`item.priority`]="{ item }">
-                <DsStatusBadge :value="item.priority" />
-              </template>
+            <template #[`item.priority`]="{ item }">
+              <DsStatusBadge :value="item.priority" />
+            </template>
 
-              <template #[`item.readiness`]="{ item }">
-                <DsStatusBadge :value="store.getReadinessForRequest(item.id)?.overallState ?? 'PENDING'" />
-              </template>
+            <template #[`item.readiness`]="{ item }">
+              <DsStatusBadge :value="store.getReadinessForRequest(item.id)?.overallState ?? 'PENDING'" />
+            </template>
 
-              <template #[`item.status`]="{ item }">
-                <DsStatusBadge :value="item.status" />
-              </template>
+            <template #[`item.status`]="{ item }">
+              <DsStatusBadge :value="item.status" />
+            </template>
 
-              <template #[`item.actions`]="{ item }">
-                <VBtn
-                  color="primary"
-                  icon="mdi-open-in-new"
-                  size="small"
-                  :to="`/ops/flight-requests/${item.id}`"
-                  variant="text"
-                />
-              </template>
-              <template #detail="{ item, detail }">
-                <VRow dense>
-                  <VCol cols="12" md="4">
-                    <div class="text-sm text-text-muted">Aircraft</div>
-                    <div class="font-medium">{{ detail?.aircraftReg ?? '-' }}</div>
-                  </VCol>
-                  <VCol cols="12" md="4">
-                    <div class="text-sm text-text-muted">Crew</div>
-                    <div class="font-medium">{{ detail?.crewNames?.join(', ') ?? '-' }}</div>
-                  </VCol>
-                  <VCol cols="12" md="4">
-                    <div class="text-sm text-text-muted">Cargo / Payload</div>
-                    <div class="font-medium">{{ detail?.payloadKg ?? 0 }} kg</div>
-                  </VCol>
-                  <VCol cols="12">
-                    <div class="text-sm text-text-muted">Notes</div>
-                    <div>{{ detail?.notes ?? '—' }}</div>
-                  </VCol>
-                </VRow>
-              </template>
-            </CommonTableExpanded>
-          </VCard>
-        </VCol>
+            <template #[`item.actions`]="{ item }">
+              <VBtn
+                color="primary"
+                icon="mdi-open-in-new"
+                size="small"
+                :to="`/ops/flight-requests/${item.id}`"
+                variant="text"
+              />
+            </template>
+            <template #detail="{ detail }">
+              <VRow dense>
+                <VCol cols="12" md="4">
+                  <div class="text-sm text-text-muted">Aircraft</div>
+                  <div class="font-medium">{{ detail?.aircraftReg ?? '-' }}</div>
+                </VCol>
+                <VCol cols="12" md="4">
+                  <div class="text-sm text-text-muted">Crew</div>
+                  <div class="font-medium">{{ detail?.crewNames?.join(', ') ?? '-' }}</div>
+                </VCol>
+                <VCol cols="12" md="4">
+                  <div class="text-sm text-text-muted">Cargo / Payload</div>
+                  <div class="font-medium">{{ detail?.payloadKg ?? 0 }} kg</div>
+                </VCol>
+                <VCol cols="12">
+                  <div class="text-sm text-text-muted">Notes</div>
+                  <div>{{ detail?.notes ?? '—' }}</div>
+                </VCol>
+              </VRow>
+            </template>
+          </CommonTableExpanded>
+        </VCard>
+      </VCol>
 
       <VCol cols="12" lg="4">
         <VCard border class="mb-4">

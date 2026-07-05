@@ -70,7 +70,7 @@ function toggleRail() {
               rail
             "
           >
-            <vImg :width="68" cover src="https://amapapua.com/files/ama-pt-logo-shaded4.png"></vImg>
+            <vImg :width="68" cover src="https://amapapua.com/files/ama-pt-logo-shaded4.png" />
           </div>
           <div v-if="!rail" class="min-w-0">
             <div class="text-lg font-bold leading-5 text-brand-primary">AMA</div>

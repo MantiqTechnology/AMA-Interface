@@ -1,6 +1,6 @@
 <!-- ExpandedTable.vue -->
 <script setup lang="ts" generic="T extends Record<string, any>">
-import { VDataTableServer, VProgressCircular, VProgressLinear } from 'vuetify/components';
+import { VDataTableServer, VProgressLinear } from 'vuetify/components';
 
 interface CacheEntry {
   data: any
@@ -24,14 +24,6 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 defineOptions({ inheritAttrs: false })
-
-const attrs = useAttrs()
-
-// deteksi mode server: cek prop eksplisit dulu, baru fallback ke $attrs
-const isServerMode = computed(() => {
-  if (props.serverItemsLength !== undefined) return true
-  return attrs['items-length'] !== undefined || attrs.itemsLength !== undefined
-})
 
 const expanded = ref<string[]>([])
 const cache = new Map<string, CacheEntry>()
@@ -106,8 +98,8 @@ defineExpose({ invalidate, invalidateAll, refreshRow, refreshAllExpanded })
 
 <template>
   <VDataTableServer
-    density="default"
     v-model:expanded="expanded"
+    density="default"
     :headers="headers"
     :items="items"
     :item-value="itemValue"
