@@ -1,0 +1,1 @@
+Mock receipt for SE-001: Wamena ground handling and stretcher positioning support.

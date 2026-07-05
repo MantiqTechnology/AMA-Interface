@@ -1,0 +1,10 @@
+.nuxt
+.output
+node_modules
+data/*.sqlite
+data/*.sqlite-*
+data/*.json
+coverage
+dist
+.env
+.DS_Store
