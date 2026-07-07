@@ -3,7 +3,7 @@ import type { DemoRole } from '#shared/types/roles';
 
 export function useDemoAuth() {
   const session = useState<DemoSessionDto>('demo-session', () => ({
-    role: 'Director',
+    role: 'Demo Admin',
     demoMode: true
   }));
 

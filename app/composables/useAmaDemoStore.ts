@@ -15,7 +15,7 @@ import { authorizeOperation, deny } from '#operations/policies';
 import { calculateReadiness, readinessHasBlocker } from '#operations/readiness';
 
 const typedSeed = seedDatabase as unknown as DemoDatabase;
-const defaultPersonaId = 'USR-001';
+const defaultPersonaId = 'USR-DEMO-ADMIN';
 
 function cloneSeed() {
   return JSON.parse(JSON.stringify(typedSeed)) as DemoDatabase;
@@ -44,7 +44,9 @@ export function useAmaDemoStore() {
   const currentUserId = useState<string>('ama-demo-current-user-id', () => defaultPersonaId);
   const { pushToast } = useDemoToasts();
 
-  const currentUser = computed(() => byId(data.value.appUsers, currentUserId.value) ?? data.value.appUsers[0]);
+  const currentUser = computed(
+    () => byId(data.value.appUsers, currentUserId.value) ?? data.value.appUsers[0]
+  );
   const currentRoles = computed(() =>
     currentUser.value.roleIds
       .map((roleId) => byId(data.value.roles, roleId))
@@ -166,7 +168,12 @@ export function useAmaDemoStore() {
     }
 
     module.status = active ? 'ACTIVE' : 'DISABLED';
-    appendAudit('TENANT_MODULE', moduleKey, active ? 'ENABLED' : 'DISABLED', `Module ${moduleKey} updated.`);
+    appendAudit(
+      'TENANT_MODULE',
+      moduleKey,
+      active ? 'ENABLED' : 'DISABLED',
+      `Module ${moduleKey} updated.`
+    );
     pushToast({
       type: 'success',
       title: 'Module entitlement diperbarui',
@@ -224,7 +231,7 @@ export function useAmaDemoStore() {
           confirmedLiters: request.fuelPlan.requiredLiters,
           status: 'CONFIRMED',
           confirmedAt: nowDemoIso(),
-          validUntil: request.plannedDepartureAt,
+          validUntil: request.plannedDepartureAt
         }
       : {
           id: `FUEL-DEMO-${data.value.fuelConfirmations.length + 1}`,
@@ -245,7 +252,12 @@ export function useAmaDemoStore() {
     replaceById(data.value.fuelConfirmations, nextFuel);
     request.fuelPlan.confirmationId = nextFuel.id;
     updateReadiness(request);
-    appendAudit('FUEL_CONFIRMATION', nextFuel.id, 'MOCK_CONFIRMED', `Fuel mock confirmed for ${request.id}.`);
+    appendAudit(
+      'FUEL_CONFIRMATION',
+      nextFuel.id,
+      'MOCK_CONFIRMED',
+      `Fuel mock confirmed for ${request.id}.`
+    );
     pushToast({ type: 'success', title: 'Fuel mock confirmed', message: request.requestNumber });
     return decision;
   }
@@ -253,7 +265,8 @@ export function useAmaDemoStore() {
   function confirmHandling(handlingId: string) {
     const handling = getHandlingConfirmation(handlingId);
     const request = getRequest(handling?.flightRequestId);
-    if (!handling || !request) return deny('MISSING_REQUIRED_DATA', 'Handling confirmation tidak ditemukan.');
+    if (!handling || !request)
+      return deny('MISSING_REQUIRED_DATA', 'Handling confirmation tidak ditemukan.');
 
     const decision = guard('handling.confirm', {
       flightRequest: request,
@@ -267,8 +280,17 @@ export function useAmaDemoStore() {
     handling.parkingBay ||= `BAY-${getStation(handling.stationId)?.code ?? 'D'}1`;
     handling.remarks = 'DEMO DATA / NO LIVE INTEGRATION: station handling confirmed locally.';
     updateReadiness(request);
-    appendAudit('HANDLING_CONFIRMATION', handling.id, 'MOCK_CONFIRMED', `Handling confirmed for ${handling.stationId}.`);
-    pushToast({ type: 'success', title: 'Handling confirmed', message: handling.providerReference });
+    appendAudit(
+      'HANDLING_CONFIRMATION',
+      handling.id,
+      'MOCK_CONFIRMED',
+      `Handling confirmed for ${handling.stationId}.`
+    );
+    pushToast({
+      type: 'success',
+      title: 'Handling confirmed',
+      message: handling.providerReference
+    });
     return decision;
   }
 
@@ -297,7 +319,12 @@ export function useAmaDemoStore() {
 
     request.assignedAircraftId = alternate.id;
     updateReadiness(request);
-    appendAudit('FLIGHT_REQUEST', request.id, 'AIRCRAFT_REASSIGNED', `Assigned ${alternate.registration}.`);
+    appendAudit(
+      'FLIGHT_REQUEST',
+      request.id,
+      'AIRCRAFT_REASSIGNED',
+      `Assigned ${alternate.registration}.`
+    );
     pushToast({ type: 'success', title: 'Aircraft diganti', message: alternate.registration });
     return decision;
   }
@@ -312,7 +339,9 @@ export function useAmaDemoStore() {
     });
     if (!decision.allowed) return decision;
 
-    const nonPilotCrew = getCrew(request.assignedCrewIds).filter((member) => member.role !== 'PILOT');
+    const nonPilotCrew = getCrew(request.assignedCrewIds).filter(
+      (member) => member.role !== 'PILOT'
+    );
     const alternatePilot = data.value.crew
       .filter((member) => member.role === 'PILOT' && !request.assignedCrewIds.includes(member.id))
       .find((pilot) => {
@@ -333,7 +362,12 @@ export function useAmaDemoStore() {
 
     request.assignedCrewIds = [alternatePilot.id, ...nonPilotCrew.map((member) => member.id)];
     updateReadiness(request);
-    appendAudit('FLIGHT_REQUEST', request.id, 'CREW_REASSIGNED', `Assigned ${alternatePilot.name}.`);
+    appendAudit(
+      'FLIGHT_REQUEST',
+      request.id,
+      'CREW_REASSIGNED',
+      `Assigned ${alternatePilot.name}.`
+    );
     pushToast({ type: 'success', title: 'Pilot diganti', message: alternatePilot.name });
     return decision;
   }
@@ -365,7 +399,12 @@ export function useAmaDemoStore() {
         remarks: null
       });
     }
-    appendAudit('FLIGHT_REQUEST', request.id, 'SUBMITTED', `${request.requestNumber} submitted for approval.`);
+    appendAudit(
+      'FLIGHT_REQUEST',
+      request.id,
+      'SUBMITTED',
+      `${request.requestNumber} submitted for approval.`
+    );
     pushToast({ type: 'success', title: 'Request dikirim', message: request.requestNumber });
     return decision;
   }
@@ -389,9 +428,15 @@ export function useAmaDemoStore() {
     });
     if (!dispatchDecision.allowed) return dispatchDecision;
 
-    const existingFlight = data.value.flights.find((flight) => flight.flightRequestId === request.id);
+    const existingFlight = data.value.flights.find(
+      (flight) => flight.flightRequestId === request.id
+    );
     if (existingFlight) {
-      pushToast({ type: 'info', title: 'Flight sudah dibuat', message: existingFlight.flightNumber });
+      pushToast({
+        type: 'info',
+        title: 'Flight sudah dibuat',
+        message: existingFlight.flightNumber
+      });
       return approveDecision;
     }
 
@@ -439,7 +484,12 @@ export function useAmaDemoStore() {
       approval.decisionByUserId = currentUserId.value;
       approval.remarks = 'Approved in local demo simulation.';
     }
-    appendAudit('FLIGHT_REQUEST', request.id, 'APPROVED_AND_RELEASED', `${flight.flightNumber} created.`);
+    appendAudit(
+      'FLIGHT_REQUEST',
+      request.id,
+      'APPROVED_AND_RELEASED',
+      `${flight.flightNumber} created.`
+    );
     pushToast({ type: 'success', title: 'Flight dibuat', message: flight.flightNumber });
     return approveDecision;
   }
@@ -486,8 +536,17 @@ export function useAmaDemoStore() {
     if (nextStatus === 'DEPARTED') flight.actualDepartureAt = nowDemoIso();
     if (nextStatus === 'LANDED') flight.actualArrivalAt = nowDemoIso();
     appendTimeline(flight, nextStatus, note || `Manual status changed to ${nextStatus}.`);
-    appendAudit('FLIGHT', flight.id, `STATUS_${nextStatus}`, note || `Status changed to ${nextStatus}.`);
-    pushToast({ type: 'success', title: 'Flight status diperbarui', message: `${flight.flightNumber}: ${nextStatus}` });
+    appendAudit(
+      'FLIGHT',
+      flight.id,
+      `STATUS_${nextStatus}`,
+      note || `Status changed to ${nextStatus}.`
+    );
+    pushToast({
+      type: 'success',
+      title: 'Flight status diperbarui',
+      message: `${flight.flightNumber}: ${nextStatus}`
+    });
     return decision;
   }
 
@@ -526,7 +585,9 @@ export function useAmaDemoStore() {
       incidentReported: payload.incidentReported,
       operationalRemark: payload.operationalRemark,
       financeHandoffStatus: 'READY_FOR_REVIEW',
-      maintenanceHandoffStatus: payload.incidentReported ? 'DEFECT_REVIEW_REQUIRED' : 'NO_DEFECT_REPORTED'
+      maintenanceHandoffStatus: payload.incidentReported
+        ? 'DEFECT_REVIEW_REQUIRED'
+        : 'NO_DEFECT_REPORTED'
     };
     appendTimeline(flight, 'CLOSED', payload.operationalRemark);
     appendAudit('FLIGHT', flight.id, 'CLOSED', payload.operationalRemark);

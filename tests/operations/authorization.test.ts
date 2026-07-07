@@ -38,6 +38,20 @@ function readiness(data: DemoDatabase, requestId: string) {
 }
 
 describe('operations authorization policies', () => {
+  it('uses Demo Admin as the all-module default persona', () => {
+    const data = cloneSeed();
+    const demoAdmin = data.appUsers[0];
+    const demoRole = data.roles.find((role) => role.id === 'ROLE-DEMO-ADMIN');
+
+    expect(demoAdmin.id).toBe('USR-DEMO-ADMIN');
+    expect(demoAdmin.roleIds).toContain('ROLE-DEMO-ADMIN');
+    expect(demoRole?.permissionIds).toHaveLength(data.permissionCatalog.length);
+    expect(
+      data.permissionCatalog.every((permission) => demoRole?.permissionIds.includes(permission.id))
+    ).toBe(true);
+    expect(demoRole?.scopeDefault).toBe('ALL_STATIONS');
+  });
+
   it('prevents a Flight Coordinator from approving their own request', () => {
     const data = cloneSeed();
     const decision = authorizeOperation(data, 'USR-001', 'flight_request.approve', {
@@ -127,7 +141,9 @@ describe('operations authorization policies', () => {
 
   it('denies action when its tenant module is inactive', () => {
     const data = cloneSeed();
-    const financeModule = data.tenantModules.find((module) => module.moduleKey === 'finance-handoff');
+    const financeModule = data.tenantModules.find(
+      (module) => module.moduleKey === 'finance-handoff'
+    );
     if (!financeModule) throw new Error('Missing finance module');
     financeModule.status = 'DISABLED';
 
