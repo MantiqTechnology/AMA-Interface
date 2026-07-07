@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useDisplay } from 'vuetify';
 import { useTheme } from 'vuetify';
 
 const route = useRoute();
 const store = useAmaDemoStore();
 const theme = useTheme();
+const { mdAndUp } = useDisplay();
+const mobileDrawer = useState('ama-sidebar-mobile-open', () => false);
 
 const notifications = [
   {
@@ -36,6 +39,7 @@ const pageTitle = computed(() => {
   if (route.path.startsWith('/ops/flights')) return 'Flight Detail';
   if (route.path.startsWith('/ops/flight-closure')) return 'Flight Closure';
   if (route.path.startsWith('/admin/access-demo')) return 'Access Demo';
+  if (route.path.startsWith('/master-data')) return 'Master Data';
   if (route.path.startsWith('/dashboard')) return 'Dashboard';
   if (route.path.startsWith('/flights')) return 'Flights';
   if (route.path.startsWith('/invoices')) return 'Invoice';
@@ -47,11 +51,23 @@ const isDark = computed(() => theme.global.name.value === 'amaDark');
 function toggleTheme() {
   theme.global.name.value = isDark.value ? 'amaLight' : 'amaDark';
 }
+
+function openMobileNavigation() {
+  mobileDrawer.value = true;
+}
 </script>
 
 <template>
   <VAppBar border color="surface" flat height="64">
     <div class="flex w-full items-center gap-3 px-4">
+      <VBtn
+        v-if="!mdAndUp"
+        aria-label="Open navigation"
+        icon="mdi-menu"
+        variant="text"
+        @click="openMobileNavigation"
+      />
+
       <div class="min-w-0">
         <div class="text-lg font-semibold text-brand-primary">{{ pageTitle }}</div>
       </div>

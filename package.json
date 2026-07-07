@@ -16,6 +16,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "demo:reset": "tsx scripts/reset-demo.ts",
     "demo:export": "tsx scripts/export-demo.ts",
+    "uploads:migrate-local": "tsx scripts/migrate-local-uploads.ts",
     "test": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write .",

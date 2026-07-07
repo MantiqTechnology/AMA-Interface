@@ -76,6 +76,29 @@ Includes KPIs, latest flights, pending fuel requests, submitted station expenses
 
 ## Uploads
 
+- `GET /api/uploads` -> `LocalUploadDto[]`
+- `POST /api/uploads` multipart field `file` -> `LocalUploadDto`
+- `GET /api/uploads/:id` -> `LocalUploadDto`
+- `GET /api/uploads/:id/file` -> file stream for inline view
+- `GET /api/uploads/:id/file?download=1` -> file stream as attachment
+- `DELETE /api/uploads/:id` -> deleted `LocalUploadDto`
 - `POST /api/uploads/receipts` multipart field `file` -> `{ filename, path, size, contentType }`
 
-Uploads are stored under `public/uploads/mock-receipts` for local demos. Swap this for object storage or a production document service later without changing station expense DTOs.
+General uploads are stored under `data/uploads/local` with local metadata in `data/local-uploads.json`.
+The legacy receipt mock endpoint stores files under `public/uploads/mock-receipts`.
+Swap this for object storage or a production document service later without changing station expense DTOs.
+
+Run `pnpm uploads:migrate-local` once to move older local uploads from `public/uploads/local` into private local storage.
+
+## Documents
+
+- `GET /api/documents?ownerType=&ownerId=&status=&verificationStatus=&search=` -> `MasterDocumentDto[]`
+- `POST /api/documents` body `CreateDocumentBody` -> `MasterDocumentDto`
+- `GET /api/documents/:id` -> `MasterDocumentDto`
+- `PATCH /api/documents/:id` body `UpdateDocumentBody` -> `MasterDocumentDto`
+- `DELETE /api/documents/:id` -> deleted `MasterDocumentDto`
+- `POST /api/documents/:id/verify` -> `MasterDocumentDto`
+- `POST /api/documents/:id/reject` body `{ rejectionReason }` -> `MasterDocumentDto`
+- `POST /api/documents/:id/supersede` body `SupersedeDocumentBody` -> new `MasterDocumentDto`
+
+Document metadata is stored in `data/local-documents.json`. File bytes remain in the upload domain and are served only through `/api/uploads/:id/file`.

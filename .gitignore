@@ -5,7 +5,9 @@ data/*.sqlite
 data/*.sqlite-*
 data/*.json
 !data/ops-demo-db.json
+data/uploads
 coverage
 dist
+public/uploads/local
 .env
 .DS_Store
