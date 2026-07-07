@@ -49,7 +49,7 @@ export default defineNuxtConfig({
     '#shared': fileURLToPath(new URL('./shared', import.meta.url)),
     '#server': fileURLToPath(new URL('./server', import.meta.url))
   },
-  css: ['~/assets/css/main.css'],
+  css: ['@mdi/font/css/materialdesignicons.css', '~/assets/css/main.css'],
   runtimeConfig: {
     dbPath: defaultDbPath,
     demoMode: process.env.DEMO_MODE ?? 'true',

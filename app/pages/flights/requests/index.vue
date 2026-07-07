@@ -69,7 +69,7 @@ async function submitFlight(id: string) {
 
     <VCard border class="mb-4">
       <VCardText>
-        <VRow dense>
+        <VRow density="comfortable">
           <VCol cols="12" md="8">
             <VTextField
               v-model="search"

@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  vuetify@4.1.3:
-    hash: 390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b
-    path: patches/vuetify@4.1.3.patch
-
 importers:
 
   .:
@@ -38,6 +33,9 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
+      '@mdi/font':
+        specifier: 7.4.47
+        version: 7.4.47
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(magicast@0.5.3)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.13.2)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0)))
@@ -87,11 +85,11 @@ importers:
         specifier: ^3.3.6
         version: 3.3.6(typescript@5.9.3)
       vuetify:
-        specifier: 4.1.3
-        version: 4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))
+        specifier: 4.1.4
+        version: 4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))
       vuetify-nuxt-module:
         specifier: 1.0.0-rc.2
-        version: 1.0.0-rc.2(@nuxt/schema@3.21.8)(esbuild@0.28.1)(magicast@0.5.3)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))
+        version: 1.0.0-rc.2(@nuxt/schema@3.21.8)(esbuild@0.28.1)(magicast@0.5.3)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))
 
 packages:
 
@@ -821,6 +819,9 @@ packages:
     resolution: {integrity: sha512-uwPAhccfFJlsfCxMYTwOdVfOz3xqyj8xYL3zJj8f0pb30tLohnnFPhLuqp4/qoEz8sNxe4SESZedcBojRefIzg==}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@mdi/font@7.4.47':
+    resolution: {integrity: sha512-43MtGpd585SNzHZPcYowu/84Vz2a2g31TvPMTm9uTiCSWzaheQySUcSyUH/46fPnuPQWof2yd0pGBtzee/IQWw==}
 
   '@napi-rs/wasm-runtime@1.1.6':
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
@@ -4702,8 +4703,8 @@ packages:
     peerDependencies:
       vuetify: ^3.4.0 || ^4.0.0
 
-  vuetify@4.1.3:
-    resolution: {integrity: sha512-tI6GHgICixvnoncWkSBNMKfwzjbt6H8FxEtGvUxYirOIBu00u5TUANgUbu1ly6wr9sVjvwqakCjUiAYJFsqpMw==}
+  vuetify@4.1.4:
+    resolution: {integrity: sha512-8/H0Yl6h9t07/ExuyZFIRJqAenpKeCiVaRJzbHGfTtuZRZIs5EbtjdFYikPIu6h9thBJAx15PrU4ofa4LvdJag==}
     peerDependencies:
       typescript: '>=4.7'
       vite-plugin-vuetify: '>=2.1.0'
@@ -5408,6 +5409,8 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
+
+  '@mdi/font@7.4.47': {}
 
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
@@ -6626,11 +6629,11 @@ snapshots:
 
   '@vue/shared@3.5.39': {}
 
-  '@vuetify/loader-shared@2.1.2(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))':
+  '@vuetify/loader-shared@2.1.2(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))':
     dependencies:
       upath: 2.0.1
       vue: 3.5.39(typescript@5.9.3)
-      vuetify: 4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))
+      vuetify: 4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))
 
   '@vuetify/unplugin-styles@1.0.0-beta.11(@nuxt/kit@4.4.8(magicast@0.5.3))(@nuxt/schema@3.21.8)(esbuild@0.28.1)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:
@@ -9532,10 +9535,10 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  vuetify-nuxt-module@1.0.0-rc.2(@nuxt/schema@3.21.8)(esbuild@0.28.1)(magicast@0.5.3)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))):
+  vuetify-nuxt-module@1.0.0-rc.2(@nuxt/schema@3.21.8)(esbuild@0.28.1)(magicast@0.5.3)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))):
     dependencies:
       '@nuxt/kit': 4.4.8(magicast@0.5.3)
-      '@vuetify/loader-shared': 2.1.2(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))
+      '@vuetify/loader-shared': 2.1.2(vue@3.5.39(typescript@5.9.3))(vuetify@4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))
       '@vuetify/unplugin-styles': 1.0.0-beta.11(@nuxt/kit@4.4.8(magicast@0.5.3))(@nuxt/schema@3.21.8)(esbuild@0.28.1)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0))
       defu: 6.1.7
       local-pkg: 1.2.1
@@ -9544,7 +9547,7 @@ snapshots:
       semver: 7.8.5
       ufo: 1.6.4
       unconfig: 7.5.0
-      vuetify: 4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))
+      vuetify: 4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@nuxt/schema'
@@ -9562,7 +9565,7 @@ snapshots:
       - vue
       - webpack
 
-  vuetify@4.1.3(patch_hash=390294c437ead10508f412b8d83e55836830881328f51f41e1649a3c4cf4e60b)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)):
+  vuetify@4.1.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)):
     dependencies:
       vue: 3.5.39(typescript@5.9.3)
     optionalDependencies:

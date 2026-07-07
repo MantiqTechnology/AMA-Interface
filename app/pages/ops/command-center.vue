@@ -19,14 +19,17 @@ const activeFlights = computed(() =>
 
 const metrics = computed(() => ({
   requestsToday: readableRequests.value.length,
-  readyForApproval: readableRequests.value.filter((request) => request.status === 'READY_FOR_APPROVAL')
-    .length,
+  readyForApproval: readableRequests.value.filter(
+    (request) => request.status === 'READY_FOR_APPROVAL'
+  ).length,
   blocked: readableRequests.value.filter((request) => request.status === 'BLOCKED').length,
   activeFlights: activeFlights.value.length,
-  criticalAlerts: store.data.value.alerts.filter((alert) => alert.severity === 'CRITICAL' && !alert.isRead)
-    .length,
-  aircraftAvailable: store.data.value.aircraft.filter((aircraft) => aircraft.operationalStatus === 'AVAILABLE')
-    .length
+  criticalAlerts: store.data.value.alerts.filter(
+    (alert) => alert.severity === 'CRITICAL' && !alert.isRead
+  ).length,
+  aircraftAvailable: store.data.value.aircraft.filter(
+    (aircraft) => aircraft.operationalStatus === 'AVAILABLE'
+  ).length
 }));
 
 const requestHeaders = [
@@ -64,9 +67,7 @@ function routeLabel(routeId: string) {
         </p>
       </div>
       <VSpacer />
-      <VBtn color="primary" prepend-icon="mdi-refresh" @click="store.resetDemo">
-        Reset Demo
-      </VBtn>
+      <VBtn color="primary" prepend-icon="mdi-refresh" @click="store.resetDemo"> Reset Demo </VBtn>
     </div>
 
     <VRow>
@@ -134,7 +135,9 @@ function routeLabel(routeId: string) {
             </template>
 
             <template #[`item.readiness`]="{ item }">
-              <DsStatusBadge :value="store.getReadinessForRequest(item.id)?.overallState ?? 'PENDING'" />
+              <DsStatusBadge
+                :value="store.getReadinessForRequest(item.id)?.overallState ?? 'PENDING'"
+              />
             </template>
 
             <template #[`item.status`]="{ item }">
@@ -151,7 +154,7 @@ function routeLabel(routeId: string) {
               />
             </template>
             <template #detail="{ detail }">
-              <VRow dense>
+              <VRow density="comfortable">
                 <VCol cols="12" md="4">
                   <div class="text-sm text-text-muted">Aircraft</div>
                   <div class="font-medium">{{ detail?.aircraftReg ?? '-' }}</div>

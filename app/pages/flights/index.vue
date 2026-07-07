@@ -103,7 +103,7 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
 
     <VCard border class="mb-4">
       <VCardText>
-        <VRow dense>
+        <VRow density="comfortable">
           <VCol cols="12" md="3">
             <VTextField
               v-model="search"
