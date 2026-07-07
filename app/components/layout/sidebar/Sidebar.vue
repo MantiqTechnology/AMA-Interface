@@ -114,9 +114,51 @@ const navItems = computed<NavItem[]>(() =>
       visible: true,
       children: [
         {
-          label: 'Overview',
+          label: 'Flight Board',
           to: '/flights',
           icon: 'mdi-earth',
+          visible: true
+        },
+        {
+          label: 'Flight Requests',
+          to: '/flights/requests',
+          icon: 'mdi-clipboard-plus-outline',
+          visible: true
+        },
+        {
+          label: 'Readiness',
+          to: '/flights/readiness',
+          icon: 'mdi-clipboard-pulse-outline',
+          visible: true
+        },
+        {
+          label: 'Manifest',
+          to: '/flights/manifest',
+          icon: 'mdi-account-box-multiple-outline',
+          visible: true
+        },
+        {
+          label: 'Fuel Control',
+          to: '/flights/fuel',
+          icon: 'mdi-fuel',
+          visible: true
+        },
+        {
+          label: 'Station Ops',
+          to: '/flights/station-operations',
+          icon: 'mdi-airport',
+          visible: true
+        },
+        {
+          label: 'Actual & Closure',
+          to: '/flights/actual-closure',
+          icon: 'mdi-airplane-check',
+          visible: true
+        },
+        {
+          label: 'Maintenance',
+          to: '/flights/maintenance',
+          icon: 'mdi-wrench-clock',
           visible: true
         },
         {
@@ -238,12 +280,28 @@ const navItems = computed<NavItem[]>(() =>
 
 const isActiveTop = (to: string) => route.path === to || route.path.startsWith(`${to}/`);
 
+const flightModulePaths = [
+  '/flights/requests',
+  '/flights/readiness',
+  '/flights/manifest',
+  '/flights/fuel',
+  '/flights/station-operations',
+  '/flights/actual-closure',
+  '/flights/maintenance'
+];
+
+function isActiveChild(to: string) {
+  if (to !== '/flights') return isActiveTop(to);
+  if (route.path === '/flights') return true;
+  return route.path.startsWith('/flights/') && !flightModulePaths.some((path) => isActiveTop(path));
+}
+
 function groupKey(item: NavItem) {
   return `nav-${item.label.toLowerCase().replaceAll(' ', '-')}`;
 }
 
 function isActiveGroup(item: NavItem) {
-  return item.children?.some((child) => isActiveTop(child.to)) ?? false;
+  return item.children?.some((child) => isActiveChild(child.to)) ?? false;
 }
 
 function firstChildPath(item: NavItem) {
@@ -357,7 +415,7 @@ function closeMobileOnNavigate() {
             <VListItem
               v-for="child in item.children"
               :key="child.to"
-              :active="isActiveTop(child.to)"
+              :active="isActiveChild(child.to)"
               class="nav-item nav-child mb-1"
               color="primary"
               :prepend-icon="child.icon"
