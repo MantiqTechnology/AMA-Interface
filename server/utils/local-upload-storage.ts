@@ -30,12 +30,32 @@ export type LocalUploadFile = {
   stream: ReturnType<typeof createReadStream>;
 };
 
+function isEphemeralRuntime() {
+  return Boolean(process.env.VERCEL) || process.env.NODE_ENV === 'production';
+}
+
+function resolveWritablePath(path: string) {
+  if (!isEphemeralRuntime()) {
+    return path;
+  }
+
+  if (!isAbsolute(path)) {
+    return join('/tmp', path);
+  }
+
+  if (path.startsWith('/var/task/')) {
+    return join('/tmp', basename(path));
+  }
+
+  return path;
+}
+
 function getUploadDir() {
-  return process.env.AMA_UPLOAD_DIR ?? DEFAULT_UPLOAD_DIR;
+  return resolveWritablePath(process.env.AMA_UPLOAD_DIR ?? DEFAULT_UPLOAD_DIR);
 }
 
 function getManifestPath() {
-  return process.env.AMA_UPLOAD_MANIFEST ?? DEFAULT_MANIFEST_PATH;
+  return resolveWritablePath(process.env.AMA_UPLOAD_MANIFEST ?? DEFAULT_MANIFEST_PATH);
 }
 
 function getMaxUploadBytes() {

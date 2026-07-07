@@ -29,6 +29,7 @@ afterEach(async () => {
   delete process.env.AMA_UPLOAD_DIR;
   delete process.env.AMA_UPLOAD_MANIFEST;
   delete process.env.AMA_DOCUMENT_MANIFEST;
+  delete process.env.VERCEL;
 });
 
 describe('local document storage', () => {
@@ -136,5 +137,43 @@ describe('local document storage', () => {
     await expect(deleteDocument(document.id)).rejects.toMatchObject({
       code: 'DOCUMENT_VERIFIED_DELETE_BLOCKED'
     });
+  });
+
+  it('stores documents in writable temp storage on Vercel', async () => {
+    const runtimeRoot = `ama-vercel-documents-${Date.now()}`;
+    const runtimePath = join(tmpdir(), runtimeRoot);
+
+    process.env.VERCEL = '1';
+    process.env.AMA_UPLOAD_DIR = `${runtimeRoot}/uploads`;
+    process.env.AMA_UPLOAD_MANIFEST = `${runtimeRoot}/local-uploads.json`;
+    process.env.AMA_DOCUMENT_MANIFEST = `${runtimeRoot}/local-documents.json`;
+
+    try {
+      const upload = await saveLocalUpload({
+        data: Buffer.from('vercel document'),
+        originalName: 'agent-contract.pdf',
+        contentType: 'application/pdf'
+      });
+
+      const document = await createDocument({
+        ownerType: 'company',
+        ownerId: 'ref-agent-djj-counter',
+        uploadId: upload.id,
+        documentType: 'AGENCY_AGREEMENT',
+        title: 'Agent Agreement',
+        visibility: 'INTERNAL'
+      });
+
+      const documents = await listDocuments({
+        ownerType: 'company',
+        ownerId: 'ref-agent-djj-counter',
+        search: ''
+      });
+
+      expect(documents.map((item) => item.id)).toEqual([document.id]);
+      expect(documents[0].upload?.viewUrl).toBe(`/api/uploads/${upload.id}/file`);
+    } finally {
+      await rm(runtimePath, { recursive: true, force: true });
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
@@ -39,8 +39,28 @@ type DemoDocumentSeed = {
   visibility?: MasterDocument['visibility'];
 };
 
+function isEphemeralRuntime() {
+  return Boolean(process.env.VERCEL) || process.env.NODE_ENV === 'production';
+}
+
+function resolveWritablePath(path: string) {
+  if (!isEphemeralRuntime()) {
+    return path;
+  }
+
+  if (!isAbsolute(path)) {
+    return join('/tmp', path);
+  }
+
+  if (path.startsWith('/var/task/')) {
+    return join('/tmp', basename(path));
+  }
+
+  return path;
+}
+
 function getManifestPath() {
-  return process.env.AMA_DOCUMENT_MANIFEST ?? DEFAULT_MANIFEST_PATH;
+  return resolveWritablePath(process.env.AMA_DOCUMENT_MANIFEST ?? DEFAULT_MANIFEST_PATH);
 }
 
 async function readManifest(): Promise<DocumentManifest> {
