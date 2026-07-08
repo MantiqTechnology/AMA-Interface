@@ -69,6 +69,15 @@ describe('FlightOperationsService', () => {
       actualUpliftLitre: 690,
       actualPricePerLitre: 18500
     });
+    const fuelPosted = services.flightOperations.fuelAction(fuel.id, 'post', {});
+    const fuelHandoff = fuelPosted.financeHandoffs.find(
+      (handoff) => handoff.sourceType === 'fuel' && handoff.sourceId === fuel.id
+    );
+    expect(fuelHandoff).toMatchObject({
+      eventType: 'FUEL_COST_DRAFT',
+      status: 'READY',
+      amount: 12765000
+    });
 
     services.flightOperations.createStationService({
       flightId: created.id,

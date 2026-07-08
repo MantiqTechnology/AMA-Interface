@@ -1529,7 +1529,12 @@ export class FlightOperationsService {
       return;
     }
     this.sqlite
-      .prepare(`INSERT INTO flight_finance_handoffs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .prepare(
+        `INSERT INTO flight_finance_handoffs (
+          id, flight_id, source_type, source_id, event_type, status, summary, amount,
+          currency_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
       .run(
         `handoff-${nanoid(10)}`,
         flightId,
