@@ -89,6 +89,34 @@ export const financeHandoffEventTypeSchema = z.enum([
   'FLIGHT_CANCELLED_VOID_REQUEST'
 ]);
 
+const blankToNull = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? null : value;
+
+const blankToUndefined = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+const localDateTimeToIso = (value: unknown) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u.test(trimmed)) {
+    return new Date(trimmed).toISOString();
+  }
+  return trimmed;
+};
+
+const nullableIdSchema = z.preprocess(blankToNull, z.string().trim().min(1).nullable().optional());
+const nullableTextSchema = z.preprocess(blankToNull, z.string().trim().nullable().optional());
+const nullableIsoDateTimeSchema = z.preprocess(
+  localDateTimeToIso,
+  isoDateTimeSchema.nullable().optional()
+);
+const nonnegativeNumberSchema = z.preprocess(blankToUndefined, z.coerce.number().nonnegative());
+const nullableNonnegativeNumberSchema = z.preprocess(
+  blankToNull,
+  z.coerce.number().nonnegative().nullable().optional()
+);
+
 export type FlightOperationStatus = z.infer<typeof flightOperationStatusSchema>;
 export type FlightType = z.infer<typeof flightTypeSchema>;
 export type CrewAssignmentRole = z.infer<typeof crewAssignmentRoleSchema>;
@@ -372,13 +400,13 @@ export const createFlightOperationBodySchema = z.object({
   flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   flightType: flightTypeSchema,
   routeId: z.string().min(1),
-  customerId: z.string().min(1).nullable().optional(),
-  aircraftId: z.string().min(1).nullable().optional(),
-  pilotInCommandId: z.string().min(1).nullable().optional(),
-  coPilotId: z.string().min(1).nullable().optional(),
-  scheduledDepartureAt: isoDateTimeSchema.nullable().optional(),
-  scheduledArrivalAt: isoDateTimeSchema.nullable().optional(),
-  remarks: z.string().trim().max(1000).nullable().optional()
+  customerId: nullableIdSchema,
+  aircraftId: nullableIdSchema,
+  pilotInCommandId: nullableIdSchema,
+  coPilotId: nullableIdSchema,
+  scheduledDepartureAt: nullableIsoDateTimeSchema,
+  scheduledArrivalAt: nullableIsoDateTimeSchema,
+  remarks: z.preprocess(blankToNull, z.string().trim().max(1000).nullable().optional())
 });
 
 export const flightOperationIdParamsSchema = z.object({
@@ -386,13 +414,13 @@ export const flightOperationIdParamsSchema = z.object({
 });
 
 export const actionNoteBodySchema = z.object({
-  note: z.string().trim().max(1000).optional()
+  note: z.preprocess(blankToUndefined, z.string().trim().max(1000).optional())
 });
 
 export const flightReasonActionBodySchema = z.object({
   reasonId: z.string().min(1),
-  reasonNote: z.string().trim().max(1000).optional(),
-  diversionStationId: z.string().min(1).optional()
+  reasonNote: z.preprocess(blankToUndefined, z.string().trim().max(1000).optional()),
+  diversionStationId: z.preprocess(blankToUndefined, z.string().trim().min(1).optional())
 });
 
 export const actualTimeBodySchema = z.object({
@@ -402,33 +430,36 @@ export const actualTimeBodySchema = z.object({
 export const createPassengerBodySchema = z.object({
   manifestId: z.string().min(1),
   fullName: z.string().trim().min(1),
-  identityType: z.string().trim().nullable().optional(),
-  identityNumber: z.string().trim().nullable().optional(),
-  weightKg: z.number().nonnegative().nullable().optional(),
-  seatNumber: z.string().trim().nullable().optional(),
-  baggageWeightKg: z.number().nonnegative().nullable().optional(),
-  remarks: z.string().trim().nullable().optional()
+  identityType: nullableTextSchema,
+  identityNumber: nullableTextSchema,
+  weightKg: nullableNonnegativeNumberSchema,
+  seatNumber: nullableTextSchema,
+  baggageWeightKg: nullableNonnegativeNumberSchema,
+  remarks: nullableTextSchema
 });
 
 export const createCargoBodySchema = z.object({
   manifestId: z.string().min(1),
   description: z.string().trim().min(1),
-  senderName: z.string().trim().nullable().optional(),
-  receiverName: z.string().trim().nullable().optional(),
-  actualWeightKg: z.number().nonnegative(),
-  volumeWeightKg: z.number().nonnegative().nullable().optional(),
-  chargeableWeightKg: z.number().nonnegative().nullable().optional(),
-  dgCategoryId: z.string().trim().nullable().optional(),
-  dgAcceptanceStatus: dgAcceptanceStatusSchema.optional().default('NOT_APPLICABLE'),
-  remarks: z.string().trim().nullable().optional()
+  senderName: nullableTextSchema,
+  receiverName: nullableTextSchema,
+  actualWeightKg: nonnegativeNumberSchema,
+  volumeWeightKg: nullableNonnegativeNumberSchema,
+  chargeableWeightKg: nullableNonnegativeNumberSchema,
+  dgCategoryId: nullableIdSchema,
+  dgAcceptanceStatus: z.preprocess(
+    blankToUndefined,
+    dgAcceptanceStatusSchema.default('NOT_APPLICABLE')
+  ),
+  remarks: nullableTextSchema
 });
 
 export const createFuelRequestBodySchema = z.object({
   flightId: z.string().min(1),
   fuelSupplierId: z.string().min(1),
   fuelType: z.string().min(1),
-  requestedQuantityLitre: z.number().nonnegative(),
-  referencePricePerLitre: z.number().nonnegative().nullable().optional()
+  requestedQuantityLitre: nonnegativeNumberSchema,
+  referencePricePerLitre: nullableNonnegativeNumberSchema
 });
 
 export const createStationServiceBodySchema = z.object({
@@ -436,27 +467,27 @@ export const createStationServiceBodySchema = z.object({
   stationId: z.string().min(1),
   serviceSupplierId: z.string().min(1),
   serviceType: stationServiceTypeSchema,
-  referenceRate: z.number().nonnegative().nullable().optional()
+  referenceRate: nullableNonnegativeNumberSchema
 });
 
 export const createStationCostBodySchema = z.object({
-  flightId: z.string().min(1).nullable().optional(),
+  flightId: nullableIdSchema,
   stationId: z.string().min(1),
-  vendorId: z.string().min(1).nullable().optional(),
+  vendorId: nullableIdSchema,
   costCategoryId: z.string().min(1),
-  amount: z.number().nonnegative(),
+  amount: nonnegativeNumberSchema,
   currencyId: z.string().min(1),
   description: z.string().trim().min(1)
 });
 
 export const createMaintenanceHandoffBodySchema = z.object({
-  flightId: z.string().min(1).nullable().optional(),
+  flightId: nullableIdSchema,
   aircraftId: z.string().min(1),
   serviceabilityStatus: z.string().min(1),
-  workOrderReference: z.string().trim().nullable().optional(),
-  maintenanceNote: z.string().trim().nullable().optional(),
-  sparePartReference: z.string().trim().nullable().optional(),
-  maintenanceCost: z.number().nonnegative().default(0),
+  workOrderReference: nullableTextSchema,
+  maintenanceNote: nullableTextSchema,
+  sparePartReference: nullableTextSchema,
+  maintenanceCost: z.preprocess(blankToUndefined, z.coerce.number().nonnegative().default(0)),
   currencyId: z.string().min(1)
 });
 
