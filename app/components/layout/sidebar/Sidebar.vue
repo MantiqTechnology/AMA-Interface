@@ -206,6 +206,12 @@ const navItems = computed<NavItem[]>(() =>
           visible: true
         },
         {
+          label: 'Station Ledger',
+          to: '/ticketing/finance',
+          icon: 'mdi-cash-register',
+          visible: can('booking.read').allowed || can('finance_handoff.read').allowed
+        },
+        {
           label: vendorsMasterDataConfig.shortTitle,
           to: vendorsMasterDataConfig.routePath,
           icon: 'mdi-truck-outline',
@@ -293,12 +299,6 @@ const navItems = computed<NavItem[]>(() =>
           to: '/ticketing/management',
           icon: 'mdi-currency-usd',
           visible: can('booking.update').allowed
-        },
-        {
-          label: 'Station Ledger',
-          to: '/ticketing/finance',
-          icon: 'mdi-cash-register',
-          visible: can('booking.read').allowed || can('finance_handoff.read').allowed
         }
       ].filter((child) => child.visible)
     },

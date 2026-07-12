@@ -55,6 +55,68 @@ async function confirmPod() {
   }
 }
 
+const isCancellingCargo = ref(false);
+
+async function handleCancelCargo(cargoId: string) {
+  if (!cargoId) return;
+  if (!confirm(`Apakah Anda yakin ingin membatalkan & merefund kargo AWB ${cargoId}?`)) return;
+
+  isCancellingCargo.value = true;
+  try {
+    const res = await fetchApi<any>('/api/ticketing/refund-cargo', {
+      method: 'POST',
+      body: { cargoId }
+    });
+    if (res && res.success) {
+      pushToast({
+        type: 'success',
+        title: 'Kargo Dibatalkan',
+        message: `Kargo AWB ${cargoId} berhasil dibatalkan dan direfund.`
+      });
+      await refreshCargos();
+    }
+  } catch (e: any) {
+    pushToast({
+      type: 'error',
+      title: 'Pembatalan Gagal',
+      message: e.data?.message || 'Gagal membatalkan kargo.'
+    });
+  } finally {
+    isCancellingCargo.value = false;
+  }
+}
+
+async function handleRejectRefundCargo(cargoId: string) {
+  if (!cargoId) return;
+  if (
+    !confirm(
+      'Apakah Anda yakin ingin menolak permintaan refund kargo ini? Status pembayaran akan dikembalikan menjadi PAID.'
+    )
+  )
+    return;
+
+  try {
+    const res = await fetchApi<any>('/api/ticketing/reject-refund', {
+      method: 'POST',
+      body: { type: 'cargo', id: cargoId }
+    });
+    if (res && res.success) {
+      pushToast({
+        type: 'success',
+        title: 'Refund Kargo Ditolak',
+        message: 'Permintaan refund kargo telah ditolak.'
+      });
+      await refreshCargos();
+    }
+  } catch (e: any) {
+    pushToast({
+      type: 'error',
+      title: 'Gagal Memproses',
+      message: e.data?.message || 'Terjadi kesalahan saat memproses penolakan.'
+    });
+  }
+}
+
 const { pushToast } = useDemoToasts();
 </script>
 
@@ -114,9 +176,7 @@ const { pushToast } = useDemoToasts();
                   <td>{{ cargo.receiverName }}</td>
                   <td>
                     <VChip size="small" variant="tonal">
-                      {{
-                        getFlightNumber(cargo.flightOrderId)
-                      }}
+                      {{ getFlightNumber(cargo.flightOrderId) }}
                     </VChip>
                   </td>
                   <td>{{ getFlightRouteLabel(cargo.flightOrderId) }}</td>
@@ -132,25 +192,98 @@ const { pushToast } = useDemoToasts();
                   <td>
                     <VChip
                       size="small"
-                      :color="cargo.paymentStatus === 'PAID' ? 'success' : 'warning'"
+                      :color="
+                        cargo.paymentStatus === 'PAID'
+                          ? 'success'
+                          : cargo.paymentStatus === 'REFUND_REQUESTED'
+                            ? 'warning'
+                            : cargo.paymentStatus === 'REFUNDED'
+                              ? 'error'
+                              : 'default'
+                      "
                       variant="elevated"
                     >
                       {{ cargo.paymentStatus }}
                     </VChip>
+                    <div
+                      v-if="
+                        cargo.paymentStatus === 'REFUND_REQUESTED' &&
+                          cargo.status.startsWith('REFUND_REQUESTED:')
+                      "
+                      class="text-caption text-grey mt-1"
+                      style="max-width: 150px; line-height: 1.2"
+                    >
+                      Reason: "{{ cargo.status.replace('REFUND_REQUESTED: ', '') }}"
+                    </div>
                   </td>
                   <td>
-                    <VBtn
-                      v-if="cargo.status !== 'DELIVERED'"
-                      size="small"
-                      color="primary"
-                      prepend-icon="mdi-truck-delivery"
-                      :disabled="cargo.paymentStatus !== 'PAID'"
-                      @click="openPod(cargo)"
-                    >
-                      Selesaikan POD
-                    </VBtn>
-                    <div v-else class="text-success text-caption d-flex align-center ga-1">
-                      <VIcon size="small">mdi-check-decagram</VIcon> Terkirim
+                    <div class="d-flex ga-2 align-center">
+                      <!-- Normal paid cargo flow: POD and Request/Direct Cancel -->
+                      <VBtn
+                        v-if="
+                          cargo.status !== 'DELIVERED' &&
+                            !cargo.status.startsWith('REFUND_REQUESTED') &&
+                            cargo.status !== 'CANCELLED'
+                        "
+                        size="small"
+                        color="primary"
+                        prepend-icon="mdi-truck-delivery"
+                        :disabled="cargo.paymentStatus !== 'PAID'"
+                        @click="openPod(cargo)"
+                      >
+                        Selesaikan POD
+                      </VBtn>
+                      <div
+                        v-else-if="cargo.status === 'DELIVERED'"
+                        class="text-success text-caption d-flex align-center ga-1"
+                      >
+                        <VIcon size="small">mdi-check-decagram</VIcon> Terkirim
+                      </div>
+
+                      <VBtn
+                        v-if="
+                          cargo.status !== 'DELIVERED' &&
+                            !cargo.status.startsWith('REFUND_REQUESTED') &&
+                            cargo.status !== 'CANCELLED' &&
+                            cargo.paymentStatus === 'PAID'
+                        "
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        prepend-icon="mdi-cancel"
+                        @click="handleCancelCargo(cargo.id)"
+                      >
+                        Batalkan
+                      </VBtn>
+
+                      <!-- Admin handling of REFUND_REQUESTED status -->
+                      <VBtn
+                        v-if="cargo.paymentStatus === 'REFUND_REQUESTED'"
+                        size="small"
+                        color="success"
+                        prepend-icon="mdi-check"
+                        @click="handleCancelCargo(cargo.id)"
+                      >
+                        Approve Refund
+                      </VBtn>
+
+                      <VBtn
+                        v-if="cargo.paymentStatus === 'REFUND_REQUESTED'"
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        prepend-icon="mdi-close"
+                        @click="handleRejectRefundCargo(cargo.id)"
+                      >
+                        Reject
+                      </VBtn>
+
+                      <div
+                        v-if="cargo.status === 'CANCELLED'"
+                        class="text-error text-caption d-flex align-center ga-1"
+                      >
+                        <VIcon size="small" color="error">mdi-cancel</VIcon> Dibatalkan
+                      </div>
                     </div>
                   </td>
                 </tr>

@@ -46,12 +46,22 @@ export default defineApiEventHandler(async (event) => {
   // Sync to OCC flight manifests
   try {
     const now = new Date().toISOString();
-    sqlite
-      .prepare(
-        `INSERT OR IGNORE INTO flight_manifests (id, flight_id, manifest_type, status, created_at, updated_at)
-         VALUES (?, ?, 'CARGO', 'DRAFT', ?, ?)`
-      )
-      .run(`manifest-${body.flightOrderId}-cargo`, body.flightOrderId, now, now);
+    let manifestId = '';
+    const existingManifest = sqlite
+      .prepare('SELECT id FROM flight_manifests WHERE flight_id = ? AND manifest_type = ?')
+      .get(body.flightOrderId, 'CARGO') as { id: string } | undefined;
+
+    if (existingManifest) {
+      manifestId = existingManifest.id;
+    } else {
+      manifestId = `${body.flightOrderId}-manifest-cargo`;
+      sqlite
+        .prepare(
+          `INSERT INTO flight_manifests (id, flight_id, manifest_type, status, created_at, updated_at)
+           VALUES (?, ?, 'CARGO', 'DRAFT', ?, ?)`
+        )
+        .run(manifestId, body.flightOrderId, now, now);
+    }
 
     const volWeight =
       Math.round(
@@ -72,7 +82,7 @@ export default defineApiEventHandler(async (event) => {
       )
       .run(
         `cargo-sync-${awbId}`,
-        `manifest-${body.flightOrderId}-cargo`,
+        manifestId,
         'Cargo Shipment AWB',
         body.senderName,
         body.receiverName,

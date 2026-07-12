@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDbClient } from '../../db/client';
 import { manifests } from '../../db/schema';
 import { defineApiEventHandler } from '../../utils/api-response';
@@ -16,7 +16,12 @@ export default defineApiEventHandler(async (event) => {
   const rows = await db
     .select({ seatNumber: manifests.seatNumber })
     .from(manifests)
-    .where(eq(manifests.flightOrderId, String(flightOrderId)));
+    .where(
+      and(
+        eq(manifests.flightOrderId, String(flightOrderId)),
+        sql`remarks NOT LIKE '%"paymentStatus":"REFUNDED"%'`
+      )
+    );
 
   return rows.map((r) => r.seatNumber);
 });

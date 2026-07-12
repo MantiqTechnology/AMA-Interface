@@ -124,3 +124,58 @@ Pengguna dapat mengunduh tiket/AWB kargo dalam format PDF A5 berkualitas tinggi 
 ## 6. Perbaikan Kompatibilitas Vuetify 3 & SSR Hydration
 
 Mengatasi peringatan konsol dan masalah fungsionalitas UI yang disebabkan oleh penggunaan kode usang (_deprecated_) dan ketidakcocokan render antara server (SSR) dan browser (client).
+
+---
+
+## 7. Alur Refund & Reschedule (Refund & Reschedule Flow)
+
+Modul ini mendukung proses pengembalian dana (refund) dan perubahan jadwal penerbangan (reschedule) bagi tiket penumpang komersial serta dokumen AWB kargo.
+
+### A. Alur Refund Berbasis Persetujuan (Approval-Based Refund Flow)
+
+Proses refund melibatkan pengajuan oleh sisi customer melalui portal pencarian dan verifikasi oleh sisi admin stasiun:
+
+1. **Pengajuan Refund oleh Customer**:
+   - Customer mencari tiket atau kargo mereka di menu **Pencarian Tiket & AWB** di [Portal Booking](/ticketing/booking).
+   - Tombol **"Ajukan Refund"** aktif hanya untuk tiket/kargo berstatus `PAID` yang memenuhi syarat (misal: tiket belum check-in, kargo belum berstatus `DELIVERED`).
+   - Customer menginput **Alasan Refund** yang bersifat wajib.
+   - Mengirim request ke endpoint `POST /api/ticketing/request-refund`, mengubah status pembayaran menjadi `REFUND_REQUESTED` dan mencatat alasan refund di database.
+2. **Review & Approval oleh Admin**:
+   - Admin stasiun memantau dasbor **Passenger Manifest** (`/ticketing/passenger`) dan **Cargo Tracking** (`/ticketing/cargo`).
+   - Tiket/kargo berstatus `REFUND_REQUESTED` ditandai dengan warna kuning mencolok dan menampilkan alasan pembatalan dari customer.
+   - Admin dapat menekan tombol **"Approve Refund"** (mengeksekusi `POST /api/ticketing/refund-ticket` atau `/refund-cargo` untuk mengosongkan kursi/bobot kargo di OCC serta mencatat pengembalian dana negatif di Jurnal Finansial) atau menekan tombol **"Reject"** (mengeksekusi `POST /api/ticketing/reject-refund` untuk memulihkan status ke `PAID` semula).
+
+```mermaid
+sequenceDiagram
+    actor Cust as Customer (Portal)
+    actor Admin as Admin Stasiun
+    participant BE as Backend API
+    participant OCC as OCC DB (Manifest)
+    participant FIN as Jurnal Keuangan
+
+    Cust->>BE: POST /api/ticketing/request-refund (Alasan wajib)
+    BE-->>Cust: Status berubah menjadi REFUND_REQUESTED
+    Note over Admin: Admin memverifikasi alasan di dasbor
+    alt Setujui Refund
+        Admin->>BE: POST /api/ticketing/refund-ticket (Approve)
+        BE->>OCC: Hapus data manifes (Bebaskan Kursi/Bobot)
+        BE->>FIN: Catat pengeluaran kas negatif di Jurnal Finansial
+        BE-->>Admin: Sukses (Status: REFUNDED)
+    else Tolak Refund
+        Admin->>BE: POST /api/ticketing/reject-refund (Reject)
+        BE-->>Admin: Sukses (Status kembali: PAID)
+    end
+```
+
+### B. Alur Reschedule Mandiri (Direct Reschedule Flow)
+
+Customer dapat melakukan reschedule tiket penumpang komersial secara langsung tanpa membutuhkan persetujuan bertahap dari admin:
+
+1. **Pemilihan Penerbangan & Kursi**:
+   - Customer mengklik tombol **"Reschedule"** pada detail tiket lunas di Portal Booking.
+   - Memilih penerbangan alternatif yang tersedia pada rute yang sama.
+   - Menentukan nomor kursi baru melalui diagram peta kursi (seatmap) Caravan.
+2. **Eksekusi Reschedule**:
+   - Sistem mengirim request ke `POST /api/ticketing/reschedule-ticket`.
+   - Sistem memvalidasi ketersediaan kapasitas penerbangan baru di backend.
+   - Jika tersedia, status penerbangan komersial dipindahkan ke penerbangan baru, kursi lama dibebaskan, kursi baru dipesan, dan data penumpang di manifes OCC disinkronisasikan secara instan.

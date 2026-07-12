@@ -633,6 +633,138 @@ async function downloadPdf(item: any, type: 'ticket' | 'cargo') {
   }
 }
 
+// Customer Refund Request State
+const custRefundDialog = ref(false);
+const custRefundReason = ref('');
+const isSubmittingCustRefund = ref(false);
+
+// Customer Reschedule State
+const custRescheduleDialog = ref(false);
+const custTargetFlightId = ref('');
+const custTargetSeat = ref('');
+const isSubmittingCustReschedule = ref(false);
+const custOccupiedSeatsForTargetFlight = ref<string[]>([]);
+const isLoadingCustOccupiedSeats = ref(false);
+
+// Caravan seats (12 seats)
+const caravanSeats = ['1A', '1B', '2A', '2B', '3A', '3B', '4A', '4B', '5A', '5B', '6A', '6B'];
+
+// Get alternative flights for searchedItem
+const custAlternativeFlights = computed(() => {
+  if (!searchedItem.value || searchType.value !== 'ticket') return [];
+  const currentFlight = flights.value.find((f: any) => f.id === searchedItem.value.flightOrderId);
+  if (!currentFlight || !currentFlight.route) return [];
+
+  return flights.value.filter(
+    (f: any) =>
+      f.route?.id === currentFlight.route.id &&
+      f.id !== currentFlight.id &&
+      ['scheduled', 'ready'].includes(f.status)
+  );
+});
+
+// Watch flight selection in customer reschedule dialog
+watch(custTargetFlightId, async (newVal) => {
+  custTargetSeat.value = '';
+  if (!newVal) {
+    custOccupiedSeatsForTargetFlight.value = [];
+    return;
+  }
+  isLoadingCustOccupiedSeats.value = true;
+  try {
+    const res = await fetchApi<string[]>(`/api/ticketing/occupied-seats?flightOrderId=${newVal}`);
+    custOccupiedSeatsForTargetFlight.value = res || [];
+  } catch (e) {
+    console.error('Error fetching occupied seats for reschedule:', e);
+    custOccupiedSeatsForTargetFlight.value = [];
+  } finally {
+    isLoadingCustOccupiedSeats.value = false;
+  }
+});
+
+function openCustRefundDialog() {
+  custRefundReason.value = '';
+  custRefundDialog.value = true;
+}
+
+async function handleCustRefundRequest() {
+  if (!searchedItem.value || !custRefundReason.value.trim()) return;
+  isSubmittingCustRefund.value = true;
+  try {
+    const res = await fetchApi<any>('/api/ticketing/request-refund', {
+      method: 'POST',
+      body: {
+        type: searchType.value,
+        id: searchedItem.value.id,
+        reason: custRefundReason.value
+      }
+    });
+    if (res && res.success) {
+      pushToast({
+        type: 'success',
+        title: 'Pengajuan Refund Terkirim',
+        message: 'Permintaan refund Anda telah dikirim dan menunggu persetujuan admin.'
+      });
+      custRefundDialog.value = false;
+      // Refresh search details
+      const refreshRes = await fetchApi<any>(
+        searchType.value === 'ticket'
+          ? `/api/ticketing/tickets?id=${searchedItem.value.id}`
+          : `/api/ticketing/cargo-bookings?id=${searchedItem.value.id}`
+      );
+      searchedItem.value = refreshRes;
+    }
+  } catch (e: any) {
+    pushToast({
+      type: 'error',
+      title: 'Pengajuan Gagal',
+      message: e.data?.message || 'Terjadi kesalahan saat mengajukan refund.'
+    });
+  } finally {
+    isSubmittingCustRefund.value = false;
+  }
+}
+
+function openCustRescheduleDialog() {
+  custTargetFlightId.value = '';
+  custTargetSeat.value = '';
+  custRescheduleDialog.value = true;
+}
+
+async function handleCustReschedule() {
+  if (!searchedItem.value || !custTargetFlightId.value || !custTargetSeat.value) return;
+  isSubmittingCustReschedule.value = true;
+  try {
+    const res = await fetchApi<any>('/api/ticketing/reschedule-ticket', {
+      method: 'POST',
+      body: {
+        ticketId: searchedItem.value.id,
+        newFlightOrderId: custTargetFlightId.value,
+        newSeatNumber: custTargetSeat.value
+      }
+    });
+    if (res && res.success) {
+      pushToast({
+        type: 'success',
+        title: 'Reschedule Berhasil',
+        message: `Tiket Anda berhasil dipindahkan ke penerbangan baru dengan kursi ${custTargetSeat.value}.`
+      });
+      custRescheduleDialog.value = false;
+      // Refresh search details
+      const refreshRes = await fetchApi<any>(`/api/ticketing/tickets?id=${searchedItem.value.id}`);
+      searchedItem.value = refreshRes;
+    }
+  } catch (e: any) {
+    pushToast({
+      type: 'error',
+      title: 'Reschedule Gagal',
+      message: e.data?.message || 'Terjadi kesalahan saat reschedule.'
+    });
+  } finally {
+    isSubmittingCustReschedule.value = false;
+  }
+}
+
 const { pushToast } = useDemoToasts();
 </script>
 
@@ -1290,8 +1422,10 @@ const { pushToast } = useDemoToasts();
                           </div>
                         </VCardText>
 
-                        <!-- Action Area: Pay -->
-                        <VCardActions class="border-t pt-3 mt-3 d-flex justify-end ga-2">
+                        <!-- Action Area: Pay, Refund, Reschedule -->
+                        <VCardActions
+                          class="border-t pt-3 mt-3 d-flex flex-wrap align-center justify-end ga-2"
+                        >
                           <VBtn
                             color="secondary"
                             prepend-icon="mdi-download"
@@ -1300,8 +1434,14 @@ const { pushToast } = useDemoToasts();
                           >
                             Unduh PDF
                           </VBtn>
+
+                          <!-- Simulasi Bayar jika belum lunas -->
                           <VBtn
-                            v-if="searchedItem.paymentStatus !== 'PAID'"
+                            v-if="
+                              searchedItem.paymentStatus !== 'PAID' &&
+                                searchedItem.paymentStatus !== 'REFUND_REQUESTED' &&
+                                searchedItem.paymentStatus !== 'REFUNDED'
+                            "
                             color="success"
                             prepend-icon="mdi-cash"
                             variant="flat"
@@ -1309,12 +1449,64 @@ const { pushToast } = useDemoToasts();
                           >
                             Simulasi Bayar Sekarang
                           </VBtn>
+
+                          <!-- Jika Lunas, bisa ajukan Refund & Reschedule (jika syarat terpenuhi) -->
+                          <template v-if="searchedItem.paymentStatus === 'PAID'">
+                            <div
+                              class="d-flex align-center ga-1 text-success font-weight-bold mr-auto"
+                            >
+                              <VIcon>mdi-check-decagram</VIcon>
+                              Lunas & Terverifikasi
+                            </div>
+
+                            <!-- Reschedule untuk Tiket Penumpang -->
+                            <VBtn
+                              v-if="
+                                searchType === 'ticket' &&
+                                  searchedItem.checkInStatus !== 'CHECKED_IN'
+                              "
+                              color="warning"
+                              variant="outlined"
+                              prepend-icon="mdi-calendar-edit"
+                              @click="openCustRescheduleDialog"
+                            >
+                              Reschedule
+                            </VBtn>
+
+                            <!-- Refund untuk Tiket (belum check-in) & Kargo (belum terkirim/batal) -->
+                            <VBtn
+                              v-if="
+                                (searchType === 'ticket' &&
+                                  searchedItem.checkInStatus !== 'CHECKED_IN') ||
+                                  (searchType === 'cargo' &&
+                                    searchedItem.status !== 'DELIVERED' &&
+                                    searchedItem.status !== 'CANCELLED')
+                              "
+                              color="error"
+                              variant="outlined"
+                              prepend-icon="mdi-cash-refund"
+                              @click="openCustRefundDialog"
+                            >
+                              Ajukan Refund
+                            </VBtn>
+                          </template>
+
+                          <!-- Status Pengajuan Refund -->
                           <div
-                            v-else
-                            class="d-flex align-center ga-1 text-success font-weight-bold"
+                            v-else-if="searchedItem.paymentStatus === 'REFUND_REQUESTED'"
+                            class="d-flex align-center ga-1 text-warning font-weight-bold"
                           >
-                            <VIcon>mdi-check-decagram</VIcon>
-                            Booking Lunas & Terverifikasi SQLite Server
+                            <VIcon color="warning">mdi-clock-outline</VIcon>
+                            Menunggu Persetujuan Refund oleh Admin
+                          </div>
+
+                          <!-- Status Sudah Refunded -->
+                          <div
+                            v-else-if="searchedItem.paymentStatus === 'REFUNDED'"
+                            class="d-flex align-center ga-1 text-error font-weight-bold"
+                          >
+                            <VIcon color="error">mdi-cancel</VIcon>
+                            Booking Dibatalkan & Refund Selesai
                           </div>
                         </VCardActions>
                       </VCard>
@@ -1327,6 +1519,105 @@ const { pushToast } = useDemoToasts();
         </VCard>
       </ClientOnly>
     </VContainer>
+
+    <!-- CUSTOMER REFUND REQUEST DIALOG -->
+    <VDialog v-model="custRefundDialog" max-width="450">
+      <VCard border rounded="xl" class="pa-4">
+        <VCardTitle class="text-error font-weight-bold border-b pb-2">
+          Pengajuan Pembatalan & Refund
+        </VCardTitle>
+        <VCardText v-if="searchedItem" class="pt-4">
+          Apakah Anda yakin ingin mengajukan refund untuk
+          {{ searchType === 'ticket' ? 'Tiket' : 'AWB Kargo' }}
+          <strong>{{ searchedItem.id }}</strong>?
+          <VTextarea
+            v-model="custRefundReason"
+            label="Alasan Pembatalan / Refund (Wajib)"
+            placeholder="Tulis alasan mengapa Anda ingin mengajukan pembatalan tiket..."
+            variant="outlined"
+            density="comfortable"
+            rows="3"
+            class="mt-3"
+            required
+          />
+        </VCardText>
+        <VCardActions class="border-t pt-3 mt-3">
+          <VSpacer />
+          <VBtn variant="text" @click="custRefundDialog = false">Batal</VBtn>
+          <VBtn
+            color="error"
+            :disabled="!custRefundReason.trim()"
+            :loading="isSubmittingCustRefund"
+            @click="handleCustRefundRequest"
+          >
+            Kirim Pengajuan
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- CUSTOMER RESCHEDULE DIALOG -->
+    <VDialog v-model="custRescheduleDialog" max-width="500">
+      <VCard border rounded="xl" class="pa-4">
+        <VCardTitle class="text-warning font-weight-bold border-b pb-2">
+          Reschedule Mandiri Penerbangan
+        </VCardTitle>
+        <VCardText v-if="searchedItem" class="pt-4">
+          <div v-if="searchType === 'ticket'" class="mb-4">
+            Reschedule tiket untuk: <strong>{{ searchedItem.passengerName }}</strong><br>
+            Penerbangan saat ini:
+            <strong>{{ getFlightLabel(searchedItem.flightOrderId) }}</strong> (Kursi:
+            {{ searchedItem.seatNumber }})
+          </div>
+
+          <!-- Select New Flight -->
+          <VSelect
+            v-model="custTargetFlightId"
+            :items="custAlternativeFlights"
+            item-title="flightNumber"
+            item-value="id"
+            label="Pilih Penerbangan Alternatif"
+            variant="outlined"
+            density="comfortable"
+            class="mb-3"
+            no-data-text="Tidak ada penerbangan alternatif dengan rute ini"
+          />
+
+          <!-- Select New Seat -->
+          <div v-if="custTargetFlightId">
+            <div class="text-subtitle-2 font-weight-bold mb-2">Pilih Kursi Baru:</div>
+            <div class="d-grid ga-2" style="display: grid; grid-template-columns: repeat(4, 1fr)">
+              <VBtn
+                v-for="seat in caravanSeats"
+                :key="seat"
+                size="small"
+                :color="custTargetSeat === seat ? 'warning' : 'default'"
+                :disabled="custOccupiedSeatsForTargetFlight.includes(seat)"
+                variant="outlined"
+                @click="custTargetSeat = seat"
+              >
+                {{ seat }}
+              </VBtn>
+            </div>
+            <div v-if="isLoadingCustOccupiedSeats" class="text-caption text-grey mt-2 text-center">
+              Memuat status kursi...
+            </div>
+          </div>
+        </VCardText>
+        <VCardActions class="border-t pt-3 mt-3">
+          <VSpacer />
+          <VBtn variant="text" @click="custRescheduleDialog = false">Batal</VBtn>
+          <VBtn
+            color="warning"
+            :disabled="!custTargetFlightId || !custTargetSeat"
+            :loading="isSubmittingCustReschedule"
+            @click="handleCustReschedule"
+          >
+            Confirm Reschedule
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
 
     <!-- SUCCESS DIALOG -->
     <VDialog v-model="successDialog" max-width="500">

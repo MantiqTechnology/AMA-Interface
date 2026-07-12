@@ -10,6 +10,7 @@ interface TicketRemarks {
   loyaltyMemberId?: string | null;
   agentId?: string | null;
   createdAt?: string | null;
+  refundReason?: string | null;
 }
 
 export default defineApiEventHandler(async (event) => {
@@ -56,7 +57,8 @@ export default defineApiEventHandler(async (event) => {
       checkInStatus: remarksObj.checkInStatus || 'PENDING',
       loyaltyMemberId: remarksObj.loyaltyMemberId || null,
       agentId: remarksObj.agentId || null,
-      createdAt: remarksObj.createdAt || null
+      createdAt: remarksObj.createdAt || null,
+      refundReason: remarksObj.refundReason || null
     };
   });
 

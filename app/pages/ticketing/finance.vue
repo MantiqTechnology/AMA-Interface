@@ -14,9 +14,13 @@ const { data: ticketsData } = await useAsyncData('fin-tickets', () =>
 const { data: cargosData } = await useAsyncData('fin-cargos', () =>
   fetchApi<any[]>('/api/ticketing/cargo-bookings')
 );
+const { data: flightsData } = await useAsyncData('fin-flights', () =>
+  fetchApi<any[]>('/api/flights')
+);
 
 const tickets = computed(() => ticketsData.value || []);
 const cargos = computed(() => cargosData.value || []);
+const flights = computed(() => flightsData.value || []);
 
 // Financial calculations
 const totalPassengerRevenue = computed(() => {
@@ -35,7 +39,7 @@ const totalStationRevenue = computed(() => {
   return totalPassengerRevenue.value + totalCargoRevenue.value;
 });
 
-// Mock ledger logs
+// Mock ledger logs (supporting refund transactions)
 const ledgerEntries = computed(() => {
   const entries: any[] = [];
   tickets.value.forEach((t: any) => {
@@ -46,6 +50,21 @@ const ledgerEntries = computed(() => {
         description: `Pendapatan Tiket Penumpang: ${t.passengerName} (Seat ${t.seatNumber})`,
         amount: t.ticketPrice,
         date: t.createdAt || new Date().toISOString()
+      });
+    } else if (t.paymentStatus === 'REFUNDED') {
+      entries.push({
+        id: `TX-${t.id}`,
+        type: 'PASSENGER',
+        description: `Pendapatan Tiket Penumpang: ${t.passengerName} (Seat ${t.seatNumber})`,
+        amount: t.ticketPrice,
+        date: t.createdAt || new Date().toISOString()
+      });
+      entries.push({
+        id: `TX-${t.id}-REF`,
+        type: 'PASSENGER',
+        description: `Refund Tiket Penumpang: ${t.passengerName} (Seat ${t.seatNumber})`,
+        amount: -(t.ticketPrice || 0),
+        date: new Date().toISOString()
       });
     }
   });
@@ -59,11 +78,139 @@ const ledgerEntries = computed(() => {
         amount: c.totalTariff,
         date: c.createdAt || new Date().toISOString()
       });
+    } else if (c.paymentStatus === 'REFUNDED') {
+      entries.push({
+        id: `TX-${c.id}`,
+        type: 'CARGO',
+        description: `Pendapatan Kargo AWB: ${c.id} (${c.senderName} -> ${c.receiverName})`,
+        amount: c.totalTariff,
+        date: c.createdAt || new Date().toISOString()
+      });
+      entries.push({
+        id: `TX-${c.id}-REF`,
+        type: 'CARGO',
+        description: `Refund Kargo AWB: ${c.id} (${c.senderName} -> ${c.receiverName})`,
+        amount: -(c.totalTariff || 0),
+        date: new Date().toISOString()
+      });
     }
   });
 
   // Sort by date desc
   return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+});
+
+// Route Revenue Recap: group revenue by route ID
+const revenueByRoute = computed(() => {
+  const routeMap: Record<
+    string,
+    { origin: string; destination: string; passenger: number; cargo: number; total: number }
+  > = {};
+
+  flights.value.forEach((f: any) => {
+    if (!f.route) return;
+    const key = f.route.id;
+    if (!routeMap[key]) {
+      routeMap[key] = {
+        origin: f.route.origin?.name || f.route.origin?.code || '',
+        destination: f.route.destination?.name || f.route.destination?.code || '',
+        passenger: 0,
+        cargo: 0,
+        total: 0
+      };
+    }
+  });
+
+  tickets.value.forEach((t: any) => {
+    if (t.paymentStatus !== 'PAID') return;
+    const flight = flights.value.find((f: any) => f.id === t.flightOrderId);
+    if (flight && flight.route) {
+      const key = flight.route.id;
+      if (!routeMap[key]) {
+        routeMap[key] = {
+          origin: flight.route.origin?.name || flight.route.origin?.code || '',
+          destination: flight.route.destination?.name || flight.route.destination?.code || '',
+          passenger: 0,
+          cargo: 0,
+          total: 0
+        };
+      }
+      routeMap[key].passenger += t.ticketPrice || 0;
+    }
+  });
+
+  cargos.value.forEach((c: any) => {
+    if (c.paymentStatus !== 'PAID') return;
+    const flight = flights.value.find((f: any) => f.id === c.flightOrderId);
+    if (flight && flight.route) {
+      const key = flight.route.id;
+      if (!routeMap[key]) {
+        routeMap[key] = {
+          origin: flight.route.origin?.name || flight.route.origin?.code || '',
+          destination: flight.route.destination?.name || flight.route.destination?.code || '',
+          passenger: 0,
+          cargo: 0,
+          total: 0
+        };
+      }
+      routeMap[key].cargo += c.totalTariff || 0;
+    }
+  });
+
+  return Object.values(routeMap).map((r) => {
+    r.total = r.passenger + r.cargo;
+    return r;
+  });
+});
+
+// Station Revenue Recap: group revenue by origin station code
+const revenueByStation = computed(() => {
+  const stationMap: Record<
+    string,
+    { stationName: string; code: string; ticketCount: number; cargoWeight: number; total: number }
+  > = {};
+
+  tickets.value.forEach((t: any) => {
+    if (t.paymentStatus !== 'PAID') return;
+    const flight = flights.value.find((f: any) => f.id === t.flightOrderId);
+    if (flight && flight.route && flight.route.origin) {
+      const station = flight.route.origin;
+      const key = station.code;
+      if (!stationMap[key]) {
+        stationMap[key] = {
+          stationName: station.name,
+          code: station.code,
+          ticketCount: 0,
+          cargoWeight: 0,
+          total: 0
+        };
+      }
+      stationMap[key].ticketCount += 1;
+      stationMap[key].total += t.ticketPrice || 0;
+    }
+  });
+
+  cargos.value.forEach((c: any) => {
+    if (c.paymentStatus !== 'PAID') return;
+    const flight = flights.value.find((f: any) => f.id === c.flightOrderId);
+    if (flight && flight.route && flight.route.origin) {
+      const station = flight.route.origin;
+      const key = station.code;
+      if (!stationMap[key]) {
+        stationMap[key] = {
+          stationName: station.name,
+          code: station.code,
+          ticketCount: 0,
+          cargoWeight: 0,
+          total: 0
+        };
+      }
+      stationMap[key].cargoWeight += c.actualWeightKg || 0;
+      stationMap[key].total += c.totalTariff || 0;
+    }
+  });
+
+  return Object.values(stationMap);
 });
 </script>
 
@@ -140,6 +287,83 @@ const ledgerEntries = computed(() => {
                 </div>
               </div>
             </VCardText>
+          </VCard>
+        </VCol>
+      </VRow>
+
+      <!-- Revenue Recap per Route & Station -->
+      <VRow class="mb-5">
+        <!-- Route Recap -->
+        <VCol cols="12" md="6">
+          <VCard border rounded="lg">
+            <VCardTitle class="text-subtitle-1 font-weight-bold text-primary px-4 py-3">
+              <VIcon start color="primary">mdi-map-marker-distance</VIcon>
+              Rekap Pendapatan per Rute
+            </VCardTitle>
+            <VTable class="w-full">
+              <thead>
+                <tr class="bg-grey-lighten-4">
+                  <th>RUTE</th>
+                  <th>TIKET PENUMPANG</th>
+                  <th>TARIF KARGO</th>
+                  <th>TOTAL OMSET</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="route in revenueByRoute" :key="route.origin + '-' + route.destination">
+                  <td class="font-weight-bold text-secondary">
+                    {{ route.origin }} → {{ route.destination }}
+                  </td>
+                  <td>Rp {{ route.passenger.toLocaleString('id-ID') }}</td>
+                  <td>Rp {{ route.cargo.toLocaleString('id-ID') }}</td>
+                  <td class="font-weight-bold text-success">
+                    Rp {{ route.total.toLocaleString('id-ID') }}
+                  </td>
+                </tr>
+                <tr v-if="revenueByRoute.length === 0">
+                  <td colspan="4" class="text-center text-grey py-4">
+                    Belum ada transaksi rute tercatat.
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
+          </VCard>
+        </VCol>
+
+        <!-- Station Recap -->
+        <VCol cols="12" md="6">
+          <VCard border rounded="lg">
+            <VCardTitle class="text-subtitle-1 font-weight-bold text-primary px-4 py-3">
+              <VIcon start color="primary">mdi-office-building-marker</VIcon>
+              Rekap Pendapatan per Stasiun (Asal)
+            </VCardTitle>
+            <VTable class="w-full">
+              <thead>
+                <tr class="bg-grey-lighten-4">
+                  <th>STASIUN</th>
+                  <th>TIKET TERJUAL</th>
+                  <th>BERAT KARGO</th>
+                  <th>TOTAL PENDAPATAN</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="station in revenueByStation" :key="station.code">
+                  <td class="font-weight-bold text-secondary">
+                    {{ station.stationName }} ({{ station.code }})
+                  </td>
+                  <td>{{ station.ticketCount }} Tiket</td>
+                  <td>{{ station.cargoWeight }} Kg</td>
+                  <td class="font-weight-bold text-success">
+                    Rp {{ station.total.toLocaleString('id-ID') }}
+                  </td>
+                </tr>
+                <tr v-if="revenueByStation.length === 0">
+                  <td colspan="4" class="text-center text-grey py-4">
+                    Belum ada transaksi stasiun tercatat.
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
           </VCard>
         </VCol>
       </VRow>

@@ -68,12 +68,22 @@ export default defineApiEventHandler(async (event) => {
   // Sync to OCC flight manifests
   try {
     const now = new Date().toISOString();
-    sqlite
-      .prepare(
-        `INSERT OR IGNORE INTO flight_manifests (id, flight_id, manifest_type, status, created_at, updated_at)
-         VALUES (?, ?, 'PASSENGER', 'DRAFT', ?, ?)`
-      )
-      .run(`manifest-${body.flightOrderId}-passenger`, body.flightOrderId, now, now);
+    let manifestId = '';
+    const existingManifest = sqlite
+      .prepare('SELECT id FROM flight_manifests WHERE flight_id = ? AND manifest_type = ?')
+      .get(body.flightOrderId, 'PASSENGER') as { id: string } | undefined;
+
+    if (existingManifest) {
+      manifestId = existingManifest.id;
+    } else {
+      manifestId = `${body.flightOrderId}-manifest-pax`;
+      sqlite
+        .prepare(
+          `INSERT INTO flight_manifests (id, flight_id, manifest_type, status, created_at, updated_at)
+           VALUES (?, ?, 'PASSENGER', 'DRAFT', ?, ?)`
+        )
+        .run(manifestId, body.flightOrderId, now, now);
+    }
 
     sqlite
       .prepare(
@@ -84,7 +94,7 @@ export default defineApiEventHandler(async (event) => {
       )
       .run(
         `pax-sync-${ticketId}`,
-        `manifest-${body.flightOrderId}-passenger`,
+        manifestId,
         body.passengerName,
         'KTP',
         body.documentNumber,
