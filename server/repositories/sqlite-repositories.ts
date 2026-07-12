@@ -117,6 +117,9 @@ export class SqliteFlightRepository implements FlightRepository {
   async list(params: {
     status?: FlightStatus;
     station?: string;
+    origin?: string;
+    destination?: string;
+    type?: string;
     limit: number;
     offset: number;
   }): Promise<FlightJoinedRecord[]> {
@@ -128,7 +131,35 @@ export class SqliteFlightRepository implements FlightRepository {
 
     if (params.station) {
       const stationCode = params.station.toUpperCase();
-      conditions.push(or(eq(originStation.code, stationCode), eq(destinationStation.code, stationCode))!);
+      conditions.push(
+        or(eq(originStation.code, stationCode), eq(destinationStation.code, stationCode))!
+      );
+    }
+
+    if (params.origin) {
+      conditions.push(eq(originStation.code, params.origin.toUpperCase()));
+    }
+
+    if (params.destination) {
+      conditions.push(eq(destinationStation.code, params.destination.toUpperCase()));
+    }
+
+    if (params.type) {
+      const typeLower = params.type.toLowerCase();
+      if (typeLower === 'passenger') {
+        conditions.push(
+          or(
+            eq(flightOrders.purpose, 'PASSENGER'),
+            eq(flightOrders.purpose, 'CHARTER'),
+            sql`${flightOrders.purpose} LIKE '%passenger%'`,
+            sql`${flightOrders.purpose} LIKE '%charter%'`
+          )!
+        );
+      } else if (typeLower === 'cargo') {
+        conditions.push(
+          or(eq(flightOrders.purpose, 'CARGO'), sql`${flightOrders.purpose} LIKE '%cargo%'`)!
+        );
+      }
     }
 
     const where = applyAnd(conditions);
@@ -157,7 +188,10 @@ export class SqliteFlightRepository implements FlightRepository {
           .orderBy(desc(flightOrders.scheduledDeparture))
           .limit(params.limit)
           .offset(params.offset)
-      : await query.orderBy(desc(flightOrders.scheduledDeparture)).limit(params.limit).offset(params.offset);
+      : await query
+          .orderBy(desc(flightOrders.scheduledDeparture))
+          .limit(params.limit)
+          .offset(params.offset);
 
     return rows.map((row) => ({
       ...row,
@@ -227,7 +261,10 @@ export class SqliteFuelRepository implements FuelRepository {
           .orderBy(desc(fuelRequests.requiredAt))
           .limit(params.limit)
           .offset(params.offset)
-      : await query.orderBy(desc(fuelRequests.requiredAt)).limit(params.limit).offset(params.offset);
+      : await query
+          .orderBy(desc(fuelRequests.requiredAt))
+          .limit(params.limit)
+          .offset(params.offset);
   }
 
   async getRequest(id: string) {
@@ -284,11 +321,18 @@ export class SqliteStationExpenseRepository implements StationExpenseRepository 
           .orderBy(desc(stationExpenses.incurredAt))
           .limit(params.limit)
           .offset(params.offset)
-      : await query.orderBy(desc(stationExpenses.incurredAt)).limit(params.limit).offset(params.offset);
+      : await query
+          .orderBy(desc(stationExpenses.incurredAt))
+          .limit(params.limit)
+          .offset(params.offset);
   }
 
   async getById(id: string) {
-    const row = await this.db.select().from(stationExpenses).where(eq(stationExpenses.id, id)).get();
+    const row = await this.db
+      .select()
+      .from(stationExpenses)
+      .where(eq(stationExpenses.id, id))
+      .get();
     return row ?? null;
   }
 
@@ -338,7 +382,11 @@ export class SqliteInvoiceRepository implements InvoiceRepository {
   }
 
   async updateStatus(id: string, status: string) {
-    const [updated] = await this.db.update(invoices).set({ status }).where(eq(invoices.id, id)).returning();
+    const [updated] = await this.db
+      .update(invoices)
+      .set({ status })
+      .where(eq(invoices.id, id))
+      .returning();
     return updated ?? null;
   }
 
@@ -465,7 +513,9 @@ export class SqliteMaintenanceRepository implements MaintenanceRepository {
 
   async closeWorkOrder(id: string, closedAt: string, closingNotes?: string) {
     const row = await this.getWorkOrder(id);
-    const description = closingNotes ? `${row?.description ?? ''}\nClose notes: ${closingNotes}` : row?.description;
+    const description = closingNotes
+      ? `${row?.description ?? ''}\nClose notes: ${closingNotes}`
+      : row?.description;
 
     const [updated] = await this.db
       .update(maintenanceWorkOrders)

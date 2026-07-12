@@ -102,3 +102,17 @@ Run `pnpm uploads:migrate-local` once to move older local uploads from `public/u
 - `POST /api/documents/:id/supersede` body `SupersedeDocumentBody` -> new `MasterDocumentDto`
 
 Document metadata is stored in `data/local-documents.json`. File bytes remain in the upload domain and are served only through `/api/uploads/:id/file`.
+
+## Ticketing
+
+- `GET /api/ticketing/tickets?id=&flightOrderId=` -> List of passenger tickets or single passenger ticket.
+- `POST /api/ticketing/book-passenger` body `{ flightOrderId, passengerName, documentNumber, seatNumber, weightKg, ticketPrice, loyaltyMemberId, agentId }` -> Creates a passenger ticket. Validates seat occupancy to prevent double bookings.
+- `GET /api/ticketing/cargo-bookings?id=` -> List of cargo bookings or single cargo booking.
+- `POST /api/ticketing/book-cargo` body `{ flightOrderId, senderName, receiverName, actualWeightKg, lengthCm, widthCm, heightCm, isDangerous, dgClass, paymentMethod, agentId, totalTariff }` -> Creates a cargo booking.
+- `POST /api/ticketing/pay-ticket` body `{ ticketId }` -> Sets passenger ticket payment status to PAID.
+- `POST /api/ticketing/pay-cargo` body `{ cargoBookingId }` -> Sets cargo booking payment status to PAID.
+- `POST /api/ticketing/check-in` body `{ ticketId }` -> Sets passenger check-in status to CHECKED_IN.
+- `GET /api/ticketing/occupied-seats?flightOrderId=` -> Array of occupied seat numbers (e.g. `["1A", "1B"]`) for the specified flight order.
+- `POST /api/ticketing/open-sales` body `{ flightOperationId }` -> Creates a commercial flight order in `flight_orders` mapped from the OCC's `flight_operations` record.
+
+For detailed visual and business workflows of the ticketing features (including seatmap mapping, double-booking validation, and client-side PDF exports), refer to [docs/ticketing-flow.md](file:///home/mark/Development/project/AMA-Interface/docs/ticketing-flow.md).

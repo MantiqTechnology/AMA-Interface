@@ -268,6 +268,40 @@ const navItems = computed<NavItem[]>(() =>
         }
       ].filter((child) => child.visible)
     },
+    {
+      label: 'Ticketing & Cargo',
+      icon: 'mdi-ticket-confirmation-outline',
+      visible:
+        can('booking.read').allowed ||
+        can('booking.update').allowed ||
+        can('finance_handoff.read').allowed,
+      children: [
+        {
+          label: 'Passenger Manifest',
+          to: '/ticketing/passenger',
+          icon: 'mdi-account-multiple-outline',
+          visible: can('booking.read').allowed
+        },
+        {
+          label: 'Cargo Tracking',
+          to: '/ticketing/cargo',
+          icon: 'mdi-package-variant',
+          visible: can('booking.read').allowed
+        },
+        {
+          label: 'Tariff & Routes',
+          to: '/ticketing/management',
+          icon: 'mdi-currency-usd',
+          visible: can('booking.update').allowed
+        },
+        {
+          label: 'Station Ledger',
+          to: '/ticketing/finance',
+          icon: 'mdi-cash-register',
+          visible: can('booking.read').allowed || can('finance_handoff.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
     { label: 'Uploads', to: '/uploads', icon: 'mdi-file-upload-outline', visible: true },
     {
       label: 'Access',

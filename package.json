@@ -25,10 +25,12 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@types/jspdf": "^2.0.0",
     "apexcharts": "^5.16.0",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
     "h3": "^1.15.4",
+    "jspdf": "^4.2.1",
     "nanoid": "^5.1.5",
     "nuxt": "3.21.8",
     "vue3-apexcharts": "^1.11.1",

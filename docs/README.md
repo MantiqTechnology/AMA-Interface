@@ -46,6 +46,9 @@ scripts/              Local demo lifecycle commands
 public/uploads/       Mock receipt files and upload target
 ```
 
+For detailed API contracts, refer to [docs/api-contracts.md](file:///home/mark/Development/project/AMA-Interface/docs/api-contracts.md).
+For detailed workflow documentation of the Ticketing module features, refer to [docs/ticketing-flow.md](file:///home/mark/Development/project/AMA-Interface/docs/ticketing-flow.md).
+
 The UI uses Vuetify through `vuetify-nuxt-module`. Brand colors are configured in `nuxt.config.ts` as the `amaLight` Vuetify theme and mirrored in `app/assets/css/theme.css` for CSS utility tokens.
 
 The route handlers only validate input and call services. Services depend on repository interfaces. For a production backend, keep the UI, contracts, API envelope, and service calls stable, then replace `createSqliteRepositories` in `server/services/index.ts` with repositories backed by Postgres, an internal API, or a queue/workflow system.

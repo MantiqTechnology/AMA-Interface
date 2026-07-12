@@ -51,6 +51,9 @@ export type FlightRepository = {
   list(params: {
     status?: FlightStatus;
     station?: string;
+    origin?: string;
+    destination?: string;
+    type?: string;
     limit: number;
     offset: number;
   }): Promise<FlightJoinedRecord[]>;

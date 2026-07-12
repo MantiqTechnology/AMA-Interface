@@ -74,7 +74,10 @@ export const flightDetailDtoSchema = flightSummaryDtoSchema.extend({
 
 export const listFlightsQuerySchema = paginationQuerySchema.extend({
   status: flightStatusSchema.optional(),
-  station: z.string().optional()
+  station: z.string().optional(),
+  origin: z.string().optional(),
+  destination: z.string().optional(),
+  type: z.string().optional()
 });
 
 export const createFlightOrderBodySchema = z.object({

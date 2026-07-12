@@ -39,6 +39,7 @@ function patchVuetifySwitchPostcss() {
 }
 
 export default defineNuxtConfig({
+  // ssr: false,
   compatibilityDate: '2026-07-04',
   devtools: { enabled: true },
   modules: ['vuetify-nuxt-module'],

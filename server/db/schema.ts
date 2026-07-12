@@ -495,3 +495,26 @@ export type RefTaxCodeRecord = typeof refTaxCodes.$inferSelect;
 export type RefPaymentTermRecord = typeof refPaymentTerms.$inferSelect;
 export type RefCurrencyRecord = typeof refCurrencies.$inferSelect;
 export type RefDgCategoryRecord = typeof refDgCategories.$inferSelect;
+
+export const cargoBookings = sqliteTable('cargo_bookings', {
+  id: text('id').primaryKey(), // AWB
+  senderName: text('sender_name').notNull(),
+  receiverName: text('receiver_name').notNull(),
+  flightOrderId: text('flight_order_id')
+    .notNull()
+    .references(() => flightOrders.id),
+  actualWeightKg: real('actual_weight_kg').notNull(),
+  lengthCm: real('length_cm').notNull(),
+  widthCm: real('width_cm').notNull(),
+  heightCm: real('height_cm').notNull(),
+  isDangerous: integer('is_dangerous', { mode: 'boolean' }).notNull().default(false),
+  dgClass: text('dg_class'),
+  paymentMethod: text('payment_method').notNull(),
+  paymentStatus: text('payment_status').notNull().default('UNPAID'),
+  agentId: text('agent_id'),
+  totalTariff: real('total_tariff').notNull(),
+  status: text('status').notNull().default('BOOKED'),
+  createdAt: text('created_at').notNull()
+});
+
+export type CargoBookingRecord = typeof cargoBookings.$inferSelect;

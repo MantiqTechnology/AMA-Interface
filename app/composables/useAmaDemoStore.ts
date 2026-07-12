@@ -595,11 +595,80 @@ export function useAmaDemoStore() {
     return decision;
   }
 
+  // Ticketing state & synchronization
+  const passengerTickets = ref<any[]>([]);
+  const cargoWaybills = ref<any[]>([]);
+
+  async function loadTicketingData() {
+    try {
+      const tickets = await fetchApi<any[]>('/api/ticketing/tickets');
+      if (tickets) passengerTickets.value = tickets;
+
+      const cargos = await fetchApi<any[]>('/api/ticketing/cargo-bookings');
+      if (cargos) cargoWaybills.value = cargos;
+    } catch (e) {
+      console.error('Failed to load ticketing data', e);
+    }
+  }
+
+  async function bookPassengerTicket(payload: any) {
+    const res = await fetchApi<any>('/api/ticketing/book-passenger', {
+      method: 'POST',
+      body: payload
+    });
+    await loadTicketingData();
+    return res;
+  }
+
+  async function payPassengerTicket(ticketId: string) {
+    const res = await fetchApi<any>('/api/ticketing/pay-ticket', {
+      method: 'POST',
+      body: { ticketId }
+    });
+    await loadTicketingData();
+    return res;
+  }
+
+  async function checkInPassenger(ticketId: string) {
+    const res = await fetchApi<any>('/api/ticketing/check-in', {
+      method: 'POST',
+      body: { ticketId }
+    });
+    await loadTicketingData();
+    return res;
+  }
+
+  async function bookCargo(payload: any) {
+    const res = await fetchApi<any>('/api/ticketing/book-cargo', {
+      method: 'POST',
+      body: payload
+    });
+    await loadTicketingData();
+    return res;
+  }
+
+  async function payCargo(awbNumber: string) {
+    const res = await fetchApi<any>('/api/ticketing/pay-cargo', {
+      method: 'POST',
+      body: { awbNumber }
+    });
+    await loadTicketingData();
+    return res;
+  }
+
   return {
     data,
     currentRoles,
     currentUser,
     currentUserId,
+    passengerTickets,
+    cargoWaybills,
+    loadTicketingData,
+    bookPassengerTicket,
+    payPassengerTicket,
+    checkInPassenger,
+    bookCargo,
+    payCargo,
     getAircraft,
     getApprovalForRequest,
     getCrew,

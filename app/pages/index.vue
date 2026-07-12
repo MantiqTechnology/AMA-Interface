@@ -133,6 +133,17 @@ async function login() {
               >
                 Login
               </VBtn>
+
+              <VBtn
+                block
+                color="secondary"
+                variant="outlined"
+                prepend-icon="mdi-ticket-confirmation-outline"
+                size="large"
+                to="/ticketing/booking"
+              >
+                Portal Booking Publik (Penumpang & Kargo)
+              </VBtn>
             </div>
 
             <VDivider class="my-6" />

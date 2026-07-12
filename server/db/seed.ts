@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import type { AppDatabase } from './client';
 import {
   aircraft,
@@ -31,7 +32,8 @@ import {
   routes,
   serializedParts,
   stationExpenses,
-  stations
+  stations,
+  cargoBookings
 } from './schema';
 
 const now = '2026-07-04T09:00:00.000+07:00';
@@ -1063,6 +1065,142 @@ export async function seedDemoData(db: AppDatabase) {
         updatedAt: referenceNow
       },
       {
+        id: 'ref-rate-passenger-djj-tim',
+        rateCode: 'PAX_DJJ_TIM',
+        serviceType: 'PASSENGER',
+        originStationId: 'ref-st-djj',
+        destinationStationId: 'ref-st-tim',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 2200000,
+        rateUnit: 'PER_PASSENGER',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ref-rate-cargo-djj-tim',
+        rateCode: 'CARGO_DJJ_TIM_KG',
+        serviceType: 'CARGO',
+        originStationId: 'ref-st-djj',
+        destinationStationId: 'ref-st-tim',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 38000,
+        rateUnit: 'PER_KG',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ref-rate-passenger-tim-wmx',
+        rateCode: 'PAX_TIM_WMX',
+        serviceType: 'PASSENGER',
+        originStationId: 'ref-st-tim',
+        destinationStationId: 'ref-st-wmx',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 1900000,
+        rateUnit: 'PER_PASSENGER',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ref-rate-cargo-tim-wmx',
+        rateCode: 'CARGO_TIM_WMX_KG',
+        serviceType: 'CARGO',
+        originStationId: 'ref-st-tim',
+        destinationStationId: 'ref-st-wmx',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 34000,
+        rateUnit: 'PER_KG',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ref-rate-passenger-wmx-oks',
+        rateCode: 'PAX_WMX_OKS',
+        serviceType: 'PASSENGER',
+        originStationId: 'ref-st-wmx',
+        destinationStationId: 'ref-st-oks',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 1200000,
+        rateUnit: 'PER_PASSENGER',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ref-rate-cargo-wmx-oks',
+        rateCode: 'CARGO_WMX_OKS_KG',
+        serviceType: 'CARGO',
+        originStationId: 'ref-st-wmx',
+        destinationStationId: 'ref-st-oks',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 22000,
+        rateUnit: 'PER_KG',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ref-rate-passenger-djj-nbx',
+        rateCode: 'PAX_DJJ_NBX',
+        serviceType: 'PASSENGER',
+        originStationId: 'ref-st-djj',
+        destinationStationId: 'ref-st-nbx',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 2100000,
+        rateUnit: 'PER_PASSENGER',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ref-rate-cargo-djj-nbx',
+        rateCode: 'CARGO_DJJ_NBX_KG',
+        serviceType: 'CARGO',
+        originStationId: 'ref-st-djj',
+        destinationStationId: 'ref-st-nbx',
+        customerId: null,
+        aircraftType: null,
+        currencyId: 'ref-cur-idr',
+        baseRate: 36000,
+        rateUnit: 'PER_KG',
+        effectiveFrom: '2026-07-01',
+        effectiveTo: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
         id: 'ref-rate-charter-tim-wmx',
         rateCode: 'CHARTER_TIM_WMX',
         serviceType: 'CHARTER',
@@ -1319,7 +1457,7 @@ export async function seedDemoData(db: AppDatabase) {
         customerId: 'cu-yayasan-lentera',
         routeId: 'rt-sentani-wamena',
         aircraftId: 'ac-caravan-001',
-        status: 'scheduled',
+        status: 'completed',
         scheduledDeparture: '2026-07-04T10:15:00.000+07:00',
         scheduledArrival: '2026-07-04T11:10:00.000+07:00',
         purpose: 'Community supply and passenger charter',
@@ -1333,7 +1471,7 @@ export async function seedDemoData(db: AppDatabase) {
         customerId: 'cu-dinkes-mamberamo',
         routeId: 'rt-wamena-sentani',
         aircraftId: 'ac-pilatus-001',
-        status: 'ready',
+        status: 'completed',
         scheduledDeparture: '2026-07-04T12:40:00.000+07:00',
         scheduledArrival: '2026-07-04T13:38:00.000+07:00',
         purpose: 'Medevac return leg with clinical escort',
@@ -1347,7 +1485,7 @@ export async function seedDemoData(db: AppDatabase) {
         customerId: 'cu-pt-kargo-timur',
         routeId: 'rt-timika-merauke',
         aircraftId: 'ac-caravan-001',
-        status: 'draft',
+        status: 'completed',
         scheduledDeparture: '2026-07-05T08:30:00.000+07:00',
         scheduledArrival: '2026-07-05T10:45:00.000+07:00',
         purpose: 'High-priority cargo movement',
@@ -1369,7 +1507,10 @@ export async function seedDemoData(db: AppDatabase) {
         currency: 'IDR'
       }
     ])
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: flightOrders.id,
+      set: { status: sql`excluded.status` }
+    });
 
   await db
     .insert(manifests)
@@ -1381,7 +1522,8 @@ export async function seedDemoData(db: AppDatabase) {
         documentNumber: 'KTP-927101-001',
         seatNumber: '1A',
         weightKg: 62,
-        remarks: 'Team lead'
+        remarks:
+          '{"ticketPrice":1800000,"paymentStatus":"PAID","checkInStatus":"CHECKED_IN","createdAt":"2026-07-04T09:00:00.000Z"}'
       },
       {
         id: 'mn-001-b',
@@ -1390,7 +1532,8 @@ export async function seedDemoData(db: AppDatabase) {
         documentNumber: 'KTP-950201-332',
         seatNumber: '1B',
         weightKg: 74,
-        remarks: null
+        remarks:
+          '{"ticketPrice":1800000,"paymentStatus":"UNPAID","checkInStatus":"PENDING","createdAt":"2026-07-04T09:00:00.000Z"}'
       },
       {
         id: 'mn-002-a',
@@ -1399,7 +1542,8 @@ export async function seedDemoData(db: AppDatabase) {
         documentNumber: 'MED-CASE-2407',
         seatNumber: 'MED',
         weightKg: 58,
-        remarks: 'Stretcher position'
+        remarks:
+          '{"ticketPrice":1800000,"paymentStatus":"PAID","checkInStatus":"PENDING","createdAt":"2026-07-04T09:00:00.000Z"}'
       },
       {
         id: 'mn-002-b',
@@ -1408,7 +1552,70 @@ export async function seedDemoData(db: AppDatabase) {
         documentNumber: 'STR-77822',
         seatNumber: '2A',
         weightKg: 55,
-        remarks: 'Clinical escort'
+        remarks:
+          '{"ticketPrice":1800000,"paymentStatus":"PAID","checkInStatus":"CHECKED_IN","createdAt":"2026-07-04T09:00:00.000Z"}'
+      },
+      {
+        id: 'TKT-DEMO12',
+        flightOrderId: 'fo-ama-260704-001',
+        passengerName: 'Sarah Wenda',
+        documentNumber: 'KTP-930401-443',
+        seatNumber: '2B',
+        weightKg: 65,
+        remarks:
+          '{"ticketPrice":1800000,"paymentStatus":"PAID","checkInStatus":"PENDING","createdAt":"2026-07-04T09:10:00.000Z"}'
+      },
+      {
+        id: 'TKT-DEMO34',
+        flightOrderId: 'fo-ama-260704-002',
+        passengerName: 'Alex Giai',
+        documentNumber: 'KTP-912201-112',
+        seatNumber: '3C',
+        weightKg: 78,
+        remarks:
+          '{"ticketPrice":1800000,"paymentStatus":"UNPAID","checkInStatus":"PENDING","createdAt":"2026-07-04T09:15:00.000Z"}'
+      }
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(cargoBookings)
+    .values([
+      {
+        id: 'AWB-100200',
+        senderName: 'Koperasi Kopi Wamena',
+        receiverName: 'Toko Kopi Sentani',
+        flightOrderId: 'fo-ama-260704-001',
+        actualWeightKg: 45,
+        lengthCm: 40,
+        widthCm: 40,
+        heightCm: 40,
+        isDangerous: false,
+        dgClass: null,
+        paymentMethod: 'TRANSFER',
+        paymentStatus: 'PAID',
+        agentId: 'ref-ag-papua-cargo',
+        totalTariff: 1440000,
+        status: 'BOOKED',
+        createdAt: '2026-07-04T09:00:00.000Z'
+      },
+      {
+        id: 'AWB-300400',
+        senderName: 'CV Papua Logistik Mandiri',
+        receiverName: 'Ibu Maria Jayapura',
+        flightOrderId: 'fo-ama-260704-002',
+        actualWeightKg: 12,
+        lengthCm: 30,
+        widthCm: 30,
+        heightCm: 30,
+        isDangerous: true,
+        dgClass: 'Class 9 - Lithium Batteries',
+        paymentMethod: 'CASH',
+        paymentStatus: 'UNPAID',
+        agentId: null,
+        totalTariff: 384000,
+        status: 'BOOKED',
+        createdAt: '2026-07-04T09:30:00.000Z'
       }
     ])
     .onConflictDoNothing();
