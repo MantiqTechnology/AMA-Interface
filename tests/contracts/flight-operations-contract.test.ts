@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createCargoBodySchema,
   createFlightOperationBodySchema,
+  createFlightRequestBodySchema,
   createFuelRequestBodySchema,
   createStationCostBodySchema
 } from '../../shared/contracts/flight-operations';
@@ -10,8 +11,10 @@ describe('flight operation request contracts', () => {
   it('normalizes blank optional flight fields and datetime-local values', () => {
     const parsed = createFlightOperationBodySchema.parse({
       flightDate: '2026-07-08',
-      flightType: 'CHARTER',
-      routeId: 'ref-route-djj-wmx',
+      flightTypeId: 'flight-type-charter',
+      serviceTypeId: 'flight-service-type-charter-cargo',
+      priorityId: 'flight-priority-normal',
+      routeId: 'route-djj-wmx',
       customerId: '',
       aircraftId: '',
       pilotInCommandId: '',
@@ -40,7 +43,7 @@ describe('flight operation request contracts', () => {
       volumeWeightKg: '',
       chargeableWeightKg: '13',
       dgCategoryId: '',
-      dgAcceptanceStatus: ''
+      dgAcceptanceStatusId: ''
     });
 
     expect(cargo.senderName).toBeNull();
@@ -48,7 +51,7 @@ describe('flight operation request contracts', () => {
     expect(cargo.volumeWeightKg).toBeNull();
     expect(cargo.chargeableWeightKg).toBe(13);
     expect(cargo.dgCategoryId).toBeNull();
-    expect(cargo.dgAcceptanceStatus).toBe('NOT_APPLICABLE');
+    expect(cargo.dgAcceptanceStatusId).toBe('dg-acceptance-status-not-applicable');
 
     const fuel = createFuelRequestBodySchema.parse({
       flightId: 'flight-1',
@@ -63,16 +66,46 @@ describe('flight operation request contracts', () => {
 
     const stationCost = createStationCostBodySchema.parse({
       flightId: '',
-      stationId: 'ref-st-djj',
+      stationId: 'st-djj',
       vendorId: '',
-      costCategoryId: 'ref-cost-handling',
+      costCategoryId: 'cost-handling',
       amount: '250000',
-      currencyId: 'ref-currency-idr',
+      currencyId: 'currency-idr',
       description: 'Handling'
     });
 
     expect(stationCost.flightId).toBeNull();
     expect(stationCost.vendorId).toBeNull();
     expect(stationCost.amount).toBe(250000);
+  });
+
+  it('normalizes the five-step flight request payload', () => {
+    const parsed = createFlightRequestBodySchema.parse({
+      flightDate: '2026-07-10',
+      flightTypeId: 'flight-type-cargo',
+      serviceTypeId: 'flight-service-type-charter-cargo',
+      routeId: 'route-djj-wmx',
+      customerId: 'cust-papua-logistics',
+      aircraftId: 'ac-pk-ama',
+      pilotInCommandId: 'crew-pic-valid',
+      coPilotId: '',
+      scheduledDepartureAt: '2026-07-10T08:30',
+      scheduledArrivalAt: '2026-07-10T09:45',
+      requestSource: 'Corporate Charter Request',
+      priorityId: 'flight-priority-normal',
+      passengerEstimate: '2',
+      cargoWeightEstimateKg: '640',
+      dangerousGoods: false,
+      requestedFuelLitre: '850',
+      parkingRequired: true,
+      destinationHandlingRequired: true,
+      estimatedRevenue: '28000000'
+    });
+
+    expect(parsed.coPilotId).toBeNull();
+    expect(parsed.passengerEstimate).toBe(2);
+    expect(parsed.cargoWeightEstimateKg).toBe(640);
+    expect(parsed.requestedFuelLitre).toBe(850);
+    expect(parsed.estimatedRevenue).toBe(28000000);
   });
 });

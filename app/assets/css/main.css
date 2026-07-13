@@ -1,2 +1,31 @@
 @import 'tailwindcss';
 @import './theme.css';
+
+/* Vuetify 4 component styles are layered; restore field chrome after Tailwind's reset layer. */
+.v-field--variant-outlined .v-field__outline {
+  border: var(--v-field-border-width, 1px) solid currentColor;
+  border-radius: inherit;
+  opacity: var(--v-field-border-opacity, 0.38);
+  pointer-events: none;
+}
+
+.v-field--variant-outlined.v-field--focused .v-field__outline {
+  border-width: 2px;
+  opacity: 1;
+}
+
+.v-field--variant-outlined .v-field__outline__start,
+.v-field--variant-outlined .v-field__outline__notch::before,
+.v-field--variant-outlined .v-field__outline__notch::after,
+.v-field--variant-outlined .v-field__outline__end {
+  border-width: 0 !important;
+}
+
+.v-field--variant-outlined .v-field-label--floating {
+  background: rgb(var(--v-theme-surface));
+  padding-inline: 4px;
+}
+
+.v-select--selected .v-field .v-field__input > input {
+  opacity: 0 !important;
+}

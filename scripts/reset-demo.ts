@@ -4,6 +4,7 @@ import { createDbClient, resolveDbPath } from '../server/db/client';
 import { dropDemoDatabase, runMigrations } from '../server/db/migrate';
 import { seedDemoData } from '../server/db/seed';
 import { seedFlightOperationsData } from '../server/db/seed-flight-operations';
+import { seedTicketingData } from '../server/db/seeds/ticketing';
 
 const dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite';
 const resolvedDbPath = resolveDbPath(dbPath);
@@ -19,6 +20,7 @@ dropDemoDatabase(sqlite);
 runMigrations(sqlite);
 await seedDemoData(db);
 seedFlightOperationsData(sqlite);
+seedTicketingData(sqlite);
 sqlite.close();
 
 await rm(join(process.cwd(), 'public', 'uploads', 'mock-receipts', '.DS_Store'), { force: true });

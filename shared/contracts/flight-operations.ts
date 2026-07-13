@@ -18,8 +18,42 @@ export const flightOperationStatuses = [
   'REOPENED_FOR_CORRECTION'
 ] as const;
 
+export const flightRequestStatuses = [
+  'DRAFT',
+  'SUBMITTED',
+  'APPROVED',
+  'REJECTED',
+  'CONVERTED'
+] as const;
+
+export const flightApprovalTypes = [
+  'READINESS_APPROVAL',
+  'FLIGHT_APPROVAL',
+  'CLOSURE_APPROVAL',
+  'OVERRIDE'
+] as const;
+
+export const flightApprovalStatuses = [
+  'NOT_STARTED',
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+  'REVISION_REQUESTED'
+] as const;
+
 export const flightOperationStatusSchema = z.enum(flightOperationStatuses);
+export const flightRequestStatusSchema = z.enum(flightRequestStatuses);
+export const flightApprovalTypeSchema = z.enum(flightApprovalTypes);
+export const flightApprovalStatusSchema = z.enum(flightApprovalStatuses);
 export const flightTypeSchema = z.enum(['CHARTER', 'PASSENGER', 'CARGO']);
+export const flightServiceTypeSchema = z.enum([
+  'CHARTER_CARGO',
+  'CHARTER_PASSENGER',
+  'SCHEDULED_PASSENGER',
+  'MEDEVAC',
+  'POSITIONING'
+]);
+export const flightPrioritySchema = z.enum(['NORMAL', 'HIGH', 'EMERGENCY']);
 export const crewAssignmentRoleSchema = z.enum([
   'PILOT_IN_COMMAND',
   'CO_PILOT',
@@ -106,6 +140,7 @@ const localDateTimeToIso = (value: unknown) => {
 };
 
 const nullableIdSchema = z.preprocess(blankToNull, z.string().trim().min(1).nullable().optional());
+const referenceIdSchema = z.string().trim().min(1);
 const nullableTextSchema = z.preprocess(blankToNull, z.string().trim().nullable().optional());
 const nullableIsoDateTimeSchema = z.preprocess(
   localDateTimeToIso,
@@ -118,7 +153,12 @@ const nullableNonnegativeNumberSchema = z.preprocess(
 );
 
 export type FlightOperationStatus = z.infer<typeof flightOperationStatusSchema>;
+export type FlightRequestStatus = z.infer<typeof flightRequestStatusSchema>;
+export type FlightApprovalType = z.infer<typeof flightApprovalTypeSchema>;
+export type FlightApprovalStatus = z.infer<typeof flightApprovalStatusSchema>;
 export type FlightType = z.infer<typeof flightTypeSchema>;
+export type FlightServiceType = z.infer<typeof flightServiceTypeSchema>;
+export type FlightPriority = z.infer<typeof flightPrioritySchema>;
 export type CrewAssignmentRole = z.infer<typeof crewAssignmentRoleSchema>;
 export type FlightActionType = z.infer<typeof flightActionTypeSchema>;
 export type ReadinessStatus = z.infer<typeof readinessStatusSchema>;
@@ -133,11 +173,35 @@ export type MaintenanceHandoffStatus = z.infer<typeof maintenanceHandoffStatusSc
 export type FinanceHandoffEventType = z.infer<typeof financeHandoffEventTypeSchema>;
 export type FinanceHandoffStatus = z.infer<typeof financeHandoffStatusSchema>;
 
+export type FlightOperationLookupOption = {
+  value: string;
+  id: string;
+  code: string;
+  label: string;
+  title: string;
+  sortOrder: number;
+};
+
 export type FlightOperationRecord = {
   id: string;
+  orderNumber: string;
+  flightRequestId: string | null;
+  requestNumber: string | null;
   flightNumber: string;
   flightDate: string;
+  flightTypeId: string;
+  flightTypeCode: FlightType;
+  flightTypeLabel: string;
   flightType: FlightType;
+  serviceTypeId: string;
+  serviceTypeCode: FlightServiceType;
+  serviceTypeLabel: string;
+  serviceType: FlightServiceType;
+  requestSource: string;
+  priorityId: string;
+  priorityCode: FlightPriority;
+  priorityLabel: string;
+  priority: FlightPriority;
   routeId: string;
   routeCode: string;
   originStationId: string;
@@ -149,18 +213,28 @@ export type FlightOperationRecord = {
   aircraftId: string | null;
   aircraftRegistration: string | null;
   aircraftServiceability: string | null;
+  aircraftCurrentStationCode: string | null;
+  aircraftNextMaintenanceDueAt: string | null;
   pilotInCommandId: string | null;
   pilotInCommandName: string | null;
+  pilotInCommandAvailabilityStatus: string | null;
   coPilotId: string | null;
   coPilotName: string | null;
+  coPilotAvailabilityStatus: string | null;
   scheduledDepartureAt: string | null;
   scheduledArrivalAt: string | null;
   actualDepartureAt: string | null;
   actualArrivalAt: string | null;
+  currentStatusId: string;
+  currentStatusCode: FlightOperationStatus;
+  currentStatusLabel: string;
   currentStatus: FlightOperationStatus;
   createdByUserId: string | null;
   approvedByUserId: string | null;
   remarks: string | null;
+  billingType: string;
+  estimatedRevenue: number | null;
+  currencyCode: string;
   isLocked: boolean;
   readinessPercent: number;
   readinessSummary: string;
@@ -179,6 +253,12 @@ export type FlightCrewAssignmentDto = {
   isPrimary: boolean;
   licenseExpiryDate: string | null;
   medicalExpiryDate: string | null;
+  baseStationCode: string | null;
+  dutyStationCode: string | null;
+  masterAvailabilityStatus: string | null;
+  readinessNote: string | null;
+  availabilityStatus: 'READY' | 'WARNING' | 'BLOCKED';
+  conflictNote: string | null;
 };
 
 export type FlightReadinessCheckDto = {
@@ -192,6 +272,12 @@ export type FlightReadinessCheckDto = {
   evaluatedByUserId: string | null;
   resultNote: string | null;
   sourceReference: string | null;
+  category: 'AIRCRAFT' | 'CREW' | 'MANIFEST' | 'FUEL' | 'STATION' | 'FINANCE' | 'DOCUMENTS';
+  severity: 'SUCCESS' | 'WARNING' | 'DANGER' | 'NEUTRAL';
+  blocking: boolean;
+  ownerRole: string;
+  recommendedAction: string;
+  actionHref: string | null;
 };
 
 export type FlightStatusHistoryDto = {
@@ -326,7 +412,95 @@ export type FlightFinanceHandoffDto = {
   createdAt: string;
 };
 
+export type FlightApprovalDto = {
+  id: string;
+  flightId: string;
+  approvalType: FlightApprovalType;
+  status: FlightApprovalStatus;
+  requestedByUserId: string | null;
+  assignedRole: string;
+  decidedByUserId: string | null;
+  requestedAt: string | null;
+  decidedAt: string | null;
+  reason: string | null;
+  affectedSection: string | null;
+  requiredCorrection: string | null;
+};
+
+export type FlightAttachmentDto = {
+  id: string;
+  flightId: string;
+  documentType: string;
+  fileName: string;
+  status: 'AVAILABLE' | 'PENDING';
+  uploadedAt: string | null;
+};
+
+export type FlightRequestRecord = {
+  id: string;
+  requestNumber: string;
+  statusId: string;
+  statusCode: FlightRequestStatus;
+  statusLabel: string;
+  status: FlightRequestStatus;
+  flightDate: string;
+  flightTypeId: string;
+  flightTypeCode: FlightType;
+  flightTypeLabel: string;
+  flightType: FlightType;
+  serviceTypeId: string;
+  serviceTypeCode: FlightServiceType;
+  serviceTypeLabel: string;
+  serviceType: FlightServiceType;
+  routeId: string;
+  routeCode: string;
+  originStationCode: string;
+  destinationStationCode: string;
+  customerId: string | null;
+  customerName: string | null;
+  aircraftId: string | null;
+  aircraftRegistration: string | null;
+  pilotInCommandId: string | null;
+  pilotInCommandName: string | null;
+  coPilotId: string | null;
+  coPilotName: string | null;
+  scheduledDepartureAt: string | null;
+  scheduledArrivalAt: string | null;
+  requestSource: string;
+  priorityId: string;
+  priorityCode: FlightPriority;
+  priorityLabel: string;
+  priority: FlightPriority;
+  passengerEstimate: number;
+  cargoWeightEstimateKg: number;
+  cargoCategory: string | null;
+  dangerousGoods: boolean;
+  fuelType: string;
+  requestedFuelLitre: number;
+  fuelSupplierId: string | null;
+  handlingSupplierId: string | null;
+  parkingRequired: boolean;
+  destinationHandlingRequired: boolean;
+  billingType: string;
+  estimatedRevenue: number | null;
+  currencyCode: string;
+  remarks: string | null;
+  convertedFlightId: string | null;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FlightRequestOverviewDto = {
+  summary: Record<FlightRequestStatus, number>;
+  requests: FlightRequestRecord[];
+};
+
 export type FlightOperationDetailDto = FlightOperationRecord & {
+  closureReadiness: {
+    allowed: boolean;
+    missing: string[];
+  };
   crewAssignments: FlightCrewAssignmentDto[];
   readinessChecks: FlightReadinessCheckDto[];
   histories: FlightStatusHistoryDto[];
@@ -338,6 +512,8 @@ export type FlightOperationDetailDto = FlightOperationRecord & {
   stationCosts: FlightStationCostDto[];
   maintenanceHandoffs: FlightMaintenanceHandoffDto[];
   financeHandoffs: FlightFinanceHandoffDto[];
+  approvals: FlightApprovalDto[];
+  attachments: FlightAttachmentDto[];
 };
 
 export type FlightOperationOverviewDto = {
@@ -346,45 +522,50 @@ export type FlightOperationOverviewDto = {
 };
 
 export type FlightOperationLookupsDto = {
-  routes: Array<{
-    value: string;
-    title: string;
-    originStationId: string;
-    destinationStationId: string;
-  }>;
-  aircraft: Array<{ value: string; title: string; serviceabilityStatus: string; fuelType: string }>;
-  crews: Array<{
-    value: string;
-    title: string;
-    crewRole: string;
-    licenseExpiryDate: string | null;
-    medicalExpiryDate: string | null;
-  }>;
-  customers: Array<{ value: string; title: string }>;
-  stations: Array<{ value: string; title: string }>;
-  fuelSuppliers: Array<{
-    value: string;
-    title: string;
-    fuelType: string;
-    referencePricePerLitre: number;
-  }>;
-  serviceSuppliers: Array<{
-    value: string;
-    title: string;
-    serviceType: string;
-    referenceRate: number | null;
-  }>;
-  vendors: Array<{ value: string; title: string }>;
-  costCategories: Array<{ value: string; title: string }>;
-  currencies: Array<{ value: string; title: string }>;
-  dgCategories: Array<{ value: string; title: string }>;
-  flightReasons: Array<{ value: string; title: string; reasonType: string; requiresNote: boolean }>;
+  flightTypes: FlightOperationLookupOption[];
+  flightServiceTypes: FlightOperationLookupOption[];
+  flightPriorities: FlightOperationLookupOption[];
+  flightRequestStatuses: FlightOperationLookupOption[];
+  flightOperationStatuses: FlightOperationLookupOption[];
+  crewAssignmentRoles: FlightOperationLookupOption[];
+  flightActionTypes: FlightOperationLookupOption[];
+  flightApprovalTypes: FlightOperationLookupOption[];
+  flightApprovalStatuses: FlightOperationLookupOption[];
+  flightAttachmentStatuses: FlightOperationLookupOption[];
+  readinessStatuses: FlightOperationLookupOption[];
+  manifestTypes: FlightOperationLookupOption[];
+  manifestStatuses: FlightOperationLookupOption[];
+  dgAcceptanceStatuses: FlightOperationLookupOption[];
+  fuelWorkflowStatuses: FlightOperationLookupOption[];
+  stationServiceTypes: FlightOperationLookupOption[];
+  stationServiceStatuses: FlightOperationLookupOption[];
+  stationCostStatuses: FlightOperationLookupOption[];
+  aircraftServiceabilityStatuses: FlightOperationLookupOption[];
+  maintenanceHandoffStatuses: FlightOperationLookupOption[];
+  financeEventTypes: FlightOperationLookupOption[];
+  financeHandoffStatuses: FlightOperationLookupOption[];
+};
+
+export type FlightRatePreviewDto = {
+  matchedRateId: string | null;
+  rateCode: string | null;
+  serviceType: 'CHARTER' | 'PASSENGER' | 'CARGO' | null;
+  bookingChannel: string | null;
+  baseAmount: number;
+  rateUnit: string | null;
+  quantity: number;
+  minimumCharge: number | null;
+  estimatedTotal: number;
+  currencyCode: string;
+  taxCodeId: string | null;
+  taxCode: string | null;
+  note: string;
 };
 
 export const listFlightOperationsQuerySchema = z.object({
   search: z.string().trim().max(100).optional().default(''),
-  status: flightOperationStatusSchema.optional(),
-  flightType: flightTypeSchema.optional(),
+  statusId: z.string().trim().optional(),
+  flightTypeId: z.string().trim().optional(),
   routeId: z.string().trim().optional(),
   originStationId: z.string().trim().optional(),
   destinationStationId: z.string().trim().optional(),
@@ -396,9 +577,35 @@ export const listFlightOperationsQuerySchema = z.object({
   offset: z.coerce.number().int().nonnegative().optional().default(0)
 });
 
+export const listFlightRequestsQuerySchema = z.object({
+  search: z.string().trim().max(100).optional().default(''),
+  statusId: z.string().trim().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional().default(50),
+  offset: z.coerce.number().int().nonnegative().optional().default(0)
+});
+
+export const flightRatePreviewQuerySchema = z.object({
+  routeId: z.string().trim().min(1),
+  flightTypeId: z.string().trim().optional(),
+  serviceTypeId: z.string().trim().optional(),
+  bookingChannel: z.enum(['COUNTER', 'AGENT', 'CORPORATE', 'CARGO', 'CHARTER']).optional(),
+  passengerType: z.enum(['ADULT', 'CHILD', 'INFANT']).optional(),
+  cargoPriceBasis: z.enum(['ACTUAL_WEIGHT', 'VOLUME_WEIGHT', 'CHARGEABLE_WEIGHT']).optional(),
+  customerId: z.string().trim().optional(),
+  aircraftType: z.string().trim().optional(),
+  quantity: z.coerce.number().nonnegative().optional().default(1),
+  date: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/u)
+    .optional()
+});
+
 export const createFlightOperationBodySchema = z.object({
   flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
-  flightType: flightTypeSchema,
+  flightTypeId: referenceIdSchema,
+  serviceTypeId: referenceIdSchema,
+  priorityId: referenceIdSchema,
   routeId: z.string().min(1),
   customerId: nullableIdSchema,
   aircraftId: nullableIdSchema,
@@ -407,6 +614,45 @@ export const createFlightOperationBodySchema = z.object({
   scheduledDepartureAt: nullableIsoDateTimeSchema,
   scheduledArrivalAt: nullableIsoDateTimeSchema,
   remarks: z.preprocess(blankToNull, z.string().trim().max(1000).nullable().optional())
+});
+
+export const createFlightRequestBodySchema = z.object({
+  flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  flightTypeId: referenceIdSchema,
+  serviceTypeId: referenceIdSchema,
+  routeId: z.string().min(1),
+  customerId: nullableIdSchema,
+  aircraftId: nullableIdSchema,
+  pilotInCommandId: nullableIdSchema,
+  coPilotId: nullableIdSchema,
+  scheduledDepartureAt: nullableIsoDateTimeSchema,
+  scheduledArrivalAt: nullableIsoDateTimeSchema,
+  requestSource: z.string().trim().min(1).max(100).default('Corporate Charter Request'),
+  priorityId: referenceIdSchema,
+  passengerEstimate: z.coerce.number().int().nonnegative().default(0),
+  cargoWeightEstimateKg: z.coerce.number().nonnegative().default(0),
+  cargoCategory: nullableTextSchema,
+  dangerousGoods: z.coerce.boolean().default(false),
+  fuelType: z.string().trim().min(1).default('AVTUR'),
+  requestedFuelLitre: z.coerce.number().nonnegative().default(0),
+  fuelSupplierId: nullableIdSchema,
+  handlingSupplierId: nullableIdSchema,
+  parkingRequired: z.coerce.boolean().default(false),
+  destinationHandlingRequired: z.coerce.boolean().default(false),
+  billingType: z.string().trim().min(1).default('CHARTER'),
+  estimatedRevenue: nullableNonnegativeNumberSchema,
+  remarks: z.preprocess(blankToNull, z.string().trim().max(1000).nullable().optional())
+});
+
+export const flightRequestIdParamsSchema = z.object({
+  id: z.string().min(1)
+});
+
+export const flightApprovalDecisionBodySchema = z.object({
+  decision: z.enum(['APPROVE', 'REJECT', 'REQUEST_REVISION']),
+  reason: z.string().trim().max(1000).optional(),
+  affectedSection: z.string().trim().max(100).optional(),
+  requiredCorrection: z.string().trim().max(1000).optional()
 });
 
 export const flightOperationIdParamsSchema = z.object({
@@ -447,9 +693,9 @@ export const createCargoBodySchema = z.object({
   volumeWeightKg: nullableNonnegativeNumberSchema,
   chargeableWeightKg: nullableNonnegativeNumberSchema,
   dgCategoryId: nullableIdSchema,
-  dgAcceptanceStatus: z.preprocess(
+  dgAcceptanceStatusId: z.preprocess(
     blankToUndefined,
-    dgAcceptanceStatusSchema.default('NOT_APPLICABLE')
+    z.string().trim().min(1).default('dg-acceptance-status-not-applicable')
   ),
   remarks: nullableTextSchema
 });
@@ -466,7 +712,7 @@ export const createStationServiceBodySchema = z.object({
   flightId: z.string().min(1),
   stationId: z.string().min(1),
   serviceSupplierId: z.string().min(1),
-  serviceType: stationServiceTypeSchema,
+  serviceTypeId: referenceIdSchema,
   referenceRate: nullableNonnegativeNumberSchema
 });
 
@@ -483,7 +729,7 @@ export const createStationCostBodySchema = z.object({
 export const createMaintenanceHandoffBodySchema = z.object({
   flightId: nullableIdSchema,
   aircraftId: z.string().min(1),
-  serviceabilityStatus: z.string().min(1),
+  serviceabilityStatusId: referenceIdSchema,
   workOrderReference: nullableTextSchema,
   maintenanceNote: nullableTextSchema,
   sparePartReference: nullableTextSchema,
@@ -492,7 +738,10 @@ export const createMaintenanceHandoffBodySchema = z.object({
 });
 
 export type ListFlightOperationsQuery = z.infer<typeof listFlightOperationsQuerySchema>;
+export type ListFlightRequestsQuery = z.infer<typeof listFlightRequestsQuerySchema>;
 export type CreateFlightOperationBody = z.infer<typeof createFlightOperationBodySchema>;
+export type CreateFlightRequestBody = z.infer<typeof createFlightRequestBodySchema>;
+export type FlightApprovalDecisionBody = z.infer<typeof flightApprovalDecisionBodySchema>;
 export type ActionNoteBody = z.infer<typeof actionNoteBodySchema>;
 export type FlightReasonActionBody = z.infer<typeof flightReasonActionBodySchema>;
 export type ActualTimeBody = z.infer<typeof actualTimeBodySchema>;

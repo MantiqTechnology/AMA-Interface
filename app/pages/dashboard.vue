@@ -709,10 +709,12 @@ function resetSections() {
     <div class="dashboard-shell">
       <main class="dashboard-main">
         <section class="mb-4">
-          <div class="mb-4 flex flex-wrap items-start gap-4">
-            <div class="min-w-0">
-              <h1 class="text-3xl font-bold text-text-primary">PT AMA Operations Command Center</h1>
-              <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-text-secondary">
+          <div class="mb-4 d-flex flex-wrap align-start ga-4">
+            <div>
+              <h1 class="text-h4 font-weight-bold text-text-primary">
+                PT AMA Operations Command Center
+              </h1>
+              <div class="mt-2 d-flex flex-wrap align-center ga-2 text-body-2 text-text-secondary">
                 <span>Senin, 6 Juli 2026 — Asia/Jayapura</span>
                 <VChip color="secondary" size="small" variant="tonal">
                   Demo Mode · Single Tenant · No Live Integration
@@ -787,23 +789,25 @@ function resetSections() {
           <VWindowItem value="command">
             <VRow v-if="sections.kpis" class="mb-2">
               <VCol v-for="kpi in kpis" :key="kpi.label" cols="12" sm="6" xl="2">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardText>
-                    <div class="text-xs font-bold uppercase tracking-normal text-text-secondary">
+                    <div class="text-caption font-weight-bold text-uppercase text-text-secondary">
                       {{ kpi.label }}
                     </div>
-                    <div class="mt-3 text-3xl font-bold" :class="`text-${kpi.tone}`">
+                    <div class="mt-3 text-h4 font-weight-bold" :class="`text-${kpi.tone}`">
                       {{ kpi.value }}
                     </div>
-                    <div class="mt-2 text-sm font-medium text-text-primary">{{ kpi.caption }}</div>
-                    <div class="mt-1 text-xs text-text-secondary">{{ kpi.reason }}</div>
+                    <div class="mt-2 text-body-2 font-weight-medium text-text-primary">
+                      {{ kpi.caption }}
+                    </div>
+                    <div class="mt-1 text-caption text-text-secondary">{{ kpi.reason }}</div>
                   </VCardText>
                 </VCard>
               </VCol>
             </VRow>
 
             <VCard v-if="sections.actions" border class="mb-4 priority-panel">
-              <VCardTitle class="flex flex-wrap items-center gap-3 text-text-primary">
+              <VCardTitle class="d-flex flex-wrap align-center ga-3 text-text-primary">
                 PERLU TINDAKAN SEKARANG
                 <VChip color="danger" size="small" variant="tonal">OCC Priority</VChip>
               </VCardTitle>
@@ -811,10 +815,10 @@ function resetSections() {
                 <VRow>
                   <VCol v-for="item in urgentActions" :key="item.id" cols="12" lg="4">
                     <div
-                      class="action-row h-full"
+                      class="action-row h-100"
                       :class="`action-row--${item.severity.toLowerCase()}`"
                     >
-                      <div class="mb-3 flex flex-wrap items-center gap-2">
+                      <div class="mb-3 d-flex flex-wrap align-center ga-2">
                         <VChip
                           :color="item.severity === 'CRITICAL' ? 'danger' : 'warning'"
                           size="small"
@@ -822,16 +826,20 @@ function resetSections() {
                         >
                           {{ item.severity }}
                         </VChip>
-                        <span class="text-sm font-bold text-text-primary">{{ item.title }}</span>
+                        <span class="text-body-2 font-weight-bold text-text-primary">
+                          {{ item.title }}
+                        </span>
                       </div>
-                      <div class="text-sm text-text-primary">{{ item.issue }}</div>
-                      <div class="mt-1 text-sm text-text-primary">{{ item.impact }}</div>
+                      <div class="text-body-2 text-text-primary">{{ item.issue }}</div>
+                      <div class="mt-1 text-body-2 text-text-primary">{{ item.impact }}</div>
                       <div
-                        class="mt-3 text-xs font-semibold uppercase tracking-normal text-text-secondary"
+                        class="mt-3 text-caption font-weight-medium text-uppercase text-text-secondary"
                       >
                         PIC
                       </div>
-                      <div class="text-sm font-medium text-text-primary">{{ item.owner }}</div>
+                      <div class="text-body-2 font-weight-medium text-text-primary">
+                        {{ item.owner }}
+                      </div>
                       <VBtn
                         class="mt-4"
                         color="primary"
@@ -849,7 +857,7 @@ function resetSections() {
 
             <VRow>
               <VCol v-if="sections.readiness" cols="12" xl="4">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle class="text-text-primary">
                     Flight Request Readiness Hari Ini
                   </VCardTitle>
@@ -863,7 +871,7 @@ function resetSections() {
                       :series="readinessChartSeries"
                       type="donut"
                     />
-                    <p class="mt-3 text-sm text-text-secondary">
+                    <p class="mt-3 text-body-2 text-text-secondary">
                       Menunjukkan request yang dapat dilanjutkan versus yang harus diselesaikan
                       dahulu.
                     </p>
@@ -872,13 +880,13 @@ function resetSections() {
               </VCol>
 
               <VCol v-if="sections.fleet" cols="12" xl="8">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle class="text-text-primary">Fleet Availability</VCardTitle>
                   <VCardText>
                     <div class="fleet-grid mb-4">
                       <div v-for="group in fleetGroups" :key="group.aircraft" class="fleet-group">
-                        <div class="font-bold text-text-primary">{{ group.aircraft }}</div>
-                        <div class="mt-3 flex flex-wrap gap-2">
+                        <div class="font-weight-bold text-text-primary">{{ group.aircraft }}</div>
+                        <div class="mt-3 d-flex flex-wrap ga-2">
                           <VChip
                             v-for="status in group.statuses"
                             :key="`${group.aircraft}-${status.status}`"
@@ -911,20 +919,36 @@ function resetSections() {
                       <template #detail="{ detail }">
                         <VRow density="compact">
                           <VCol cols="12" md="3">
-                            <div class="detail-label">Configuration</div>
-                            <div class="detail-value">{{ detail?.configuration ?? '-' }}</div>
+                            <div class="text-caption font-weight-bold text-text-secondary">
+                              Configuration
+                            </div>
+                            <div class="text-body-2 font-weight-medium text-text-primary">
+                              {{ detail?.configuration ?? '-' }}
+                            </div>
                           </VCol>
                           <VCol cols="12" md="3">
-                            <div class="detail-label">Maintenance</div>
-                            <div class="detail-value">{{ detail?.maintenance ?? '-' }}</div>
+                            <div class="text-caption font-weight-bold text-text-secondary">
+                              Maintenance
+                            </div>
+                            <div class="text-body-2 font-weight-medium text-text-primary">
+                              {{ detail?.maintenance ?? '-' }}
+                            </div>
                           </VCol>
                           <VCol cols="12" md="3">
-                            <div class="detail-label">Next Commitment</div>
-                            <div class="detail-value">{{ detail?.nextCommitment ?? '-' }}</div>
+                            <div class="text-caption font-weight-bold text-text-secondary">
+                              Next Commitment
+                            </div>
+                            <div class="text-body-2 font-weight-medium text-text-primary">
+                              {{ detail?.nextCommitment ?? '-' }}
+                            </div>
                           </VCol>
                           <VCol cols="12" md="3">
-                            <div class="detail-label">Documents</div>
-                            <div class="detail-value">{{ detail?.documents ?? '-' }}</div>
+                            <div class="text-caption font-weight-bold text-text-secondary">
+                              Documents
+                            </div>
+                            <div class="text-body-2 font-weight-medium text-text-primary">
+                              {{ detail?.documents ?? '-' }}
+                            </div>
                           </VCol>
                         </VRow>
                       </template>
@@ -940,24 +964,28 @@ function resetSections() {
               <VCardText>
                 <div class="flight-board-grid">
                   <section v-for="lane in boardLanes" :key="lane.status" class="flight-lane">
-                    <div class="mb-3 flex items-center justify-between gap-2">
-                      <div class="text-sm font-bold text-text-primary">{{ lane.label }}</div>
+                    <div class="mb-3 d-flex align-center justify-space-between ga-2">
+                      <div class="text-body-2 font-weight-bold text-text-primary">
+                        {{ lane.label }}
+                      </div>
                       <VChip size="small" variant="tonal">{{ lane.flights.length }}</VChip>
                     </div>
 
-                    <div v-if="lane.flights.length" class="grid gap-3">
+                    <div v-if="lane.flights.length" class="d-flex flex-column ga-3">
                       <div v-for="flight in lane.flights" :key="flight.id" class="flight-card">
-                        <div class="mb-2 flex items-center justify-between gap-2">
-                          <span class="font-bold text-text-primary">{{ flight.flightNumber }}</span>
+                        <div class="mb-2 d-flex align-center justify-space-between ga-2">
+                          <span class="font-weight-bold text-text-primary">
+                            {{ flight.flightNumber }}
+                          </span>
                           <span
                             class="status-dot"
                             :class="`status-dot--${lane.status.toLowerCase()}`"
                           />
                         </div>
-                        <div class="text-sm font-medium text-text-primary">
+                        <div class="text-body-2 font-weight-medium text-text-primary">
                           {{ routeLabel(flight.routeId) }}
                         </div>
-                        <div class="mt-1 text-xs text-text-secondary">
+                        <div class="mt-1 text-caption text-text-secondary">
                           {{ getAircraftLabel(flight.aircraftId) }}
                         </div>
                         <VDivider class="my-3" />
@@ -992,7 +1020,7 @@ function resetSections() {
 
             <VRow>
               <VCol v-if="sections.blockers" cols="12" lg="5">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle class="text-text-primary">Blocker Hari Ini</VCardTitle>
                   <VCardSubtitle>Readiness Blocker Breakdown</VCardSubtitle>
                   <VCardText>
@@ -1002,11 +1030,11 @@ function resetSections() {
                       :series="blockerChartSeries"
                       type="bar"
                     />
-                    <div class="mt-3 grid gap-2">
+                    <div class="mt-3 d-flex flex-column ga-2">
                       <div
                         v-for="item in blockerBreakdown"
                         :key="item.label"
-                        class="flex items-center justify-between gap-3 text-sm"
+                        class="d-flex align-center justify-space-between ga-3 text-body-2"
                       >
                         <span class="text-text-primary">{{ item.label }}</span>
                         <strong class="text-text-primary">{{ item.value }}</strong>
@@ -1017,7 +1045,7 @@ function resetSections() {
               </VCol>
 
               <VCol v-if="sections.stations" cols="12" lg="7">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle class="text-text-primary">Station Readiness Matrix</VCardTitle>
                   <VCardSubtitle>
                     Kesiapan station remote Papua untuk operasi hari ini.
@@ -1057,20 +1085,34 @@ function resetSections() {
                     <template #detail="{ detail }">
                       <VRow density="compact">
                         <VCol cols="12" md="3">
-                          <div class="detail-label">Station Name</div>
-                          <div class="detail-value">{{ detail?.name ?? '-' }}</div>
+                          <div class="text-caption font-weight-bold text-text-secondary">
+                            Station Name
+                          </div>
+                          <div class="text-body-2 font-weight-medium text-text-primary">
+                            {{ detail?.name ?? '-' }}
+                          </div>
                         </VCol>
                         <VCol cols="12" md="3">
-                          <div class="detail-label">City</div>
-                          <div class="detail-value">{{ detail?.city ?? '-' }}</div>
+                          <div class="text-caption font-weight-bold text-text-secondary">City</div>
+                          <div class="text-body-2 font-weight-medium text-text-primary">
+                            {{ detail?.city ?? '-' }}
+                          </div>
                         </VCol>
                         <VCol cols="12" md="4">
-                          <div class="detail-label">Capabilities</div>
-                          <div class="detail-value">{{ detail?.capabilities ?? '-' }}</div>
+                          <div class="text-caption font-weight-bold text-text-secondary">
+                            Capabilities
+                          </div>
+                          <div class="text-body-2 font-weight-medium text-text-primary">
+                            {{ detail?.capabilities ?? '-' }}
+                          </div>
                         </VCol>
                         <VCol cols="12" md="2">
-                          <div class="detail-label">Timezone</div>
-                          <div class="detail-value">{{ detail?.timezone ?? '-' }}</div>
+                          <div class="text-caption font-weight-bold text-text-secondary">
+                            Timezone
+                          </div>
+                          <div class="text-body-2 font-weight-medium text-text-primary">
+                            {{ detail?.timezone ?? '-' }}
+                          </div>
                         </VCol>
                       </VRow>
                     </template>
@@ -1083,7 +1125,7 @@ function resetSections() {
           <VWindowItem v-if="sections.management" value="management">
             <VRow>
               <VCol cols="12" lg="6">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>Flight Completion Trend</VCardTitle>
                   <VCardSubtitle>Scheduled vs completed vs cancelled per hari.</VCardSubtitle>
                   <VCardText>
@@ -1098,7 +1140,7 @@ function resetSections() {
               </VCol>
 
               <VCol cols="12" lg="3">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>On-Time Performance</VCardTitle>
                   <VCardSubtitle>On-time, delayed, cancelled.</VCardSubtitle>
                   <VCardText>
@@ -1113,7 +1155,7 @@ function resetSections() {
               </VCol>
 
               <VCol cols="12" lg="3">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>Request Source Mix</VCardTitle>
                   <VCardSubtitle>Ticketing, cargo, charter, medevac.</VCardSubtitle>
                   <VCardText>
@@ -1128,7 +1170,7 @@ function resetSections() {
               </VCol>
 
               <VCol cols="12" lg="6">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>Delay Reason Breakdown</VCardTitle>
                   <VCardSubtitle>
                     Weather, handling, fuel, crew, maintenance, operational.
@@ -1145,7 +1187,7 @@ function resetSections() {
               </VCol>
 
               <VCol cols="12" lg="6">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>Aircraft Utilization</VCardTitle>
                   <VCardSubtitle>Flight hours mock per aircraft.</VCardSubtitle>
                   <VCardText>
@@ -1160,7 +1202,7 @@ function resetSections() {
               </VCol>
 
               <VCol cols="12" lg="6">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>Fuel Requested vs Confirmed</VCardTitle>
                   <VCardSubtitle>Per station dan fuel type mock.</VCardSubtitle>
                   <VCardText>
@@ -1175,7 +1217,7 @@ function resetSections() {
               </VCol>
 
               <VCol cols="12" lg="3">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>Route Activity</VCardTitle>
                   <VTable density="compact">
                     <thead>
@@ -1197,7 +1239,7 @@ function resetSections() {
               </VCol>
 
               <VCol cols="12" lg="3">
-                <VCard border class="h-full">
+                <VCard border class="h-100">
                   <VCardTitle>Station Performance</VCardTitle>
                   <VTable density="compact">
                     <thead>
@@ -1234,8 +1276,8 @@ function resetSections() {
     >
       <div class="drawer-header">
         <div>
-          <div class="text-lg font-bold text-text-primary">Dashboard Controls</div>
-          <div class="text-xs text-text-secondary">Show or hide dashboard sections</div>
+          <div class="text-subtitle-1 font-weight-bold text-text-primary">Dashboard Controls</div>
+          <div class="text-caption text-text-secondary">Show or hide dashboard sections</div>
         </div>
         <VBtn
           aria-label="Hide dashboard controls"
@@ -1247,11 +1289,11 @@ function resetSections() {
       </div>
       <VDivider />
       <div class="drawer-content">
-        <div class="grid gap-3">
+        <div class="d-flex flex-column ga-3">
           <div v-for="control in sectionControls" :key="control.key" class="control-row">
-            <div class="min-w-0">
-              <div class="font-medium text-text-primary">{{ control.label }}</div>
-              <div class="text-xs text-text-secondary">{{ control.hint }}</div>
+            <div>
+              <div class="font-weight-medium text-text-primary">{{ control.label }}</div>
+              <div class="text-caption text-text-secondary">{{ control.hint }}</div>
             </div>
             <VSwitch
               v-model="sections[control.key]"
@@ -1411,18 +1453,6 @@ function resetSections() {
   border: 1px solid rgb(var(--v-theme-border-default));
   border-radius: 8px;
   padding: 10px 12px;
-}
-
-.detail-label {
-  color: rgb(var(--v-theme-text-secondary));
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.detail-value {
-  color: rgb(var(--v-theme-text-primary));
-  font-size: 0.9rem;
-  font-weight: 600;
 }
 
 @media (max-width: 760px) {

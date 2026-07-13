@@ -42,7 +42,7 @@ describe('local document storage', () => {
 
     const document = await createDocument({
       ownerType: 'aircraft',
-      ownerId: 'ref-ac-pk-ama',
+      ownerId: 'ac-pk-ama',
       uploadId: upload.id,
       documentType: 'AIRCRAFT_CERTIFICATE_OF_AIRWORTHINESS',
       title: 'Certificate of Airworthiness',
@@ -56,14 +56,14 @@ describe('local document storage', () => {
 
     const ownerDocuments = await listDocuments({
       ownerType: 'aircraft',
-      ownerId: 'ref-ac-pk-ama',
+      ownerId: 'ac-pk-ama',
       search: ''
     });
     expect(ownerDocuments.map((item) => item.id)).toEqual([document.id]);
 
     const otherOwnerDocuments = await listDocuments({
       ownerType: 'station',
-      ownerId: 'ref-st-djj',
+      ownerId: 'st-djj',
       search: ''
     });
     expect(otherOwnerDocuments).toEqual([]);
@@ -90,7 +90,7 @@ describe('local document storage', () => {
     });
     const first = await createDocument({
       ownerType: 'personnel',
-      ownerId: 'ref-crew-pic-expired',
+      ownerId: 'crew-pic-expired',
       uploadId: firstUpload.id,
       documentType: 'PILOT_MEDICAL_CERTIFICATE',
       title: 'Medical Certificate',
@@ -126,7 +126,7 @@ describe('local document storage', () => {
     });
     const document = await createDocument({
       ownerType: 'customer',
-      ownerId: 'ref-cust-papua-logistics',
+      ownerId: 'cust-papua-logistics',
       uploadId: upload.id,
       documentType: 'CHARTER_AGREEMENT',
       title: 'Charter Agreement',
@@ -157,7 +157,7 @@ describe('local document storage', () => {
 
       const document = await createDocument({
         ownerType: 'company',
-        ownerId: 'ref-agent-djj-counter',
+        ownerId: 'agent-djj-counter',
         uploadId: upload.id,
         documentType: 'AGENCY_AGREEMENT',
         title: 'Agent Agreement',
@@ -166,7 +166,7 @@ describe('local document storage', () => {
 
       const documents = await listDocuments({
         ownerType: 'company',
-        ownerId: 'ref-agent-djj-counter',
+        ownerId: 'agent-djj-counter',
         search: ''
       });
 

@@ -1,8 +1,5 @@
 import { nanoid } from 'nanoid';
-import type {
-  CloseWorkOrderBody,
-  CreateWorkOrderBody
-} from '../../shared/contracts/maintenance';
+import type { CloseWorkOrderBody, CreateWorkOrderBody } from '../../shared/contracts/maintenance';
 import type { Repositories } from '../repositories/interfaces';
 import { notFound } from '../utils/errors';
 import { mapMaintenanceWorkOrder } from './mappers';
@@ -10,7 +7,12 @@ import { mapMaintenanceWorkOrder } from './mappers';
 export class MaintenanceService {
   constructor(private readonly repositories: Repositories) {}
 
-  async listWorkOrders(query: { status?: string; aircraftId?: string; limit: number; offset: number }) {
+  async listWorkOrders(query: {
+    status?: string;
+    aircraftId?: string;
+    limit: number;
+    offset: number;
+  }) {
     const rows = await this.repositories.maintenance.listWorkOrders(query);
     return await Promise.all(rows.map((row) => this.mapWorkOrder(row.id)));
   }
@@ -41,7 +43,7 @@ export class MaintenanceService {
       id: nanoid(),
       severity: input.priority === 'aog' ? 'critical' : 'warning',
       title: 'Maintenance work order opened',
-      message: `${created.title} opened for ${aircraft.tailNumber}`,
+      message: `${created.title} opened for ${aircraft.registrationNumber}`,
       entityType: 'maintenance_work_order',
       entityId: created.id,
       isRead: false,

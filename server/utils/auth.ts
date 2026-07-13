@@ -18,3 +18,14 @@ export function setDemoRole(event: H3Event, role: DemoRole) {
     maxAge: 60 * 60 * 24 * 14
   });
 }
+
+export function getDemoActorId(event: H3Event) {
+  const actors: Record<DemoRole, string> = {
+    'Demo Admin': 'USR-DEMO-ADMIN',
+    Director: 'USR-DIRECTOR',
+    OCC: 'USR-001',
+    'Station Admin': 'USR-STATION-ADMIN',
+    'Maintenance Manager': 'USR-MAINTENANCE-MANAGER'
+  };
+  return actors[getDemoRole(event)];
+}

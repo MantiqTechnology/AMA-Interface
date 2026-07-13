@@ -215,7 +215,7 @@ function createDemoPdf(title: string, lines: string[]) {
 const demoDocumentSeeds: DemoDocumentSeed[] = [
   {
     ownerType: 'aircraft',
-    ownerId: 'ref-ac-pk-ama',
+    ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_CERTIFICATE_OF_REGISTRATION',
     title: 'PK-AMA Certificate of Registration',
     documentNumber: 'SIM-COR-PKAMA-2026',
@@ -224,7 +224,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'aircraft',
-    ownerId: 'ref-ac-pk-ama',
+    ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_CERTIFICATE_OF_AIRWORTHINESS',
     title: 'PK-AMA Certificate of Airworthiness',
     documentNumber: 'SIM-COA-PKAMA-2026',
@@ -233,7 +233,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'aircraft',
-    ownerId: 'ref-ac-pk-ama',
+    ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_INSURANCE_CERTIFICATE',
     title: 'PK-AMA Insurance Certificate',
     documentNumber: 'SIM-INS-PKAMA-2026',
@@ -242,7 +242,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'aircraft',
-    ownerId: 'ref-ac-pk-ama',
+    ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_WEIGHT_AND_BALANCE',
     title: 'PK-AMA Weight & Balance Report',
     documentNumber: 'SIM-WB-PKAMA-2026',
@@ -251,7 +251,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'personnel',
-    ownerId: 'ref-crew-pic-expired',
+    ownerId: 'crew-pic-expired',
     documentType: 'PILOT_LICENSE',
     title: 'Pilot Licence - Yohanis Tabuni Demo',
     documentNumber: 'SIM-LIC-PIC-003',
@@ -260,7 +260,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'personnel',
-    ownerId: 'ref-crew-pic-expired',
+    ownerId: 'crew-pic-expired',
     documentType: 'PILOT_MEDICAL_CERTIFICATE',
     title: 'Medical Certificate - Yohanis Tabuni Demo',
     documentNumber: 'SIM-MED-PIC-003',
@@ -270,7 +270,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'personnel',
-    ownerId: 'ref-crew-pic-expiring',
+    ownerId: 'crew-pic-expiring',
     documentType: 'PILOT_RECURRENCY_TRAINING',
     title: 'Recurrency Training - Mikael Kogoya Demo',
     documentNumber: 'SIM-TRN-PIC-002',
@@ -280,7 +280,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'station',
-    ownerId: 'ref-st-djj',
+    ownerId: 'st-djj',
     documentType: 'STATION_INFORMATION_SHEET',
     title: 'Sentani Station Information Sheet',
     documentNumber: 'SIM-STN-DJJ-INFO',
@@ -289,7 +289,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'station',
-    ownerId: 'ref-st-djj',
+    ownerId: 'st-djj',
     documentType: 'STATION_LOCAL_SOP',
     title: 'Sentani Local SOP',
     documentNumber: 'SIM-STN-DJJ-SOP',
@@ -298,7 +298,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'vendor',
-    ownerId: 'ref-vendor-maintenance',
+    ownerId: 'vendor-maintenance',
     documentType: 'VENDOR_LEGAL_DOCUMENT',
     title: 'Maintenance Vendor Legal Document',
     documentNumber: 'SIM-VND-MAINT-LEGAL',
@@ -307,7 +307,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'vendor',
-    ownerId: 'ref-vendor-maintenance',
+    ownerId: 'vendor-maintenance',
     documentType: 'VENDOR_BANK_VERIFICATION',
     title: 'Maintenance Vendor Bank Verification',
     documentNumber: 'SIM-VND-MAINT-BANK',
@@ -317,7 +317,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'customer',
-    ownerId: 'ref-cust-papua-logistics',
+    ownerId: 'cust-papua-logistics',
     documentType: 'CHARTER_AGREEMENT',
     title: 'Papua Logistics Charter Agreement',
     documentNumber: 'SIM-CUST-PLG-AGR',
@@ -326,7 +326,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'customer',
-    ownerId: 'ref-cust-papua-logistics',
+    ownerId: 'cust-papua-logistics',
     documentType: 'CUSTOMER_RATE_CARD',
     title: 'Papua Logistics Rate Card',
     documentNumber: 'SIM-CUST-PLG-RATE',
@@ -335,7 +335,7 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
   },
   {
     ownerType: 'route',
-    ownerId: 'ref-route-djj-wmx',
+    ownerId: 'route-djj-wmx',
     documentType: 'ROUTE_RISK_ASSESSMENT',
     title: 'DJJ-WMX Route Risk Assessment',
     documentNumber: 'SIM-RTE-DJJ-WMX',

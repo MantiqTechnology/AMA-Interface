@@ -1,0 +1,14 @@
+import {
+  cargoBookingIdParamsSchema,
+  deliverCargoBookingSchema
+} from '../../../../../shared/features/ticketing/cargo';
+import { getCargoBookingService } from '../../../../features/ticketing/cargo';
+import { defineApiEventHandler } from '../../../../utils/api-response';
+import { parseBody, parseParams } from '../../../../utils/validation';
+
+export default defineApiEventHandler(async (event) =>
+  getCargoBookingService().deliver(
+    parseParams(event, cargoBookingIdParamsSchema).id,
+    await parseBody(event, deliverCargoBookingSchema)
+  )
+);

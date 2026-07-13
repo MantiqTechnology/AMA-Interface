@@ -1,24 +1,5 @@
 <script setup lang="ts">
 import { useDisplay } from 'vuetify';
-import {
-  agentsMasterDataConfig,
-  aircraftMasterDataConfig,
-  chartOfAccountsMasterDataConfig,
-  costCategoriesMasterDataConfig,
-  crewMasterDataConfig,
-  currenciesMasterDataConfig,
-  customersMasterDataConfig,
-  dgCategoriesMasterDataConfig,
-  flightReasonsMasterDataConfig,
-  fuelSuppliersMasterDataConfig,
-  handlingParkingSuppliersMasterDataConfig,
-  paymentTermsMasterDataConfig,
-  rateCardsMasterDataConfig,
-  routesMasterDataConfig,
-  stationsMasterDataConfig,
-  taxCodesMasterDataConfig,
-  vendorsMasterDataConfig
-} from '#shared/contracts/master-data';
 
 const rail = useState('ama-sidebar-rail', () => false);
 const mobileDrawer = useState('ama-sidebar-mobile-open', () => false);
@@ -83,40 +64,52 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('flight.read').allowed
         },
         {
-          label: stationsMasterDataConfig.shortTitle,
-          to: stationsMasterDataConfig.routePath,
+          label: 'Stations',
+          to: '/master-data/stations',
           icon: 'mdi-airport',
           visible: masterDataVisible.value
         },
         {
-          label: routesMasterDataConfig.shortTitle,
-          to: routesMasterDataConfig.routePath,
+          label: 'Routes',
+          to: '/master-data/routes',
           icon: 'mdi-map-marker-path',
           visible: masterDataVisible.value
         },
         {
+          label: 'Schedule Templates',
+          to: '/master-data/flight-schedule-templates',
+          icon: 'mdi-calendar-clock',
+          visible: masterDataVisible.value
+        },
+        {
+          label: 'Capacity Profiles',
+          to: '/master-data/flight-capacity-profiles',
+          icon: 'mdi-seat-passenger',
+          visible: masterDataVisible.value
+        },
+        {
           label: 'Personnel',
-          to: crewMasterDataConfig.routePath,
+          to: '/master-data/personnel',
           icon: 'mdi-account-group-outline',
           visible: masterDataVisible.value
         },
         {
-          label: flightReasonsMasterDataConfig.shortTitle,
-          to: flightReasonsMasterDataConfig.routePath,
+          label: 'Flight Reasons',
+          to: '/master-data/flight-reasons',
           icon: 'mdi-alert-circle-outline',
           visible: masterDataVisible.value
         }
       ].filter((child) => child.visible)
     },
     {
-      label: 'Flights',
+      label: 'Flight Control',
       icon: 'mdi-airplane',
       visible: true,
       children: [
         {
-          label: 'Flight Board',
+          label: 'Flight Orders',
           to: '/flights',
-          icon: 'mdi-earth',
+          icon: 'mdi-airplane-marker',
           visible: true
         },
         {
@@ -162,9 +155,9 @@ const navItems = computed<NavItem[]>(() =>
           visible: true
         },
         {
-          label: aircraftMasterDataConfig.shortTitle,
+          label: 'Aircraft',
           icon: 'mdi-airplane',
-          to: aircraftMasterDataConfig.routePath,
+          to: '/master-data/aircraft',
           visible: masterDataVisible.value
         }
       ].filter((child) => child.visible)
@@ -175,22 +168,53 @@ const navItems = computed<NavItem[]>(() =>
       visible: masterDataVisible.value,
       children: [
         {
-          label: customersMasterDataConfig.shortTitle,
-          to: customersMasterDataConfig.routePath,
+          label: 'Customers',
+          to: '/master-data/customers',
           icon: 'mdi-domain',
           visible: masterDataVisible.value
         },
         {
-          label: agentsMasterDataConfig.shortTitle,
-          to: agentsMasterDataConfig.routePath,
+          label: 'Agents',
+          to: '/master-data/agents',
           icon: 'mdi-storefront-outline',
           visible: masterDataVisible.value
         },
         {
-          label: rateCardsMasterDataConfig.shortTitle,
-          to: rateCardsMasterDataConfig.routePath,
+          label: 'Rates',
+          to: '/master-data/rates',
           icon: 'mdi-cash-multiple',
           visible: masterDataVisible.value
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'Ticketing',
+      icon: 'mdi-ticket-confirmation-outline',
+      visible: true,
+      children: [
+        {
+          label: 'Passenger Manifest',
+          to: '/ticketing/passenger',
+          icon: 'mdi-account-multiple-outline',
+          visible: true
+        },
+        {
+          label: 'Cargo Tracking',
+          to: '/ticketing/cargo',
+          icon: 'mdi-package-variant',
+          visible: true
+        },
+        {
+          label: 'Sales Management',
+          to: '/ticketing/management',
+          icon: 'mdi-store-cog-outline',
+          visible: masterDataVisible.value
+        },
+        {
+          label: 'Station Ledger',
+          to: '/ticketing/finance',
+          icon: 'mdi-cash-register',
+          visible: true
         }
       ].filter((child) => child.visible)
     },
@@ -206,50 +230,50 @@ const navItems = computed<NavItem[]>(() =>
           visible: true
         },
         {
-          label: vendorsMasterDataConfig.shortTitle,
-          to: vendorsMasterDataConfig.routePath,
+          label: 'Vendors',
+          to: '/master-data/vendors',
           icon: 'mdi-truck-outline',
           visible: masterDataVisible.value
         },
         {
-          label: fuelSuppliersMasterDataConfig.shortTitle,
-          to: fuelSuppliersMasterDataConfig.routePath,
+          label: 'Fuel Suppliers',
+          to: '/master-data/fuel-suppliers',
           icon: 'mdi-fuel',
           visible: masterDataVisible.value
         },
         {
-          label: handlingParkingSuppliersMasterDataConfig.shortTitle,
-          to: handlingParkingSuppliersMasterDataConfig.routePath,
+          label: 'Handling & Parking',
+          to: '/master-data/handling-parking-suppliers',
           icon: 'mdi-warehouse',
           visible: masterDataVisible.value
         },
         {
-          label: costCategoriesMasterDataConfig.shortTitle,
-          to: costCategoriesMasterDataConfig.routePath,
+          label: 'Cost Categories',
+          to: '/master-data/cost-categories',
           icon: 'mdi-shape-outline',
           visible: masterDataVisible.value
         },
         {
-          label: chartOfAccountsMasterDataConfig.shortTitle,
-          to: chartOfAccountsMasterDataConfig.routePath,
+          label: 'Chart of Accounts',
+          to: '/master-data/chart-of-accounts',
           icon: 'mdi-file-tree-outline',
           visible: masterDataVisible.value
         },
         {
-          label: taxCodesMasterDataConfig.shortTitle,
-          to: taxCodesMasterDataConfig.routePath,
+          label: 'Tax Codes',
+          to: '/master-data/tax-codes',
           icon: 'mdi-percent-outline',
           visible: masterDataVisible.value
         },
         {
-          label: paymentTermsMasterDataConfig.shortTitle,
-          to: paymentTermsMasterDataConfig.routePath,
+          label: 'Payment Terms',
+          to: '/master-data/payment-terms',
           icon: 'mdi-calendar-clock',
           visible: masterDataVisible.value
         },
         {
-          label: currenciesMasterDataConfig.shortTitle,
-          to: currenciesMasterDataConfig.routePath,
+          label: 'Currencies',
+          to: '/master-data/currencies',
           icon: 'mdi-currency-usd',
           visible: masterDataVisible.value
         }
@@ -261,8 +285,8 @@ const navItems = computed<NavItem[]>(() =>
       visible: masterDataVisible.value,
       children: [
         {
-          label: dgCategoriesMasterDataConfig.shortTitle,
-          to: dgCategoriesMasterDataConfig.routePath,
+          label: 'DG Categories',
+          to: '/master-data/dg-categories',
           icon: 'mdi-package-variant-closed',
           visible: masterDataVisible.value
         }

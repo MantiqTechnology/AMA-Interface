@@ -74,6 +74,24 @@ Includes KPIs, latest flights, pending fuel requests, submitted station expenses
 - `GET /api/maintenance/work-orders/:id` -> `MaintenanceWorkOrderDto`
 - `POST /api/maintenance/work-orders/:id/actions/close` body `CloseWorkOrderBody` -> `MaintenanceWorkOrderDto`
 
+## Ticketing
+
+- `GET /api/ticketing/available-flights?serviceType=&originStationId=&destinationStationId=` -> `AvailableTicketingFlightDto[]`
+- `GET /api/ticketing/sales` -> `TicketingOccFlightDto[]`
+- `POST /api/ticketing/sales/open` body `{ flightOperationId }` -> `TicketingSalesOpeningDto`
+- `GET /api/ticketing/passenger-tickets?search=&flightOrderId=&paymentStatus=&checkInStatus=` -> `PassengerTicketDto[]`
+- `POST /api/ticketing/passenger-tickets` body `CreatePassengerTicketInput` -> `PassengerTicketDto`
+- `GET /api/ticketing/passenger-tickets/:id` -> `PassengerTicketDto`
+- `PATCH /api/ticketing/passenger-tickets/:id/payment` -> `PassengerTicketDto`
+- `PATCH /api/ticketing/passenger-tickets/:id/check-in` -> `PassengerTicketDto`
+- `GET /api/ticketing/flights/:id/occupied-seats` -> `string[]`
+- `GET /api/ticketing/cargo-bookings?search=&flightOrderId=&paymentStatus=&status=` -> `CargoBookingDto[]`
+- `POST /api/ticketing/cargo-bookings` body `CreateCargoBookingInput` -> `CargoBookingDto`
+- `GET /api/ticketing/cargo-bookings/:id` -> `CargoBookingDto`
+- `PATCH /api/ticketing/cargo-bookings/:id/payment` -> `CargoBookingDto`
+- `PATCH /api/ticketing/cargo-bookings/:id/delivery` -> `CargoBookingDto`
+- `GET /api/ticketing/ledger` -> `TicketingLedgerDto`
+
 ## Uploads
 
 - `GET /api/uploads` -> `LocalUploadDto[]`

@@ -62,6 +62,9 @@ The Operations Command Center demo reads `data/ops-demo-db.json` into a local Nu
 6. Open `/ops/flight-following`, review active `AMA702`, and manually move valid statuses.
 7. Open `FLT-AMA-0705-009` from flight detail/closure to show closed finance and maintenance handoff preview.
 8. Use `/admin/access-demo` as Platform Administrator to toggle non-mandatory module entitlements locally.
+9. Open `/ticketing/management` to review OCC sales readiness, then use `/ticketing/booking` for passenger and cargo booking.
+
+The ticketing architecture and OCC manifest synchronization are documented in [ticketing-flow.md](ticketing-flow.md).
 
 ## Data
 

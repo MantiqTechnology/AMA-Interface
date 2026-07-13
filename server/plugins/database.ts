@@ -2,6 +2,7 @@ import { getDbClient } from '../db/client';
 import { runMigrations } from '../db/migrate';
 import { seedDemoData } from '../db/seed';
 import { seedFlightOperationsData } from '../db/seed-flight-operations';
+import { seedTicketingData } from '../db/seeds/ticketing';
 
 export default defineNitroPlugin(async () => {
   const config = useRuntimeConfig();
@@ -17,4 +18,5 @@ export default defineNitroPlugin(async () => {
   }
 
   seedFlightOperationsData(sqlite);
+  seedTicketingData(sqlite);
 });

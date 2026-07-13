@@ -37,7 +37,7 @@ export type FlightJoinedRecord = {
   manifestCount: number;
 };
 
-export type ReferenceRepository = {
+export type MasterDataLookupRepository = {
   getAircraft(id: string): Promise<AircraftRecord | null>;
   listAircraft(): Promise<AircraftRecord[]>;
   getStation(id: string): Promise<StationRecord | null>;
@@ -138,7 +138,7 @@ export type AlertRepository = {
 };
 
 export type Repositories = {
-  references: ReferenceRepository;
+  references: MasterDataLookupRepository;
   flights: FlightRepository;
   fuel: FuelRepository;
   stationExpenses: StationExpenseRepository;

@@ -1,34 +1,289 @@
 import type Database from 'better-sqlite3';
+import {
+  operationsMasterDataStatements,
+  operationsMasterDataDropStatements
+} from './migrations/master-data/operations';
+import {
+  commercialMasterDataStatements,
+  commercialMasterDataDropStatements
+} from './migrations/master-data/commercial';
+import {
+  financeMasterDataStatements,
+  financeMasterDataDropStatements
+} from './migrations/master-data/finance';
+import {
+  cargoMasterDataStatements,
+  cargoMasterDataDropStatements
+} from './migrations/master-data/cargo';
+import { ticketingDropStatements, ticketingStatements } from './migrations/ticketing';
 
-const createStatements = [
-  `CREATE TABLE IF NOT EXISTS aircraft (
-    id TEXT PRIMARY KEY,
-    tail_number TEXT NOT NULL UNIQUE,
-    type TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    capacity INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available'
-  )`,
-  `CREATE TABLE IF NOT EXISTS stations (
+type FlightOperationLookupSeed = {
+  table: string;
+  idPrefix: string;
+  values: Array<[code: string, label: string]>;
+};
+
+const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
+  {
+    table: 'flight_types',
+    idPrefix: 'flight-type',
+    values: [
+      ['CHARTER', 'Charter'],
+      ['PASSENGER', 'Passenger'],
+      ['CARGO', 'Cargo']
+    ]
+  },
+  {
+    table: 'flight_service_types',
+    idPrefix: 'flight-service-type',
+    values: [
+      ['CHARTER_CARGO', 'Charter Cargo'],
+      ['CHARTER_PASSENGER', 'Charter Passenger'],
+      ['SCHEDULED_PASSENGER', 'Scheduled Passenger'],
+      ['MEDEVAC', 'Medevac'],
+      ['POSITIONING', 'Positioning']
+    ]
+  },
+  {
+    table: 'flight_priorities',
+    idPrefix: 'flight-priority',
+    values: [
+      ['NORMAL', 'Normal'],
+      ['HIGH', 'High'],
+      ['EMERGENCY', 'Emergency']
+    ]
+  },
+  {
+    table: 'flight_request_statuses',
+    idPrefix: 'flight-request-status',
+    values: [
+      ['DRAFT', 'Draft'],
+      ['SUBMITTED', 'Submitted'],
+      ['APPROVED', 'Approved'],
+      ['REJECTED', 'Rejected'],
+      ['CONVERTED', 'Converted']
+    ]
+  },
+  {
+    table: 'flight_operation_statuses',
+    idPrefix: 'flight-operation-status',
+    values: [
+      ['DRAFT', 'Draft'],
+      ['PENDING_READINESS', 'Pending Readiness'],
+      ['BLOCKED', 'Blocked'],
+      ['READY_FOR_APPROVAL', 'Ready For Approval'],
+      ['APPROVED', 'Approved'],
+      ['SCHEDULED', 'Scheduled'],
+      ['CHECK_IN_OPEN', 'Check-In Open'],
+      ['IN_PROGRESS', 'In Progress'],
+      ['LANDED', 'Landed'],
+      ['PENDING_CLOSURE', 'Pending Closure'],
+      ['CLOSED', 'Closed'],
+      ['CANCELLED', 'Cancelled'],
+      ['DIVERTED', 'Diverted'],
+      ['REOPENED_FOR_CORRECTION', 'Reopened For Correction']
+    ]
+  },
+  {
+    table: 'crew_assignment_roles',
+    idPrefix: 'crew-assignment-role',
+    values: [
+      ['PILOT_IN_COMMAND', 'Pilot In Command'],
+      ['CO_PILOT', 'Co-Pilot'],
+      ['CABIN_CREW', 'Cabin Crew'],
+      ['FLIGHT_OPERATIONS', 'Flight Operations'],
+      ['GROUND_CREW', 'Ground Crew']
+    ]
+  },
+  {
+    table: 'flight_action_types',
+    idPrefix: 'flight-action-type',
+    values: [
+      ['CREATE', 'Create'],
+      ['SUBMIT', 'Submit'],
+      ['READINESS_EVALUATED', 'Readiness Evaluated'],
+      ['BLOCK', 'Block'],
+      ['APPROVE', 'Approve'],
+      ['SCHEDULE', 'Schedule'],
+      ['OPEN_CHECK_IN', 'Open Check-In'],
+      ['DEPART', 'Depart'],
+      ['LAND', 'Land'],
+      ['MARK_PENDING_CLOSURE', 'Mark Pending Closure'],
+      ['CLOSE', 'Close'],
+      ['CANCEL', 'Cancel'],
+      ['DIVERT', 'Divert'],
+      ['REOPEN', 'Reopen']
+    ]
+  },
+  {
+    table: 'flight_approval_types',
+    idPrefix: 'flight-approval-type',
+    values: [
+      ['READINESS_APPROVAL', 'Readiness Approval'],
+      ['FLIGHT_APPROVAL', 'Flight Approval'],
+      ['CLOSURE_APPROVAL', 'Closure Approval'],
+      ['OVERRIDE', 'Override']
+    ]
+  },
+  {
+    table: 'flight_approval_statuses',
+    idPrefix: 'flight-approval-status',
+    values: [
+      ['NOT_STARTED', 'Not Started'],
+      ['PENDING', 'Pending'],
+      ['APPROVED', 'Approved'],
+      ['REJECTED', 'Rejected'],
+      ['REVISION_REQUESTED', 'Revision Requested']
+    ]
+  },
+  {
+    table: 'flight_attachment_statuses',
+    idPrefix: 'flight-attachment-status',
+    values: [
+      ['AVAILABLE', 'Available'],
+      ['PENDING', 'Pending']
+    ]
+  },
+  {
+    table: 'readiness_statuses',
+    idPrefix: 'readiness-status',
+    values: [
+      ['PENDING', 'Pending'],
+      ['PASS', 'Pass'],
+      ['FAIL', 'Fail'],
+      ['NOT_APPLICABLE', 'Not Applicable']
+    ]
+  },
+  {
+    table: 'manifest_types',
+    idPrefix: 'manifest-type',
+    values: [
+      ['PASSENGER', 'Passenger'],
+      ['CARGO', 'Cargo']
+    ]
+  },
+  {
+    table: 'manifest_statuses',
+    idPrefix: 'manifest-status',
+    values: [
+      ['DRAFT', 'Draft'],
+      ['SUBMITTED', 'Submitted'],
+      ['APPROVED', 'Approved'],
+      ['LOCKED', 'Locked']
+    ]
+  },
+  {
+    table: 'dg_acceptance_statuses',
+    idPrefix: 'dg-acceptance-status',
+    values: [
+      ['NOT_APPLICABLE', 'Not Applicable'],
+      ['PENDING', 'Pending'],
+      ['ACCEPTED', 'Accepted'],
+      ['REJECTED', 'Rejected']
+    ]
+  },
+  {
+    table: 'fuel_workflow_statuses',
+    idPrefix: 'fuel-workflow-status',
+    values: [
+      ['REQUESTED', 'Requested'],
+      ['APPROVED', 'Approved'],
+      ['UPLIFTED', 'Uplifted'],
+      ['POSTED', 'Posted'],
+      ['REJECTED', 'Rejected']
+    ]
+  },
+  {
+    table: 'station_service_types',
+    idPrefix: 'station-service-type',
+    values: [
+      ['HANDLING', 'Handling'],
+      ['PARKING', 'Parking']
+    ]
+  },
+  {
+    table: 'station_service_statuses',
+    idPrefix: 'station-service-status',
+    values: [
+      ['REQUESTED', 'Requested'],
+      ['CONFIRMED', 'Confirmed'],
+      ['REJECTED', 'Rejected'],
+      ['CANCELLED', 'Cancelled']
+    ]
+  },
+  {
+    table: 'station_cost_statuses',
+    idPrefix: 'station-cost-status',
+    values: [
+      ['DRAFT', 'Draft'],
+      ['SUBMITTED', 'Submitted'],
+      ['APPROVED', 'Approved'],
+      ['REJECTED', 'Rejected'],
+      ['VOID', 'Void']
+    ]
+  },
+  {
+    table: 'aircraft_serviceability_statuses',
+    idPrefix: 'aircraft-serviceability-status',
+    values: [
+      ['SERVICEABLE', 'Serviceable'],
+      ['SERVICEABLE_WITH_RESTRICTIONS', 'Serviceable With Restrictions'],
+      ['MAINTENANCE_DUE', 'Maintenance Due'],
+      ['UNSERVICEABLE', 'Unserviceable']
+    ]
+  },
+  {
+    table: 'maintenance_handoff_statuses',
+    idPrefix: 'maintenance-handoff-status',
+    values: [
+      ['DRAFT', 'Draft'],
+      ['SUBMITTED', 'Submitted'],
+      ['APPROVED', 'Approved'],
+      ['REJECTED', 'Rejected'],
+      ['POSTED', 'Posted']
+    ]
+  },
+  {
+    table: 'finance_event_types',
+    idPrefix: 'finance-event-type',
+    values: [
+      ['FUEL_COST_DRAFT', 'Fuel Cost Draft'],
+      ['STATION_COST_DRAFT', 'Station Cost Draft'],
+      ['MAINTENANCE_EXPENSE_DRAFT', 'Maintenance Expense Draft'],
+      ['FLIGHT_CLOSED_ELIGIBLE_FOR_INVOICE', 'Flight Closed Eligible For Invoice'],
+      ['FLIGHT_CANCELLED_VOID_REQUEST', 'Flight Cancelled Void Request']
+    ]
+  },
+  {
+    table: 'finance_handoff_statuses',
+    idPrefix: 'finance-handoff-status',
+    values: [
+      ['DRAFT', 'Draft'],
+      ['READY', 'Ready'],
+      ['POSTED', 'Posted'],
+      ['VOID', 'Void']
+    ]
+  }
+];
+
+const flightOperationLookupCreateStatements = flightOperationLookupSeeds.map(
+  (seed) => `CREATE TABLE IF NOT EXISTS ${seed.table} (
     id TEXT PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    province TEXT NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1
-  )`,
-  `CREATE TABLE IF NOT EXISTS routes (
-    id TEXT PRIMARY KEY,
-    origin_station_id TEXT NOT NULL REFERENCES stations(id),
-    destination_station_id TEXT NOT NULL REFERENCES stations(id),
-    distance_nm INTEGER NOT NULL,
-    estimated_block_minutes INTEGER NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS customers (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL,
-    contact_email TEXT NOT NULL
-  )`,
+    label TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`
+);
+
+const createStatements = [
+  ...operationsMasterDataStatements,
+  ...flightOperationLookupCreateStatements,
+  ...financeMasterDataStatements,
+  ...commercialMasterDataStatements,
+  ...cargoMasterDataStatements,
   `CREATE TABLE IF NOT EXISTS flight_orders (
     id TEXT PRIMARY KEY,
     flight_number TEXT NOT NULL UNIQUE,
@@ -152,292 +407,138 @@ const createStatements = [
     is_read INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS ref_currencies (
+
+  ...flightOperationLookupCreateStatements,
+
+  `CREATE TABLE IF NOT EXISTS flight_requests (
     id TEXT PRIMARY KEY,
-    currency_code TEXT NOT NULL UNIQUE,
-    currency_name TEXT NOT NULL,
-    symbol TEXT NOT NULL,
-    decimal_places INTEGER NOT NULL CHECK (decimal_places >= 0),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_payment_terms (
-    id TEXT PRIMARY KEY,
-    term_code TEXT NOT NULL UNIQUE,
-    term_name TEXT NOT NULL,
-    due_days INTEGER NOT NULL CHECK (due_days >= 0),
-    description TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_stations (
-    id TEXT PRIMARY KEY,
-    station_code TEXT NOT NULL UNIQUE,
-    station_name TEXT NOT NULL,
-    city_or_region TEXT NOT NULL,
-    province TEXT NOT NULL,
-    airport_type TEXT NOT NULL,
-    has_fuel_service INTEGER NOT NULL DEFAULT 0,
-    has_handling_service INTEGER NOT NULL DEFAULT 0,
-    has_parking_service INTEGER NOT NULL DEFAULT 0,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_chart_of_accounts (
-    id TEXT PRIMARY KEY,
-    account_code TEXT NOT NULL UNIQUE,
-    account_name TEXT NOT NULL,
-    account_type TEXT NOT NULL,
-    normal_balance TEXT NOT NULL,
-    parent_account_id TEXT REFERENCES ref_chart_of_accounts(id),
-    is_postable INTEGER NOT NULL DEFAULT 1,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    CHECK (parent_account_id IS NULL OR parent_account_id <> id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_cost_categories (
-    id TEXT PRIMARY KEY,
-    category_code TEXT NOT NULL UNIQUE,
-    category_name TEXT NOT NULL,
-    cost_group TEXT NOT NULL,
-    default_coa_id TEXT REFERENCES ref_chart_of_accounts(id),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_aircraft (
-    id TEXT PRIMARY KEY,
-    registration_number TEXT NOT NULL UNIQUE,
-    aircraft_type TEXT NOT NULL,
-    manufacturer TEXT NOT NULL,
-    model TEXT NOT NULL,
-    passenger_capacity INTEGER NOT NULL CHECK (passenger_capacity >= 0),
-    cargo_capacity_kg INTEGER NOT NULL CHECK (cargo_capacity_kg >= 0),
-    fuel_type TEXT NOT NULL,
-    serviceability_status TEXT NOT NULL,
-    base_station_id TEXT REFERENCES ref_stations(id),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_routes (
-    id TEXT PRIMARY KEY,
-    route_code TEXT NOT NULL UNIQUE,
-    origin_station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    destination_station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    estimated_duration_minutes INTEGER NOT NULL CHECK (estimated_duration_minutes >= 0),
-    distance_km INTEGER NOT NULL CHECK (distance_km >= 0),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE (origin_station_id, destination_station_id),
-    CHECK (origin_station_id <> destination_station_id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_crews (
-    id TEXT PRIMARY KEY,
-    employee_code TEXT NOT NULL UNIQUE,
-    full_name TEXT NOT NULL,
-    crew_role TEXT NOT NULL,
-    license_type TEXT,
-    license_number TEXT,
-    license_expiry_date TEXT,
-    medical_expiry_date TEXT,
-    base_station_id TEXT REFERENCES ref_stations(id),
-    unit TEXT NOT NULL,
-    employment_status TEXT NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_flight_reasons (
-    id TEXT PRIMARY KEY,
-    reason_code TEXT NOT NULL UNIQUE,
-    reason_type TEXT NOT NULL,
-    category TEXT NOT NULL,
-    description TEXT NOT NULL,
-    requires_note INTEGER NOT NULL DEFAULT 0,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_customers (
-    id TEXT PRIMARY KEY,
-    account_code TEXT NOT NULL UNIQUE,
-    account_name TEXT NOT NULL,
-    account_type TEXT NOT NULL,
-    contact_person TEXT,
-    phone TEXT,
-    email TEXT,
-    billing_address TEXT,
-    payment_term_id TEXT REFERENCES ref_payment_terms(id),
-    credit_limit INTEGER CHECK (credit_limit IS NULL OR credit_limit >= 0),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_agents (
-    id TEXT PRIMARY KEY,
-    agent_code TEXT NOT NULL UNIQUE,
-    agent_name TEXT NOT NULL,
-    agent_type TEXT NOT NULL,
-    station_id TEXT REFERENCES ref_stations(id),
-    commission_basis_points INTEGER CHECK (commission_basis_points IS NULL OR commission_basis_points >= 0),
-    contact_person TEXT,
-    phone TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_vendors (
-    id TEXT PRIMARY KEY,
-    vendor_code TEXT NOT NULL UNIQUE,
-    vendor_name TEXT NOT NULL,
-    vendor_type TEXT NOT NULL,
-    station_id TEXT REFERENCES ref_stations(id),
-    contact_person TEXT,
-    phone TEXT,
-    email TEXT,
-    payment_term_id TEXT REFERENCES ref_payment_terms(id),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_fuel_suppliers (
-    id TEXT PRIMARY KEY,
-    supplier_code TEXT NOT NULL UNIQUE,
-    supplier_name TEXT NOT NULL,
-    station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    fuel_type TEXT NOT NULL,
-    reference_price_per_litre INTEGER NOT NULL CHECK (reference_price_per_litre >= 0),
-    currency_id TEXT NOT NULL REFERENCES ref_currencies(id),
-    contact_person TEXT,
-    phone TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_station_service_suppliers (
-    id TEXT PRIMARY KEY,
-    supplier_code TEXT NOT NULL UNIQUE,
-    supplier_name TEXT NOT NULL,
-    station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    service_type TEXT NOT NULL,
-    reference_rate INTEGER CHECK (reference_rate IS NULL OR reference_rate >= 0),
-    currency_id TEXT REFERENCES ref_currencies(id),
-    contact_person TEXT,
-    phone TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_rate_cards (
-    id TEXT PRIMARY KEY,
-    rate_code TEXT NOT NULL UNIQUE,
-    service_type TEXT NOT NULL,
-    origin_station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    destination_station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    customer_id TEXT REFERENCES ref_customers(id),
-    aircraft_type TEXT,
-    currency_id TEXT NOT NULL REFERENCES ref_currencies(id),
-    base_rate INTEGER NOT NULL CHECK (base_rate >= 0),
-    rate_unit TEXT NOT NULL,
-    effective_from TEXT NOT NULL,
-    effective_to TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    CHECK (origin_station_id <> destination_station_id),
-    CHECK (effective_to IS NULL OR effective_to >= effective_from)
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_tax_codes (
-    id TEXT PRIMARY KEY,
-    tax_code TEXT NOT NULL UNIQUE,
-    tax_name TEXT NOT NULL,
-    tax_rate_basis_points INTEGER NOT NULL CHECK (tax_rate_basis_points >= 0),
-    tax_type TEXT NOT NULL,
-    effective_from TEXT NOT NULL,
-    effective_to TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    CHECK (effective_to IS NULL OR effective_to >= effective_from)
-  )`,
-  `CREATE TABLE IF NOT EXISTS ref_dg_categories (
-    id TEXT PRIMARY KEY,
-    dg_code TEXT NOT NULL UNIQUE,
-    dg_class TEXT NOT NULL,
-    description TEXT NOT NULL,
-    handling_instruction TEXT NOT NULL,
-    requires_special_approval INTEGER NOT NULL DEFAULT 0,
-    is_active INTEGER NOT NULL DEFAULT 1,
+    request_number TEXT NOT NULL UNIQUE,
+    status_id TEXT NOT NULL REFERENCES flight_request_statuses(id),
+    flight_date TEXT NOT NULL,
+    flight_type_id TEXT NOT NULL REFERENCES flight_types(id),
+    service_type_id TEXT NOT NULL REFERENCES flight_service_types(id),
+    route_id TEXT NOT NULL REFERENCES routes(id),
+    customer_id TEXT REFERENCES customers(id),
+    aircraft_id TEXT REFERENCES aircraft(id),
+    pilot_in_command_id TEXT REFERENCES crews(id),
+    co_pilot_id TEXT REFERENCES crews(id),
+    scheduled_departure_at TEXT,
+    scheduled_arrival_at TEXT,
+    request_source TEXT NOT NULL,
+    priority_id TEXT NOT NULL REFERENCES flight_priorities(id),
+    passenger_estimate INTEGER NOT NULL DEFAULT 0,
+    cargo_weight_estimate_kg REAL NOT NULL DEFAULT 0,
+    cargo_category TEXT,
+    dangerous_goods INTEGER NOT NULL DEFAULT 0,
+    fuel_type TEXT NOT NULL DEFAULT 'AVTUR',
+    requested_fuel_litre REAL NOT NULL DEFAULT 0,
+    fuel_supplier_id TEXT REFERENCES fuel_suppliers(id),
+    handling_supplier_id TEXT REFERENCES station_service_suppliers(id),
+    parking_required INTEGER NOT NULL DEFAULT 0,
+    destination_handling_required INTEGER NOT NULL DEFAULT 0,
+    billing_type TEXT NOT NULL DEFAULT 'CHARTER',
+    estimated_revenue INTEGER,
+    currency_code TEXT NOT NULL DEFAULT 'IDR',
+    remarks TEXT,
+    converted_flight_id TEXT,
+    created_by_user_id TEXT NOT NULL,
+    approved_by_user_id TEXT,
+    approved_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS flight_operations (
     id TEXT PRIMARY KEY,
+    order_number TEXT NOT NULL UNIQUE,
+    flight_request_id TEXT REFERENCES flight_requests(id),
     flight_number TEXT NOT NULL UNIQUE,
     flight_date TEXT NOT NULL,
-    flight_type TEXT NOT NULL,
-    route_id TEXT NOT NULL REFERENCES ref_routes(id),
-    origin_station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    destination_station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    customer_id TEXT REFERENCES ref_customers(id),
-    aircraft_id TEXT REFERENCES ref_aircraft(id),
-    pilot_in_command_id TEXT REFERENCES ref_crews(id),
-    co_pilot_id TEXT REFERENCES ref_crews(id),
+    flight_type_id TEXT NOT NULL REFERENCES flight_types(id),
+    service_type_id TEXT NOT NULL REFERENCES flight_service_types(id),
+    request_source TEXT NOT NULL DEFAULT 'Corporate Charter Request',
+    priority_id TEXT NOT NULL REFERENCES flight_priorities(id),
+    route_id TEXT NOT NULL REFERENCES routes(id),
+    origin_station_id TEXT NOT NULL REFERENCES stations(id),
+    destination_station_id TEXT NOT NULL REFERENCES stations(id),
+    customer_id TEXT REFERENCES customers(id),
+    aircraft_id TEXT REFERENCES aircraft(id),
+    pilot_in_command_id TEXT REFERENCES crews(id),
+    co_pilot_id TEXT REFERENCES crews(id),
     scheduled_departure_at TEXT,
     scheduled_arrival_at TEXT,
     actual_departure_at TEXT,
     actual_arrival_at TEXT,
-    current_status TEXT NOT NULL,
+    current_status_id TEXT NOT NULL REFERENCES flight_operation_statuses(id),
     created_by_user_id TEXT,
     approved_by_user_id TEXT,
     remarks TEXT,
+    billing_type TEXT NOT NULL DEFAULT 'CHARTER',
+    estimated_revenue INTEGER,
+    currency_code TEXT NOT NULL DEFAULT 'IDR',
     is_locked INTEGER NOT NULL DEFAULT 0,
     blocking_reason TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (flight_type IN ('CHARTER', 'PASSENGER', 'CARGO')),
-    CHECK (current_status IN ('DRAFT', 'PENDING_READINESS', 'BLOCKED', 'READY_FOR_APPROVAL', 'APPROVED', 'SCHEDULED', 'CHECK_IN_OPEN', 'IN_PROGRESS', 'LANDED', 'PENDING_CLOSURE', 'CLOSED', 'CANCELLED', 'DIVERTED', 'REOPENED_FOR_CORRECTION')),
     CHECK (scheduled_arrival_at IS NULL OR scheduled_departure_at IS NULL OR scheduled_arrival_at >= scheduled_departure_at),
     CHECK (actual_arrival_at IS NULL OR actual_departure_at IS NULL OR actual_arrival_at >= actual_departure_at)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_crew_assignments (
     id TEXT PRIMARY KEY,
     flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
-    crew_id TEXT NOT NULL REFERENCES ref_crews(id),
-    assignment_role TEXT NOT NULL,
+    crew_id TEXT NOT NULL REFERENCES crews(id),
+    assignment_role_id TEXT NOT NULL REFERENCES crew_assignment_roles(id),
     is_primary INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (assignment_role IN ('PILOT_IN_COMMAND', 'CO_PILOT', 'CABIN_CREW', 'FLIGHT_OPERATIONS', 'GROUND_CREW')),
-    UNIQUE (flight_id, crew_id, assignment_role)
+    UNIQUE (flight_id, crew_id, assignment_role_id)
   )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_crew_primary_pic ON flight_crew_assignments(flight_id) WHERE assignment_role = 'PILOT_IN_COMMAND' AND is_primary = 1`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_crew_primary_copilot ON flight_crew_assignments(flight_id) WHERE assignment_role = 'CO_PILOT' AND is_primary = 1`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_crew_primary_pic ON flight_crew_assignments(flight_id) WHERE assignment_role_id = 'crew-assignment-role-pilot-in-command' AND is_primary = 1`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_crew_primary_copilot ON flight_crew_assignments(flight_id) WHERE assignment_role_id = 'crew-assignment-role-co-pilot' AND is_primary = 1`,
   `CREATE TABLE IF NOT EXISTS flight_status_histories (
     id TEXT PRIMARY KEY,
     flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
-    from_status TEXT,
-    to_status TEXT NOT NULL,
-    action_type TEXT NOT NULL,
-    reason_id TEXT REFERENCES ref_flight_reasons(id),
+    from_status_id TEXT REFERENCES flight_operation_statuses(id),
+    to_status_id TEXT NOT NULL REFERENCES flight_operation_statuses(id),
+    action_type_id TEXT NOT NULL REFERENCES flight_action_types(id),
+    reason_id TEXT REFERENCES flight_reasons(id),
     reason_note TEXT,
     changed_by_user_id TEXT,
     changed_at TEXT NOT NULL,
-    metadata_json TEXT,
-    CHECK (action_type IN ('CREATE', 'SUBMIT', 'READINESS_EVALUATED', 'BLOCK', 'APPROVE', 'SCHEDULE', 'OPEN_CHECK_IN', 'DEPART', 'LAND', 'MARK_PENDING_CLOSURE', 'CLOSE', 'CANCEL', 'DIVERT', 'REOPEN'))
+    metadata_json TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_operation_approvals (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    approval_type_id TEXT NOT NULL REFERENCES flight_approval_types(id),
+    status_id TEXT NOT NULL REFERENCES flight_approval_statuses(id),
+    requested_by_user_id TEXT,
+    assigned_role TEXT NOT NULL,
+    decided_by_user_id TEXT,
+    requested_at TEXT,
+    decided_at TEXT,
+    reason TEXT,
+    affected_section TEXT,
+    required_correction TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id, approval_type_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_operation_attachments (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    document_type TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    status_id TEXT NOT NULL REFERENCES flight_attachment_statuses(id),
+    uploaded_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS flight_readiness_checks (
     id TEXT PRIMARY KEY,
     flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
     check_code TEXT NOT NULL,
     check_name TEXT NOT NULL,
-    status TEXT NOT NULL,
+    status_id TEXT NOT NULL REFERENCES readiness_statuses(id),
     is_required INTEGER NOT NULL DEFAULT 1,
     evaluated_at TEXT,
     evaluated_by_user_id TEXT,
@@ -445,22 +546,19 @@ const createStatements = [
     source_reference TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (status IN ('PENDING', 'PASS', 'FAIL', 'NOT_APPLICABLE')),
     UNIQUE (flight_id, check_code)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_manifests (
     id TEXT PRIMARY KEY,
     flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
-    manifest_type TEXT NOT NULL,
-    status TEXT NOT NULL,
+    manifest_type_id TEXT NOT NULL REFERENCES manifest_types(id),
+    status_id TEXT NOT NULL REFERENCES manifest_statuses(id),
     approved_by_user_id TEXT,
     approved_at TEXT,
     locked_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (manifest_type IN ('PASSENGER', 'CARGO')),
-    CHECK (status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'LOCKED')),
-    UNIQUE (flight_id, manifest_type)
+    UNIQUE (flight_id, manifest_type_id)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_manifest_passengers (
     id TEXT PRIMARY KEY,
@@ -484,28 +582,27 @@ const createStatements = [
     actual_weight_kg REAL NOT NULL,
     volume_weight_kg REAL,
     chargeable_weight_kg REAL,
-    dg_category_id TEXT REFERENCES ref_dg_categories(id),
-    dg_acceptance_status TEXT NOT NULL,
+    dg_category_id TEXT REFERENCES dg_categories(id),
+    dg_acceptance_status_id TEXT NOT NULL REFERENCES dg_acceptance_statuses(id),
     remarks TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (actual_weight_kg >= 0),
-    CHECK (dg_acceptance_status IN ('NOT_APPLICABLE', 'PENDING', 'ACCEPTED', 'REJECTED'))
+    CHECK (actual_weight_kg >= 0)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_fuel_requests (
     id TEXT PRIMARY KEY,
     flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
-    fuel_supplier_id TEXT NOT NULL REFERENCES ref_fuel_suppliers(id),
+    fuel_supplier_id TEXT NOT NULL REFERENCES fuel_suppliers(id),
     fuel_type TEXT NOT NULL,
     requested_quantity_litre REAL NOT NULL,
     approved_quantity_litre REAL,
     actual_uplift_litre REAL,
     reference_price_per_litre INTEGER,
     actual_price_per_litre INTEGER,
-    tax_code_id TEXT REFERENCES ref_tax_codes(id),
+    tax_code_id TEXT REFERENCES tax_codes(id),
     tax_amount INTEGER,
     total_cost INTEGER,
-    status TEXT NOT NULL,
+    status_id TEXT NOT NULL REFERENCES fuel_workflow_statuses(id),
     rejection_reason TEXT,
     variance_note TEXT,
     requested_by_user_id TEXT,
@@ -515,91 +612,78 @@ const createStatements = [
     updated_at TEXT NOT NULL,
     CHECK (requested_quantity_litre >= 0),
     CHECK (approved_quantity_litre IS NULL OR approved_quantity_litre >= 0),
-    CHECK (actual_uplift_litre IS NULL OR actual_uplift_litre >= 0),
-    CHECK (status IN ('REQUESTED', 'APPROVED', 'UPLIFTED', 'POSTED', 'REJECTED'))
+    CHECK (actual_uplift_litre IS NULL OR actual_uplift_litre >= 0)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_station_service_requests (
     id TEXT PRIMARY KEY,
     flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
-    station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    service_supplier_id TEXT NOT NULL REFERENCES ref_station_service_suppliers(id),
-    service_type TEXT NOT NULL,
-    status TEXT NOT NULL,
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    service_supplier_id TEXT NOT NULL REFERENCES station_service_suppliers(id),
+    service_type_id TEXT NOT NULL REFERENCES station_service_types(id),
+    status_id TEXT NOT NULL REFERENCES station_service_statuses(id),
     reference_rate INTEGER,
     confirmed_at TEXT,
     confirmed_by_user_id TEXT,
     rejection_note TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    CHECK (service_type IN ('HANDLING', 'PARKING')),
-    CHECK (status IN ('REQUESTED', 'CONFIRMED', 'REJECTED', 'CANCELLED'))
+    updated_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS flight_station_costs (
     id TEXT PRIMARY KEY,
     flight_id TEXT REFERENCES flight_operations(id) ON DELETE SET NULL,
-    station_id TEXT NOT NULL REFERENCES ref_stations(id),
-    vendor_id TEXT REFERENCES ref_vendors(id),
-    cost_category_id TEXT NOT NULL REFERENCES ref_cost_categories(id),
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    vendor_id TEXT REFERENCES vendors(id),
+    cost_category_id TEXT NOT NULL REFERENCES cost_categories(id),
     amount INTEGER NOT NULL,
-    currency_id TEXT NOT NULL REFERENCES ref_currencies(id),
+    currency_id TEXT NOT NULL REFERENCES currencies(id),
     description TEXT NOT NULL,
-    status TEXT NOT NULL,
+    status_id TEXT NOT NULL REFERENCES station_cost_statuses(id),
     submitted_by_user_id TEXT,
     approved_by_user_id TEXT,
     approved_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (amount >= 0),
-    CHECK (status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'VOID'))
+    CHECK (amount >= 0)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_maintenance_handoffs (
     id TEXT PRIMARY KEY,
     flight_id TEXT REFERENCES flight_operations(id) ON DELETE SET NULL,
-    aircraft_id TEXT NOT NULL REFERENCES ref_aircraft(id),
-    serviceability_status TEXT NOT NULL,
+    aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
+    serviceability_status_id TEXT NOT NULL REFERENCES aircraft_serviceability_statuses(id),
     work_order_reference TEXT,
     maintenance_note TEXT,
     spare_part_reference TEXT,
     maintenance_cost INTEGER NOT NULL DEFAULT 0,
-    currency_id TEXT NOT NULL REFERENCES ref_currencies(id),
-    status TEXT NOT NULL,
+    currency_id TEXT NOT NULL REFERENCES currencies(id),
+    status_id TEXT NOT NULL REFERENCES maintenance_handoff_statuses(id),
     recorded_by_user_id TEXT,
     approved_by_user_id TEXT,
     approved_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (maintenance_cost >= 0),
-    CHECK (status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'POSTED'))
+    CHECK (maintenance_cost >= 0)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_finance_handoffs (
     id TEXT PRIMARY KEY,
     flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
     source_type TEXT NOT NULL,
     source_id TEXT,
-    event_type TEXT NOT NULL,
-    status TEXT NOT NULL,
+    event_type_id TEXT NOT NULL REFERENCES finance_event_types(id),
+    status_id TEXT NOT NULL REFERENCES finance_handoff_statuses(id),
     summary TEXT NOT NULL,
     amount INTEGER,
-    currency_id TEXT REFERENCES ref_currencies(id),
+    currency_id TEXT REFERENCES currencies(id),
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    CHECK (event_type IN ('FUEL_COST_DRAFT', 'STATION_COST_DRAFT', 'MAINTENANCE_EXPENSE_DRAFT', 'FLIGHT_CLOSED_ELIGIBLE_FOR_INVOICE', 'FLIGHT_CANCELLED_VOID_REQUEST')),
-    CHECK (status IN ('DRAFT', 'READY', 'POSTED', 'VOID'))
+    updated_at TEXT NOT NULL
   )`,
+  ...ticketingStatements,
   `CREATE INDEX IF NOT EXISTS idx_flight_orders_status ON flight_orders(status)`,
   `CREATE INDEX IF NOT EXISTS idx_fuel_requests_status ON fuel_requests(status)`,
   `CREATE INDEX IF NOT EXISTS idx_station_expenses_status ON station_expenses(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status)`,
   `CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_ref_aircraft_active ON ref_aircraft(is_active)`,
-  `CREATE INDEX IF NOT EXISTS idx_ref_stations_active ON ref_stations(is_active)`,
-  `CREATE INDEX IF NOT EXISTS idx_ref_routes_active ON ref_routes(is_active)`,
-  `CREATE INDEX IF NOT EXISTS idx_ref_crews_active ON ref_crews(is_active)`,
-  `CREATE INDEX IF NOT EXISTS idx_ref_customers_active ON ref_customers(is_active)`,
-  `CREATE INDEX IF NOT EXISTS idx_ref_rate_cards_active ON ref_rate_cards(is_active)`,
-  `CREATE INDEX IF NOT EXISTS idx_ref_vendors_active ON ref_vendors(is_active)`,
-  `CREATE INDEX IF NOT EXISTS idx_flight_operations_status ON flight_operations(current_status)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_operations_status ON flight_operations(current_status_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_operations_date ON flight_operations(flight_date)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_operations_route ON flight_operations(route_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_status_histories_flight ON flight_status_histories(flight_id)`,
@@ -610,6 +694,7 @@ const createStatements = [
 ];
 
 const dropStatements = [
+  ...ticketingDropStatements,
   'DROP TABLE IF EXISTS flight_finance_handoffs',
   'DROP TABLE IF EXISTS flight_maintenance_handoffs',
   'DROP TABLE IF EXISTS flight_station_costs',
@@ -619,26 +704,38 @@ const dropStatements = [
   'DROP TABLE IF EXISTS flight_manifest_passengers',
   'DROP TABLE IF EXISTS flight_manifests',
   'DROP TABLE IF EXISTS flight_readiness_checks',
+  'DROP TABLE IF EXISTS flight_operation_attachments',
+  'DROP TABLE IF EXISTS flight_operation_approvals',
   'DROP TABLE IF EXISTS flight_status_histories',
   'DROP TABLE IF EXISTS flight_crew_assignments',
   'DROP TABLE IF EXISTS flight_operations',
-  'DROP TABLE IF EXISTS ref_dg_categories',
-  'DROP TABLE IF EXISTS ref_tax_codes',
-  'DROP TABLE IF EXISTS ref_rate_cards',
-  'DROP TABLE IF EXISTS ref_station_service_suppliers',
-  'DROP TABLE IF EXISTS ref_fuel_suppliers',
-  'DROP TABLE IF EXISTS ref_vendors',
-  'DROP TABLE IF EXISTS ref_agents',
-  'DROP TABLE IF EXISTS ref_customers',
-  'DROP TABLE IF EXISTS ref_flight_reasons',
-  'DROP TABLE IF EXISTS ref_crews',
-  'DROP TABLE IF EXISTS ref_routes',
-  'DROP TABLE IF EXISTS ref_aircraft',
-  'DROP TABLE IF EXISTS ref_cost_categories',
-  'DROP TABLE IF EXISTS ref_chart_of_accounts',
-  'DROP TABLE IF EXISTS ref_stations',
-  'DROP TABLE IF EXISTS ref_payment_terms',
-  'DROP TABLE IF EXISTS ref_currencies',
+  'DROP TABLE IF EXISTS flight_requests',
+  'DROP TABLE IF EXISTS finance_handoff_statuses',
+  'DROP TABLE IF EXISTS finance_event_types',
+  'DROP TABLE IF EXISTS maintenance_handoff_statuses',
+  'DROP TABLE IF EXISTS aircraft_serviceability_statuses',
+  'DROP TABLE IF EXISTS station_cost_statuses',
+  'DROP TABLE IF EXISTS station_service_statuses',
+  'DROP TABLE IF EXISTS station_service_types',
+  'DROP TABLE IF EXISTS fuel_workflow_statuses',
+  'DROP TABLE IF EXISTS dg_acceptance_statuses',
+  'DROP TABLE IF EXISTS manifest_statuses',
+  'DROP TABLE IF EXISTS manifest_types',
+  'DROP TABLE IF EXISTS readiness_statuses',
+  'DROP TABLE IF EXISTS flight_attachment_statuses',
+  'DROP TABLE IF EXISTS flight_approval_statuses',
+  'DROP TABLE IF EXISTS flight_approval_types',
+  'DROP TABLE IF EXISTS flight_action_types',
+  'DROP TABLE IF EXISTS crew_assignment_roles',
+  'DROP TABLE IF EXISTS flight_operation_statuses',
+  'DROP TABLE IF EXISTS flight_request_statuses',
+  'DROP TABLE IF EXISTS flight_priorities',
+  'DROP TABLE IF EXISTS flight_service_types',
+  'DROP TABLE IF EXISTS flight_types',
+  ...cargoMasterDataDropStatements,
+  ...commercialMasterDataDropStatements,
+  ...financeMasterDataDropStatements,
+  ...operationsMasterDataDropStatements,
   'DROP TABLE IF EXISTS alerts',
   'DROP TABLE IF EXISTS approvals',
   'DROP TABLE IF EXISTS payments',
@@ -649,22 +746,542 @@ const dropStatements = [
   'DROP TABLE IF EXISTS fuel_uplifts',
   'DROP TABLE IF EXISTS fuel_requests',
   'DROP TABLE IF EXISTS manifests',
-  'DROP TABLE IF EXISTS flight_orders',
-  'DROP TABLE IF EXISTS customers',
-  'DROP TABLE IF EXISTS routes',
-  'DROP TABLE IF EXISTS stations',
-  'DROP TABLE IF EXISTS aircraft'
+  'DROP TABLE IF EXISTS flight_orders'
+];
+
+const obsoleteTablePrefix = ['r', 'e', 'f', '_'].join('');
+const cleanRebuildRequiredMessage =
+  'AMA demo database uses the pre-cleanup schema. Run `pnpm demo:reset` or remove the SQLite DB before starting the app.';
+
+const canonicalShapeRequirements = [
+  { table: 'aircraft', column: 'registration_number' },
+  { table: 'stations', column: 'station_code' },
+  { table: 'routes', column: 'route_code' },
+  { table: 'customers', column: 'account_code' },
+  { table: 'passenger_tickets', column: 'ticket_status' }
 ];
 
 export function runMigrations(sqlite: Database.Database) {
-  sqlite.pragma('foreign_keys = ON');
+  assertCleanRebuildCompatible(sqlite);
+
+  sqlite.pragma('foreign_keys = OFF');
   const migrate = sqlite.transaction(() => {
     for (const statement of createStatements) {
       sqlite.exec(statement);
     }
+
+    seedFlightOperationLookups(sqlite);
+    ensureColumn(sqlite, 'flight_operations', 'order_number', "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(
+      sqlite,
+      'flight_operations',
+      'flight_request_id',
+      'TEXT REFERENCES flight_requests(id)'
+    );
+    ensureLookupColumns(sqlite);
+    ensureColumn(
+      sqlite,
+      'flight_operations',
+      'request_source',
+      "TEXT NOT NULL DEFAULT 'Corporate Charter Request'"
+    );
+    ensureColumn(sqlite, 'flight_operations', 'billing_type', "TEXT NOT NULL DEFAULT 'CHARTER'");
+    ensureColumn(sqlite, 'flight_operations', 'estimated_revenue', 'INTEGER');
+    ensureColumn(sqlite, 'flight_operations', 'currency_code', "TEXT NOT NULL DEFAULT 'IDR'");
+    ensureColumn(sqlite, 'stations', 'station_pic_name', 'TEXT');
+    ensureColumn(sqlite, 'stations', 'station_pic_phone', 'TEXT');
+    ensureColumn(sqlite, 'stations', 'operational_notes', 'TEXT');
+    ensureColumn(sqlite, 'stations', 'is_remote_station', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'stations', 'low_connectivity_mode', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'aircraft', 'serial_number', 'TEXT');
+    ensureColumn(sqlite, 'aircraft', 'fleet_code', 'TEXT');
+    ensureColumn(sqlite, 'aircraft', 'operational_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");
+    ensureColumn(
+      sqlite,
+      'aircraft',
+      'default_capacity_profile_id',
+      'TEXT REFERENCES flight_capacity_profiles(id)'
+    );
+    ensureColumn(sqlite, 'aircraft', 'current_station_id', 'TEXT REFERENCES stations(id)');
+    ensureColumn(sqlite, 'aircraft', 'last_maintenance_check_at', 'TEXT');
+    ensureColumn(sqlite, 'aircraft', 'next_maintenance_due_at', 'TEXT');
+    ensureColumn(sqlite, 'aircraft', 'serviceability_note', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'crews',
+      'availability_status',
+      "TEXT NOT NULL DEFAULT 'AVAILABLE' CHECK (availability_status IN ('AVAILABLE', 'ON_DUTY', 'ASSIGNED_OTHER_FLIGHT', 'ON_LEAVE', 'UNAVAILABLE'))"
+    );
+    ensureColumn(sqlite, 'crews', 'duty_station_id', 'TEXT REFERENCES stations(id)');
+    ensureColumn(sqlite, 'crews', 'readiness_note', 'TEXT');
+    ensureColumn(sqlite, 'flight_capacity_profiles', 'profile_name', "TEXT NOT NULL DEFAULT ''");
+    sqlite.exec(
+      `UPDATE flight_capacity_profiles
+       SET profile_name = profile_code
+       WHERE profile_name IS NULL OR profile_name = ''`
+    );
+    ensureColumn(sqlite, 'flight_reasons', 'reason_name', "TEXT NOT NULL DEFAULT ''");
+    sqlite.exec(
+      `UPDATE flight_reasons
+       SET reason_name = reason_code
+       WHERE reason_name IS NULL OR reason_name = ''`
+    );
+    ensureColumn(sqlite, 'flight_reasons', 'affects_operational_kpi', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_reasons', 'affects_finance_review', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(
+      sqlite,
+      'flight_reasons',
+      'dashboard_severity',
+      "TEXT NOT NULL DEFAULT 'WARNING' CHECK (dashboard_severity IN ('INFO', 'WARNING', 'CRITICAL'))"
+    );
+    ensureColumn(
+      sqlite,
+      'rate_cards',
+      'pricing_scope',
+      "TEXT NOT NULL DEFAULT 'PUBLIC_COUNTER' CHECK (pricing_scope IN ('PUBLIC_COUNTER', 'CORPORATE_CONTRACT', 'CARGO_CONTRACT', 'CHARTER_CONTRACT'))"
+    );
+    ensureColumn(sqlite, 'rate_cards', 'tax_code_id', 'TEXT REFERENCES tax_codes(id)');
+    ensureColumn(
+      sqlite,
+      'rate_cards',
+      'booking_channel',
+      "TEXT NOT NULL DEFAULT 'COUNTER' CHECK (booking_channel IN ('COUNTER', 'AGENT', 'CORPORATE', 'CARGO', 'CHARTER'))"
+    );
+    ensureColumn(
+      sqlite,
+      'rate_cards',
+      'passenger_type',
+      "TEXT CHECK (passenger_type IS NULL OR passenger_type IN ('ADULT', 'CHILD', 'INFANT'))"
+    );
+    ensureColumn(
+      sqlite,
+      'rate_cards',
+      'cargo_price_basis',
+      "TEXT CHECK (cargo_price_basis IS NULL OR cargo_price_basis IN ('ACTUAL_WEIGHT', 'VOLUME_WEIGHT', 'CHARGEABLE_WEIGHT'))"
+    );
+    ensureColumn(
+      sqlite,
+      'rate_cards',
+      'rate_priority',
+      'INTEGER NOT NULL DEFAULT 100 CHECK (rate_priority >= 0)'
+    );
+    ensureColumn(sqlite, 'rate_cards', 'minimum_charge', 'INTEGER');
+    ensureColumn(sqlite, 'rate_cards', 'demo_usage_note', 'TEXT');
+    sqlite.exec(
+      `UPDATE flight_operations
+       SET order_number = 'FO-' || substr(flight_number, 5)
+       WHERE order_number IS NULL OR order_number = ''`
+    );
+    recreateIndexes(sqlite);
+    sqlite.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_operations_order_number ON flight_operations(order_number)'
+    );
+    sqlite.exec(
+      'CREATE INDEX IF NOT EXISTS idx_flight_operations_request ON flight_operations(flight_request_id)'
+    );
+    sqlite.exec(
+      'CREATE INDEX IF NOT EXISTS idx_flight_requests_status ON flight_requests(status_id)'
+    );
+    sqlite.exec(
+      'CREATE INDEX IF NOT EXISTS idx_flight_operation_approvals_flight ON flight_operation_approvals(flight_id)'
+    );
   });
 
-  migrate();
+  try {
+    migrate();
+  } finally {
+    sqlite.pragma('foreign_keys = ON');
+  }
+}
+
+function quoteSqlIdentifier(identifier: string) {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+function sqliteTableNames(sqlite: Database.Database) {
+  return (
+    sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+      .all() as Array<{ name: string }>
+  ).map((row) => row.name);
+}
+
+function obsoleteTables(sqlite: Database.Database) {
+  return sqliteTableNames(sqlite).filter((table) => {
+    const normalizedTable = table.toLowerCase();
+    return normalizedTable.startsWith(obsoleteTablePrefix) || normalizedTable.includes('legacy');
+  });
+}
+
+function tableExists(sqlite: Database.Database, table: string) {
+  return sqliteTableNames(sqlite).includes(table);
+}
+
+function hasCleanRebuildIncompatibleShape(sqlite: Database.Database) {
+  return canonicalShapeRequirements.filter(
+    ({ table, column }) => tableExists(sqlite, table) && !hasColumn(sqlite, table, column)
+  );
+}
+
+function assertCleanRebuildCompatible(sqlite: Database.Database) {
+  const obsolete = obsoleteTables(sqlite);
+  const incompatible = hasCleanRebuildIncompatibleShape(sqlite);
+  if (obsolete.length === 0 && incompatible.length === 0) {
+    return;
+  }
+
+  const details = [
+    obsolete.length > 0 ? `obsolete tables: ${obsolete.join(', ')}` : undefined,
+    incompatible.length > 0
+      ? `incompatible table shapes: ${incompatible
+          .map(({ table, column }) => `${table} missing ${column}`)
+          .join(', ')}`
+      : undefined
+  ]
+    .filter(Boolean)
+    .join('; ');
+
+  throw new Error(`${cleanRebuildRequiredMessage} ${details}`);
+}
+
+function ensureColumn(
+  sqlite: Database.Database,
+  table: string,
+  column: string,
+  definition: string
+) {
+  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((item) => item.name === column)) {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+function lookupId(idPrefix: string, code: string) {
+  return `${idPrefix}-${code.toLowerCase().replaceAll('_', '-')}`;
+}
+
+function seedFlightOperationLookups(sqlite: Database.Database) {
+  const now = new Date().toISOString();
+  const statementCache = new Map<string, Database.Statement>();
+  for (const seed of flightOperationLookupSeeds) {
+    let statement = statementCache.get(seed.table);
+    if (!statement) {
+      statement = sqlite.prepare(
+        `INSERT OR IGNORE INTO ${seed.table}
+          (id, code, label, sort_order, is_active, created_at, updated_at)
+         VALUES (@id, @code, @label, @sortOrder, 1, @createdAt, @updatedAt)`
+      );
+      statementCache.set(seed.table, statement);
+    }
+    seed.values.forEach(([code, label], index) => {
+      statement.run({
+        id: lookupId(seed.idPrefix, code),
+        code,
+        label,
+        sortOrder: index + 1,
+        createdAt: now,
+        updatedAt: now
+      });
+    });
+  }
+}
+
+function hasColumn(sqlite: Database.Database, table: string, column: string) {
+  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return columns.some((item) => item.name === column);
+}
+
+function backfillLookupColumn(
+  sqlite: Database.Database,
+  table: string,
+  oldColumn: string,
+  newColumn: string,
+  lookupTable: string,
+  fallbackCode?: string
+) {
+  if (!hasColumn(sqlite, table, newColumn)) {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${newColumn} TEXT`);
+  }
+
+  const oldColumnExists = hasColumn(sqlite, table, oldColumn);
+  if (oldColumnExists) {
+    const unmapped = sqlite
+      .prepare(
+        `SELECT ${oldColumn} as code
+         FROM ${table}
+         WHERE ${oldColumn} IS NOT NULL
+           AND ${oldColumn} NOT IN (SELECT code FROM ${lookupTable})
+         LIMIT 1`
+      )
+      .get() as { code?: string } | undefined;
+
+    if (unmapped?.code) {
+      throw new Error(
+        `Cannot migrate ${table}.${oldColumn}: lookup code ${unmapped.code} is not seeded in ${lookupTable}`
+      );
+    }
+
+    sqlite.exec(
+      `UPDATE ${table}
+       SET ${newColumn} = (
+         SELECT lookup.id FROM ${lookupTable} lookup
+         WHERE lookup.code = ${table}.${oldColumn}
+       )
+       WHERE ${newColumn} IS NULL`
+    );
+  }
+
+  if (fallbackCode) {
+    sqlite.exec(
+      `UPDATE ${table}
+       SET ${newColumn} = (
+         SELECT lookup.id FROM ${lookupTable} lookup WHERE lookup.code = '${fallbackCode}'
+       )
+       WHERE ${newColumn} IS NULL`
+    );
+  }
+}
+
+function ensureLookupColumns(sqlite: Database.Database) {
+  backfillLookupColumn(
+    sqlite,
+    'flight_schedule_templates',
+    'service_type',
+    'service_type_id',
+    'flight_service_types',
+    'CHARTER_CARGO'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_capacity_profiles',
+    'service_type',
+    'service_type_id',
+    'flight_service_types',
+    'CHARTER_CARGO'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_requests',
+    'status',
+    'status_id',
+    'flight_request_statuses',
+    'DRAFT'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_requests',
+    'flight_type',
+    'flight_type_id',
+    'flight_types',
+    'CHARTER'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_requests',
+    'service_type',
+    'service_type_id',
+    'flight_service_types',
+    'CHARTER_CARGO'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_requests',
+    'priority',
+    'priority_id',
+    'flight_priorities',
+    'NORMAL'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_operations',
+    'flight_type',
+    'flight_type_id',
+    'flight_types',
+    'CHARTER'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_operations',
+    'service_type',
+    'service_type_id',
+    'flight_service_types',
+    'CHARTER_CARGO'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_operations',
+    'priority',
+    'priority_id',
+    'flight_priorities',
+    'NORMAL'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_operations',
+    'current_status',
+    'current_status_id',
+    'flight_operation_statuses',
+    'DRAFT'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_crew_assignments',
+    'assignment_role',
+    'assignment_role_id',
+    'crew_assignment_roles',
+    'GROUND_CREW'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_status_histories',
+    'from_status',
+    'from_status_id',
+    'flight_operation_statuses'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_status_histories',
+    'to_status',
+    'to_status_id',
+    'flight_operation_statuses',
+    'DRAFT'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_status_histories',
+    'action_type',
+    'action_type_id',
+    'flight_action_types',
+    'CREATE'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_operation_approvals',
+    'approval_type',
+    'approval_type_id',
+    'flight_approval_types',
+    'READINESS_APPROVAL'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_operation_approvals',
+    'status',
+    'status_id',
+    'flight_approval_statuses',
+    'NOT_STARTED'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_operation_attachments',
+    'status',
+    'status_id',
+    'flight_attachment_statuses',
+    'PENDING'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_readiness_checks',
+    'status',
+    'status_id',
+    'readiness_statuses',
+    'PENDING'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_manifests',
+    'manifest_type',
+    'manifest_type_id',
+    'manifest_types',
+    'PASSENGER'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_manifests',
+    'status',
+    'status_id',
+    'manifest_statuses',
+    'DRAFT'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_manifest_cargo_items',
+    'dg_acceptance_status',
+    'dg_acceptance_status_id',
+    'dg_acceptance_statuses',
+    'NOT_APPLICABLE'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_fuel_requests',
+    'status',
+    'status_id',
+    'fuel_workflow_statuses',
+    'REQUESTED'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_station_service_requests',
+    'service_type',
+    'service_type_id',
+    'station_service_types',
+    'HANDLING'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_station_service_requests',
+    'status',
+    'status_id',
+    'station_service_statuses',
+    'REQUESTED'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_station_costs',
+    'status',
+    'status_id',
+    'station_cost_statuses',
+    'DRAFT'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_maintenance_handoffs',
+    'serviceability_status',
+    'serviceability_status_id',
+    'aircraft_serviceability_statuses',
+    'SERVICEABLE'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_maintenance_handoffs',
+    'status',
+    'status_id',
+    'maintenance_handoff_statuses',
+    'DRAFT'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_finance_handoffs',
+    'event_type',
+    'event_type_id',
+    'finance_event_types',
+    'FUEL_COST_DRAFT'
+  );
+  backfillLookupColumn(
+    sqlite,
+    'flight_finance_handoffs',
+    'status',
+    'status_id',
+    'finance_handoff_statuses',
+    'DRAFT'
+  );
+}
+
+function recreateIndexes(sqlite: Database.Database) {
+  for (const statement of createStatements) {
+    if (/^CREATE (UNIQUE )?INDEX/u.test(statement)) {
+      sqlite.exec(statement);
+    }
+  }
 }
 
 export function dropDemoDatabase(sqlite: Database.Database) {
@@ -673,8 +1290,14 @@ export function dropDemoDatabase(sqlite: Database.Database) {
     for (const statement of dropStatements) {
       sqlite.exec(statement);
     }
+    for (const table of obsoleteTables(sqlite)) {
+      sqlite.exec(`DROP TABLE IF EXISTS ${quoteSqlIdentifier(table)}`);
+    }
   });
 
-  drop();
-  sqlite.pragma('foreign_keys = ON');
+  try {
+    drop();
+  } finally {
+    sqlite.pragma('foreign_keys = ON');
+  }
 }

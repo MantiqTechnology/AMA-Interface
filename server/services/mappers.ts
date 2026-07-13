@@ -8,8 +8,15 @@ import type {
   StationDto
 } from '../../shared/contracts/flights';
 import type { FuelRequestDto, FuelUpliftDto } from '../../shared/contracts/fuel';
-import type { InvoiceDetailDto, InvoiceSummaryDto, PaymentDto } from '../../shared/contracts/invoices';
-import type { MaintenanceWorkOrderDto, SerializedPartDto } from '../../shared/contracts/maintenance';
+import type {
+  InvoiceDetailDto,
+  InvoiceSummaryDto,
+  PaymentDto
+} from '../../shared/contracts/invoices';
+import type {
+  MaintenanceWorkOrderDto,
+  SerializedPartDto
+} from '../../shared/contracts/maintenance';
 import type { StationExpenseDto } from '../../shared/contracts/station-expenses';
 import type {
   AircraftRecord,
@@ -28,22 +35,41 @@ import type {
 } from '../db/schema';
 import type { FlightJoinedRecord } from '../repositories/interfaces';
 
+function aircraftStatus(row: AircraftRecord): AircraftDto['status'] {
+  if (row.serviceabilityStatus === 'UNSERVICEABLE') return 'grounded';
+  if (row.operationalStatus !== 'ACTIVE' || row.serviceabilityStatus === 'MAINTENANCE_DUE') {
+    return 'in_maintenance';
+  }
+
+  return 'available';
+}
+
+function customerType(row: CustomerRecord): CustomerDto['type'] {
+  if (row.accountType === 'GOVERNMENT') return 'government';
+  if (row.accountType === 'INDIVIDUAL') return 'charter';
+  return 'charter';
+}
+
+function kmToNm(distanceKm: number) {
+  return Math.max(1, Math.round(distanceKm * 0.539957));
+}
+
 export function mapAircraft(row: AircraftRecord): AircraftDto {
   return {
     id: row.id,
-    tailNumber: row.tailNumber,
-    type: row.type,
-    displayName: row.displayName,
-    capacity: row.capacity,
-    status: row.status as AircraftDto['status']
+    tailNumber: row.registrationNumber,
+    type: row.aircraftType,
+    displayName: `${row.registrationNumber} - ${row.manufacturer} ${row.model}`,
+    capacity: row.passengerCapacity,
+    status: aircraftStatus(row)
   };
 }
 
 export function mapStation(row: StationRecord): StationDto {
   return {
     id: row.id,
-    code: row.code,
-    name: row.name,
+    code: row.stationCode,
+    name: row.stationName,
     province: row.province,
     isActive: row.isActive
   };
@@ -52,9 +78,9 @@ export function mapStation(row: StationRecord): StationDto {
 export function mapCustomer(row: CustomerRecord): CustomerDto {
   return {
     id: row.id,
-    name: row.name,
-    type: row.type as CustomerDto['type'],
-    contactEmail: row.contactEmail
+    name: row.accountName,
+    type: customerType(row),
+    contactEmail: row.email ?? `${row.accountCode.toLowerCase()}@demo.invalid`
   };
 }
 
@@ -72,8 +98,8 @@ export function mapFlightSummary(row: FlightJoinedRecord): FlightSummaryDto {
       id: row.route.id,
       origin: mapStation(row.origin),
       destination: mapStation(row.destination),
-      distanceNm: row.route.distanceNm,
-      estimatedBlockMinutes: row.route.estimatedBlockMinutes
+      distanceNm: kmToNm(row.route.distanceKm),
+      estimatedBlockMinutes: row.route.estimatedDurationMinutes
     },
     manifestCount: row.manifestCount,
     quotedAmount: row.flight.quotedAmount,
@@ -92,7 +118,10 @@ export function mapManifest(row: ManifestRecord) {
   };
 }
 
-export function mapFlightDetail(row: FlightJoinedRecord, manifest: ManifestRecord[]): FlightDetailDto {
+export function mapFlightDetail(
+  row: FlightJoinedRecord,
+  manifest: ManifestRecord[]
+): FlightDetailDto {
   return {
     ...mapFlightSummary(row),
     purpose: row.flight.purpose,
@@ -165,7 +194,10 @@ export function mapPayment(row: PaymentRecord): PaymentDto {
   };
 }
 
-export function mapInvoiceSummary(row: InvoiceRecord, flight: FlightJoinedRecord): InvoiceSummaryDto {
+export function mapInvoiceSummary(
+  row: InvoiceRecord,
+  flight: FlightJoinedRecord
+): InvoiceSummaryDto {
   return {
     id: row.id,
     invoiceNumber: row.invoiceNumber,

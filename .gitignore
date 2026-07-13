@@ -7,6 +7,9 @@ data/*.json
 !data/ops-demo-db.json
 data/uploads
 coverage
+playwright-report
+test-results
+.mirrord
 dist
 public/uploads/local
 .env

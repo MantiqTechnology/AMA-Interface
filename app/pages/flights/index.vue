@@ -1,36 +1,18 @@
 <script setup lang="ts">
+import AircraftSelect from '../../features/operations/aircraft/AircraftSelect.vue';
+import RouteSelect from '../../features/operations/routes/RouteSelect.vue';
 import type {
   FlightOperationLookupsDto,
   FlightOperationOverviewDto,
-  FlightOperationStatus,
-  FlightType
+  FlightOperationStatus
 } from '#shared/contracts/flight-operations';
 
 const search = ref('');
-const status = ref<FlightOperationStatus | undefined>();
-const flightType = ref<FlightType | undefined>();
-const routeId = ref<string | undefined>();
-const aircraftId = ref<string | undefined>();
+const statusId = ref<string | undefined>();
+const flightTypeId = ref<string | undefined>();
+const routeId = ref<string | null>(null);
+const aircraftId = ref<string | null>(null);
 const customerId = ref<string | undefined>();
-
-const statusOptions = [
-  { title: 'All status', value: undefined },
-  { title: 'Draft', value: 'DRAFT' },
-  { title: 'Pending Readiness', value: 'PENDING_READINESS' },
-  { title: 'Blocked', value: 'BLOCKED' },
-  { title: 'Ready for Approval', value: 'READY_FOR_APPROVAL' },
-  { title: 'Scheduled', value: 'SCHEDULED' },
-  { title: 'In Progress', value: 'IN_PROGRESS' },
-  { title: 'Landed', value: 'LANDED' },
-  { title: 'Pending Closure', value: 'PENDING_CLOSURE' }
-] as const;
-
-const flightTypeOptions = [
-  { title: 'All types', value: undefined },
-  { title: 'Charter', value: 'CHARTER' },
-  { title: 'Passenger', value: 'PASSENGER' },
-  { title: 'Cargo', value: 'CARGO' }
-] as const;
 
 const { data: lookups } = await useAsyncData('flight-operation-lookups', () =>
   fetchApi<FlightOperationLookupsDto>('/api/flight-operations/lookups')
@@ -42,17 +24,20 @@ const { data, pending, error, refresh } = await useAsyncData(
     fetchApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
       query: {
         search: search.value,
-        status: status.value,
-        flightType: flightType.value,
-        routeId: routeId.value,
-        aircraftId: aircraftId.value,
+        statusId: statusId.value,
+        flightTypeId: flightTypeId.value,
+        routeId: routeId.value ?? undefined,
+        aircraftId: aircraftId.value ?? undefined,
         customerId: customerId.value
       }
     }),
   {
-    watch: [search, status, flightType, routeId, aircraftId, customerId]
+    watch: [search, statusId, flightTypeId, routeId, aircraftId, customerId]
   }
 );
+
+const statusOptions = computed(() => lookups.value?.flightOperationStatuses ?? []);
+const flightTypeOptions = computed(() => lookups.value?.flightTypes ?? []);
 
 const cards: Array<{ label: string; status: FlightOperationStatus; icon: string }> = [
   { label: 'Draft', status: 'DRAFT', icon: 'mdi-file-outline' },
@@ -70,14 +55,14 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
   <VContainer class="px-3 py-5 md:px-4" fluid>
     <div class="mb-5 flex flex-wrap items-end gap-4">
       <div>
-        <h1 class="text-h4 font-weight-bold text-text-primary">Flight Board</h1>
+        <h1 class="text-h4 font-weight-bold text-text-primary">Flight Orders</h1>
         <p class="text-text-muted">
-          Data diperbarui berdasarkan perubahan status dan input user pada demo.
+          Central operational records from readiness through flight closure.
         </p>
       </div>
       <VSpacer />
       <VBtn color="secondary" prepend-icon="mdi-plus" to="/flights/requests/new">
-        Create Flight Request
+        New Flight Request
       </VBtn>
     </div>
 
@@ -116,9 +101,10 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
           </VCol>
           <VCol cols="12" md="2">
             <VSelect
-              v-model="status"
+              v-model="statusId"
               density="compact"
               hide-details
+              clearable
               item-title="title"
               item-value="value"
               label="Status"
@@ -128,9 +114,10 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
           </VCol>
           <VCol cols="12" md="2">
             <VSelect
-              v-model="flightType"
+              v-model="flightTypeId"
               density="compact"
               hide-details
+              clearable
               item-title="title"
               item-value="value"
               label="Type"
@@ -139,30 +126,10 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
             />
           </VCol>
           <VCol cols="12" md="2">
-            <VSelect
-              v-model="routeId"
-              clearable
-              density="compact"
-              hide-details
-              item-title="title"
-              item-value="value"
-              label="Route"
-              :items="lookups?.routes ?? []"
-              variant="outlined"
-            />
+            <RouteSelect v-model="routeId" :allow-create="false" label="Route" />
           </VCol>
           <VCol cols="12" md="3">
-            <VSelect
-              v-model="aircraftId"
-              clearable
-              density="compact"
-              hide-details
-              item-title="title"
-              item-value="value"
-              label="Aircraft"
-              :items="lookups?.aircraft ?? []"
-              variant="outlined"
-            />
+            <AircraftSelect v-model="aircraftId" :allow-create="false" label="Aircraft" />
           </VCol>
         </VRow>
       </VCardText>
@@ -171,7 +138,7 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
     <VCard border>
       <template #title>
         <div class="flex items-center justify-between">
-          <span class="text-text-primary">Operational Flights</span>
+          <span class="text-text-primary">Operational Flight Orders</span>
           <VBtn icon="mdi-refresh" variant="text" @click="refresh" />
         </div>
       </template>

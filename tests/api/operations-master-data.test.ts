@@ -1,0 +1,165 @@
+import { rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { setup, $fetch } from '@nuxt/test-utils/e2e';
+import { beforeAll, describe, expect, it } from 'vitest';
+import type { ApiResponse } from '../../shared/contracts/api';
+import type { AircraftOption } from '../../shared/features/operations/aircraft';
+import type { FlightCapacityProfileOption } from '../../shared/features/operations/flight-capacity-profiles';
+import type { FlightScheduleTemplateOption } from '../../shared/features/operations/flight-schedule-templates';
+import type { PersonnelOption } from '../../shared/features/operations/personnel';
+import type { RouteDto, RouteOption } from '../../shared/features/operations/routes';
+import type { StationDto, StationOption } from '../../shared/features/operations/stations';
+import { createDbClient, resolveDbPath } from '../../server/db/client';
+import { dropDemoDatabase, runMigrations } from '../../server/db/migrate';
+import { seedDemoData } from '../../server/db/seed';
+
+process.env.DEMO_MODE = 'true';
+process.env.AMA_DB_PATH = './data/test-operations-master-data.sqlite';
+
+beforeAll(async () => {
+  const resolved = resolveDbPath(process.env.AMA_DB_PATH);
+  await rm(resolved, { force: true });
+  await rm(`${resolved}-wal`, { force: true });
+  await rm(`${resolved}-shm`, { force: true });
+
+  const { db, sqlite } = createDbClient(process.env.AMA_DB_PATH);
+  dropDemoDatabase(sqlite);
+  runMigrations(sqlite);
+  await seedDemoData(db);
+  sqlite.close();
+});
+
+await setup({
+  rootDir: fileURLToPath(new URL('../..', import.meta.url)),
+  server: true,
+  browser: false
+});
+
+describe('operations master data APIs', () => {
+  it('owns the station list and options response', async () => {
+    const list = await $fetch<ApiResponse<StationDto[]>>('/api/master-data/stations');
+    expect(list.ok).toBe(true);
+    if (!list.ok) throw new Error(list.error.message);
+    expect(list.data[0]).toMatchObject({ stationCode: expect.any(String), isActive: true });
+    expect(list.data[0]).not.toHaveProperty('station_code');
+
+    const options = await $fetch<ApiResponse<StationOption[]>>('/api/master-data/stations/options');
+    expect(options.ok).toBe(true);
+    if (!options.ok) throw new Error(options.error.message);
+    expect(options.data[0]).toMatchObject({
+      id: expect.any(String),
+      stationCode: expect.any(String),
+      stationName: expect.any(String)
+    });
+  });
+
+  it('creates, reads, updates, lists, deactivates, and provides route options', async () => {
+    const created = await $fetch<ApiResponse<RouteDto>>('/api/master-data/routes', {
+      method: 'POST',
+      body: {
+        routeCode: 'API-DJJ-MKQ',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-mkq',
+        estimatedDurationMinutes: 75,
+        distanceKm: 380
+      }
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(created.error.message);
+
+    const detail = await $fetch<ApiResponse<RouteDto>>(
+      `/api/master-data/routes/${created.data.id}`
+    );
+    expect(detail.ok && detail.data.routeCode).toBe('API-DJJ-MKQ');
+
+    const updated = await $fetch<ApiResponse<RouteDto>>(
+      `/api/master-data/routes/${created.data.id}`,
+      {
+        method: 'PUT',
+        body: {
+          routeCode: 'API-DJJ-MKQ-2',
+          originStationId: 'st-djj',
+          destinationStationId: 'st-mkq',
+          estimatedDurationMinutes: 80,
+          distanceKm: 390
+        }
+      }
+    );
+    expect(updated.ok && updated.data.estimatedDurationMinutes).toBe(80);
+
+    const list = await $fetch<ApiResponse<RouteDto[]>>('/api/master-data/routes', {
+      query: { active: 'all', search: 'API-DJJ-MKQ-2' }
+    });
+    expect(list.ok && list.data).toHaveLength(1);
+
+    const options = await $fetch<ApiResponse<RouteOption[]>>('/api/master-data/routes/options');
+    expect(options.ok).toBe(true);
+    if (!options.ok) throw new Error(options.error.message);
+    expect(options.data).toContainEqual(
+      expect.objectContaining({
+        id: created.data.id,
+        routeCode: 'API-DJJ-MKQ-2',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-mkq',
+        originStationCode: 'DJJ',
+        destinationStationCode: 'MKQ'
+      })
+    );
+
+    const status = await $fetch<ApiResponse<RouteDto>>(
+      `/api/master-data/routes/${created.data.id}/status`,
+      { method: 'PATCH', body: { isActive: false } }
+    );
+    expect(status.ok && status.data.isActive).toBe(false);
+  });
+
+  it('exposes workflow metadata through each owning feature options API', async () => {
+    const [aircraft, personnel, schedules, capacities] = await Promise.all([
+      $fetch<ApiResponse<AircraftOption[]>>('/api/master-data/aircraft/options'),
+      $fetch<ApiResponse<PersonnelOption[]>>('/api/master-data/personnel/options'),
+      $fetch<ApiResponse<FlightScheduleTemplateOption[]>>(
+        '/api/master-data/flight-schedule-templates/options'
+      ),
+      $fetch<ApiResponse<FlightCapacityProfileOption[]>>(
+        '/api/master-data/flight-capacity-profiles/options'
+      )
+    ]);
+
+    if (!aircraft.ok || !personnel.ok || !schedules.ok || !capacities.ok) {
+      throw new Error('Unable to load feature-owned workflow options.');
+    }
+    expect(aircraft.data).toContainEqual(
+      expect.objectContaining({
+        id: 'ac-pk-ama',
+        registrationNumber: 'PK-AMA',
+        passengerCapacity: expect.any(Number),
+        cargoCapacityKg: expect.any(Number),
+        serviceabilityStatus: expect.any(String)
+      })
+    );
+    expect(personnel.data).toContainEqual(
+      expect.objectContaining({
+        id: 'crew-pic-valid',
+        fullName: expect.any(String),
+        crewRole: 'PILOT_IN_COMMAND',
+        availabilityStatus: expect.any(String)
+      })
+    );
+    expect(schedules.data).toContainEqual(
+      expect.objectContaining({
+        id: 'schedule-djj-wmx-mwf',
+        routeId: 'route-djj-wmx',
+        operatingDays: expect.any(Array),
+        departureTimeLocal: expect.any(String)
+      })
+    );
+    expect(capacities.data).toContainEqual(
+      expect.objectContaining({
+        id: 'cap-pilatus-djj-wmx-pax',
+        aircraftId: 'ac-pk-ama',
+        routeId: 'route-djj-wmx',
+        seatCapacity: expect.any(Number)
+      })
+    );
+  });
+});

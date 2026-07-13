@@ -41,7 +41,11 @@ const pageTitle = computed(() => {
   if (route.path.startsWith('/admin/access-demo')) return 'Access Demo';
   if (route.path.startsWith('/master-data')) return 'Master Data';
   if (route.path.startsWith('/dashboard')) return 'Dashboard';
-  if (route.path.startsWith('/flights')) return 'Flights';
+  if (route.path.startsWith('/flights/requests')) return 'Flight Requests';
+  if (/^\/flights\/[^/]+$/u.test(route.path)) {
+    return mdAndUp.value ? 'Flight Order Workspace' : 'Flight Order';
+  }
+  if (route.path.startsWith('/flights')) return 'Flight Control';
   if (route.path.startsWith('/invoices')) return 'Invoice';
   return 'Dashboard';
 });
@@ -117,7 +121,7 @@ function openMobileNavigation() {
             <VAvatar color="secondary" size="32">
               <VIcon icon="mdi-account-outline" />
             </VAvatar>
-            <span class="ml-2 hidden max-w-[160px] truncate text-sm font-medium md:inline">
+            <span class="ml-2 hidden max-w-40 truncate text-sm font-medium md:inline">
               {{ store.currentUser.value.name }}
             </span>
             <VIcon class="ml-1" icon="mdi-chevron-down" size="18" />

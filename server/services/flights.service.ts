@@ -1,5 +1,9 @@
 import { nanoid } from 'nanoid';
-import type { CreateFlightOrderBody, FlightStatus, ListFlightsQuery } from '../../shared/contracts/flights';
+import type {
+  CreateFlightOrderBody,
+  FlightStatus,
+  ListFlightsQuery
+} from '../../shared/contracts/flights';
 import type { Repositories } from '../repositories/interfaces';
 import { DomainError, notFound } from '../utils/errors';
 import { mapFlightDetail, mapFlightSummary } from './mappers';
@@ -32,8 +36,15 @@ export class FlightsService {
     if (!customer) throw notFound('Customer', input.customerId);
     if (!route) throw notFound('Route', input.routeId);
     if (!aircraft) throw notFound('Aircraft', input.aircraftId);
-    if (aircraft.status !== 'available') {
-      throw new DomainError('AIRCRAFT_UNAVAILABLE', `${aircraft.tailNumber} is not available`, 409);
+    if (
+      aircraft.operationalStatus !== 'ACTIVE' ||
+      aircraft.serviceabilityStatus === 'UNSERVICEABLE'
+    ) {
+      throw new DomainError(
+        'AIRCRAFT_UNAVAILABLE',
+        `${aircraft.registrationNumber} is not available`,
+        409
+      );
     }
 
     const created = await this.repositories.flights.create({

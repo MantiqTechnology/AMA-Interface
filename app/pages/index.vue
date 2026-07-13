@@ -133,6 +133,16 @@ async function login() {
               >
                 Login
               </VBtn>
+
+              <VBtn
+                block
+                prepend-icon="mdi-ticket-confirmation-outline"
+                size="large"
+                to="/ticketing/booking"
+                variant="outlined"
+              >
+                Passenger & Cargo Booking
+              </VBtn>
             </div>
 
             <VDivider class="my-6" />

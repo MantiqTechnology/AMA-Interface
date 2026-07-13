@@ -29,7 +29,7 @@ import type {
   FuelRepository,
   InvoiceRepository,
   MaintenanceRepository,
-  ReferenceRepository,
+  MasterDataLookupRepository,
   Repositories,
   StationExpenseRepository
 } from './interfaces';
@@ -41,7 +41,7 @@ function applyAnd(conditions: SQL[]) {
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
-export class SqliteReferenceRepository implements ReferenceRepository {
+export class SqliteMasterDataLookupRepository implements MasterDataLookupRepository {
   constructor(private readonly db: AppDatabase) {}
 
   async getAircraft(id: string) {
@@ -50,7 +50,7 @@ export class SqliteReferenceRepository implements ReferenceRepository {
   }
 
   async listAircraft() {
-    return await this.db.select().from(aircraft).orderBy(aircraft.tailNumber);
+    return await this.db.select().from(aircraft).orderBy(aircraft.registrationNumber);
   }
 
   async getStation(id: string) {
@@ -59,7 +59,7 @@ export class SqliteReferenceRepository implements ReferenceRepository {
   }
 
   async listStations() {
-    return await this.db.select().from(stations).orderBy(stations.code);
+    return await this.db.select().from(stations).orderBy(stations.stationCode);
   }
 
   async getCustomer(id: string) {
@@ -93,20 +93,20 @@ export class SqliteReferenceRepository implements ReferenceRepository {
       id: row.route.id,
       origin: {
         id: row.origin.id,
-        code: row.origin.code,
-        name: row.origin.name,
+        code: row.origin.stationCode,
+        name: row.origin.stationName,
         province: row.origin.province,
         isActive: row.origin.isActive
       },
       destination: {
         id: row.destination.id,
-        code: row.destination.code,
-        name: row.destination.name,
+        code: row.destination.stationCode,
+        name: row.destination.stationName,
         province: row.destination.province,
         isActive: row.destination.isActive
       },
-      distanceNm: row.route.distanceNm,
-      estimatedBlockMinutes: row.route.estimatedBlockMinutes
+      distanceNm: Math.max(1, Math.round(row.route.distanceKm * 0.539957)),
+      estimatedBlockMinutes: row.route.estimatedDurationMinutes
     };
   }
 }
@@ -128,7 +128,12 @@ export class SqliteFlightRepository implements FlightRepository {
 
     if (params.station) {
       const stationCode = params.station.toUpperCase();
-      conditions.push(or(eq(originStation.code, stationCode), eq(destinationStation.code, stationCode))!);
+      conditions.push(
+        or(
+          eq(originStation.stationCode, stationCode),
+          eq(destinationStation.stationCode, stationCode)
+        )!
+      );
     }
 
     const where = applyAnd(conditions);
@@ -157,7 +162,10 @@ export class SqliteFlightRepository implements FlightRepository {
           .orderBy(desc(flightOrders.scheduledDeparture))
           .limit(params.limit)
           .offset(params.offset)
-      : await query.orderBy(desc(flightOrders.scheduledDeparture)).limit(params.limit).offset(params.offset);
+      : await query
+          .orderBy(desc(flightOrders.scheduledDeparture))
+          .limit(params.limit)
+          .offset(params.offset);
 
     return rows.map((row) => ({
       ...row,
@@ -227,7 +235,10 @@ export class SqliteFuelRepository implements FuelRepository {
           .orderBy(desc(fuelRequests.requiredAt))
           .limit(params.limit)
           .offset(params.offset)
-      : await query.orderBy(desc(fuelRequests.requiredAt)).limit(params.limit).offset(params.offset);
+      : await query
+          .orderBy(desc(fuelRequests.requiredAt))
+          .limit(params.limit)
+          .offset(params.offset);
   }
 
   async getRequest(id: string) {
@@ -284,11 +295,18 @@ export class SqliteStationExpenseRepository implements StationExpenseRepository 
           .orderBy(desc(stationExpenses.incurredAt))
           .limit(params.limit)
           .offset(params.offset)
-      : await query.orderBy(desc(stationExpenses.incurredAt)).limit(params.limit).offset(params.offset);
+      : await query
+          .orderBy(desc(stationExpenses.incurredAt))
+          .limit(params.limit)
+          .offset(params.offset);
   }
 
   async getById(id: string) {
-    const row = await this.db.select().from(stationExpenses).where(eq(stationExpenses.id, id)).get();
+    const row = await this.db
+      .select()
+      .from(stationExpenses)
+      .where(eq(stationExpenses.id, id))
+      .get();
     return row ?? null;
   }
 
@@ -338,7 +356,11 @@ export class SqliteInvoiceRepository implements InvoiceRepository {
   }
 
   async updateStatus(id: string, status: string) {
-    const [updated] = await this.db.update(invoices).set({ status }).where(eq(invoices.id, id)).returning();
+    const [updated] = await this.db
+      .update(invoices)
+      .set({ status })
+      .where(eq(invoices.id, id))
+      .returning();
     return updated ?? null;
   }
 
@@ -465,7 +487,9 @@ export class SqliteMaintenanceRepository implements MaintenanceRepository {
 
   async closeWorkOrder(id: string, closedAt: string, closingNotes?: string) {
     const row = await this.getWorkOrder(id);
-    const description = closingNotes ? `${row?.description ?? ''}\nClose notes: ${closingNotes}` : row?.description;
+    const description = closingNotes
+      ? `${row?.description ?? ''}\nClose notes: ${closingNotes}`
+      : row?.description;
 
     const [updated] = await this.db
       .update(maintenanceWorkOrders)
@@ -507,7 +531,7 @@ export class SqliteAlertRepository implements AlertRepository {
 
 export function createSqliteRepositories(db: AppDatabase): Repositories {
   return {
-    references: new SqliteReferenceRepository(db),
+    references: new SqliteMasterDataLookupRepository(db),
     flights: new SqliteFlightRepository(db),
     fuel: new SqliteFuelRepository(db),
     stationExpenses: new SqliteStationExpenseRepository(db),
