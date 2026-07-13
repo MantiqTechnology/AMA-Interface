@@ -55,22 +55,55 @@ function routeLabel(routeId: string) {
   const destination = store.getStation(route?.destinationStationId);
   return route && origin && destination ? formatRouteCode(origin.code, destination.code) : '-';
 }
+
+/**
+ * Pure display helpers only — do not affect data, features, or existing logic.
+ * Used purely to pick an icon for presentation purposes.
+ */
+function severityIcon(severity: string) {
+  switch (severity) {
+    case 'CRITICAL':
+      return 'mdi-alert-octagon';
+    case 'WARNING':
+      return 'mdi-alert';
+    default:
+      return 'mdi-information';
+  }
+}
+
+function severityIconClass(severity: string) {
+  switch (severity) {
+    case 'CRITICAL':
+      return 'text-error';
+    case 'WARNING':
+      return 'text-warning';
+    default:
+      return 'text-info';
+  }
+}
 </script>
 
 <template>
   <VContainer class="px-3 py-5 md:px-4" fluid>
-    <div class="mb-5 flex flex-wrap items-end gap-4">
+    <!-- Header -->
+    <div class="mb-5 d-flex flex-wrap align-end ga-4">
       <div>
-        <h1 class="text-3xl font-bold text-text-primary">Operations Command Center</h1>
-        <p class="text-text-muted">
+        <div class="mb-1 d-flex flex-wrap align-center ga-2">
+          <VBtn density="comfortable" icon="mdi-arrow-left" to="/dashboard" variant="text" />
+          <h1 class="text-h4 font-weight-bold text-text-primary">Operations Command Center</h1>
+        </div>
+        <p class="text-text-secondary">
           Alur demo: request komersial, readiness, dispatch approval, following, dan closure.
         </p>
       </div>
       <VSpacer />
-      <VBtn color="primary" prepend-icon="mdi-refresh" @click="store.resetDemo"> Reset Demo </VBtn>
+      <VBtn color="primary" prepend-icon="mdi-refresh" variant="flat" @click="store.resetDemo">
+        Reset Demo
+      </VBtn>
     </div>
 
-    <VRow>
+    <!-- Stat cards -->
+    <VRow class="mb-4">
       <VCol cols="12" sm="6" lg="2">
         <DsStatCard label="Request Hari Ini" :value="metrics.requestsToday" />
       </VCol>
@@ -91,96 +124,116 @@ function routeLabel(routeId: string) {
       </VCol>
     </VRow>
 
-    <VRow class="mt-1">
+    <VRow>
+      <!-- Flight request board -->
       <VCol cols="12" lg="8">
         <VCard border>
-          <VCardTitle class="flex items-center gap-3 text-text-primary">
-            Today's Flight Request Board
-            <VChip color="secondary" size="small" variant="tonal">Asia/Jayapura</VChip>
+          <VCardTitle class="d-flex align-center ga-2">
+            <VIcon icon="mdi-clipboard-text-clock-outline" size="20" class="text-primary" />
+            <span class="text-text-primary font-weight-bold">Today's Flight Request Board</span>
+            <VChip color="secondary" size="small" variant="tonal" class="ml-3">
+              <VIcon icon="mdi-map-clock-outline" size="14" start />
+              Asia/Jayapura
+            </VChip>
           </VCardTitle>
-          <CommonTableExpanded
-            ref="requestTableRef"
-            density="comfortable"
-            fixed-header
-            hide-default-footer
-            hover
-            item-value="id"
-            :headers="requestHeaders"
-            :items="readableRequests"
-            :items-length="readableRequests.length"
-            :items-per-page="Math.max(readableRequests.length, 1)"
-            :fetch-detail="fetchFlightRequestDetail"
-            :cache-ttl="60_000"
-          >
-            <template #[`item.requestNumber`]="{ item }">
-              <NuxtLink
-                class="font-semibold text-text-primary no-underline"
-                :to="`/ops/flight-requests/${item.id}`"
-              >
-                {{ item.requestNumber }}
-              </NuxtLink>
-              <div class="text-sm text-text-muted">{{ item.title }}</div>
-            </template>
+          <VDivider />
 
-            <template #[`item.route`]="{ item }">
-              {{ routeLabel(item.routeId) }}
-            </template>
+          <div class="overflow-x-auto">
+            <CommonTableExpanded
+              ref="requestTableRef"
+              density="comfortable"
+              fixed-header
+              hide-default-footer
+              hover
+              item-value="id"
+              :headers="requestHeaders"
+              :items="readableRequests"
+              :items-length="readableRequests.length"
+              :items-per-page="Math.max(readableRequests.length, 1)"
+              :fetch-detail="fetchFlightRequestDetail"
+              :cache-ttl="60_000"
+            >
+              <template #[`item.requestNumber`]="{ item }">
+                <NuxtLink
+                  class="font-weight-bold text-text-primary text-decoration-none"
+                  :to="`/ops/flight-requests/${item.id}`"
+                >
+                  {{ item.requestNumber }}
+                </NuxtLink>
+                <div class="text-caption text-text-secondary">{{ item.title }}</div>
+              </template>
 
-            <template #[`item.plannedDepartureAt`]="{ item }">
-              {{ formatJayapuraDateTime(item.plannedDepartureAt) }}
-            </template>
+              <template #[`item.route`]="{ item }">
+                <span class="font-mono text-body-2">{{ routeLabel(item.routeId) }}</span>
+              </template>
 
-            <template #[`item.priority`]="{ item }">
-              <DsStatusBadge :value="item.priority" />
-            </template>
+              <template #[`item.plannedDepartureAt`]="{ item }">
+                <span class="text-no-wrap text-body-2">
+                  {{ formatJayapuraDateTime(item.plannedDepartureAt) }}
+                </span>
+              </template>
 
-            <template #[`item.readiness`]="{ item }">
-              <DsStatusBadge
-                :value="store.getReadinessForRequest(item.id)?.overallState ?? 'PENDING'"
-              />
-            </template>
+              <template #[`item.priority`]="{ item }">
+                <DsStatusBadge :value="item.priority" />
+              </template>
 
-            <template #[`item.status`]="{ item }">
-              <DsStatusBadge :value="item.status" />
-            </template>
+              <template #[`item.readiness`]="{ item }">
+                <DsStatusBadge
+                  :value="store.getReadinessForRequest(item.id)?.overallState ?? 'PENDING'"
+                />
+              </template>
 
-            <template #[`item.actions`]="{ item }">
-              <VBtn
-                color="primary"
-                icon="mdi-open-in-new"
-                size="small"
-                :to="`/ops/flight-requests/${item.id}`"
-                variant="text"
-              />
-            </template>
-            <template #detail="{ detail }">
-              <VRow density="comfortable">
-                <VCol cols="12" md="4">
-                  <div class="text-sm text-text-muted">Aircraft</div>
-                  <div class="font-medium">{{ detail?.aircraftReg ?? '-' }}</div>
-                </VCol>
-                <VCol cols="12" md="4">
-                  <div class="text-sm text-text-muted">Crew</div>
-                  <div class="font-medium">{{ detail?.crewNames?.join(', ') ?? '-' }}</div>
-                </VCol>
-                <VCol cols="12" md="4">
-                  <div class="text-sm text-text-muted">Cargo / Payload</div>
-                  <div class="font-medium">{{ detail?.payloadKg ?? 0 }} kg</div>
-                </VCol>
-                <VCol cols="12">
-                  <div class="text-sm text-text-muted">Notes</div>
-                  <div>{{ detail?.notes ?? '—' }}</div>
-                </VCol>
-              </VRow>
-            </template>
-          </CommonTableExpanded>
+              <template #[`item.status`]="{ item }">
+                <DsStatusBadge :value="item.status" />
+              </template>
+
+              <template #[`item.actions`]="{ item }">
+                <VBtn
+                  aria-label="Open detail"
+                  color="primary"
+                  density="comfortable"
+                  icon="mdi-open-in-new"
+                  size="small"
+                  :to="`/ops/flight-requests/${item.id}`"
+                  variant="text"
+                />
+              </template>
+
+              <template #detail="{ detail }">
+                <VRow density="comfortable">
+                  <VCol cols="12" md="4">
+                    <div class="text-caption text-text-secondary">Aircraft</div>
+                    <div class="font-weight-medium">{{ detail?.aircraftReg ?? '-' }}</div>
+                  </VCol>
+                  <VCol cols="12" md="4">
+                    <div class="text-caption text-text-secondary">Crew</div>
+                    <div class="font-weight-medium">{{ detail?.crewNames?.join(', ') ?? '-' }}</div>
+                  </VCol>
+                  <VCol cols="12" md="4">
+                    <div class="text-caption text-text-secondary">Cargo / Payload</div>
+                    <div class="font-weight-medium">{{ detail?.payloadKg ?? 0 }} kg</div>
+                  </VCol>
+                  <VCol cols="12">
+                    <div class="text-caption text-text-secondary">Notes</div>
+                    <div>{{ detail?.notes ?? '—' }}</div>
+                  </VCol>
+                </VRow>
+              </template>
+            </CommonTableExpanded>
+          </div>
         </VCard>
       </VCol>
 
+      <!-- Side panels -->
       <VCol cols="12" lg="4">
         <VCard border class="mb-4">
-          <VCardTitle class="text-text-primary">Priority Alerts</VCardTitle>
-          <VList lines="two">
+          <VCardTitle class="d-flex align-center ga-2">
+            <VIcon icon="mdi-bell-alert-outline" size="20" class="text-primary" />
+            <span class="text-text-primary font-weight-bold">Priority Alerts</span>
+          </VCardTitle>
+          <VDivider />
+
+          <VList v-if="store.data.value.alerts.length" lines="two">
             <VListItem
               v-for="alert in store.data.value.alerts"
               :key="alert.id"
@@ -191,36 +244,54 @@ function routeLabel(routeId: string) {
               "
             >
               <template #prepend>
+                <VIcon
+                  :icon="severityIcon(alert.severity)"
+                  :class="severityIconClass(alert.severity)"
+                  size="20"
+                  class="mr-1"
+                />
+              </template>
+              <VListItemTitle class="font-weight-medium">{{ alert.title }}</VListItemTitle>
+              <VListItemSubtitle>{{ alert.message }}</VListItemSubtitle>
+              <template #append>
                 <DsStatusBadge :value="alert.severity" />
               </template>
-              <VListItemTitle>{{ alert.title }}</VListItemTitle>
-              <VListItemSubtitle>{{ alert.message }}</VListItemSubtitle>
             </VListItem>
           </VList>
+          <VAlert v-else class="ma-4" color="info" icon="mdi-check-circle-outline" variant="tonal">
+            Tidak ada alert saat ini.
+          </VAlert>
         </VCard>
 
         <VCard border>
-          <VCardTitle class="text-text-primary">Aircraft Availability</VCardTitle>
-          <VDataTableServer
-            density="compact"
-            hide-default-footer
-            hover
-            item-value="id"
-            :headers="aircraftHeaders"
-            :items="store.data.value.aircraft"
-            :items-length="store.data.value.aircraft.length"
-            :items-per-page="store.data.value.aircraft.length"
-          >
-            <template #[`item.registration`]="{ item }">
-              <strong>{{ item.registration }}</strong>
-            </template>
-            <template #[`item.station`]="{ item }">
-              {{ store.getStation(item.currentStationId)?.code ?? '-' }}
-            </template>
-            <template #[`item.operationalStatus`]="{ item }">
-              <DsStatusBadge :value="item.operationalStatus" />
-            </template>
-          </VDataTableServer>
+          <VCardTitle class="d-flex align-center ga-2">
+            <VIcon icon="mdi-airplane-cog" size="20" class="text-primary" />
+            <span class="text-text-primary font-weight-bold">Aircraft Availability</span>
+          </VCardTitle>
+          <VDivider />
+
+          <div class="overflow-x-auto">
+            <VDataTableServer
+              density="compact"
+              hide-default-footer
+              hover
+              item-value="id"
+              :headers="aircraftHeaders"
+              :items="store.data.value.aircraft"
+              :items-length="store.data.value.aircraft.length"
+              :items-per-page="store.data.value.aircraft.length"
+            >
+              <template #[`item.registration`]="{ item }">
+                <strong class="font-mono">{{ item.registration }}</strong>
+              </template>
+              <template #[`item.station`]="{ item }">
+                {{ store.getStation(item.currentStationId)?.code ?? '-' }}
+              </template>
+              <template #[`item.operationalStatus`]="{ item }">
+                <DsStatusBadge :value="item.operationalStatus" />
+              </template>
+            </VDataTableServer>
+          </div>
         </VCard>
       </VCol>
     </VRow>
