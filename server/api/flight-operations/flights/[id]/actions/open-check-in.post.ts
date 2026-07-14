@@ -2,8 +2,14 @@ import { flightOperationIdParamsSchema } from '../../../../../../shared/contract
 import { defineApiEventHandler } from '../../../../../utils/api-response';
 import { getServices } from '../../../../../utils/services';
 import { parseParams } from '../../../../../utils/validation';
+import { getDemoActorId, requireDemoPermission } from '../../../../../utils/auth';
 
 export default defineApiEventHandler((event) => {
+  requireDemoPermission(event, 'flight.following.update');
   const params = parseParams(event, flightOperationIdParamsSchema);
-  return getServices().flightOperations.transition(params.id, 'CHECK_IN_OPEN');
+  return getServices().flightOperations.transition(
+    params.id,
+    'CHECK_IN_OPEN',
+    getDemoActorId(event)
+  );
 });

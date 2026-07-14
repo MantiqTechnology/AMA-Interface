@@ -6,6 +6,7 @@ import type {
 
 type PassengerRefundSubject = {
   id: string;
+  flightOperationId: string;
   paymentStatus: 'UNPAID' | 'PAID';
   checkInStatus: 'PENDING' | 'CHECKED_IN';
   amount: number;
@@ -14,6 +15,7 @@ type PassengerRefundSubject = {
 
 type CargoRefundSubject = {
   id: string;
+  flightOperationId: string;
   paymentStatus: 'UNPAID' | 'PAID';
   bookingStatus: 'BOOKED' | 'DELIVERED';
   amount: number;
@@ -25,6 +27,7 @@ const refundSelect = `
     refund.id,
     refund.subject_type AS subjectType,
     COALESCE(refund.passenger_ticket_id, refund.cargo_booking_id) AS subjectId,
+    refund.flight_operation_id AS flightOperationId,
     COALESCE(ticket.id, booking.id) AS referenceNumber,
     flight.flight_number AS flightNumber,
     origin.station_code || ' -> ' || destination.station_code AS routeLabel,
@@ -41,8 +44,7 @@ const refundSelect = `
   FROM ticketing_refund_requests refund
   LEFT JOIN passenger_tickets ticket ON ticket.id = refund.passenger_ticket_id
   LEFT JOIN cargo_bookings booking ON booking.id = refund.cargo_booking_id
-  JOIN flight_orders flight
-    ON flight.id = COALESCE(ticket.flight_order_id, booking.flight_order_id)
+  JOIN flight_operations flight ON flight.id = refund.flight_operation_id
   JOIN routes route ON route.id = flight.route_id
   JOIN stations origin ON origin.id = route.origin_station_id
   JOIN stations destination ON destination.id = route.destination_station_id
@@ -79,11 +81,12 @@ export class TicketRefundRepository {
     return (
       (this.sqlite
         .prepare(
-          `SELECT ticket.id, ticket.payment_status AS paymentStatus,
+          `SELECT ticket.id, ticket.flight_operation_id AS flightOperationId,
+                  ticket.payment_status AS paymentStatus,
                   ticket.check_in_status AS checkInStatus, ticket.ticket_price AS amount,
-                  flight.currency AS currencyCode
+                  flight.currency_code AS currencyCode
            FROM passenger_tickets ticket
-           JOIN flight_orders flight ON flight.id = ticket.flight_order_id
+           JOIN flight_operations flight ON flight.id = ticket.flight_operation_id
            WHERE ticket.id = ?`
         )
         .get(id) as PassengerRefundSubject | undefined) ?? null
@@ -94,11 +97,12 @@ export class TicketRefundRepository {
     return (
       (this.sqlite
         .prepare(
-          `SELECT booking.id, booking.payment_status AS paymentStatus,
+          `SELECT booking.id, booking.flight_operation_id AS flightOperationId,
+                  booking.payment_status AS paymentStatus,
                   booking.status AS bookingStatus, booking.total_tariff AS amount,
-                  flight.currency AS currencyCode
+                  flight.currency_code AS currencyCode
            FROM cargo_bookings booking
-           JOIN flight_orders flight ON flight.id = booking.flight_order_id
+           JOIN flight_operations flight ON flight.id = booking.flight_operation_id
            WHERE booking.id = ?`
         )
         .get(id) as CargoRefundSubject | undefined) ?? null
@@ -134,6 +138,7 @@ export class TicketRefundRepository {
   createPassenger(
     id: string,
     passengerTicketId: string,
+    flightOperationId: string,
     reason: string,
     amount: number,
     currencyCode: string,
@@ -143,12 +148,13 @@ export class TicketRefundRepository {
     this.sqlite
       .prepare(
         `INSERT INTO ticketing_refund_requests (
-           id, subject_type, passenger_ticket_id, reason, status, amount, currency_code,
+           id, flight_operation_id, subject_type, passenger_ticket_id, reason, status, amount, currency_code,
            requested_by_user_id, requested_at, created_at, updated_at
-         ) VALUES (?, 'PASSENGER', ?, ?, 'REQUESTED', ?, ?, ?, ?, ?, ?)`
+         ) VALUES (?, ?, 'PASSENGER', ?, ?, 'REQUESTED', ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
+        flightOperationId,
         passengerTicketId,
         reason,
         amount,
@@ -163,6 +169,7 @@ export class TicketRefundRepository {
   createCargo(
     id: string,
     cargoBookingId: string,
+    flightOperationId: string,
     reason: string,
     amount: number,
     currencyCode: string,
@@ -172,12 +179,13 @@ export class TicketRefundRepository {
     this.sqlite
       .prepare(
         `INSERT INTO ticketing_refund_requests (
-           id, subject_type, cargo_booking_id, reason, status, amount, currency_code,
+           id, flight_operation_id, subject_type, cargo_booking_id, reason, status, amount, currency_code,
            requested_by_user_id, requested_at, created_at, updated_at
-         ) VALUES (?, 'CARGO', ?, ?, 'REQUESTED', ?, ?, ?, ?, ?, ?)`
+         ) VALUES (?, ?, 'CARGO', ?, ?, 'REQUESTED', ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
+        flightOperationId,
         cargoBookingId,
         reason,
         amount,
@@ -203,9 +211,9 @@ export class TicketRefundRepository {
 
       if (decision === 'APPROVE') {
         if (request.subjectType === 'PASSENGER') {
-          this.approvePassenger(request.subjectId, timestamp);
+          this.approvePassenger(request.subjectId, request.flightOperationId, timestamp);
         } else {
-          this.approveCargo(request.subjectId, timestamp);
+          this.approveCargo(request.subjectId, request.flightOperationId, timestamp);
         }
       }
 
@@ -229,9 +237,14 @@ export class TicketRefundRepository {
     return decide.immediate();
   }
 
-  private approvePassenger(ticketId: string, timestamp: string) {
+  private approvePassenger(ticketId: string, flightOperationId: string, timestamp: string) {
     const subject = this.passengerSubject(ticketId);
-    if (!subject || subject.paymentStatus !== 'PAID' || subject.checkInStatus !== 'PENDING') {
+    if (
+      !subject ||
+      subject.flightOperationId !== flightOperationId ||
+      subject.paymentStatus !== 'PAID' ||
+      subject.checkInStatus !== 'PENDING'
+    ) {
       throw new Error('TICKETING_REFUND_SUBJECT_CHANGED');
     }
     const manifest = this.sqlite
@@ -239,9 +252,9 @@ export class TicketRefundRepository {
         `SELECT manifest.id, manifest.locked_at AS lockedAt
          FROM flight_manifest_passengers passenger
          JOIN flight_manifests manifest ON manifest.id = passenger.manifest_id
-         WHERE passenger.id = ?`
+         WHERE passenger.passenger_ticket_id = ?`
       )
-      .get(`ticket-sync-${ticketId}`) as { id: string; lockedAt: string | null } | undefined;
+      .get(ticketId) as { id: string; lockedAt: string | null } | undefined;
     if (manifest?.lockedAt) throw new Error('TICKETING_MANIFEST_LOCKED');
     this.sqlite
       .prepare('DELETE FROM flight_manifest_passengers WHERE id = ?')
@@ -256,9 +269,14 @@ export class TicketRefundRepository {
     if (manifest) this.returnManifestToDraft(manifest.id, timestamp);
   }
 
-  private approveCargo(bookingId: string, timestamp: string) {
+  private approveCargo(bookingId: string, flightOperationId: string, timestamp: string) {
     const subject = this.cargoSubject(bookingId);
-    if (!subject || subject.paymentStatus !== 'PAID' || subject.bookingStatus !== 'BOOKED') {
+    if (
+      !subject ||
+      subject.flightOperationId !== flightOperationId ||
+      subject.paymentStatus !== 'PAID' ||
+      subject.bookingStatus !== 'BOOKED'
+    ) {
       throw new Error('TICKETING_REFUND_SUBJECT_CHANGED');
     }
     const manifest = this.sqlite
@@ -266,9 +284,9 @@ export class TicketRefundRepository {
         `SELECT manifest.id, manifest.locked_at AS lockedAt
          FROM flight_manifest_cargo_items item
          JOIN flight_manifests manifest ON manifest.id = item.manifest_id
-         WHERE item.id = ?`
+         WHERE item.cargo_booking_id = ?`
       )
-      .get(`ticket-sync-${bookingId}`) as { id: string; lockedAt: string | null } | undefined;
+      .get(bookingId) as { id: string; lockedAt: string | null } | undefined;
     if (manifest?.lockedAt) throw new Error('TICKETING_MANIFEST_LOCKED');
     this.sqlite
       .prepare('DELETE FROM flight_manifest_cargo_items WHERE id = ?')

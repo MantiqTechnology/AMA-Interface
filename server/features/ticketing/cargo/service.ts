@@ -30,8 +30,8 @@ export class CargoBookingService {
   }
 
   async create(input: CreateCargoBookingInput) {
-    const flight = this.salesRepository.getBookableFlight(input.flightOrderId, 'CARGO');
-    if (!flight) throw notFound('Bookable cargo flight', input.flightOrderId);
+    const flight = this.salesRepository.getBookableFlight(input.flightOperationId, 'CARGO');
+    if (!flight) throw notFound('Bookable cargo flight', input.flightOperationId);
     if (input.agentId) {
       const agent = await this.agentRepository.getById(input.agentId);
       if (!agent?.isActive) {
@@ -73,7 +73,6 @@ export class CargoBookingService {
     try {
       this.repository.createAndSync({
         id,
-        flightOrderId: input.flightOrderId,
         flightOperationId: flight.flightOperationId,
         senderName: input.senderName,
         receiverName: input.receiverName,

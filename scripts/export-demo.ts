@@ -6,31 +6,29 @@ import { runMigrations } from '../server/db/migrate';
 const dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite';
 const exportPath =
   process.env.AMA_EXPORT_PATH ??
-  join(process.cwd(), 'data', `ama-demo-export-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+  join(
+    process.cwd(),
+    'data',
+    `ama-demo-export-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+  );
 
 const { sqlite } = createDbClient(dbPath);
 runMigrations(sqlite);
 
-const tables = [
-  'aircraft',
-  'stations',
-  'routes',
-  'customers',
-  'flight_orders',
-  'manifests',
-  'fuel_requests',
-  'fuel_uplifts',
-  'station_expenses',
-  'maintenance_work_orders',
-  'serialized_parts',
-  'invoices',
-  'payments',
-  'approvals',
-  'alerts'
-];
+const tables = (
+  sqlite
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )
+    .all() as Array<{ name: string }>
+).map((row) => row.name);
+
+function quoteIdentifier(identifier: string) {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
 
 const payload = Object.fromEntries(
-  tables.map((table) => [table, sqlite.prepare(`SELECT * FROM ${table}`).all()])
+  tables.map((table) => [table, sqlite.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all()])
 );
 
 await mkdir(dirname(exportPath), { recursive: true });

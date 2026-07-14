@@ -1,23 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { createSeededTestServices } from '../helpers/demo-db';
 
+const occActor = 'USR-001';
+const adminActor = 'USR-DEMO-ADMIN';
+
 function createReadinessDraft(
   services: Awaited<ReturnType<typeof createSeededTestServices>>['services']
 ) {
-  return services.flightOperations.create({
-    flightDate: '2026-07-14',
-    flightTypeId: 'flight-type-charter',
-    serviceTypeId: 'flight-service-type-charter-cargo',
-    priorityId: 'flight-priority-normal',
-    routeId: 'route-djj-wmx',
-    customerId: 'cust-papua-logistics',
-    aircraftId: 'ac-pk-ama',
-    pilotInCommandId: 'crew-pic-valid',
-    coPilotId: 'crew-cop-valid',
-    scheduledDepartureAt: '2026-07-14T01:00:00.000Z',
-    scheduledArrivalAt: '2026-07-14T02:05:00.000Z',
-    remarks: 'Readiness regression test'
-  });
+  return services.flightOperations.create(
+    {
+      flightDate: '2026-07-14',
+      flightTypeId: 'flight-type-charter',
+      serviceTypeId: 'flight-service-type-charter-cargo',
+      priorityId: 'flight-priority-normal',
+      routeId: 'route-djj-wmx',
+      customerId: 'cust-papua-logistics',
+      aircraftId: 'ac-pk-ama',
+      pilotInCommandId: 'crew-pic-valid',
+      coPilotId: 'crew-cop-valid',
+      scheduledDepartureAt: '2026-07-14T01:00:00.000Z',
+      scheduledArrivalAt: '2026-07-14T02:05:00.000Z',
+      remarks: 'Readiness regression test'
+    },
+    occActor
+  );
 }
 
 describe('FlightOperationsService', () => {
@@ -90,42 +96,55 @@ describe('FlightOperationsService', () => {
   it('moves a valid draft through readiness approval', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
-    const created = services.flightOperations.create({
-      flightDate: '2026-07-09',
-      flightTypeId: 'flight-type-charter',
-      serviceTypeId: 'flight-service-type-charter-cargo',
-      priorityId: 'flight-priority-normal',
-      routeId: 'route-djj-wmx',
-      customerId: 'cust-papua-logistics',
-      aircraftId: 'ac-pk-ama',
-      pilotInCommandId: 'crew-pic-valid',
-      coPilotId: 'crew-cop-valid',
-      scheduledDepartureAt: '2026-07-09T01:00:00.000Z',
-      scheduledArrivalAt: '2026-07-09T02:05:00.000Z',
-      remarks: 'Automated service test'
-    });
+    const created = services.flightOperations.create(
+      {
+        flightDate: '2026-07-09',
+        flightTypeId: 'flight-type-charter',
+        serviceTypeId: 'flight-service-type-charter-cargo',
+        priorityId: 'flight-priority-normal',
+        routeId: 'route-djj-wmx',
+        customerId: 'cust-papua-logistics',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: '2026-07-09T01:00:00.000Z',
+        scheduledArrivalAt: '2026-07-09T02:05:00.000Z',
+        remarks: 'Automated service test'
+      },
+      occActor
+    );
 
     sqlite
       .prepare(
-        `UPDATE flight_manifests SET status_id = 'manifest-status-approved', updated_at = ? WHERE flight_id = ?`
+        `UPDATE flight_manifests SET status_id = 'manifest-status-approved', updated_at = ? WHERE flight_operation_id = ?`
       )
       .run(new Date().toISOString(), created.id);
 
-    services.flightOperations.createFuel({
-      flightId: created.id,
-      fuelSupplierId: 'fuel-pertamina-djj',
-      fuelType: 'AVTUR',
-      requestedQuantityLitre: 700,
-      referencePricePerLitre: 18500
-    });
+    services.flightOperations.createFuel(
+      {
+        flightId: created.id,
+        fuelSupplierId: 'fuel-pertamina-djj',
+        fuelType: 'AVTUR',
+        requestedQuantityLitre: 700,
+        referencePricePerLitre: 18500
+      },
+      occActor
+    );
     const fuel = services.flightOperations.listFuel({ flightId: created.id })[0];
     expect(fuel).toBeDefined();
-    services.flightOperations.fuelAction(fuel.id, 'approve', { approvedQuantityLitre: 700 });
-    services.flightOperations.fuelAction(fuel.id, 'uplift', {
-      actualUpliftLitre: 690,
-      actualPricePerLitre: 18500
-    });
-    const fuelPosted = services.flightOperations.fuelAction(fuel.id, 'post', {});
+    services.flightOperations.fuelAction(
+      fuel.id,
+      'approve',
+      { approvedQuantityLitre: 700 },
+      adminActor
+    );
+    services.flightOperations.fuelAction(
+      fuel.id,
+      'uplift',
+      { actualUpliftLitre: 690, actualPricePerLitre: 18500 },
+      adminActor
+    );
+    const fuelPosted = services.flightOperations.fuelAction(fuel.id, 'post', {}, adminActor);
     const fuelHandoff = fuelPosted.financeHandoffs.find(
       (handoff) => handoff.sourceType === 'fuel' && handoff.sourceId === fuel.id
     );
@@ -135,29 +154,32 @@ describe('FlightOperationsService', () => {
       amount: 12765000
     });
 
-    services.flightOperations.createStationService({
-      flightId: created.id,
-      stationId: 'st-djj',
-      serviceSupplierId: 'hp-angkasa-djj',
-      serviceTypeId: 'station-service-type-handling',
-      referenceRate: 2750000
-    });
+    services.flightOperations.createStationService(
+      {
+        flightId: created.id,
+        stationId: 'st-djj',
+        serviceSupplierId: 'hp-angkasa-djj',
+        serviceTypeId: 'station-service-type-handling',
+        referenceRate: 2750000
+      },
+      occActor
+    );
     const stationService = services.flightOperations.listStationServices({
       flightId: created.id
     })[0];
     expect(stationService).toBeDefined();
-    services.flightOperations.confirmStationService(stationService.id);
+    services.flightOperations.confirmStationService(stationService.id, adminActor);
 
-    const submitted = services.flightOperations.submit(created.id);
+    const submitted = services.flightOperations.submit(created.id, occActor);
     expect(['PENDING_READINESS', 'READY_FOR_APPROVAL']).toContain(submitted.currentStatus);
 
-    const evaluated = services.flightOperations.evaluate(created.id);
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
     expect(evaluated.currentStatus).toBe('READY_FOR_APPROVAL');
     expect(
       evaluated.readinessChecks.every((check) => ['PASS', 'NOT_APPLICABLE'].includes(check.status))
     ).toBe(true);
 
-    const approved = services.flightOperations.approve(created.id);
+    const approved = services.flightOperations.approve(created.id, {}, adminActor);
     expect(approved.currentStatus).toBe('APPROVED');
     expect(approved.approvedByUserId).toBe('USR-DEMO-ADMIN');
 
@@ -205,6 +227,13 @@ describe('FlightOperationsService', () => {
     ).toHaveLength(0);
 
     services.flightOperations.submitRequest(request.id);
+    expect(() =>
+      services.flightOperations.decideRequest(
+        request.id,
+        { decision: 'APPROVE', reason: 'Creator must not approve.' },
+        'USR-001'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'SELF_APPROVAL_BLOCKED' }));
     const result = services.flightOperations.decideRequest(
       request.id,
       { decision: 'APPROVE', reason: 'Operational request accepted.' },
@@ -233,7 +262,7 @@ describe('FlightOperationsService', () => {
       .run();
 
     const created = createReadinessDraft(services);
-    const evaluated = services.flightOperations.evaluate(created.id);
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
     const location = evaluated.readinessChecks.find(
       (check) => check.checkCode === 'AIRCRAFT_LOCATION'
     );
@@ -252,7 +281,7 @@ describe('FlightOperationsService', () => {
     sqlite.prepare(`UPDATE aircraft SET current_station_id = NULL WHERE id = 'ac-pk-ama'`).run();
 
     const created = createReadinessDraft(services);
-    const evaluated = services.flightOperations.evaluate(created.id);
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
     const location = evaluated.readinessChecks.find(
       (check) => check.checkCode === 'AIRCRAFT_LOCATION'
     );
@@ -276,7 +305,7 @@ describe('FlightOperationsService', () => {
       .run();
 
     const created = createReadinessDraft(services);
-    const evaluated = services.flightOperations.evaluate(created.id);
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
     const crewAvailability = evaluated.readinessChecks.find(
       (check) => check.checkCode === 'CREW_AVAILABILITY'
     );
@@ -303,7 +332,7 @@ describe('FlightOperationsService', () => {
       .run();
 
     const created = createReadinessDraft(services);
-    const evaluated = services.flightOperations.evaluate(created.id);
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
     const serviceability = evaluated.readinessChecks.find(
       (check) => check.checkCode === 'AIRCRAFT_SERVICEABILITY'
     );
@@ -335,7 +364,7 @@ describe('FlightOperationsService', () => {
         'approved station cost'
       ])
     });
-    expect(() => services.flightOperations.closeFlight('fop-dg-pending')).toThrow(
+    expect(() => services.flightOperations.closeFlight('fop-dg-pending', adminActor)).toThrow(
       'Flight cannot be closed'
     );
 
@@ -355,9 +384,97 @@ describe('FlightOperationsService', () => {
 
     const detail = services.flightOperations.detail('fop-closed-djj-wmx');
     expect(detail.closureReadiness).toEqual({ allowed: true, missing: [] });
-    expect(services.flightOperations.closeFlight('fop-closed-djj-wmx').currentStatus).toBe(
-      'CLOSED'
+    expect(
+      services.flightOperations.closeFlight('fop-closed-djj-wmx', adminActor).currentStatus
+    ).toBe('CLOSED');
+    expect(
+      sqlite
+        .prepare(
+          `SELECT status_id FROM flight_finance_handoffs
+           WHERE id = 'fop-closed-djj-wmx-handoff-invoice'`
+        )
+        .get()
+    ).toEqual({ status_id: 'finance-handoff-status-posted' });
+
+    sqlite.close();
+  });
+
+  it('rejects closure without canonical invoice ownership data', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    sqlite.prepare("DELETE FROM payments WHERE invoice_id = 'inv-closed-djj-wmx'").run();
+    sqlite.prepare("DELETE FROM invoices WHERE id = 'inv-closed-djj-wmx'").run();
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-pending-closure',
+             estimated_revenue = NULL, is_locked = 0
+         WHERE id = 'fop-closed-djj-wmx'`
+      )
+      .run();
+
+    const detail = services.flightOperations.detail('fop-closed-djj-wmx');
+    expect(detail.closureReadiness.missing).toContain('invoice customer/revenue');
+    expect(() => services.flightOperations.closeFlight('fop-closed-djj-wmx', adminActor)).toThrow(
+      'invoice customer/revenue'
     );
+    expect(
+      sqlite
+        .prepare(
+          `SELECT status.code AS status
+           FROM flight_operations flight
+           JOIN flight_operation_statuses status ON status.id = flight.current_status_id
+           WHERE flight.id = 'fop-closed-djj-wmx'`
+        )
+        .get()
+    ).toEqual({ status: 'PENDING_CLOSURE' });
+
+    sqlite.close();
+  });
+
+  it('rolls back closure when the canonical invoice cannot be created', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    sqlite.prepare("DELETE FROM payments WHERE invoice_id = 'inv-closed-djj-wmx'").run();
+    sqlite.prepare("DELETE FROM invoices WHERE id = 'inv-closed-djj-wmx'").run();
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-pending-closure', is_locked = 0
+         WHERE id = 'fop-closed-djj-wmx'`
+      )
+      .run();
+    sqlite.exec(
+      `CREATE TRIGGER reject_invoice_insert
+       BEFORE INSERT ON invoices
+       BEGIN
+         SELECT RAISE(ABORT, 'invoice insert rejected by test');
+       END`
+    );
+
+    expect(() => services.flightOperations.closeFlight('fop-closed-djj-wmx', adminActor)).toThrow(
+      'invoice insert rejected by test'
+    );
+    expect(
+      sqlite
+        .prepare(
+          `SELECT status.code AS status, flight.is_locked AS isLocked
+           FROM flight_operations flight
+           JOIN flight_operation_statuses status ON status.id = flight.current_status_id
+           WHERE flight.id = 'fop-closed-djj-wmx'`
+        )
+        .get()
+    ).toEqual({ status: 'PENDING_CLOSURE', isLocked: 0 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT status.code AS status
+           FROM flight_finance_handoffs handoff
+           JOIN finance_handoff_statuses status ON status.id = handoff.status_id
+           WHERE handoff.id = 'fop-closed-djj-wmx-handoff-invoice'`
+        )
+        .get()
+    ).toEqual({ status: 'POSTED' });
 
     sqlite.close();
   });

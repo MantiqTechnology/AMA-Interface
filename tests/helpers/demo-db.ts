@@ -3,7 +3,6 @@ import { dropDemoDatabase, runMigrations } from '../../server/db/migrate';
 import { seedDemoData } from '../../server/db/seed';
 import { seedFlightOperationsData } from '../../server/db/seed-flight-operations';
 import { seedTicketingData } from '../../server/db/seeds/ticketing';
-import { createSqliteRepositories } from '../../server/repositories/sqlite-repositories';
 import { createServices } from '../../server/services';
 
 export async function createSeededTestServices() {
@@ -16,6 +15,6 @@ export async function createSeededTestServices() {
 
   return {
     ...client,
-    services: createServices(createSqliteRepositories(client.db), client.sqlite)
+    services: createServices(client.sqlite)
   };
 }

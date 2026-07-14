@@ -296,7 +296,7 @@ export type FlightStatusHistoryDto = {
 
 export type FlightManifestDto = {
   id: string;
-  flightId: string;
+  flightOperationId: string;
   manifestType: ManifestType;
   status: ManifestStatus;
   passengerCount: number;

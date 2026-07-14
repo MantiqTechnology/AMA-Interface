@@ -15,7 +15,7 @@ pnpm dev
 
 If pnpm blocks native build scripts for `better-sqlite3`, run `pnpm approve-builds`, select `better-sqlite3`, then rerun `pnpm demo:reset`.
 
-Open the Nuxt dev URL and use the demo persona switcher in the header to move between Flight Coordinator, OCC Staff, Chief of Pilot, Station Operations, Finance, Maintenance, Platform Administrator, and Pilot Self Service personas.
+Open the Nuxt dev URL and use the demo persona switcher in the header to move between Director, OCC, Station Admin, Maintenance Manager, and Demo Admin.
 
 ## Scripts
 
@@ -27,6 +27,7 @@ Open the Nuxt dev URL and use the demo persona switcher in the header to move be
 - `pnpm demo:reset`: drop/recreate the demo DB and reseed.
 - `pnpm demo:export`: export all demo tables to JSON.
 - `pnpm test`: run Vitest.
+- `pnpm test:e2e`: run Playwright.
 - `pnpm lint`: run ESLint.
 - `pnpm format`: run Prettier.
 - `pnpm typecheck`: run Nuxt type checking.
@@ -34,41 +35,37 @@ Open the Nuxt dev URL and use the demo persona switcher in the header to move be
 ## Architecture
 
 ```text
-app/                  Nuxt UI, layouts, composables, placeholder feature pages
-app/utils/operations/ Pure readiness, authorization, and formatter helpers
-shared/contracts/     Zod schemas and typed DTOs used by client and server
-shared/types/         Cross-cutting types such as demo roles
-server/api/           H3/Nitro route handlers with validation and response envelopes
-server/services/      Business workflows and domain actions
-server/repositories/  Interfaces plus SQLite/Drizzle implementations
-server/db/            Drizzle schema, local connection, migration and seed helpers
+app/                  Nuxt pages and feature-owned UI components
+shared/contracts/     Cross-domain API envelopes and workflow DTOs
+shared/features/      Feature-owned Zod schemas and DTOs
+server/api/           Explicit H3/Nitro route handlers
+server/features/      Feature-owned repositories and services
+server/services/      Cross-domain operational workflows and read models
+server/db/            Domain schemas, migrations, and deterministic seeds
 scripts/              Local demo lifecycle commands
 public/uploads/       Mock receipt files and upload target
 ```
 
 The UI uses Vuetify through `vuetify-nuxt-module`. Brand colors are configured in `nuxt.config.ts` as the `amaLight` Vuetify theme and mirrored in `app/assets/css/theme.css` for CSS utility tokens.
 
-The route handlers only validate input and call services. Services depend on repository interfaces. For a production backend, keep the UI, contracts, API envelope, and service calls stable, then replace `createSqliteRepositories` in `server/services/index.ts` with repositories backed by Postgres, an internal API, or a queue/workflow system.
-
-The Operations Command Center demo reads `data/ops-demo-db.json` into a local Nuxt state store. Readiness and authorization are pure functions under `app/utils/operations`; the same rules should move to a server/API boundary for production. UI permissions are demo-friendly explanations only, while store mutations still call the same authorization guard before changing local state.
+`flight_operations` is the only persisted flight parent. Ticketing, manifests, fuel, station costs, maintenance handoffs, approvals, invoices, dashboard, command center, and flight following all read the same operation ID. Feature repositories map their own DTOs explicitly to SQLite columns; shared infrastructure is limited to database access, HTTP parsing, error handling, and the standard API envelope.
 
 ## Demo Flow
 
-1. Run `pnpm demo:reset` for the SQLite backend seed, then `pnpm dev`.
-2. Open `/ops/command-center` and review critical medevac/charter alerts.
-3. Open `FR-20260706-001`, switch to Chief of Pilot, approve it, and confirm the created flight in Flight Following.
-4. Open `FR-20260706-002` to show medevac urgency does not bypass fuel and duty-time blockers.
-5. Open `FR-20260706-003` to show expired crew qualification and pending handling blockers.
-6. Open `/ops/flight-following`, review active `AMA702`, and manually move valid statuses.
-7. Open `FLT-AMA-0705-009` from flight detail/closure to show closed finance and maintenance handoff preview.
-8. Use `/admin/access-demo` as Platform Administrator to toggle non-mandatory module entitlements locally.
-9. Open `/ticketing/management` to review OCC sales readiness, then use `/ticketing/booking` for passenger and cargo booking.
+1. Run `pnpm demo:reset`, then `pnpm dev`.
+2. Open `/flights/requests` to review, approve, and convert a request.
+3. Open `/flights` to run readiness, approval, scheduling, check-in, departure, landing, and closure actions.
+4. Open `/dashboard` and `/ops/flight-following` to monitor the same canonical flights.
+5. Open `/ticketing/management` to review sales readiness, then use `/ticketing/booking` for passenger and cargo booking.
+6. Review synchronized passenger and cargo manifests from the flight workspace.
+7. Close a ready flight and review the idempotently created draft invoice under Finance.
+8. Switch demo roles from the header to exercise server-side workflow permissions.
 
 The ticketing architecture and OCC manifest synchronization are documented in [ticketing-flow.md](ticketing-flow.md).
 
 ## Data
 
-The seed includes fictional aircraft, stations, routes, customers, flight orders, manifests, fuel requests/uplifts, station expenses, maintenance work orders, serialized parts, invoices, payments, approvals, and alerts. Aircraft names intentionally use placeholders for Pilatus, Caravan, and PAC types.
+The seed includes canonical flight operations, requests, readiness, approvals, manifests, ticketing sales and bookings, fuel workflows, station services and costs, maintenance handoffs, invoices, payments, and domain master data. Aircraft names intentionally use placeholders for Pilatus, Caravan, and PAC types.
 
 ## Local Storage
 

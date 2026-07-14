@@ -16,19 +16,21 @@ const emit = defineEmits<{
 }>();
 
 const options = ref<PassengerRescheduleOptionDto[]>([]);
-const selectedFlightOrderId = ref('');
+const selectedFlightOperationId = ref('');
 const selectedSeatNumber = ref('');
 const loading = ref(false);
 const submitting = ref(false);
 const errorMessage = ref('');
 
 const selectedFlight = computed(
-  () => options.value.find((flight) => flight.flightOrderId === selectedFlightOrderId.value) ?? null
+  () =>
+    options.value.find((flight) => flight.flightOperationId === selectedFlightOperationId.value) ??
+    null
 );
 const flightItems = computed(() =>
   options.value.map((flight) => ({
     title: `${flight.flightNumber} | ${flight.originCode} -> ${flight.destinationCode} | ${formatTicketingDateTime(flight.scheduledDeparture)}`,
-    value: flight.flightOrderId
+    value: flight.flightOperationId
   }))
 );
 
@@ -37,7 +39,7 @@ watch(
   async (open) => {
     if (!open || !props.ticket) return;
     options.value = [];
-    selectedFlightOrderId.value = '';
+    selectedFlightOperationId.value = '';
     selectedSeatNumber.value = '';
     errorMessage.value = '';
     loading.value = true;
@@ -53,12 +55,12 @@ watch(
   }
 );
 
-watch(selectedFlightOrderId, () => {
+watch(selectedFlightOperationId, () => {
   selectedSeatNumber.value = '';
 });
 
 async function submit() {
-  if (!props.ticket || !selectedFlightOrderId.value || !selectedSeatNumber.value) return;
+  if (!props.ticket || !selectedFlightOperationId.value || !selectedSeatNumber.value) return;
   submitting.value = true;
   errorMessage.value = '';
   try {
@@ -67,7 +69,7 @@ async function submit() {
       {
         method: 'POST',
         body: {
-          flightOrderId: selectedFlightOrderId.value,
+          flightOperationId: selectedFlightOperationId.value,
           seatNumber: selectedSeatNumber.value
         }
       }
@@ -105,7 +107,7 @@ async function submit() {
           </VAlert>
           <template v-else>
             <VSelect
-              v-model="selectedFlightOrderId"
+              v-model="selectedFlightOperationId"
               item-title="title"
               item-value="value"
               :items="flightItems"
@@ -128,7 +130,7 @@ async function submit() {
         <VBtn variant="text" @click="emit('update:modelValue', false)">Cancel</VBtn>
         <VBtn
           color="primary"
-          :disabled="!selectedFlightOrderId || !selectedSeatNumber"
+          :disabled="!selectedFlightOperationId || !selectedSeatNumber"
           :loading="submitting"
           prepend-icon="mdi-calendar-sync"
           @click="submit"

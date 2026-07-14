@@ -36,6 +36,7 @@ export type TicketRefundSummaryDto = {
 export type TicketRefundRequestDto = TicketRefundSummaryDto & {
   subjectType: 'PASSENGER' | 'CARGO';
   subjectId: string;
+  flightOperationId: string;
   referenceNumber: string;
   flightNumber: string;
   routeLabel: string;

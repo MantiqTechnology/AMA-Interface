@@ -1,7 +1,8 @@
+import { operationsMonitoringQuerySchema } from '../../shared/contracts/operations-monitoring';
 import { defineApiEventHandler } from '../utils/api-response';
 import { getServices } from '../utils/services';
+import { parseQuery } from '../utils/validation';
 
-export default defineApiEventHandler(async () => {
-  const services = getServices();
-  return await services.dashboard.getDashboard();
-});
+export default defineApiEventHandler((event) =>
+  getServices().dashboard.getDashboard(parseQuery(event, operationsMonitoringQuerySchema))
+);

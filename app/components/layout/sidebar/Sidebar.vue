@@ -39,24 +39,8 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'Ops',
       icon: 'mdi-airport',
-      visible:
-        can('ops.command_center.view').allowed ||
-        can('flight_request.read').allowed ||
-        can('flight.read').allowed ||
-        masterDataVisible.value,
+      visible: can('flight.read').allowed || masterDataVisible.value,
       children: [
-        {
-          label: 'Command Center',
-          to: '/ops/command-center',
-          icon: 'mdi-monitor-dashboard',
-          visible: can('ops.command_center.view').allowed
-        },
-        {
-          label: 'Requests',
-          to: '/ops/flight-requests',
-          icon: 'mdi-clipboard-list-outline',
-          visible: can('flight_request.read').allowed
-        },
         {
           label: 'Following',
           to: '/ops/flight-following',
@@ -107,7 +91,7 @@ const navItems = computed<NavItem[]>(() =>
       visible: true,
       children: [
         {
-          label: 'Flight Orders',
+          label: 'Flights',
           to: '/flights',
           icon: 'mdi-airplane-marker',
           visible: true

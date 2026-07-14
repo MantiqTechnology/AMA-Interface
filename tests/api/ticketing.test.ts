@@ -62,6 +62,77 @@ await setup({
 });
 
 describe('ticketing APIs', () => {
+  it('enforces operational mutation permissions on the server', async () => {
+    const response = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/flights/fop-dg-pending/actions/approve',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=OCC' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+
+    expect(response).toMatchObject({
+      ok: false,
+      error: {
+        code: 'FORBIDDEN',
+        details: { permissionId: 'flight.approve', role: 'OCC' }
+      }
+    });
+
+    const invalidRole = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/flights/fop-dg-pending/actions/approve',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Unknown' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(invalidRole).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN', details: { role: 'Unknown' } }
+    });
+
+    const emptyRole = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/flights/fop-dg-pending/actions/approve',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(emptyRole).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN', details: { role: '' } }
+    });
+  });
+
+  it('rejects refund records whose subject belongs to another operation', () => {
+    const ownershipDb = new Database(resolveDbPath(process.env.AMA_DB_PATH));
+    ownershipDb.pragma('foreign_keys = ON');
+
+    expect(() =>
+      ownershipDb
+        .prepare(
+          `INSERT INTO ticketing_refund_requests (
+             id, flight_operation_id, subject_type, passenger_ticket_id, reason, status,
+             amount, currency_code, requested_by_user_id, requested_at, created_at, updated_at
+           ) VALUES (
+             'refund-invalid-owner', 'fop-ticketing-cargo', 'PASSENGER', 'TKT-DEMO34',
+             'Ownership mismatch regression test', 'REQUESTED', 1800000, 'IDR',
+             'USR-DEMO-ADMIN', '2026-07-14T00:00:00.000Z',
+             '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z'
+           )`
+        )
+        .run()
+    ).toThrow('ticketing refund flight ownership mismatch');
+
+    ownershipDb.close();
+  });
+
   it('lists only sales-open flights with route-specific rates', async () => {
     const passenger = await $fetch<ApiResponse<AvailableTicketingFlightDto[]>>(
       '/api/ticketing/available-flights',
@@ -73,14 +144,14 @@ describe('ticketing APIs', () => {
     );
     expect(passenger.ok && passenger.data).toContainEqual(
       expect.objectContaining({
-        id: 'ticket-flight-passenger-demo',
+        flightOperationId: 'fop-ticketing-passenger',
         baseRate: 1800000,
         originCode: 'DJJ',
         destinationCode: 'WMX'
       })
     );
     expect(cargo.ok && cargo.data).toContainEqual(
-      expect.objectContaining({ id: 'ticket-flight-cargo-demo', baseRate: 32000 })
+      expect.objectContaining({ flightOperationId: 'fop-ticketing-cargo', baseRate: 32000 })
     );
 
     const statusDb = new Database(resolveDbPath(process.env.AMA_DB_PATH));
@@ -101,9 +172,9 @@ describe('ticketing APIs', () => {
       )
       .run('fop-ticketing-passenger');
     restoreDb.close();
-    expect(afterCancellation.ok && afterCancellation.data.map((flight) => flight.id)).not.toContain(
-      'ticket-flight-passenger-demo'
-    );
+    expect(
+      afterCancellation.ok && afterCancellation.data.map((flight) => flight.flightOperationId)
+    ).not.toContain('fop-ticketing-passenger');
   });
 
   it('books, pays, and checks in a passenger while synchronizing the OCC manifest', async () => {
@@ -112,7 +183,7 @@ describe('ticketing APIs', () => {
       {
         method: 'POST',
         body: {
-          flightOrderId: 'ticket-flight-passenger-demo',
+          flightOperationId: 'fop-ticketing-passenger',
           passengerName: 'API Ticketing Passenger',
           documentType: 'KTP',
           documentNumber: 'API-KTP-001',
@@ -136,7 +207,7 @@ describe('ticketing APIs', () => {
     expect(unfilteredList.ok).toBe(true);
     expect(unfilteredList.ok && unfilteredList.data.length).toBeGreaterThan(0);
     const occupiedSeats = await $fetch<ApiResponse<string[]>>(
-      '/api/ticketing/flights/ticket-flight-passenger-demo/occupied-seats'
+      '/api/ticketing/flights/fop-ticketing-passenger/occupied-seats'
     );
     expect(occupiedSeats.ok && occupiedSeats.data).toContain('1C');
 
@@ -146,7 +217,7 @@ describe('ticketing APIs', () => {
         method: 'POST',
         ignoreResponseError: true,
         body: {
-          flightOrderId: 'ticket-flight-passenger-demo',
+          flightOperationId: 'fop-ticketing-passenger',
           passengerName: 'Duplicate Seat',
           documentType: 'KTP',
           documentNumber: 'API-KTP-002',
@@ -233,7 +304,7 @@ describe('ticketing APIs', () => {
     );
     expect(ticket.ok && ticket.data.refundRequest).toMatchObject({ status: 'APPROVED' });
     const occupiedSeats = await $fetch<ApiResponse<string[]>>(
-      '/api/ticketing/flights/ticket-flight-passenger-demo/occupied-seats'
+      '/api/ticketing/flights/fop-ticketing-passenger/occupied-seats'
     );
     expect(occupiedSeats.ok && occupiedSeats.data).not.toContain('1A');
 
@@ -257,12 +328,32 @@ describe('ticketing APIs', () => {
   });
 
   it('reschedules an active passenger ticket and moves its OCC manifest entry atomically', async () => {
+    const historicalRefund = await $fetch<ApiResponse<TicketRefundRequestDto>>(
+      '/api/ticketing/passenger-tickets/TKT-RESCHEDULE/refund-request',
+      {
+        method: 'POST',
+        body: { reason: 'Passenger requested review before changing the original flight.' }
+      }
+    );
+    expect(historicalRefund.ok).toBe(true);
+    if (!historicalRefund.ok) throw new Error(historicalRefund.error.message);
+    const rejectedRefund = await $fetch<ApiResponse<TicketRefundRequestDto>>(
+      `/api/ticketing/refund-requests/${historicalRefund.data.id}/decision`,
+      {
+        method: 'PATCH',
+        body: { decision: 'REJECT', note: 'Passenger selected reschedule instead.' }
+      }
+    );
+    expect(rejectedRefund.ok && rejectedRefund.data.flightOperationId).toBe(
+      'fop-ticketing-passenger'
+    );
+
     const options = await $fetch<ApiResponse<PassengerRescheduleOptionDto[]>>(
       '/api/ticketing/passenger-tickets/TKT-RESCHEDULE/reschedule-options'
     );
     expect(options.ok && options.data).toContainEqual(
       expect.objectContaining({
-        flightOrderId: 'ticket-flight-passenger-later',
+        flightOperationId: 'fop-ticketing-passenger-later',
         flightNumber: 'AMA-20260717-008',
         availableSeats: expect.arrayContaining(['1A'])
       })
@@ -273,32 +364,44 @@ describe('ticketing APIs', () => {
       {
         method: 'POST',
         body: {
-          flightOrderId: 'ticket-flight-passenger-later',
+          flightOperationId: 'fop-ticketing-passenger-later',
           seatNumber: '1A'
         }
       }
     );
     expect(rescheduled.ok && rescheduled.data).toMatchObject({
-      flightOrderId: 'ticket-flight-passenger-later',
+      flightOperationId: 'fop-ticketing-passenger-later',
       flightNumber: 'AMA-20260717-008',
       seatNumber: '1A'
     });
 
     const oldSeats = await $fetch<ApiResponse<string[]>>(
-      '/api/ticketing/flights/ticket-flight-passenger-demo/occupied-seats'
+      '/api/ticketing/flights/fop-ticketing-passenger/occupied-seats'
     );
     const newSeats = await $fetch<ApiResponse<string[]>>(
-      '/api/ticketing/flights/ticket-flight-passenger-later/occupied-seats'
+      '/api/ticketing/flights/fop-ticketing-passenger-later/occupied-seats'
     );
     expect(oldSeats.ok && oldSeats.data).not.toContain('2A');
     expect(newSeats.ok && newSeats.data).toContain('1A');
+
+    const refundHistory = await $fetch<ApiResponse<TicketRefundRequestDto[]>>(
+      '/api/ticketing/refund-requests',
+      { query: { subjectType: 'PASSENGER', status: 'REJECTED' } }
+    );
+    expect(refundHistory.ok && refundHistory.data).toContainEqual(
+      expect.objectContaining({
+        id: historicalRefund.data.id,
+        flightOperationId: 'fop-ticketing-passenger',
+        flightNumber: 'AMA-20260715-006'
+      })
+    );
 
     const duplicateSeat = await $fetch<ApiResponse<PassengerTicketDto>>(
       '/api/ticketing/passenger-tickets/TKT-DEMO34/reschedule',
       {
         method: 'POST',
         body: {
-          flightOrderId: 'ticket-flight-passenger-later',
+          flightOperationId: 'fop-ticketing-passenger-later',
           seatNumber: '1A'
         },
         ignoreResponseError: true
@@ -338,7 +441,7 @@ describe('ticketing APIs', () => {
         method: 'POST',
         ignoreResponseError: true,
         body: {
-          flightOrderId: 'ticket-flight-cargo-demo',
+          flightOperationId: 'fop-ticketing-cargo',
           senderName: 'Oversized Cargo Sender',
           receiverName: 'Oversized Cargo Receiver',
           description: 'Cargo above aircraft capacity',
@@ -361,7 +464,7 @@ describe('ticketing APIs', () => {
     const created = await $fetch<ApiResponse<CargoBookingDto>>('/api/ticketing/cargo-bookings', {
       method: 'POST',
       body: {
-        flightOrderId: 'ticket-flight-cargo-demo',
+        flightOperationId: 'fop-ticketing-cargo',
         senderName: 'API Cargo Sender',
         receiverName: 'API Cargo Receiver',
         description: 'Medical supply box',
@@ -460,6 +563,13 @@ describe('ticketing APIs', () => {
   });
 
   it('opens OCC sales once and exposes the new commercial flight', async () => {
+    const beforeOpenDb = new Database(resolveDbPath(process.env.AMA_DB_PATH), { readonly: true });
+    const operationCountBefore = (
+      beforeOpenDb.prepare('SELECT COUNT(*) AS count FROM flight_operations').get() as {
+        count: number;
+      }
+    ).count;
+    beforeOpenDb.close();
     const flights = await $fetch<ApiResponse<TicketingOccFlightDto[]>>('/api/ticketing/sales');
     expect(flights.ok).toBe(true);
     if (!flights.ok) throw new Error(flights.error.message);
@@ -490,10 +600,19 @@ describe('ticketing APIs', () => {
 
     const sqlite = new Database(resolveDbPath(process.env.AMA_DB_PATH));
     sqlite.pragma('foreign_keys = ON');
+    expect(
+      (sqlite.prepare('SELECT COUNT(*) AS count FROM flight_operations').get() as { count: number })
+        .count
+    ).toBe(operationCountBefore);
+    expect(
+      sqlite
+        .prepare('SELECT flight_operation_id FROM ticketing_sales WHERE flight_operation_id = ?')
+        .get('fop-ticketing-api-open')
+    ).toEqual({ flight_operation_id: 'fop-ticketing-api-open' });
     sqlite
       .prepare(
         `INSERT INTO flight_manifests (
-           id, flight_id, manifest_type_id, status_id, created_at, updated_at
+           id, flight_operation_id, manifest_type_id, status_id, created_at, updated_at
          ) VALUES (?, ?, 'manifest-type-passenger', 'manifest-status-draft', ?, ?)`
       )
       .run(
@@ -522,7 +641,7 @@ describe('ticketing APIs', () => {
     sqlite.close();
 
     const occupied = await $fetch<ApiResponse<string[]>>(
-      `/api/ticketing/flights/${opened.data.flightOrderId}/occupied-seats`
+      `/api/ticketing/flights/${opened.data.flightOperationId}/occupied-seats`
     );
     expect(occupied.ok && occupied.data).toContain('1A');
     const occupiedTicket = await $fetch<ApiResponse<PassengerTicketDto>>(
@@ -531,7 +650,7 @@ describe('ticketing APIs', () => {
         method: 'POST',
         ignoreResponseError: true,
         body: {
-          flightOrderId: opened.data.flightOrderId,
+          flightOperationId: opened.data.flightOperationId,
           passengerName: 'Duplicate OCC Seat',
           documentType: 'KTP',
           documentNumber: 'API-KTP-OCC-DUPLICATE',
@@ -548,7 +667,7 @@ describe('ticketing APIs', () => {
       {
         method: 'POST',
         body: {
-          flightOrderId: opened.data.flightOrderId,
+          flightOperationId: opened.data.flightOperationId,
           passengerName: 'Existing Manifest Passenger',
           documentType: 'KTP',
           documentNumber: 'API-KTP-MANIFEST',

@@ -35,6 +35,16 @@ describe('database migrations', () => {
     sqlite.close();
   });
 
+  it('rejects obsolete operational tables even without an old-name prefix', () => {
+    const sqlite = new Database(':memory:');
+
+    sqlite.exec('CREATE TABLE flight_orders (id TEXT PRIMARY KEY)');
+
+    expect(() => runMigrations(sqlite)).toThrow(/obsolete tables: flight_orders/u);
+
+    sqlite.close();
+  });
+
   it('rejects old canonical master table shapes with a reset instruction', () => {
     const sqlite = new Database(':memory:');
 
@@ -45,12 +55,30 @@ describe('database migrations', () => {
     sqlite.close();
   });
 
-  it('rejects the pre-refund ticketing shape with a reset instruction', () => {
+  it('rejects ticketing tables that still lack canonical operation ownership', () => {
     const sqlite = new Database(':memory:');
 
     sqlite.exec('CREATE TABLE passenger_tickets (id TEXT PRIMARY KEY)');
 
-    expect(() => runMigrations(sqlite)).toThrow(/passenger_tickets missing ticket_status/u);
+    expect(() => runMigrations(sqlite)).toThrow(/passenger_tickets missing flight_operation_id/u);
+
+    sqlite.close();
+  });
+
+  it('rejects ticketing tables that retain a second flight parent column', () => {
+    const sqlite = new Database(':memory:');
+
+    sqlite.exec(
+      `CREATE TABLE ticketing_sales (
+         id TEXT PRIMARY KEY,
+         flight_operation_id TEXT NOT NULL,
+         flight_order_id TEXT NOT NULL
+       )`
+    );
+
+    expect(() => runMigrations(sqlite)).toThrow(
+      /obsolete columns: ticketing_sales\.flight_order_id/u
+    );
 
     sqlite.close();
   });
@@ -95,6 +123,19 @@ describe('database migrations', () => {
     const tables = tableNames(sqlite);
     expect(tables.filter((table) => table.startsWith(oldTablePrefix))).toEqual([]);
     expect(tables.filter((table) => table.includes('legacy'))).toEqual([]);
+    expect(tables).not.toEqual(
+      expect.arrayContaining([
+        'flight_orders',
+        'manifests',
+        'fuel_requests',
+        'fuel_uplifts',
+        'station_expenses',
+        'approvals',
+        'alerts',
+        'maintenance_work_orders',
+        'serialized_parts'
+      ])
+    );
     expect(tables).toEqual(
       expect.arrayContaining([
         'aircraft',
@@ -137,19 +178,21 @@ describe('database migrations', () => {
 
     runMigrations(sqlite);
 
-    expect(foreignKeyParents(sqlite, 'ticketing_sales')).toEqual(
-      expect.arrayContaining(['flight_operations', 'flight_orders'])
-    );
-    expect(foreignKeyParents(sqlite, 'passenger_tickets')).toContain('flight_orders');
+    expect(foreignKeyParents(sqlite, 'ticketing_sales')).toContain('flight_operations');
+    expect(foreignKeyParents(sqlite, 'flight_manifests')).toContain('flight_operations');
+    expect(foreignKeyParents(sqlite, 'passenger_tickets')).toContain('flight_operations');
     expect(foreignKeyParents(sqlite, 'cargo_bookings')).toEqual(
-      expect.arrayContaining(['flight_orders', 'agents', 'dg_categories'])
+      expect.arrayContaining(['flight_operations', 'agents', 'dg_categories'])
     );
     expect(foreignKeyParents(sqlite, 'ticketing_refund_requests')).toEqual(
-      expect.arrayContaining(['passenger_tickets', 'cargo_bookings'])
+      expect.arrayContaining(['flight_operations', 'passenger_tickets', 'cargo_bookings'])
     );
     expect(foreignKeyParents(sqlite, 'passenger_ticket_reschedules')).toEqual(
-      expect.arrayContaining(['passenger_tickets', 'flight_orders'])
+      expect.arrayContaining(['passenger_tickets', 'flight_operations'])
     );
+    expect(foreignKeyParents(sqlite, 'invoices')).toContain('flight_operations');
+    expect(foreignKeyParents(sqlite, 'flight_manifest_passengers')).toContain('passenger_tickets');
+    expect(foreignKeyParents(sqlite, 'flight_manifest_cargo_items')).toContain('cargo_bookings');
     const passengerIndexes = sqlite
       .prepare("PRAGMA index_list('passenger_tickets')")
       .all() as Array<{ name: string; unique: number }>;

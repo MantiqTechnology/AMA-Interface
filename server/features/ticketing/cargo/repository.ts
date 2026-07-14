@@ -43,7 +43,6 @@ function toCargoBookingDto(row: CargoBookingRow): CargoBookingDto {
 
 type CargoBookingInsert = {
   id: string;
-  flightOrderId: string;
   flightOperationId: string;
   senderName: string;
   receiverName: string;
@@ -75,11 +74,11 @@ export class CargoCapacityExceededError extends Error {
 const cargoBookingSelect = `
   SELECT
     booking.id,
-    booking.flight_order_id AS flightOrderId,
+    booking.flight_operation_id AS flightOperationId,
     flight.flight_number AS flightNumber,
     origin.station_code AS originCode,
     destination.station_code AS destinationCode,
-    flight.scheduled_departure AS scheduledDeparture,
+    flight.scheduled_departure_at AS scheduledDeparture,
     booking.sender_name AS senderName,
     booking.receiver_name AS receiverName,
     booking.description,
@@ -100,7 +99,7 @@ const cargoBookingSelect = `
     agent.agent_name AS agentName,
     booking.tariff_rate AS tariffRate,
     booking.total_tariff AS totalTariff,
-    flight.currency AS currencyCode,
+    flight.currency_code AS currencyCode,
     booking.status,
     booking.delivered_to AS deliveredTo,
     booking.delivered_at AS deliveredAt,
@@ -113,7 +112,7 @@ const cargoBookingSelect = `
     booking.created_at AS createdAt,
     booking.updated_at AS updatedAt
   FROM cargo_bookings booking
-  JOIN flight_orders flight ON flight.id = booking.flight_order_id
+  JOIN flight_operations flight ON flight.id = booking.flight_operation_id
   JOIN routes route ON route.id = flight.route_id
   JOIN stations origin ON origin.id = route.origin_station_id
   JOIN stations destination ON destination.id = route.destination_station_id
@@ -141,9 +140,9 @@ export class CargoBookingRepository {
       const term = `%${query.search}%`;
       parameters.push(term, term, term);
     }
-    if (query.flightOrderId) {
-      conditions.push('booking.flight_order_id = ?');
-      parameters.push(query.flightOrderId);
+    if (query.flightOperationId) {
+      conditions.push('booking.flight_operation_id = ?');
+      parameters.push(query.flightOperationId);
     }
     if (query.paymentStatus) {
       conditions.push('booking.payment_status = ?');
@@ -166,31 +165,32 @@ export class CargoBookingRepository {
     return row ? toCargoBookingDto(row) : null;
   }
 
-  bookedWeight(flightOrderId: string) {
+  bookedWeight(flightOperationId: string) {
     const row = this.sqlite
       .prepare(
         `SELECT COALESCE(SUM(item.chargeable_weight_kg), 0) AS total
          FROM ticketing_sales sale
          JOIN flight_manifests manifest
-           ON manifest.flight_id = sale.flight_operation_id
+           ON manifest.flight_operation_id = sale.flight_operation_id
           AND manifest.manifest_type_id = 'manifest-type-cargo'
          LEFT JOIN flight_manifest_cargo_items item ON item.manifest_id = manifest.id
-         WHERE sale.flight_order_id = ?`
+         WHERE sale.flight_operation_id = ?`
       )
-      .get(flightOrderId) as { total: number };
+      .get(flightOperationId) as { total: number };
     return Number(row.total);
   }
 
   createAndSync(input: CargoBookingInsert) {
     const create = this.sqlite.transaction(() => {
-      const projectedWeightKg = this.bookedWeight(input.flightOrderId) + input.chargeableWeightKg;
+      const projectedWeightKg =
+        this.bookedWeight(input.flightOperationId) + input.chargeableWeightKg;
       if (projectedWeightKg > input.cargoCapacityKg) {
         throw new CargoCapacityExceededError(projectedWeightKg);
       }
       this.sqlite
         .prepare(
           `INSERT INTO cargo_bookings (
-             id, flight_order_id, sender_name, receiver_name, description, actual_weight_kg,
+             id, flight_operation_id, sender_name, receiver_name, description, actual_weight_kg,
              length_cm, width_cm, height_cm, volume_weight_kg, chargeable_weight_kg,
              is_dangerous, dg_category_id, dg_acceptance_status, payment_method, payment_status,
              agent_id, tariff_rate, total_tariff, status, created_at, updated_at
@@ -198,7 +198,7 @@ export class CargoBookingRepository {
         )
         .run(
           input.id,
-          input.flightOrderId,
+          input.flightOperationId,
           input.senderName,
           input.receiverName,
           input.description,
@@ -223,7 +223,7 @@ export class CargoBookingRepository {
       this.sqlite
         .prepare(
           `INSERT OR IGNORE INTO flight_manifests (
-             id, flight_id, manifest_type_id, status_id, created_at, updated_at
+             id, flight_operation_id, manifest_type_id, status_id, created_at, updated_at
            ) VALUES (?, ?, 'manifest-type-cargo', 'manifest-status-draft', ?, ?)`
         )
         .run(fallbackManifestId, input.flightOperationId, input.timestamp, input.timestamp);
@@ -231,7 +231,7 @@ export class CargoBookingRepository {
         .prepare(
           `SELECT id, locked_at AS lockedAt
            FROM flight_manifests
-           WHERE flight_id = ? AND manifest_type_id = 'manifest-type-cargo'`
+           WHERE flight_operation_id = ? AND manifest_type_id = 'manifest-type-cargo'`
         )
         .get(input.flightOperationId) as { id: string; lockedAt: string | null } | undefined;
       if (!ownedManifest) throw new Error('TICKETING_MANIFEST_NOT_FOUND');
@@ -252,14 +252,15 @@ export class CargoBookingRepository {
       this.sqlite
         .prepare(
           `INSERT INTO flight_manifest_cargo_items (
-             id, manifest_id, description, sender_name, receiver_name, actual_weight_kg,
+             id, manifest_id, cargo_booking_id, description, sender_name, receiver_name, actual_weight_kg,
              volume_weight_kg, chargeable_weight_kg, dg_category_id, dg_acceptance_status_id,
              remarks, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           `ticket-sync-${input.id}`,
           manifestId,
+          input.id,
           input.description,
           input.senderName,
           input.receiverName,

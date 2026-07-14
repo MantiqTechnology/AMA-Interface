@@ -8,53 +8,33 @@ type ApiResponse<T> =
   | { ok: false; error: { code: string; message: string; details?: unknown }; meta?: ApiMeta };
 ```
 
-Request params, query strings, and bodies are validated with Zod schemas from `shared/contracts`.
+Request params, query strings, and bodies are validated with feature-owned Zod schemas.
 
 ## Auth
 
 - `GET /api/auth/session` -> `DemoSessionDto`
 - `POST /api/auth/role` body `{ role }` -> `DemoSessionDto`
 
-Roles: `Director`, `OCC`, `Station Admin`, `Maintenance Manager`.
+Roles: `Director`, `OCC`, `Station Admin`, `Maintenance Manager`, `Demo Admin`.
 
-## Operations Command Center Pack
+## Flight Operations
 
-The `/ops/*` pages currently run from local fixture state loaded from `data/ops-demo-db.json`. Domain mutations such as readiness rerun, dispatch approval, mock fuel/handling confirmation, flight-following update, and closure are guarded by `authorizeOperation()` in `app/utils/operations/policies.ts`.
+`flight_operations.id` is the universal flight identifier used by every dependent domain.
 
-Production swap path:
+- `GET /api/flight-operations/flights` -> flight operation list
+- `POST /api/flight-operations/flights` -> create flight operation
+- `GET /api/flight-operations/flights/:id` -> flight operation detail
+- `PUT /api/flight-operations/flights/:id` -> update flight operation
+- `POST /api/flight-operations/flights/:id/actions/*` -> lifecycle actions
+- `GET /api/flight-operations/flight-following` -> `FlightFollowingDto`
 
-- keep the DTO shape and standard API envelope;
-- expose the same domain actions as server endpoints;
-- run module entitlement, RBAC, station scope, workflow transition, and readiness guards on the server before writing;
-- persist audit/timeline events in the production database instead of Nuxt local state.
+Fuel, station service, station cost, maintenance handoff, manifest, approval, readiness, and closure endpoints are grouped under `/api/flight-operations`. All payloads and rows refer to a `flightOperationId`.
 
 ## Dashboard
 
-- `GET /api/dashboard` -> `DashboardDto`
+- `GET /api/dashboard?date=&stationId=&status=` -> `DashboardDto`
 
-Includes KPIs, latest flights, pending fuel requests, submitted station expenses, invoices, approvals, and alerts.
-
-## Flights
-
-- `GET /api/flights?status=&station=&limit=&offset=` -> `FlightSummaryDto[]`
-- `POST /api/flights` body `CreateFlightOrderBody` -> `FlightDetailDto`
-- `GET /api/flights/:id` -> `FlightDetailDto`
-- `POST /api/flights/:id/actions/dispatch` -> `FlightDetailDto`
-
-## Fuel
-
-- `GET /api/fuel/requests?status=&limit=&offset=` -> `FuelRequestDto[]`
-- `POST /api/fuel/requests` body `CreateFuelRequestBody` -> `FuelRequestDto`
-- `GET /api/fuel/requests/:id` -> `FuelRequestDto`
-- `POST /api/fuel/requests/:id/actions/approve` -> `FuelRequestDto`
-- `POST /api/fuel/requests/:id/actions/uplift` body `RecordFuelUpliftBody` -> `FuelUpliftDto`
-
-## Station Expenses
-
-- `GET /api/station-expenses?status=&stationId=&limit=&offset=` -> `StationExpenseDto[]`
-- `POST /api/station-expenses` body `CreateStationExpenseBody` -> `StationExpenseDto`
-- `POST /api/station-expenses/:id/actions/submit` -> `StationExpenseDto`
-- `POST /api/station-expenses/:id/receipt` body `{ receiptPath }` -> `StationExpenseDto`
+The dashboard is calculated from canonical operations, ticketing, fuel, station cost, maintenance handoff, invoice, and payment data. Alerts are derived from current blockers and overdue workflow state; they are not stored as a second flight status.
 
 ## Invoices
 
@@ -62,30 +42,20 @@ Includes KPIs, latest flights, pending fuel requests, submitted station expenses
 - `GET /api/invoices/:id` -> `InvoiceDetailDto`
 - `POST /api/invoices/:id/actions/record-payment` body `RecordPaymentBody` -> `PaymentDto`
 
-## Approvals
-
-- `GET /api/approvals?status=&roleRequired=&limit=&offset=` -> `ApprovalDto[]`
-- `POST /api/approvals/:id/actions/decision` body `DecideApprovalBody` -> `ApprovalDto`
-
-## Maintenance
-
-- `GET /api/maintenance/work-orders?status=&aircraftId=&limit=&offset=` -> `MaintenanceWorkOrderDto[]`
-- `POST /api/maintenance/work-orders` body `CreateWorkOrderBody` -> `MaintenanceWorkOrderDto`
-- `GET /api/maintenance/work-orders/:id` -> `MaintenanceWorkOrderDto`
-- `POST /api/maintenance/work-orders/:id/actions/close` body `CloseWorkOrderBody` -> `MaintenanceWorkOrderDto`
+Invoices use `flightOperationId`. A ready finance handoff creates at most one draft invoice for a closed flight.
 
 ## Ticketing
 
 - `GET /api/ticketing/available-flights?serviceType=&originStationId=&destinationStationId=` -> `AvailableTicketingFlightDto[]`
 - `GET /api/ticketing/sales` -> `TicketingOccFlightDto[]`
 - `POST /api/ticketing/sales/open` body `{ flightOperationId }` -> `TicketingSalesOpeningDto`
-- `GET /api/ticketing/passenger-tickets?search=&flightOrderId=&paymentStatus=&checkInStatus=` -> `PassengerTicketDto[]`
+- `GET /api/ticketing/passenger-tickets?search=&flightOperationId=&paymentStatus=&checkInStatus=` -> `PassengerTicketDto[]`
 - `POST /api/ticketing/passenger-tickets` body `CreatePassengerTicketInput` -> `PassengerTicketDto`
 - `GET /api/ticketing/passenger-tickets/:id` -> `PassengerTicketDto`
 - `PATCH /api/ticketing/passenger-tickets/:id/payment` -> `PassengerTicketDto`
 - `PATCH /api/ticketing/passenger-tickets/:id/check-in` -> `PassengerTicketDto`
 - `GET /api/ticketing/flights/:id/occupied-seats` -> `string[]`
-- `GET /api/ticketing/cargo-bookings?search=&flightOrderId=&paymentStatus=&status=` -> `CargoBookingDto[]`
+- `GET /api/ticketing/cargo-bookings?search=&flightOperationId=&paymentStatus=&status=` -> `CargoBookingDto[]`
 - `POST /api/ticketing/cargo-bookings` body `CreateCargoBookingInput` -> `CargoBookingDto`
 - `GET /api/ticketing/cargo-bookings/:id` -> `CargoBookingDto`
 - `PATCH /api/ticketing/cargo-bookings/:id/payment` -> `CargoBookingDto`
@@ -102,11 +72,7 @@ Includes KPIs, latest flights, pending fuel requests, submitted station expenses
 - `DELETE /api/uploads/:id` -> deleted `LocalUploadDto`
 - `POST /api/uploads/receipts` multipart field `file` -> `{ filename, path, size, contentType }`
 
-General uploads are stored under `data/uploads/local` with local metadata in `data/local-uploads.json`.
-The legacy receipt mock endpoint stores files under `public/uploads/mock-receipts`.
-Swap this for object storage or a production document service later without changing station expense DTOs.
-
-Run `pnpm uploads:migrate-local` once to move older local uploads from `public/uploads/local` into private local storage.
+General uploads are stored under `data/uploads/local` with local metadata in `data/local-uploads.json`. Receipt mock uploads are stored under `public/uploads/mock-receipts`.
 
 ## Documents
 

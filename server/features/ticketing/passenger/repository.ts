@@ -41,7 +41,6 @@ function toPassengerTicketDto(row: PassengerTicketRow): PassengerTicketDto {
 
 type PassengerTicketInsert = {
   id: string;
-  flightOrderId: string;
   flightOperationId: string;
   passengerName: string;
   documentType: string;
@@ -57,7 +56,7 @@ type PassengerTicketInsert = {
 
 export type PassengerRescheduleContext = {
   id: string;
-  flightOrderId: string;
+  flightOperationId: string;
   routeId: string;
   originStationId: string;
   destinationStationId: string;
@@ -70,8 +69,7 @@ export type PassengerRescheduleContext = {
 type PassengerRescheduleInput = {
   id: string;
   ticketId: string;
-  sourceFlightOrderId: string;
-  targetFlightOrderId: string;
+  sourceFlightOperationId: string;
   targetFlightOperationId: string;
   routeId: string;
   seatNumber: string;
@@ -91,11 +89,11 @@ type PassengerManifestSnapshot = {
 const passengerTicketSelect = `
   SELECT
     ticket.id,
-    ticket.flight_order_id AS flightOrderId,
+    ticket.flight_operation_id AS flightOperationId,
     flight.flight_number AS flightNumber,
     origin.station_code AS originCode,
     destination.station_code AS destinationCode,
-    flight.scheduled_departure AS scheduledDeparture,
+    flight.scheduled_departure_at AS scheduledDeparture,
     ticket.passenger_name AS passengerName,
     ticket.document_type AS documentType,
     ticket.document_number AS documentNumber,
@@ -103,7 +101,7 @@ const passengerTicketSelect = `
     ticket.passenger_weight_kg AS passengerWeightKg,
     ticket.baggage_weight_kg AS baggageWeightKg,
     ticket.ticket_price AS ticketPrice,
-    flight.currency AS currencyCode,
+    flight.currency_code AS currencyCode,
     ticket.ticket_status AS ticketStatus,
     ticket.payment_status AS paymentStatus,
     ticket.payment_method AS paymentMethod,
@@ -122,7 +120,7 @@ const passengerTicketSelect = `
     ticket.created_at AS createdAt,
     ticket.updated_at AS updatedAt
   FROM passenger_tickets ticket
-  JOIN flight_orders flight ON flight.id = ticket.flight_order_id
+  JOIN flight_operations flight ON flight.id = ticket.flight_operation_id
   JOIN routes route ON route.id = flight.route_id
   JOIN stations origin ON origin.id = route.origin_station_id
   JOIN stations destination ON destination.id = route.destination_station_id
@@ -149,9 +147,9 @@ export class PassengerTicketRepository {
       const term = `%${query.search}%`;
       parameters.push(term, term, term);
     }
-    if (query.flightOrderId) {
-      conditions.push('ticket.flight_order_id = ?');
-      parameters.push(query.flightOrderId);
+    if (query.flightOperationId) {
+      conditions.push('ticket.flight_operation_id = ?');
+      parameters.push(query.flightOperationId);
     }
     if (query.paymentStatus) {
       conditions.push('ticket.payment_status = ?');
@@ -174,26 +172,26 @@ export class PassengerTicketRepository {
     return row ? toPassengerTicketDto(row) : null;
   }
 
-  occupiedSeats(flightOrderId: string): string[] {
+  occupiedSeats(flightOperationId: string): string[] {
     return (
       this.sqlite
         .prepare(
           `SELECT seatNumber FROM (
              SELECT seat_number AS seatNumber
              FROM passenger_tickets
-             WHERE flight_order_id = ? AND ticket_status = 'ACTIVE'
+             WHERE flight_operation_id = ? AND ticket_status = 'ACTIVE'
              UNION
              SELECT passenger.seat_number AS seatNumber
              FROM ticketing_sales sale
              JOIN flight_manifests manifest
-               ON manifest.flight_id = sale.flight_operation_id
+               ON manifest.flight_operation_id = sale.flight_operation_id
               AND manifest.manifest_type_id = 'manifest-type-passenger'
              JOIN flight_manifest_passengers passenger ON passenger.manifest_id = manifest.id
-             WHERE sale.flight_order_id = ? AND passenger.seat_number IS NOT NULL
+             WHERE sale.flight_operation_id = ? AND passenger.seat_number IS NOT NULL
            )
            ORDER BY seatNumber`
         )
-        .all(flightOrderId, flightOrderId) as Array<{ seatNumber: string }>
+        .all(flightOperationId, flightOperationId) as Array<{ seatNumber: string }>
     ).map((row) => row.seatNumber);
   }
 
@@ -203,7 +201,7 @@ export class PassengerTicketRepository {
         .prepare(
           `SELECT
              ticket.id,
-             ticket.flight_order_id AS flightOrderId,
+             ticket.flight_operation_id AS flightOperationId,
              flight.route_id AS routeId,
              route.origin_station_id AS originStationId,
              route.destination_station_id AS destinationStationId,
@@ -212,7 +210,7 @@ export class PassengerTicketRepository {
              ticket.check_in_status AS checkInStatus,
              refund.status AS refundStatus
            FROM passenger_tickets ticket
-           JOIN flight_orders flight ON flight.id = ticket.flight_order_id
+           JOIN flight_operations flight ON flight.id = ticket.flight_operation_id
            JOIN routes route ON route.id = flight.route_id
            LEFT JOIN ticketing_refund_requests refund ON refund.id = (
              SELECT latest.id
@@ -232,7 +230,7 @@ export class PassengerTicketRepository {
       const context = this.rescheduleContext(input.ticketId);
       if (
         !context ||
-        context.flightOrderId !== input.sourceFlightOrderId ||
+        context.flightOperationId !== input.sourceFlightOperationId ||
         context.routeId !== input.routeId ||
         context.ticketStatus !== 'ACTIVE' ||
         context.paymentStatus !== 'PAID' ||
@@ -247,18 +245,15 @@ export class PassengerTicketRepository {
         .prepare(
           `SELECT sale.flight_operation_id AS flightOperationId
            FROM ticketing_sales sale
-           JOIN flight_orders flight ON flight.id = sale.flight_order_id
            JOIN flight_operations operation ON operation.id = sale.flight_operation_id
            JOIN flight_operation_statuses status ON status.id = operation.current_status_id
-           WHERE sale.flight_order_id = ?
-             AND sale.flight_operation_id = ?
+           WHERE sale.flight_operation_id = ?
              AND sale.service_type = 'PASSENGER'
-             AND flight.route_id = ?
-             AND flight.status IN ('scheduled', 'ready')
+             AND operation.route_id = ?
              AND status.code IN ('SCHEDULED', 'CHECK_IN_OPEN')
-             AND julianday(flight.scheduled_departure) > julianday('now')`
+             AND julianday(operation.scheduled_departure_at) > julianday('now')`
         )
-        .get(input.targetFlightOrderId, input.targetFlightOperationId, input.routeId) as
+        .get(input.targetFlightOperationId, input.routeId) as
         { flightOperationId: string } | undefined;
       if (!target) throw new Error('TICKETING_RESCHEDULE_TARGET_CHANGED');
 
@@ -276,17 +271,16 @@ export class PassengerTicketRepository {
           `SELECT manifest.id, manifest.locked_at AS lockedAt
            FROM flight_manifest_passengers manifest_passenger
            JOIN flight_manifests manifest ON manifest.id = manifest_passenger.manifest_id
-           WHERE manifest_passenger.id = ?`
+           WHERE manifest_passenger.passenger_ticket_id = ?`
         )
-        .get(`ticket-sync-${input.ticketId}`) as
-        { id: string; lockedAt: string | null } | undefined;
+        .get(input.ticketId) as { id: string; lockedAt: string | null } | undefined;
       if (sourceManifest?.lockedAt) throw new Error('TICKETING_MANIFEST_LOCKED');
 
       const fallbackManifestId = `${input.targetFlightOperationId}-manifest-pax`;
       this.sqlite
         .prepare(
           `INSERT OR IGNORE INTO flight_manifests (
-             id, flight_id, manifest_type_id, status_id, created_at, updated_at
+             id, flight_operation_id, manifest_type_id, status_id, created_at, updated_at
            ) VALUES (?, ?, 'manifest-type-passenger', 'manifest-status-draft', ?, ?)`
         )
         .run(fallbackManifestId, input.targetFlightOperationId, input.timestamp, input.timestamp);
@@ -294,7 +288,7 @@ export class PassengerTicketRepository {
         .prepare(
           `SELECT id, locked_at AS lockedAt
            FROM flight_manifests
-           WHERE flight_id = ? AND manifest_type_id = 'manifest-type-passenger'`
+           WHERE flight_operation_id = ? AND manifest_type_id = 'manifest-type-passenger'`
         )
         .get(input.targetFlightOperationId) as { id: string; lockedAt: string | null } | undefined;
       if (!targetManifest) throw new Error('TICKETING_MANIFEST_NOT_FOUND');
@@ -303,10 +297,10 @@ export class PassengerTicketRepository {
       this.sqlite
         .prepare(
           `UPDATE passenger_tickets
-           SET flight_order_id = ?, seat_number = ?, updated_at = ?
+           SET flight_operation_id = ?, seat_number = ?, updated_at = ?
            WHERE id = ?`
         )
-        .run(input.targetFlightOrderId, input.seatNumber, input.timestamp, input.ticketId);
+        .run(input.targetFlightOperationId, input.seatNumber, input.timestamp, input.ticketId);
       this.sqlite
         .prepare('DELETE FROM flight_manifest_passengers WHERE id = ?')
         .run(`ticket-sync-${input.ticketId}`);
@@ -315,13 +309,14 @@ export class PassengerTicketRepository {
       this.sqlite
         .prepare(
           `INSERT INTO flight_manifest_passengers (
-             id, manifest_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+             id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
              baggage_weight_kg, remarks, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           `ticket-sync-${input.ticketId}`,
           targetManifest.id,
+          input.ticketId,
           passenger.passengerName,
           passenger.documentType,
           passenger.documentNumber,
@@ -335,15 +330,15 @@ export class PassengerTicketRepository {
       this.sqlite
         .prepare(
           `INSERT INTO passenger_ticket_reschedules (
-             id, passenger_ticket_id, previous_flight_order_id, new_flight_order_id,
+             id, passenger_ticket_id, previous_flight_operation_id, new_flight_operation_id,
              previous_seat_number, new_seat_number, rescheduled_by_user_id, rescheduled_at
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           input.id,
           input.ticketId,
-          input.sourceFlightOrderId,
-          input.targetFlightOrderId,
+          input.sourceFlightOperationId,
+          input.targetFlightOperationId,
           passenger.seatNumber,
           input.seatNumber,
           input.actorId,
@@ -358,14 +353,14 @@ export class PassengerTicketRepository {
       this.sqlite
         .prepare(
           `INSERT INTO passenger_tickets (
-             id, flight_order_id, passenger_name, document_type, document_number, seat_number,
+             id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
              passenger_weight_kg, baggage_weight_kg, ticket_price, ticket_status, payment_status,
              check_in_status, loyalty_member_id, agent_id, created_at, updated_at
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'UNPAID', 'PENDING', ?, ?, ?, ?)`
         )
         .run(
           input.id,
-          input.flightOrderId,
+          input.flightOperationId,
           input.passengerName,
           input.documentType,
           input.documentNumber,
@@ -383,7 +378,7 @@ export class PassengerTicketRepository {
       this.sqlite
         .prepare(
           `INSERT OR IGNORE INTO flight_manifests (
-             id, flight_id, manifest_type_id, status_id, created_at, updated_at
+             id, flight_operation_id, manifest_type_id, status_id, created_at, updated_at
            ) VALUES (?, ?, 'manifest-type-passenger', 'manifest-status-draft', ?, ?)`
         )
         .run(fallbackManifestId, input.flightOperationId, input.timestamp, input.timestamp);
@@ -391,7 +386,7 @@ export class PassengerTicketRepository {
         .prepare(
           `SELECT id, locked_at AS lockedAt
            FROM flight_manifests
-           WHERE flight_id = ? AND manifest_type_id = 'manifest-type-passenger'`
+           WHERE flight_operation_id = ? AND manifest_type_id = 'manifest-type-passenger'`
         )
         .get(input.flightOperationId) as { id: string; lockedAt: string | null } | undefined;
       if (!ownedManifest) throw new Error('TICKETING_MANIFEST_NOT_FOUND');
@@ -408,13 +403,14 @@ export class PassengerTicketRepository {
       this.sqlite
         .prepare(
           `INSERT INTO flight_manifest_passengers (
-             id, manifest_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+             id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
              baggage_weight_kg, remarks, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           `ticket-sync-${input.id}`,
           manifestId,
+          input.id,
           input.passengerName,
           input.documentType,
           input.documentNumber,

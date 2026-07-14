@@ -39,13 +39,13 @@ function patchVuetifySwitchPostcss() {
 }
 
 export default defineNuxtConfig({
+  buildDir: process.env.NUXT_BUILD_DIR ?? '.nuxt',
   compatibilityDate: '2026-07-04',
   devtools: { enabled: true },
   modules: ['vuetify-nuxt-module'],
   srcDir: 'app',
   serverDir: 'server',
   alias: {
-    '#operations': fileURLToPath(new URL('./app/utils/operations', import.meta.url)),
     '#shared': fileURLToPath(new URL('./shared', import.meta.url)),
     '#server': fileURLToPath(new URL('./server', import.meta.url))
   },

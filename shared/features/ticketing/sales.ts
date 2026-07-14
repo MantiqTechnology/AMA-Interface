@@ -18,7 +18,7 @@ export type AvailableTicketingFlightsQuery = z.infer<typeof availableTicketingFl
 export type OpenTicketingSalesInput = z.infer<typeof openTicketingSalesSchema>;
 
 export type AvailableTicketingFlightDto = {
-  id: string;
+  flightOperationId: string;
   flightNumber: string;
   scheduledDeparture: string;
   scheduledArrival: string;
@@ -43,7 +43,6 @@ export type AvailableTicketingFlightDto = {
 export type TicketingSalesOpeningDto = {
   id: string;
   flightOperationId: string;
-  flightOrderId: string;
   flightNumber: string;
   serviceType: TicketingServiceType;
   openedAt: string;

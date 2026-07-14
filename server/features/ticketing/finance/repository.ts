@@ -20,11 +20,11 @@ export class TicketingFinanceRepository {
              ticket.passenger_name AS customerName,
              agent.agent_name AS agentName,
              ticket.ticket_price AS amount,
-             flight.currency AS currencyCode,
+             flight.currency_code AS currencyCode,
              ticket.payment_status AS paymentStatus,
              COALESCE(ticket.paid_at, ticket.created_at) AS occurredAt
            FROM passenger_tickets ticket
-           JOIN flight_orders flight ON flight.id = ticket.flight_order_id
+           JOIN flight_operations flight ON flight.id = ticket.flight_operation_id
            JOIN routes route ON route.id = flight.route_id
            JOIN stations origin ON origin.id = route.origin_station_id
            JOIN stations destination ON destination.id = route.destination_station_id
@@ -39,11 +39,11 @@ export class TicketingFinanceRepository {
              booking.sender_name || ' / ' || booking.receiver_name AS customerName,
              agent.agent_name AS agentName,
              booking.total_tariff AS amount,
-             flight.currency AS currencyCode,
+             flight.currency_code AS currencyCode,
              booking.payment_status AS paymentStatus,
              COALESCE(booking.paid_at, booking.created_at) AS occurredAt
            FROM cargo_bookings booking
-           JOIN flight_orders flight ON flight.id = booking.flight_order_id
+           JOIN flight_operations flight ON flight.id = booking.flight_operation_id
            JOIN routes route ON route.id = flight.route_id
            JOIN stations origin ON origin.id = route.origin_station_id
            JOIN stations destination ON destination.id = route.destination_station_id
@@ -67,8 +67,7 @@ export class TicketingFinanceRepository {
            FROM ticketing_refund_requests refund
            LEFT JOIN passenger_tickets ticket ON ticket.id = refund.passenger_ticket_id
            LEFT JOIN cargo_bookings booking ON booking.id = refund.cargo_booking_id
-           JOIN flight_orders flight
-             ON flight.id = COALESCE(ticket.flight_order_id, booking.flight_order_id)
+           JOIN flight_operations flight ON flight.id = refund.flight_operation_id
            JOIN routes route ON route.id = flight.route_id
            JOIN stations origin ON origin.id = route.origin_station_id
            JOIN stations destination ON destination.id = route.destination_station_id

@@ -21,7 +21,7 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      "bash -lc 'pnpm exec nuxi cleanup && pnpm exec nuxi prepare && AMA_DB_PATH=./data/playwright.sqlite pnpm demo:reset && AMA_DB_PATH=./data/playwright.sqlite pnpm dev --port 3100'",
+      "NUXT_BUILD_DIR=.nuxt-playwright AMA_DB_PATH=./data/playwright.sqlite bash -lc 'pnpm exec nuxi cleanup && pnpm exec nuxi prepare && pnpm demo:reset && pnpm dev --port 3100'",
     url: `http://localhost:${port}`,
     reuseExistingServer: false,
     timeout: 120_000

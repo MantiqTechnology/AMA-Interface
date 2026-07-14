@@ -28,10 +28,10 @@ export class PassengerTicketService {
     return ticket;
   }
 
-  occupiedSeats(flightOrderId: string) {
-    const flight = this.salesRepository.getBookableFlight(flightOrderId, 'PASSENGER');
-    if (!flight) throw notFound('Bookable passenger flight', flightOrderId);
-    return this.repository.occupiedSeats(flightOrderId);
+  occupiedSeats(flightOperationId: string) {
+    const flight = this.salesRepository.getBookableFlight(flightOperationId, 'PASSENGER');
+    if (!flight) throw notFound('Bookable passenger flight', flightOperationId);
+    return this.repository.occupiedSeats(flightOperationId);
   }
 
   rescheduleOptions(id: string): PassengerRescheduleOptionDto[] {
@@ -42,9 +42,9 @@ export class PassengerTicketService {
         originStationId: context.originStationId,
         destinationStationId: context.destinationStationId
       })
-      .filter((flight) => flight.id !== context.flightOrderId)
+      .filter((flight) => flight.flightOperationId !== context.flightOperationId)
       .map((flight) => ({
-        flightOrderId: flight.id,
+        flightOperationId: flight.flightOperationId,
         flightNumber: flight.flightNumber,
         scheduledDeparture: flight.scheduledDeparture,
         scheduledArrival: flight.scheduledArrival,
@@ -52,7 +52,7 @@ export class PassengerTicketService {
         destinationCode: flight.destinationCode,
         aircraftRegistration: flight.aircraftRegistration,
         availableSeats: this.seatsForCapacity(flight.passengerCapacity).filter(
-          (seat) => !this.repository.occupiedSeats(flight.id).includes(seat)
+          (seat) => !this.repository.occupiedSeats(flight.flightOperationId).includes(seat)
         )
       }))
       .filter((flight) => flight.availableSeats.length > 0);
@@ -60,14 +60,14 @@ export class PassengerTicketService {
 
   reschedule(id: string, input: ReschedulePassengerTicketInput, actorId: string) {
     const context = this.getEligibleRescheduleContext(id);
-    if (input.flightOrderId === context.flightOrderId) {
+    if (input.flightOperationId === context.flightOperationId) {
       throw new DomainError(
         'TICKETING_RESCHEDULE_FLIGHT_INVALID',
         'Select a different flight for rescheduling.',
         422
       );
     }
-    const target = this.salesRepository.getBookableFlight(input.flightOrderId, 'PASSENGER');
+    const target = this.salesRepository.getBookableFlight(input.flightOperationId, 'PASSENGER');
     if (!target || target.routeId !== context.routeId) {
       throw new DomainError(
         'TICKETING_RESCHEDULE_FLIGHT_INVALID',
@@ -82,7 +82,7 @@ export class PassengerTicketService {
         422
       );
     }
-    if (this.repository.occupiedSeats(target.id).includes(input.seatNumber)) {
+    if (this.repository.occupiedSeats(target.flightOperationId).includes(input.seatNumber)) {
       throw new DomainError(
         'TICKETING_SEAT_OCCUPIED',
         `Seat ${input.seatNumber} is already occupied.`,
@@ -93,8 +93,7 @@ export class PassengerTicketService {
       this.repository.rescheduleAndSync({
         id: `reschedule-${nanoid(12)}`,
         ticketId: id,
-        sourceFlightOrderId: context.flightOrderId,
-        targetFlightOrderId: target.id,
+        sourceFlightOperationId: context.flightOperationId,
         targetFlightOperationId: target.flightOperationId,
         routeId: context.routeId,
         seatNumber: input.seatNumber,
@@ -104,7 +103,7 @@ export class PassengerTicketService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (
-        message.includes('passenger_tickets.flight_order_id') ||
+        message.includes('passenger_tickets.flight_operation_id') ||
         message.includes('flight_manifest_passengers.manifest_id')
       ) {
         throw new DomainError(
@@ -136,8 +135,8 @@ export class PassengerTicketService {
   }
 
   async create(input: CreatePassengerTicketInput) {
-    const flight = this.salesRepository.getBookableFlight(input.flightOrderId, 'PASSENGER');
-    if (!flight) throw notFound('Bookable passenger flight', input.flightOrderId);
+    const flight = this.salesRepository.getBookableFlight(input.flightOperationId, 'PASSENGER');
+    if (!flight) throw notFound('Bookable passenger flight', input.flightOperationId);
     const validSeats = new Set(this.seatsForCapacity(flight.passengerCapacity));
     if (!validSeats.has(input.seatNumber)) {
       throw new DomainError(
@@ -161,7 +160,6 @@ export class PassengerTicketService {
     try {
       this.repository.createAndSync({
         id,
-        flightOrderId: input.flightOrderId,
         flightOperationId: flight.flightOperationId,
         passengerName: input.passengerName,
         documentType: input.documentType,
@@ -177,7 +175,7 @@ export class PassengerTicketService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (
-        message.includes('passenger_tickets.flight_order_id') ||
+        message.includes('passenger_tickets.flight_operation_id') ||
         message.includes('flight_manifest_passengers.manifest_id')
       ) {
         throw new DomainError(

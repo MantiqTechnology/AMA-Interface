@@ -136,8 +136,15 @@ const features = [
   }
 ] as const;
 
+async function waitForNuxtReady(page: Page) {
+  await page.waitForFunction(() =>
+    Boolean(Reflect.get(document.querySelector('#__nuxt') ?? {}, '__vue_app__'))
+  );
+}
+
 async function openCreateDialog(page: Page, slug: string) {
   await page.goto(`/master-data/${slug}`, { waitUntil: 'networkidle' });
+  await waitForNuxtReady(page);
   await page.getByRole('button', { name: 'Add data' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -155,7 +162,8 @@ async function selectFirstDropdownOption(page: Page, dropdown: Locator) {
   const firstOption = menu.getByRole('option').first();
   await expect(firstOption).toBeVisible();
   expect(await firstOption.innerText()).not.toMatch(/undefined/i);
-  await firstOption.click();
+  await dropdown.press('ArrowDown');
+  await dropdown.press('Enter');
   await expect(dropdown).not.toHaveValue(/undefined/i);
 }
 
@@ -165,6 +173,7 @@ test.describe('feature-owned master data pages', () => {
       const runtimeErrors: string[] = [];
       page.on('pageerror', (error) => runtimeErrors.push(error.message));
       await page.goto(`/master-data/${feature.slug}`, { waitUntil: 'networkidle' });
+      await waitForNuxtReady(page);
 
       await expect(
         page.getByRole('heading', { level: 1, name: feature.heading, exact: true })
@@ -212,6 +221,25 @@ test.describe('feature-owned master data pages', () => {
     const capacity = await openCreateDialog(page, 'flight-capacity-profiles');
     await expect(capacity.getByLabel('Aircraft', { exact: true })).toBeVisible();
     await expect(capacity.getByLabel('Route', { exact: true })).toBeVisible();
+  });
+
+  test('flight reasons use the expandable common table', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/master-data/flight-reasons', { waitUntil: 'networkidle' });
+    await waitForNuxtReady(page);
+
+    const table = page.locator('.flight-reasons-table');
+    await expect(table).toBeVisible();
+    const firstRow = table.locator('tbody tr.v-data-table__tr').first();
+    await firstRow.getByRole('button', { name: 'Expand row details' }).click();
+
+    await expect(table.getByText('Operator note required')).toBeVisible();
+    await expect(table.getByText('Affects operational KPI')).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+      )
+    ).toBe(false);
   });
 
   test('commercial and finance relation forms expose explicit dependencies', async ({ page }) => {

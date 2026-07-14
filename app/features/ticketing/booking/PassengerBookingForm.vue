@@ -15,7 +15,7 @@ const destinationStationId = ref<string | null>(null);
 const occupiedSeats = ref<string[]>([]);
 const loadingSeats = ref(false);
 const form = reactive({
-  flightOrderId: null as string | null,
+  flightOperationId: null as string | null,
   passengerName: '',
   documentType: 'KTP' as 'KTP' | 'PASSPORT' | 'OTHER',
   documentNumber: '',
@@ -66,7 +66,7 @@ const flightOptions = computed(() =>
   )
 );
 const selectedFlight = computed(() =>
-  flights.value.find((flight) => flight.id === form.flightOrderId)
+  flights.value.find((flight) => flight.flightOperationId === form.flightOperationId)
 );
 function flightTitle(flight: AvailableTicketingFlightDto | string | null | undefined) {
   if (typeof flight === 'string') return flight;
@@ -76,21 +76,21 @@ function flightTitle(flight: AvailableTicketingFlightDto | string | null | undef
 
 watch(originStationId, () => {
   destinationStationId.value = null;
-  form.flightOrderId = null;
+  form.flightOperationId = null;
 });
 watch(destinationStationId, () => {
-  form.flightOrderId = null;
+  form.flightOperationId = null;
 });
 watch(
-  () => form.flightOrderId,
-  async (flightOrderId) => {
+  () => form.flightOperationId,
+  async (flightOperationId) => {
     form.seatNumber = '';
     occupiedSeats.value = [];
-    if (!flightOrderId) return;
+    if (!flightOperationId) return;
     loadingSeats.value = true;
     try {
       occupiedSeats.value = await fetchApi<string[]>(
-        `/api/ticketing/flights/${flightOrderId}/occupied-seats`
+        `/api/ticketing/flights/${flightOperationId}/occupied-seats`
       );
     } finally {
       loadingSeats.value = false;
@@ -101,7 +101,7 @@ watch(
 async function submit() {
   const validation = await formRef.value?.validate();
   if (validation && !validation.valid) return;
-  if (!form.flightOrderId || !form.seatNumber) {
+  if (!form.flightOperationId || !form.seatNumber) {
     serverError.value = 'Select a flight and an available seat.';
     return;
   }
@@ -166,10 +166,10 @@ function agentCreated(record: AgentDto) {
       </VCol>
       <VCol cols="12" md="4">
         <VAutocomplete
-          v-model="form.flightOrderId"
+          v-model="form.flightOperationId"
           :disabled="!destinationStationId"
           :item-title="flightTitle"
-          item-value="id"
+          item-value="flightOperationId"
           :items="flightOptions"
           label="Flight"
           :rules="[required('Flight')]"

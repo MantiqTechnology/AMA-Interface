@@ -2,16 +2,14 @@ export const ticketingStatements = [
   `CREATE TABLE IF NOT EXISTS ticketing_sales (
     id TEXT PRIMARY KEY,
     flight_operation_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
-    flight_order_id TEXT NOT NULL REFERENCES flight_orders(id) ON DELETE CASCADE,
     service_type TEXT NOT NULL CHECK (service_type IN ('PASSENGER', 'CARGO')),
     opened_by_user_id TEXT NOT NULL,
     opened_at TEXT NOT NULL,
-    UNIQUE (flight_operation_id),
-    UNIQUE (flight_order_id)
+    UNIQUE (flight_operation_id)
   )`,
   `CREATE TABLE IF NOT EXISTS passenger_tickets (
     id TEXT PRIMARY KEY,
-    flight_order_id TEXT NOT NULL REFERENCES flight_orders(id) ON DELETE CASCADE,
+    flight_operation_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
     passenger_name TEXT NOT NULL,
     document_type TEXT NOT NULL DEFAULT 'KTP',
     document_number TEXT NOT NULL,
@@ -32,7 +30,7 @@ export const ticketingStatements = [
   )`,
   `CREATE TABLE IF NOT EXISTS cargo_bookings (
     id TEXT PRIMARY KEY,
-    flight_order_id TEXT NOT NULL REFERENCES flight_orders(id) ON DELETE CASCADE,
+    flight_operation_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
     sender_name TEXT NOT NULL,
     receiver_name TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -59,6 +57,7 @@ export const ticketingStatements = [
   )`,
   `CREATE TABLE IF NOT EXISTS ticketing_refund_requests (
     id TEXT PRIMARY KEY,
+    flight_operation_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
     subject_type TEXT NOT NULL CHECK (subject_type IN ('PASSENGER', 'CARGO')),
     passenger_ticket_id TEXT REFERENCES passenger_tickets(id) ON DELETE CASCADE,
     cargo_booking_id TEXT REFERENCES cargo_bookings(id) ON DELETE CASCADE,
@@ -81,25 +80,67 @@ export const ticketingStatements = [
   `CREATE TABLE IF NOT EXISTS passenger_ticket_reschedules (
     id TEXT PRIMARY KEY,
     passenger_ticket_id TEXT NOT NULL REFERENCES passenger_tickets(id) ON DELETE CASCADE,
-    previous_flight_order_id TEXT NOT NULL REFERENCES flight_orders(id),
-    new_flight_order_id TEXT NOT NULL REFERENCES flight_orders(id),
+    previous_flight_operation_id TEXT NOT NULL REFERENCES flight_operations(id),
+    new_flight_operation_id TEXT NOT NULL REFERENCES flight_operations(id),
     previous_seat_number TEXT NOT NULL,
     new_seat_number TEXT NOT NULL,
     rescheduled_by_user_id TEXT NOT NULL,
     rescheduled_at TEXT NOT NULL
   )`,
+  `CREATE TRIGGER IF NOT EXISTS ticketing_refunds_validate_flight_insert
+   BEFORE INSERT ON ticketing_refund_requests
+   BEGIN
+     SELECT RAISE(ABORT, 'ticketing refund flight ownership mismatch')
+     WHERE
+       (NEW.subject_type = 'PASSENGER' AND NOT EXISTS (
+         SELECT 1 FROM passenger_tickets ticket
+         WHERE ticket.id = NEW.passenger_ticket_id
+           AND ticket.flight_operation_id = NEW.flight_operation_id
+       ))
+       OR
+       (NEW.subject_type = 'CARGO' AND NOT EXISTS (
+         SELECT 1 FROM cargo_bookings booking
+         WHERE booking.id = NEW.cargo_booking_id
+           AND booking.flight_operation_id = NEW.flight_operation_id
+       ));
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS ticketing_refunds_validate_flight_update
+   BEFORE UPDATE OF flight_operation_id, subject_type, passenger_ticket_id, cargo_booking_id
+   ON ticketing_refund_requests
+   BEGIN
+     SELECT RAISE(ABORT, 'ticketing refund flight ownership mismatch')
+     WHERE
+       (NEW.subject_type = 'PASSENGER' AND NOT EXISTS (
+         SELECT 1 FROM passenger_tickets ticket
+         WHERE ticket.id = NEW.passenger_ticket_id
+           AND ticket.flight_operation_id = NEW.flight_operation_id
+       ))
+       OR
+       (NEW.subject_type = 'CARGO' AND NOT EXISTS (
+         SELECT 1 FROM cargo_bookings booking
+         WHERE booking.id = NEW.cargo_booking_id
+           AND booking.flight_operation_id = NEW.flight_operation_id
+       ));
+   END`,
   `CREATE INDEX IF NOT EXISTS idx_ticketing_sales_service ON ticketing_sales(service_type)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS flight_manifest_passengers_manifest_seat_unique
    ON flight_manifest_passengers(manifest_id, seat_number)
    WHERE seat_number IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS flight_manifest_passengers_ticket_unique
+   ON flight_manifest_passengers(manifest_id, passenger_ticket_id)
+   WHERE passenger_ticket_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS flight_manifest_cargo_booking_unique
+   ON flight_manifest_cargo_items(manifest_id, cargo_booking_id)
+   WHERE cargo_booking_id IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS passenger_tickets_flight_seat_unique
-   ON passenger_tickets(flight_order_id, seat_number)
+   ON passenger_tickets(flight_operation_id, seat_number)
    WHERE ticket_status = 'ACTIVE'`,
-  `CREATE INDEX IF NOT EXISTS idx_passenger_tickets_flight ON passenger_tickets(flight_order_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_passenger_tickets_flight ON passenger_tickets(flight_operation_id)`,
   `CREATE INDEX IF NOT EXISTS idx_passenger_tickets_payment ON passenger_tickets(payment_status)`,
-  `CREATE INDEX IF NOT EXISTS idx_cargo_bookings_flight ON cargo_bookings(flight_order_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_cargo_bookings_flight ON cargo_bookings(flight_operation_id)`,
   `CREATE INDEX IF NOT EXISTS idx_cargo_bookings_payment ON cargo_bookings(payment_status)`,
   `CREATE INDEX IF NOT EXISTS idx_ticketing_refunds_status ON ticketing_refund_requests(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_ticketing_refunds_flight_operation ON ticketing_refund_requests(flight_operation_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ticketing_refunds_passenger ON ticketing_refund_requests(passenger_ticket_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ticketing_refunds_cargo ON ticketing_refund_requests(cargo_booking_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS ticketing_refunds_open_passenger_unique

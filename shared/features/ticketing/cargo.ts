@@ -8,14 +8,14 @@ const emptyQueryValue = (value: unknown) =>
 
 export const cargoBookingListQuerySchema = z.object({
   search: z.string().trim().max(100).optional().default(''),
-  flightOrderId: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
+  flightOperationId: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
   paymentStatus: z.preprocess(emptyQueryValue, z.enum(['UNPAID', 'PAID']).optional()),
   status: z.preprocess(emptyQueryValue, z.enum(['BOOKED', 'DELIVERED']).optional())
 });
 
 export const createCargoBookingSchema = z
   .object({
-    flightOrderId: z.string().trim().min(1),
+    flightOperationId: z.string().trim().min(1),
     senderName: z.string().trim().min(2).max(120),
     receiverName: z.string().trim().min(2).max(120),
     description: z.string().trim().min(3).max(200),
@@ -53,7 +53,7 @@ export type DeliverCargoBookingInput = z.infer<typeof deliverCargoBookingSchema>
 
 export type CargoBookingDto = {
   id: string;
-  flightOrderId: string;
+  flightOperationId: string;
   flightNumber: string;
   originCode: string;
   destinationCode: string;

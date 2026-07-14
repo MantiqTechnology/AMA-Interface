@@ -4,75 +4,21 @@ const ticketingSeedTime = '2026-07-13T09:00:00.000+07:00';
 
 export function seedTicketingData(sqlite: Database.Database) {
   const seed = sqlite.transaction(() => {
-    const insertFlightOrder = sqlite.prepare(
-      `INSERT OR IGNORE INTO flight_orders (
-        id, flight_number, order_number, customer_id, route_id, aircraft_id, status,
-        scheduled_departure, scheduled_arrival, purpose, quoted_amount, currency
-      ) VALUES (
-        @id, @flightNumber, @orderNumber, @customerId, @routeId, @aircraftId, 'scheduled',
-        @scheduledDeparture, @scheduledArrival, @purpose, @quotedAmount, 'IDR'
-      )`
-    );
-    insertFlightOrder.run({
-      id: 'ticket-flight-passenger-demo',
-      flightNumber: 'AMA-20260715-006',
-      orderNumber: 'TKT-FO-20260715-006',
-      customerId: 'cust-individual-1',
-      routeId: 'route-djj-wmx',
-      aircraftId: 'ac-pk-ama',
-      scheduledDeparture: '2026-07-15T08:00:00.000+09:00',
-      scheduledArrival: '2026-07-15T08:55:00.000+09:00',
-      purpose: 'PASSENGER',
-      quotedAmount: 1800000
-    });
-    insertFlightOrder.run({
-      id: 'ticket-flight-cargo-demo',
-      flightNumber: 'AMA-20260716-007',
-      orderNumber: 'TKT-FO-20260716-007',
-      customerId: 'cust-cargo-partner',
-      routeId: 'route-djj-wmx',
-      aircraftId: 'ac-pk-amb',
-      scheduledDeparture: '2026-07-16T09:30:00.000+09:00',
-      scheduledArrival: '2026-07-16T10:25:00.000+09:00',
-      purpose: 'CARGO',
-      quotedAmount: 32000
-    });
-    insertFlightOrder.run({
-      id: 'ticket-flight-passenger-later',
-      flightNumber: 'AMA-20260717-008',
-      orderNumber: 'TKT-FO-20260717-008',
-      customerId: 'cust-individual-1',
-      routeId: 'route-djj-wmx',
-      aircraftId: 'ac-pk-ama',
-      scheduledDeparture: '2026-07-17T08:00:00.000+09:00',
-      scheduledArrival: '2026-07-17T08:55:00.000+09:00',
-      purpose: 'PASSENGER',
-      quotedAmount: 1800000
-    });
-
     const insertSale = sqlite.prepare(
       `INSERT OR IGNORE INTO ticketing_sales (
-        id, flight_operation_id, flight_order_id, service_type, opened_by_user_id, opened_at
-      ) VALUES (?, ?, ?, ?, 'USR-DEMO-ADMIN', ?)`
+        id, flight_operation_id, service_type, opened_by_user_id, opened_at
+      ) VALUES (?, ?, ?, 'USR-DEMO-ADMIN', ?)`
     );
     insertSale.run(
       'sale-passenger-demo',
       'fop-ticketing-passenger',
-      'ticket-flight-passenger-demo',
       'PASSENGER',
       ticketingSeedTime
     );
-    insertSale.run(
-      'sale-cargo-demo',
-      'fop-ticketing-cargo',
-      'ticket-flight-cargo-demo',
-      'CARGO',
-      ticketingSeedTime
-    );
+    insertSale.run('sale-cargo-demo', 'fop-ticketing-cargo', 'CARGO', ticketingSeedTime);
     insertSale.run(
       'sale-passenger-later',
       'fop-ticketing-passenger-later',
-      'ticket-flight-passenger-later',
       'PASSENGER',
       ticketingSeedTime
     );
@@ -82,18 +28,18 @@ export function seedTicketingData(sqlite: Database.Database) {
         `UPDATE flight_manifests
          SET status_id = 'manifest-status-draft', approved_by_user_id = NULL, approved_at = NULL,
              updated_at = ?
-         WHERE flight_id IN ('fop-ticketing-passenger', 'fop-ticketing-cargo')`
+         WHERE flight_operation_id IN ('fop-ticketing-passenger', 'fop-ticketing-cargo')`
       )
       .run(ticketingSeedTime);
 
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO passenger_tickets (
-          id, flight_order_id, passenger_name, document_type, document_number, seat_number,
+          id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
           passenger_weight_kg, baggage_weight_kg, ticket_price, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
-          'TKT-DEMO12', 'ticket-flight-passenger-demo', 'Sarah Wenda', 'KTP', 'KTP-930401-443',
+          'TKT-DEMO12', 'fop-ticketing-passenger', 'Sarah Wenda', 'KTP', 'KTP-930401-443',
           '1A', 65, 8, 1800000, 'PAID', 'TRANSFER', ?, 'PENDING', NULL, NULL,
           'agent-djj-counter', ?, ?
         )`
@@ -102,11 +48,11 @@ export function seedTicketingData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO passenger_tickets (
-          id, flight_order_id, passenger_name, document_type, document_number, seat_number,
+          id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
           passenger_weight_kg, baggage_weight_kg, ticket_price, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
-          'TKT-DEMO34', 'ticket-flight-passenger-demo', 'Alex Giai', 'KTP', 'KTP-912201-112',
+          'TKT-DEMO34', 'fop-ticketing-passenger', 'Alex Giai', 'KTP', 'KTP-912201-112',
           '1B', 78, 12, 1800000, 'UNPAID', NULL, NULL, 'PENDING', NULL, NULL, NULL, ?, ?
         )`
       )
@@ -114,11 +60,11 @@ export function seedTicketingData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO passenger_tickets (
-          id, flight_order_id, passenger_name, document_type, document_number, seat_number,
+          id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
           passenger_weight_kg, baggage_weight_kg, ticket_price, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
-          'TKT-RESCHEDULE', 'ticket-flight-passenger-demo', 'Mikael Tabuni', 'KTP',
+          'TKT-RESCHEDULE', 'fop-ticketing-passenger', 'Mikael Tabuni', 'KTP',
           'KTP-920101-778', '2A', 70, 5, 1800000, 'PAID', 'TRANSFER', ?, 'PENDING',
           NULL, NULL, 'agent-djj-counter', ?, ?
         )`
@@ -128,10 +74,10 @@ export function seedTicketingData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO flight_manifest_passengers (
-          id, manifest_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+          id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
           baggage_weight_kg, remarks, created_at, updated_at
         ) VALUES (
-          'ticket-sync-TKT-DEMO12', 'fop-ticketing-passenger-manifest-pax', 'Sarah Wenda', 'KTP',
+          'ticket-sync-TKT-DEMO12', 'fop-ticketing-passenger-manifest-pax', 'TKT-DEMO12', 'Sarah Wenda', 'KTP',
           'KTP-930401-443', 65, '1A', 8, 'Ticket TKT-DEMO12', ?, ?
         )`
       )
@@ -139,10 +85,10 @@ export function seedTicketingData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO flight_manifest_passengers (
-          id, manifest_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+          id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
           baggage_weight_kg, remarks, created_at, updated_at
         ) VALUES (
-          'ticket-sync-TKT-RESCHEDULE', 'fop-ticketing-passenger-manifest-pax', 'Mikael Tabuni',
+          'ticket-sync-TKT-RESCHEDULE', 'fop-ticketing-passenger-manifest-pax', 'TKT-RESCHEDULE', 'Mikael Tabuni',
           'KTP', 'KTP-920101-778', 70, '2A', 5, 'Ticket TKT-RESCHEDULE', ?, ?
         )`
       )
@@ -150,10 +96,10 @@ export function seedTicketingData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO flight_manifest_passengers (
-          id, manifest_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+          id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
           baggage_weight_kg, remarks, created_at, updated_at
         ) VALUES (
-          'ticket-sync-TKT-DEMO34', 'fop-ticketing-passenger-manifest-pax', 'Alex Giai', 'KTP',
+          'ticket-sync-TKT-DEMO34', 'fop-ticketing-passenger-manifest-pax', 'TKT-DEMO34', 'Alex Giai', 'KTP',
           'KTP-912201-112', 78, '1B', 12, 'Ticket TKT-DEMO34', ?, ?
         )`
       )
@@ -162,12 +108,12 @@ export function seedTicketingData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO cargo_bookings (
-          id, flight_order_id, sender_name, receiver_name, description, actual_weight_kg,
+          id, flight_operation_id, sender_name, receiver_name, description, actual_weight_kg,
           length_cm, width_cm, height_cm, volume_weight_kg, chargeable_weight_kg, is_dangerous,
           dg_category_id, dg_acceptance_status, payment_method, payment_status, paid_at, agent_id,
           tariff_rate, total_tariff, status, delivered_to, delivered_at, created_at, updated_at
         ) VALUES (
-          'AWB-100200', 'ticket-flight-cargo-demo', 'Koperasi Kopi Wamena', 'Toko Kopi Sentani',
+          'AWB-100200', 'fop-ticketing-cargo', 'Koperasi Kopi Wamena', 'Toko Kopi Sentani',
           'Roasted coffee shipment', 45, 40, 40, 40, 10.7, 45, 0, NULL, 'NOT_APPLICABLE',
           'TRANSFER', 'PAID', ?, 'agent-papua-cargo', 32000, 1440000, 'BOOKED', NULL, NULL, ?, ?
         )`
@@ -176,12 +122,12 @@ export function seedTicketingData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO cargo_bookings (
-          id, flight_order_id, sender_name, receiver_name, description, actual_weight_kg,
+          id, flight_operation_id, sender_name, receiver_name, description, actual_weight_kg,
           length_cm, width_cm, height_cm, volume_weight_kg, chargeable_weight_kg, is_dangerous,
           dg_category_id, dg_acceptance_status, payment_method, payment_status, paid_at, agent_id,
           tariff_rate, total_tariff, status, delivered_to, delivered_at, created_at, updated_at
         ) VALUES (
-          'AWB-300400', 'ticket-flight-cargo-demo', 'CV Papua Logistik Mandiri',
+          'AWB-300400', 'fop-ticketing-cargo', 'CV Papua Logistik Mandiri',
           'Maria Jayapura', 'Lithium battery equipment', 12, 30, 30, 30, 4.5, 12, 1, 'dg-bat',
           'PENDING', 'CASH', 'UNPAID', NULL, NULL, 32000, 384000, 'BOOKED', NULL, NULL, ?, ?
         )`
@@ -190,13 +136,14 @@ export function seedTicketingData(sqlite: Database.Database) {
 
     const insertCargoManifest = sqlite.prepare(
       `INSERT OR IGNORE INTO flight_manifest_cargo_items (
-        id, manifest_id, description, sender_name, receiver_name, actual_weight_kg,
+        id, manifest_id, cargo_booking_id, description, sender_name, receiver_name, actual_weight_kg,
         volume_weight_kg, chargeable_weight_kg, dg_category_id, dg_acceptance_status_id,
         remarks, created_at, updated_at
-      ) VALUES (?, 'fop-ticketing-cargo-manifest-cargo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, 'fop-ticketing-cargo-manifest-cargo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     insertCargoManifest.run(
       'ticket-sync-AWB-100200',
+      'AWB-100200',
       'Roasted coffee shipment',
       'Koperasi Kopi Wamena',
       'Toko Kopi Sentani',
@@ -211,6 +158,7 @@ export function seedTicketingData(sqlite: Database.Database) {
     );
     insertCargoManifest.run(
       'ticket-sync-AWB-300400',
+      'AWB-300400',
       'Lithium battery equipment',
       'CV Papua Logistik Mandiri',
       'Maria Jayapura',

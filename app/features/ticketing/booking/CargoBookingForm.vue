@@ -12,7 +12,7 @@ const serverError = ref('');
 const originStationId = ref<string | null>(null);
 const destinationStationId = ref<string | null>(null);
 const form = reactive({
-  flightOrderId: null as string | null,
+  flightOperationId: null as string | null,
   senderName: '',
   receiverName: '',
   description: '',
@@ -65,7 +65,7 @@ const flightOptions = computed(() =>
   )
 );
 const selectedFlight = computed(() =>
-  flights.value.find((flight) => flight.id === form.flightOrderId)
+  flights.value.find((flight) => flight.flightOperationId === form.flightOperationId)
 );
 const volumeWeightKg = computed(
   () => Math.round(((form.lengthCm * form.widthCm * form.heightCm) / 6000) * 10) / 10
@@ -91,10 +91,10 @@ function flightTitle(flight: AvailableTicketingFlightDto | string | null | undef
 
 watch(originStationId, () => {
   destinationStationId.value = null;
-  form.flightOrderId = null;
+  form.flightOperationId = null;
 });
 watch(destinationStationId, () => {
-  form.flightOrderId = null;
+  form.flightOperationId = null;
 });
 watch(
   () => form.isDangerous,
@@ -106,7 +106,7 @@ watch(
 async function submit() {
   const validation = await formRef.value?.validate();
   if (validation && !validation.valid) return;
-  if (!form.flightOrderId) {
+  if (!form.flightOperationId) {
     serverError.value = 'Select a cargo flight.';
     return;
   }
@@ -167,10 +167,10 @@ async function submit() {
       </VCol>
       <VCol cols="12" md="4">
         <VAutocomplete
-          v-model="form.flightOrderId"
+          v-model="form.flightOperationId"
           :disabled="!destinationStationId"
           :item-title="flightTitle"
-          item-value="id"
+          item-value="flightOperationId"
           :items="flightOptions"
           label="Flight"
           :rules="[required('Flight')]"

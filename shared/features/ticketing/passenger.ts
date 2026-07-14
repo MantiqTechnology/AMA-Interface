@@ -8,13 +8,13 @@ const emptyQueryValue = (value: unknown) =>
 
 export const passengerTicketListQuerySchema = z.object({
   search: z.string().trim().max(100).optional().default(''),
-  flightOrderId: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
+  flightOperationId: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
   paymentStatus: z.preprocess(emptyQueryValue, z.enum(['UNPAID', 'PAID']).optional()),
   checkInStatus: z.preprocess(emptyQueryValue, z.enum(['PENDING', 'CHECKED_IN']).optional())
 });
 
 export const createPassengerTicketSchema = z.object({
-  flightOrderId: z.string().trim().min(1),
+  flightOperationId: z.string().trim().min(1),
   passengerName: z.string().trim().min(2).max(120),
   documentType: z.enum(['KTP', 'PASSPORT', 'OTHER']).default('KTP'),
   documentNumber: z.string().trim().min(3).max(80),
@@ -33,7 +33,7 @@ export const payPassengerTicketSchema = z.object({
 });
 
 export const reschedulePassengerTicketSchema = z.object({
-  flightOrderId: z.string().trim().min(1),
+  flightOperationId: z.string().trim().min(1),
   seatNumber: z
     .string()
     .trim()
@@ -46,7 +46,7 @@ export type PayPassengerTicketInput = z.infer<typeof payPassengerTicketSchema>;
 export type ReschedulePassengerTicketInput = z.infer<typeof reschedulePassengerTicketSchema>;
 
 export type PassengerRescheduleOptionDto = {
-  flightOrderId: string;
+  flightOperationId: string;
   flightNumber: string;
   scheduledDeparture: string;
   scheduledArrival: string;
@@ -58,7 +58,7 @@ export type PassengerRescheduleOptionDto = {
 
 export type PassengerTicketDto = {
   id: string;
-  flightOrderId: string;
+  flightOperationId: string;
   flightNumber: string;
   originCode: string;
   destinationCode: string;

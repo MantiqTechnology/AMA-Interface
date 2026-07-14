@@ -48,26 +48,13 @@ export class TicketingSalesService {
       );
     }
     try {
-      return this.repository.openSales(
-        flight,
-        serviceType,
-        actorId,
-        rate,
-        new Date().toISOString()
-      );
+      return this.repository.openSales(flight, serviceType, actorId, new Date().toISOString());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('ticketing_sales.flight_operation_id')) {
         throw new DomainError(
           'TICKETING_SALES_ALREADY_OPEN',
           'Ticket sales are already open for this flight.',
-          409
-        );
-      }
-      if (message.includes('flight_orders.flight_number')) {
-        throw new DomainError(
-          'TICKETING_FLIGHT_ALREADY_EXISTS',
-          'A commercial flight with this flight number already exists.',
           409
         );
       }

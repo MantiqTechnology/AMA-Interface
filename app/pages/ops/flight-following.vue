@@ -1,123 +1,130 @@
 <script setup lang="ts">
-import type { FlightStatus } from '#shared/types/ops-demo';
-import { formatJayapuraDateTime, formatRouteCode } from '#operations/formatters';
+import type { OperationalFlightMonitorDto } from '#shared/contracts/operations-monitoring';
 
-const store = useAmaDemoStore();
-const { canTransitionFlight } = useAuthorization();
-
-const headers = [
-  { title: 'Flight', key: 'flightNumber', sortable: true },
-  { title: 'Route', key: 'route', sortable: false },
-  { title: 'Planned', key: 'plannedDepartureAt', sortable: true },
-  { title: 'Actual', key: 'actual', sortable: false },
-  { title: 'Status', key: 'status', sortable: true },
-  { title: 'Delay', key: 'delay', sortable: false },
-  { title: 'Next', key: 'next', sortable: false, align: 'end' }
-] as const;
-
-const statusFlow: FlightStatus[] = [
+const date = ref('');
+const status = ref<string | null>(null);
+const statuses = [
   'SCHEDULED',
-  'READY',
-  'APPROVED',
-  'BOARDING',
-  'DEPARTED',
-  'AIRBORNE',
+  'CHECK_IN_OPEN',
+  'IN_PROGRESS',
   'LANDED',
-  'CLOSED'
+  'PENDING_CLOSURE',
+  'CLOSED',
+  'BLOCKED',
+  'CANCELLED'
 ];
+const query = computed(() => ({
+  date: date.value || undefined,
+  status: status.value || undefined
+}));
+const {
+  data: flights,
+  pending,
+  refresh
+} = await useAsyncData(
+  'flight-following',
+  () =>
+    fetchApi<OperationalFlightMonitorDto[]>('/api/flight-operations/flight-following', {
+      query: query.value
+    }),
+  { default: () => [], watch: [query] }
+);
 
-const flights = computed(() => store.data.value.flights);
-
-function routeLabel(routeId: string) {
-  const route = store.getRoute(routeId);
-  const origin = store.getStation(route?.originStationId);
-  const destination = store.getStation(route?.destinationStationId);
-  return route && origin && destination ? formatRouteCode(origin.code, destination.code) : '-';
-}
-
-function nextStatus(status: FlightStatus) {
-  return store.data.value.accessControl.flightTransitionMatrix[status]?.[0];
-}
-
-function updateToNext(flightId: string, status: FlightStatus) {
-  const next = nextStatus(status);
-  if (next) store.updateFlightStatus(flightId, next, `Manual following update to ${next}.`);
+function time(value: string | null) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Jayapura'
+  }).format(new Date(value));
 }
 </script>
 
 <template>
   <VContainer class="px-3 py-5 md:px-4" fluid>
-    <div class="mb-5">
-      <h1 class="text-3xl font-bold text-text-primary">Flight Following</h1>
-      <p class="text-text-muted">
-        Status manual demo. Real tracking intentionally out of scope for phase one.
-      </p>
+    <div class="mb-5 d-flex flex-wrap align-end ga-3">
+      <div>
+        <h1 class="text-h4 font-weight-bold text-text-primary">Flight Following</h1>
+        <p class="text-text-secondary">Live operational timeline from canonical flight records.</p>
+      </div>
+      <VSpacer />
+      <VTextField
+        v-model="date"
+        density="compact"
+        hide-details
+        label="Flight date"
+        style="width: 170px"
+        type="date"
+        variant="outlined"
+      />
+      <VSelect
+        v-model="status"
+        clearable
+        density="compact"
+        hide-details
+        :items="statuses"
+        label="Status"
+        style="width: 210px"
+        variant="outlined"
+      />
+      <VBtn icon="mdi-refresh" :loading="pending" variant="tonal" @click="refresh" />
     </div>
 
-    <VCard border class="mb-4">
-      <VCardText>
-        <div class="flex flex-wrap gap-2">
-          <VChip v-for="status in statusFlow" :key="status" color="secondary" variant="tonal">
-            {{ status }}
-          </VChip>
-        </div>
-      </VCardText>
-    </VCard>
-
     <VCard border>
-      <VDataTableServer
-        density="comfortable"
-        fixed-header
-        hover
-        item-value="id"
-        :headers="headers"
-        :items="flights"
-        :items-length="flights.length"
-        :items-per-page="Math.max(flights.length, 1)"
-      >
-        <template #[`item.flightNumber`]="{ item }">
-          <NuxtLink class="font-semibold text-text-primary no-underline" :to="`/ops/flights/${item.id}`">
-            {{ item.flightNumber }}
-          </NuxtLink>
-          <div class="text-sm text-text-muted">
-            {{ store.getAircraft(item.aircraftId)?.registration ?? '-' }}
-          </div>
-        </template>
-        <template #[`item.route`]="{ item }">
-          {{ routeLabel(item.routeId) }}
-        </template>
-        <template #[`item.plannedDepartureAt`]="{ item }">
-          <div>{{ formatJayapuraDateTime(item.plannedDepartureAt) }}</div>
-          <div class="text-sm text-text-muted">{{ formatJayapuraDateTime(item.plannedArrivalAt) }}</div>
-        </template>
-        <template #[`item.actual`]="{ item }">
-          <div>{{ item.actualDepartureAt ? formatJayapuraDateTime(item.actualDepartureAt) : '-' }}</div>
-          <div class="text-sm text-text-muted">
-            {{ item.actualArrivalAt ? formatJayapuraDateTime(item.actualArrivalAt) : '-' }}
-          </div>
-        </template>
-        <template #[`item.status`]="{ item }">
-          <DsStatusBadge :value="item.status" />
-          <div class="mt-1 text-sm text-text-muted">{{ item.currentPositionText }}</div>
-        </template>
-        <template #[`item.delay`]="{ item }">
-          <span v-if="item.delay.isDelayed">{{ item.delay.minutes }} min</span>
-          <span v-else>-</span>
-          <div class="text-sm text-text-muted">{{ item.delay.reasonText }}</div>
-        </template>
-        <template #[`item.next`]="{ item }">
-          <VBtn
-            v-if="nextStatus(item.status)"
-            color="primary"
-            size="small"
-            :disabled="!canTransitionFlight(item, nextStatus(item.status)!).allowed"
-            variant="tonal"
-            @click="updateToNext(item.id, item.status)"
-          >
-            {{ nextStatus(item.status) }}
-          </VBtn>
-        </template>
-      </VDataTableServer>
+      <div class="overflow-x-auto">
+        <VTable density="comfortable">
+          <thead>
+            <tr>
+              <th>Flight</th>
+              <th>Route</th>
+              <th>STD / ATD</th>
+              <th>STA / ATA</th>
+              <th>Aircraft</th>
+              <th>Status</th>
+              <th>Readiness</th>
+              <th aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="pending">
+              <td class="py-8 text-center" colspan="8">Loading flight following...</td>
+            </tr>
+            <tr v-else-if="!flights.length">
+              <td class="py-8 text-center text-text-secondary" colspan="8">No flights found.</td>
+            </tr>
+            <tr v-for="flight in flights" v-else :key="flight.id">
+              <td>
+                <div class="font-weight-medium">{{ flight.flightNumber }}</div>
+                <div class="text-caption text-text-secondary">{{ flight.flightDate }}</div>
+              </td>
+              <td>{{ flight.originCode }} -> {{ flight.destinationCode }}</td>
+              <td>
+                {{ time(flight.scheduledDepartureAt) }} / {{ time(flight.actualDepartureAt) }}
+              </td>
+              <td>{{ time(flight.scheduledArrivalAt) }} / {{ time(flight.actualArrivalAt) }}</td>
+              <td>{{ flight.aircraftRegistration ?? '-' }}</td>
+              <td><FlightsFlightStatusChip :status="flight.currentStatus" /></td>
+              <td style="min-width: 130px">
+                <VProgressLinear
+                  color="secondary"
+                  height="7"
+                  :model-value="flight.readinessPercent"
+                  rounded
+                />
+              </td>
+              <td>
+                <VBtn
+                  aria-label="Open flight"
+                  icon="mdi-arrow-right"
+                  size="small"
+                  :to="`/flights/${flight.id}`"
+                  variant="text"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </VTable>
+      </div>
     </VCard>
   </VContainer>
 </template>

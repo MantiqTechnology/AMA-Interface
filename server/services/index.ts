@@ -1,42 +1,21 @@
-import { getDbClient } from '../db/client';
 import type Database from 'better-sqlite3';
-import { createSqliteRepositories } from '../repositories/sqlite-repositories';
-import type { Repositories } from '../repositories/interfaces';
-import { ApprovalsService } from './approvals.service';
+import { getDbClient } from '../db/client';
 import { DashboardService } from './dashboard.service';
 import { FlightOperationsService } from './flight-operations.service';
-import { FlightsService } from './flights.service';
-import { FuelService } from './fuel.service';
 import { InvoicesService } from './invoices.service';
-import { MaintenanceService } from './maintenance.service';
-import { StationExpensesService } from './station-expenses.service';
+import { OperationsMonitoringService } from './operations-monitoring.service';
 
 export type Services = ReturnType<typeof createServices>;
 
-export function createServices(repositories: Repositories, sqlite: Database.Database) {
-  const flights = new FlightsService(repositories);
-  const fuel = new FuelService(repositories);
-  const stationExpenses = new StationExpensesService(repositories);
-  const invoices = new InvoicesService(repositories);
-  const approvals = new ApprovalsService(repositories);
-  const maintenance = new MaintenanceService(repositories);
-
+export function createServices(sqlite: Database.Database) {
   return {
-    flights,
-    fuel,
-    stationExpenses,
-    invoices,
-    approvals,
-    maintenance,
     flightOperations: new FlightOperationsService(sqlite),
-    dashboard: new DashboardService(repositories, flights, fuel, stationExpenses, invoices)
+    invoices: new InvoicesService(sqlite),
+    dashboard: new DashboardService(sqlite),
+    operationsMonitoring: new OperationsMonitoringService(sqlite)
   };
 }
 
 export function createAppServices(dbPath?: string) {
-  const { db, sqlite } = getDbClient(dbPath);
-
-  // Production swap path: keep route handlers and services intact, then replace this repository
-  // factory with one backed by Postgres/API clients while preserving the repository interfaces.
-  return createServices(createSqliteRepositories(db), sqlite);
+  return createServices(getDbClient(dbPath).sqlite);
 }

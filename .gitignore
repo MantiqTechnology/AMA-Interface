@@ -1,10 +1,10 @@
 .nuxt
+.nuxt-*
 .output
 node_modules
 data/*.sqlite
 data/*.sqlite-*
 data/*.json
-!data/ops-demo-db.json
 data/uploads
 coverage
 playwright-report

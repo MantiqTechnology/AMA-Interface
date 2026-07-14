@@ -1,27 +1,28 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { flightOperations } from './flight-operations';
 
 export const ticketingSales = sqliteTable(
   'ticketing_sales',
   {
     id: text('id').primaryKey(),
-    flightOperationId: text('flight_operation_id').notNull(),
-    flightOrderId: text('flight_order_id').notNull(),
+    flightOperationId: text('flight_operation_id')
+      .notNull()
+      .references(() => flightOperations.id, { onDelete: 'cascade' }),
     serviceType: text('service_type').$type<'PASSENGER' | 'CARGO'>().notNull(),
     openedByUserId: text('opened_by_user_id').notNull(),
     openedAt: text('opened_at').notNull()
   },
-  (table) => [
-    uniqueIndex('ticketing_sales_flight_operation_unique').on(table.flightOperationId),
-    uniqueIndex('ticketing_sales_flight_order_unique').on(table.flightOrderId)
-  ]
+  (table) => [uniqueIndex('ticketing_sales_flight_operation_unique').on(table.flightOperationId)]
 );
 
 export const passengerTickets = sqliteTable(
   'passenger_tickets',
   {
     id: text('id').primaryKey(),
-    flightOrderId: text('flight_order_id').notNull(),
+    flightOperationId: text('flight_operation_id')
+      .notNull()
+      .references(() => flightOperations.id, { onDelete: 'cascade' }),
     passengerName: text('passenger_name').notNull(),
     documentType: text('document_type').notNull().default('KTP'),
     documentNumber: text('document_number').notNull(),
@@ -45,14 +46,16 @@ export const passengerTickets = sqliteTable(
   },
   (table) => [
     uniqueIndex('passenger_tickets_flight_seat_unique')
-      .on(table.flightOrderId, table.seatNumber)
+      .on(table.flightOperationId, table.seatNumber)
       .where(sql`${table.ticketStatus} = 'ACTIVE'`)
   ]
 );
 
 export const cargoBookings = sqliteTable('cargo_bookings', {
   id: text('id').primaryKey(),
-  flightOrderId: text('flight_order_id').notNull(),
+  flightOperationId: text('flight_operation_id')
+    .notNull()
+    .references(() => flightOperations.id, { onDelete: 'cascade' }),
   senderName: text('sender_name').notNull(),
   receiverName: text('receiver_name').notNull(),
   description: text('description').notNull(),
@@ -85,6 +88,9 @@ export const ticketingRefundRequests = sqliteTable(
   'ticketing_refund_requests',
   {
     id: text('id').primaryKey(),
+    flightOperationId: text('flight_operation_id')
+      .notNull()
+      .references(() => flightOperations.id, { onDelete: 'cascade' }),
     subjectType: text('subject_type').$type<'PASSENGER' | 'CARGO'>().notNull(),
     passengerTicketId: text('passenger_ticket_id').references(() => passengerTickets.id, {
       onDelete: 'cascade'
@@ -109,6 +115,7 @@ export const ticketingRefundRequests = sqliteTable(
   },
   (table) => [
     index('idx_ticketing_refunds_status').on(table.status),
+    index('idx_ticketing_refunds_flight_operation').on(table.flightOperationId),
     index('idx_ticketing_refunds_passenger').on(table.passengerTicketId),
     index('idx_ticketing_refunds_cargo').on(table.cargoBookingId)
   ]
@@ -121,8 +128,12 @@ export const passengerTicketReschedules = sqliteTable(
     passengerTicketId: text('passenger_ticket_id')
       .notNull()
       .references(() => passengerTickets.id, { onDelete: 'cascade' }),
-    previousFlightOrderId: text('previous_flight_order_id').notNull(),
-    newFlightOrderId: text('new_flight_order_id').notNull(),
+    previousFlightOperationId: text('previous_flight_operation_id')
+      .notNull()
+      .references(() => flightOperations.id),
+    newFlightOperationId: text('new_flight_operation_id')
+      .notNull()
+      .references(() => flightOperations.id),
     previousSeatNumber: text('previous_seat_number').notNull(),
     newSeatNumber: text('new_seat_number').notNull(),
     rescheduledByUserId: text('rescheduled_by_user_id').notNull(),

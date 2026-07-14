@@ -1,8 +1,14 @@
 import { z } from 'zod';
 import { isoDateTimeSchema, paginationQuerySchema } from './common';
-import { customerDtoSchema, flightSummaryDtoSchema } from './flights';
 
-export const invoiceStatusSchema = z.enum(['draft', 'issued', 'partially_paid', 'paid', 'overdue', 'void']);
+export const invoiceStatusSchema = z.enum([
+  'draft',
+  'issued',
+  'partially_paid',
+  'paid',
+  'overdue',
+  'void'
+]);
 
 export const paymentDtoSchema = z.object({
   id: z.string(),
@@ -16,6 +22,7 @@ export const paymentDtoSchema = z.object({
 
 export const invoiceSummaryDtoSchema = z.object({
   id: z.string(),
+  flightOperationId: z.string(),
   invoiceNumber: z.string(),
   status: invoiceStatusSchema,
   subtotal: z.number().nonnegative(),
@@ -24,8 +31,21 @@ export const invoiceSummaryDtoSchema = z.object({
   currency: z.string().length(3),
   issuedAt: isoDateTimeSchema,
   dueAt: isoDateTimeSchema,
-  customer: customerDtoSchema,
-  flight: flightSummaryDtoSchema
+  customer: z.object({
+    id: z.string(),
+    name: z.string(),
+    contactEmail: z.string().nullable()
+  }),
+  flight: z.object({
+    id: z.string(),
+    flightNumber: z.string(),
+    orderNumber: z.string(),
+    currentStatus: z.string(),
+    originCode: z.string(),
+    destinationCode: z.string(),
+    scheduledDepartureAt: z.string().nullable(),
+    scheduledArrivalAt: z.string().nullable()
+  })
 });
 
 export const invoiceDetailDtoSchema = invoiceSummaryDtoSchema.extend({

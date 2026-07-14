@@ -7,7 +7,7 @@ const loading = ref(false);
 
 async function login() {
   loading.value = true;
-  await navigateTo('/ops/command-center');
+  await navigateTo('/dashboard');
 }
 </script>
 

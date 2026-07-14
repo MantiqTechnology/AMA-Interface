@@ -50,7 +50,7 @@ function insertHistory(
 function seedManifests(sqlite: Database.Database, flightId: string) {
   insertIgnore(sqlite, 'flight_manifests', {
     id: `${flightId}-manifest-pax`,
-    flightId,
+    flightOperationId: flightId,
     manifestTypeId: 'manifest-type-passenger',
     statusId: 'manifest-status-approved',
     approvedByUserId: 'USR-DEMO-ADMIN',
@@ -61,7 +61,7 @@ function seedManifests(sqlite: Database.Database, flightId: string) {
   });
   insertIgnore(sqlite, 'flight_manifests', {
     id: `${flightId}-manifest-cargo`,
-    flightId,
+    flightOperationId: flightId,
     manifestTypeId: 'manifest-type-cargo',
     statusId: 'manifest-status-approved',
     approvedByUserId: 'USR-DEMO-ADMIN',
@@ -786,6 +786,35 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       createdAt: seedNow,
       updatedAt: seedNow
     });
+    insertIgnore(sqlite, 'invoices', {
+      id: 'inv-closed-djj-wmx',
+      customerId: 'cust-papua-logistics',
+      flightOperationId: 'fop-closed-djj-wmx',
+      invoiceNumber: 'AMA-INV-2026-0707-001',
+      status: 'partially_paid',
+      subtotal: 28000000,
+      tax: 3080000,
+      total: 31080000,
+      currency: 'IDR',
+      issuedAt: '2026-07-07T11:00:00.000+07:00',
+      dueAt: '2026-07-21T23:59:59.000+07:00'
+    });
+    insertIgnore(sqlite, 'payments', {
+      id: 'pay-closed-djj-wmx',
+      invoiceId: 'inv-closed-djj-wmx',
+      amount: 10000000,
+      currency: 'IDR',
+      paidAt: '2026-07-08T09:00:00.000+07:00',
+      method: 'bank_transfer',
+      reference: 'BPD-TRF-0708-001'
+    });
+    sqlite
+      .prepare(
+        `UPDATE flight_finance_handoffs
+         SET status_id = 'finance-handoff-status-posted', updated_at = ?
+         WHERE id = 'fop-closed-djj-wmx-handoff-invoice'`
+      )
+      .run(seedNow);
     seedFinance(sqlite, 'fop-cancelled-fuel', 'VOID');
     insertIgnore(sqlite, 'flight_finance_handoffs', {
       id: 'fop-cancelled-fuel-void',

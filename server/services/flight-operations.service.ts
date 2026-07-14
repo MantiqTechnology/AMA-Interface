@@ -38,12 +38,13 @@ import type {
 } from '../../shared/contracts/flight-operations';
 import { flightOperationStatuses } from '../../shared/contracts/flight-operations';
 import { DomainError, notFound } from '../utils/errors';
+import { InvoicesService } from './invoices.service';
 
 type SqlValue = string | number | boolean | null;
 type SqlRow = Record<string, SqlValue>;
 type ClosureEvidence = Pick<
   FlightOperationRecord,
-  'currentStatus' | 'actualDepartureAt' | 'actualArrivalAt'
+  'currentStatus' | 'actualDepartureAt' | 'actualArrivalAt' | 'customerId' | 'estimatedRevenue'
 > & {
   manifests: FlightManifestDto[];
   fuelRequests: FlightFuelRequestDto[];
@@ -764,7 +765,7 @@ export class FlightOperationsService {
     return mapRequest(row);
   }
 
-  createRequest(input: CreateFlightRequestBody, actorUserId = 'USR-001') {
+  createRequest(input: CreateFlightRequestBody, actorUserId: string) {
     this.requireRow('SELECT * FROM routes WHERE id = ? AND is_active = 1', input.routeId, 'Route');
     this.requireActiveRef('flight_types', input.flightTypeId, 'Flight type');
     this.requireActiveRef('flight_service_types', input.serviceTypeId, 'Service type');
@@ -908,7 +909,7 @@ export class FlightOperationsService {
     return this.requestDetail(id);
   }
 
-  decideRequest(id: string, body: FlightApprovalDecisionBody, actorUserId = 'USR-DEMO-ADMIN') {
+  decideRequest(id: string, body: FlightApprovalDecisionBody, actorUserId: string) {
     const request = this.requestDetail(id);
     if (request.status !== 'SUBMITTED') {
       throw new DomainError(
@@ -960,7 +961,7 @@ export class FlightOperationsService {
     return { request: this.requestDetail(id), flight };
   }
 
-  create(input: CreateFlightOperationBody) {
+  create(input: CreateFlightOperationBody, actorUserId: string) {
     const route = this.requireRow(
       `SELECT * FROM routes WHERE id = ? AND is_active = 1`,
       input.routeId,
@@ -988,7 +989,7 @@ export class FlightOperationsService {
           @id, @orderNumber, NULL, @flightNumber, @flightDate, @flightTypeId,
           @serviceTypeId, 'Direct Operational Entry', @priorityId, @routeId, @originStationId,
           @destinationStationId, @customerId, @aircraftId, @pilotInCommandId, @coPilotId,
-          @scheduledDepartureAt, @scheduledArrivalAt, 'flight-operation-status-draft', 'USR-001',
+          @scheduledDepartureAt, @scheduledArrivalAt, 'flight-operation-status-draft', @createdByUserId,
           NULL, @remarks, 'CHARTER', NULL, 'IDR', 0, NULL, @createdAt, @updatedAt
         )`
       )
@@ -1010,6 +1011,7 @@ export class FlightOperationsService {
         scheduledDepartureAt: input.scheduledDepartureAt ?? null,
         scheduledArrivalAt: input.scheduledArrivalAt ?? null,
         remarks: input.remarks ?? null,
+        createdByUserId: actorUserId,
         createdAt: now,
         updatedAt: now
       });
@@ -1017,12 +1019,12 @@ export class FlightOperationsService {
     this.ensureCrewAssignments(id, input.pilotInCommandId ?? null, input.coPilotId ?? null);
     this.ensureManifests(id);
     this.initializeFlightGovernance(id);
-    this.appendHistory(id, null, 'DRAFT', 'CREATE');
-    this.evaluateReadiness(id, false);
+    this.appendHistory(id, null, 'DRAFT', 'CREATE', actorUserId);
+    this.evaluateReadiness(id, false, actorUserId);
     return this.detail(id);
   }
 
-  update(id: string, input: CreateFlightOperationBody) {
+  update(id: string, input: CreateFlightOperationBody, actorUserId: string) {
     const flight = this.requireFlight(id);
     if (flight.currentStatus !== 'DRAFT' && flight.currentStatus !== 'REOPENED_FOR_CORRECTION') {
       throw new DomainError(
@@ -1083,11 +1085,11 @@ export class FlightOperationsService {
 
     this.sqlite.prepare('DELETE FROM flight_crew_assignments WHERE flight_id = ?').run(id);
     this.ensureCrewAssignments(id, input.pilotInCommandId ?? null, input.coPilotId ?? null);
-    this.evaluateReadiness(id, false);
+    this.evaluateReadiness(id, false, actorUserId);
     return this.detail(id);
   }
 
-  submit(id: string) {
+  submit(id: string, actorUserId: string) {
     const flight = this.requireFlight(id);
     if (flight.currentStatus !== 'DRAFT' && flight.currentStatus !== 'REOPENED_FOR_CORRECTION') {
       throw new DomainError(
@@ -1104,7 +1106,7 @@ export class FlightOperationsService {
       );
     }
 
-    this.transition(id, 'PENDING_READINESS');
+    this.transition(id, 'PENDING_READINESS', actorUserId);
     this.sqlite
       .prepare(
         `UPDATE flight_operation_approvals
@@ -1112,14 +1114,14 @@ export class FlightOperationsService {
          WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-readiness-approval'`
       )
       .run(flight.createdByUserId, timestamp(), timestamp(), id);
-    return this.evaluateReadiness(id, true);
+    return this.evaluateReadiness(id, true, actorUserId);
   }
 
-  evaluate(id: string) {
-    return this.evaluateReadiness(id, true);
+  evaluate(id: string, actorUserId: string) {
+    return this.evaluateReadiness(id, true, actorUserId);
   }
 
-  approve(id: string, body: ActionNoteBody = {}, actorUserId = 'USR-DEMO-ADMIN') {
+  approve(id: string, body: ActionNoteBody, actorUserId: string) {
     const flight = this.requireFlight(id);
     if (flight.currentStatus !== 'READY_FOR_APPROVAL') {
       throw new DomainError('READINESS_NOT_APPROVABLE', 'Flight must be ready for approval.', 409);
@@ -1147,38 +1149,41 @@ export class FlightOperationsService {
          WHERE flight_id = ? AND approval_type_id IN ('flight-approval-type-readiness-approval', 'flight-approval-type-flight-approval')`
       )
       .run(actorUserId, timestamp(), body.note ?? null, timestamp(), id);
-    this.transition(id, 'APPROVED', { note: body.note });
+    this.transition(id, 'APPROVED', actorUserId, { note: body.note });
     return this.detail(id);
   }
 
-  closeFlight(id: string, actorUserId = 'USR-DEMO-ADMIN') {
-    const flight = this.detail(id);
-    if (flight.currentStatus !== 'PENDING_CLOSURE') {
-      throw new DomainError(
-        'INVALID_TRANSITION',
-        'Only a flight pending closure can be closed.',
-        409
-      );
-    }
-    const { missing } = flight.closureReadiness;
-    if (missing.length) {
-      throw new DomainError(
-        'CLOSURE_REQUIREMENTS_INCOMPLETE',
-        `Flight cannot be closed. Complete: ${missing.join(', ')}.`,
-        422,
-        { missing }
-      );
-    }
-    this.sqlite
-      .prepare(
-        `UPDATE flight_operation_approvals
-         SET status_id = 'flight-approval-status-approved', requested_by_user_id = COALESCE(requested_by_user_id, ?),
-             requested_at = COALESCE(requested_at, ?), decided_by_user_id = ?,
-             decided_at = ?, updated_at = ?
-         WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-closure-approval'`
-      )
-      .run(actorUserId, timestamp(), actorUserId, timestamp(), timestamp(), id);
-    return this.transition(id, 'CLOSED');
+  closeFlight(id: string, actorUserId: string) {
+    const close = this.sqlite.transaction(() => {
+      const flight = this.detail(id);
+      if (flight.currentStatus !== 'PENDING_CLOSURE') {
+        throw new DomainError(
+          'INVALID_TRANSITION',
+          'Only a flight pending closure can be closed.',
+          409
+        );
+      }
+      const { missing } = flight.closureReadiness;
+      if (missing.length) {
+        throw new DomainError(
+          'CLOSURE_REQUIREMENTS_INCOMPLETE',
+          `Flight cannot be closed. Complete: ${missing.join(', ')}.`,
+          422,
+          { missing }
+        );
+      }
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operation_approvals
+           SET status_id = 'flight-approval-status-approved', requested_by_user_id = COALESCE(requested_by_user_id, ?),
+               requested_at = COALESCE(requested_at, ?), decided_by_user_id = ?,
+               decided_at = ?, updated_at = ?
+           WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-closure-approval'`
+        )
+        .run(actorUserId, timestamp(), actorUserId, timestamp(), timestamp(), id);
+      return this.transition(id, 'CLOSED', actorUserId);
+    });
+    return close.immediate();
   }
 
   private closureReadiness(
@@ -1209,13 +1214,21 @@ export class FlightOperationsService {
     ) {
       missing.push('maintenance review');
     }
+    if (!evidence.customerId || evidence.estimatedRevenue === null) {
+      missing.push('invoice customer/revenue');
+    }
     return {
       allowed: evidence.currentStatus === 'PENDING_CLOSURE' && missing.length === 0,
       missing
     };
   }
 
-  transition(id: string, toStatus: FlightOperationStatus, options: { note?: string } = {}) {
+  transition(
+    id: string,
+    toStatus: FlightOperationStatus,
+    actorUserId: string,
+    options: { note?: string } = {}
+  ) {
     const flight = this.requireFlight(id);
     const allowed = normalTransitions[flight.currentStatus] ?? [];
     if (!allowed.includes(toStatus)) {
@@ -1238,9 +1251,16 @@ export class FlightOperationsService {
         timestamp(),
         id
       );
-    this.appendHistory(id, flight.currentStatus, toStatus, actionTypeForStatus(toStatus), {
-      reasonNote: options.note
-    });
+    this.appendHistory(
+      id,
+      flight.currentStatus,
+      toStatus,
+      actionTypeForStatus(toStatus),
+      actorUserId,
+      {
+        reasonNote: options.note
+      }
+    );
 
     if (toStatus === 'CLOSED') {
       this.upsertFinanceHandoff(
@@ -1253,26 +1273,27 @@ export class FlightOperationsService {
         null,
         null
       );
+      new InvoicesService(this.sqlite).processReadyHandoffs(id);
     }
 
     return this.detail(id);
   }
 
-  depart(id: string, body: ActualTimeBody) {
+  depart(id: string, body: ActualTimeBody, actorUserId: string) {
     this.sqlite
       .prepare('UPDATE flight_operations SET actual_departure_at = ?, updated_at = ? WHERE id = ?')
       .run(body.actualAt, timestamp(), id);
-    return this.transition(id, 'IN_PROGRESS');
+    return this.transition(id, 'IN_PROGRESS', actorUserId);
   }
 
-  land(id: string, body: ActualTimeBody) {
+  land(id: string, body: ActualTimeBody, actorUserId: string) {
     this.sqlite
       .prepare('UPDATE flight_operations SET actual_arrival_at = ?, updated_at = ? WHERE id = ?')
       .run(body.actualAt, timestamp(), id);
-    return this.transition(id, 'LANDED');
+    return this.transition(id, 'LANDED', actorUserId);
   }
 
-  cancel(id: string, body: FlightReasonActionBody) {
+  cancel(id: string, body: FlightReasonActionBody, actorUserId: string) {
     const flight = this.requireFlight(id);
     if (flight.currentStatus === 'CLOSED') {
       throw new DomainError(
@@ -1287,7 +1308,7 @@ export class FlightOperationsService {
         `UPDATE flight_operations SET current_status_id = 'flight-operation-status-cancelled', is_locked = 1, updated_at = ? WHERE id = ?`
       )
       .run(timestamp(), id);
-    this.appendHistory(id, flight.currentStatus, 'CANCELLED', 'CANCEL', {
+    this.appendHistory(id, flight.currentStatus, 'CANCELLED', 'CANCEL', actorUserId, {
       reasonId: body.reasonId,
       reasonNote: body.reasonNote
     });
@@ -1304,7 +1325,7 @@ export class FlightOperationsService {
     return this.detail(id);
   }
 
-  divert(id: string, body: FlightReasonActionBody) {
+  divert(id: string, body: FlightReasonActionBody, actorUserId: string) {
     const flight = this.requireFlight(id);
     if (!body.diversionStationId) {
       throw new DomainError('DIVERSION_STATION_REQUIRED', 'Diversion station is required.', 422);
@@ -1317,7 +1338,7 @@ export class FlightOperationsService {
          WHERE id = ?`
       )
       .run(body.diversionStationId, timestamp(), timestamp(), id);
-    this.appendHistory(id, flight.currentStatus, 'DIVERTED', 'DIVERT', {
+    this.appendHistory(id, flight.currentStatus, 'DIVERTED', 'DIVERT', actorUserId, {
       reasonId: body.reasonId,
       reasonNote: body.reasonNote,
       metadata: { diversionStationId: body.diversionStationId }
@@ -1325,7 +1346,7 @@ export class FlightOperationsService {
     return this.detail(id);
   }
 
-  reopen(id: string, body: FlightReasonActionBody) {
+  reopen(id: string, body: FlightReasonActionBody, actorUserId: string) {
     const flight = this.requireFlight(id);
     if (flight.currentStatus !== 'CLOSED') {
       throw new DomainError('REOPEN_ONLY_CLOSED', 'Only closed flights can be reopened.', 409);
@@ -1336,7 +1357,7 @@ export class FlightOperationsService {
         `UPDATE flight_operations SET current_status_id = 'flight-operation-status-reopened-for-correction', is_locked = 0, updated_at = ? WHERE id = ?`
       )
       .run(timestamp(), id);
-    this.appendHistory(id, 'CLOSED', 'REOPENED_FOR_CORRECTION', 'REOPEN', {
+    this.appendHistory(id, 'CLOSED', 'REOPENED_FOR_CORRECTION', 'REOPEN', actorUserId, {
       reasonId: body.reasonId,
       reasonNote: body.reasonNote
     });
@@ -1354,10 +1375,10 @@ export class FlightOperationsService {
           @baggageWeightKg, @remarks, @createdAt, @updatedAt)`
       )
       .run({ id: nanoid(), createdAt: timestamp(), updatedAt: timestamp(), ...body });
-    return this.detail(String(this.manifestFlightId(body.manifestId)));
+    return this.detail(String(this.manifestFlightOperationId(body.manifestId)));
   }
 
-  createCargo(body: CreateCargoBody) {
+  createCargo(body: CreateCargoBody, actorUserId: string) {
     this.requireManifest(body.manifestId);
     this.sqlite
       .prepare(
@@ -1370,12 +1391,12 @@ export class FlightOperationsService {
           @createdAt, @updatedAt)`
       )
       .run({ id: nanoid(), createdAt: timestamp(), updatedAt: timestamp(), ...body });
-    const flightId = String(this.manifestFlightId(body.manifestId));
-    this.evaluateReadiness(flightId, false);
+    const flightId = String(this.manifestFlightOperationId(body.manifestId));
+    this.evaluateReadiness(flightId, false, actorUserId);
     return this.detail(flightId);
   }
 
-  createFuel(body: CreateFuelRequestBody) {
+  createFuel(body: CreateFuelRequestBody, actorUserId: string) {
     const flight = this.requireFlight(body.flightId);
     const supplier = this.requireRow(
       `SELECT * FROM fuel_suppliers WHERE id = ? AND is_active = 1`,
@@ -1399,17 +1420,18 @@ export class FlightOperationsService {
           requested_by_user_id, created_at, updated_at
         ) VALUES (@id, @flightId, @fuelSupplierId, @fuelType, @requestedQuantityLitre,
           NULL, NULL, @referencePricePerLitre, NULL, NULL, NULL, NULL, 'fuel-workflow-status-requested',
-          'USR-DEMO-ADMIN', @createdAt, @updatedAt)`
+          @actorUserId, @createdAt, @updatedAt)`
       )
-      .run({ id, createdAt: timestamp(), updatedAt: timestamp(), ...body });
-    this.evaluateReadiness(body.flightId, false);
+      .run({ id, actorUserId, createdAt: timestamp(), updatedAt: timestamp(), ...body });
+    this.evaluateReadiness(body.flightId, false, actorUserId);
     return this.detail(body.flightId);
   }
 
   fuelAction(
     id: string,
     action: 'approve' | 'uplift' | 'post' | 'reject',
-    body: Record<string, unknown>
+    body: Record<string, unknown>,
+    actorUserId: string
   ) {
     const request = this.requireRow(
       `SELECT * FROM flight_fuel_requests WHERE id = ?`,
@@ -1420,18 +1442,23 @@ export class FlightOperationsService {
     if (action === 'approve') {
       this.sqlite
         .prepare(
-          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-approved', approved_quantity_litre = ?, approved_by_user_id = 'USR-DEMO-ADMIN', updated_at = ? WHERE id = ?`
+          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-approved', approved_quantity_litre = ?, approved_by_user_id = ?, updated_at = ? WHERE id = ?`
         )
-        .run(Number(body.approvedQuantityLitre ?? request.requested_quantity_litre), now, id);
+        .run(
+          Number(body.approvedQuantityLitre ?? request.requested_quantity_litre),
+          actorUserId,
+          now,
+          id
+        );
     } else if (action === 'uplift') {
       const actual = Number(body.actualUpliftLitre ?? 0);
       const price = Number(body.actualPricePerLitre ?? request.reference_price_per_litre ?? 0);
       const total = Math.round(actual * price);
       this.sqlite
         .prepare(
-          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-uplifted', actual_uplift_litre = ?, actual_price_per_litre = ?, total_cost = ?, tax_amount = 0, uplift_recorded_by_user_id = 'USR-DEMO-ADMIN', variance_note = ?, updated_at = ? WHERE id = ?`
+          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-uplifted', actual_uplift_litre = ?, actual_price_per_litre = ?, total_cost = ?, tax_amount = 0, uplift_recorded_by_user_id = ?, variance_note = ?, updated_at = ? WHERE id = ?`
         )
-        .run(actual, price, total, String(body.varianceNote ?? ''), now, id);
+        .run(actual, price, total, actorUserId, String(body.varianceNote ?? ''), now, id);
     } else if (action === 'post') {
       this.sqlite
         .prepare(
@@ -1461,11 +1488,11 @@ export class FlightOperationsService {
         .run(String(body.rejectionReason ?? 'Rejected in demo workflow.'), now, id);
     }
     const flightId = String(request.flight_id);
-    this.evaluateReadiness(flightId, false);
+    this.evaluateReadiness(flightId, false, actorUserId);
     return this.detail(flightId);
   }
 
-  createStationService(body: CreateStationServiceBody) {
+  createStationService(body: CreateStationServiceBody, actorUserId: string) {
     const id = `station-service-${nanoid(10)}`;
     this.sqlite
       .prepare(
@@ -1476,11 +1503,11 @@ export class FlightOperationsService {
           @referenceRate, @createdAt, @updatedAt)`
       )
       .run({ id, createdAt: timestamp(), updatedAt: timestamp(), ...body });
-    this.evaluateReadiness(body.flightId, false);
+    this.evaluateReadiness(body.flightId, false, actorUserId);
     return this.detail(body.flightId);
   }
 
-  confirmStationService(id: string) {
+  confirmStationService(id: string, actorUserId: string) {
     const row = this.requireRow(
       `SELECT * FROM flight_station_service_requests WHERE id = ?`,
       id,
@@ -1488,14 +1515,14 @@ export class FlightOperationsService {
     );
     this.sqlite
       .prepare(
-        `UPDATE flight_station_service_requests SET status_id = 'station-service-status-confirmed', confirmed_at = ?, confirmed_by_user_id = 'USR-DEMO-ADMIN', updated_at = ? WHERE id = ?`
+        `UPDATE flight_station_service_requests SET status_id = 'station-service-status-confirmed', confirmed_at = ?, confirmed_by_user_id = ?, updated_at = ? WHERE id = ?`
       )
-      .run(timestamp(), timestamp(), id);
-    this.evaluateReadiness(String(row.flight_id), false);
+      .run(timestamp(), actorUserId, timestamp(), id);
+    this.evaluateReadiness(String(row.flight_id), false, actorUserId);
     return this.detail(String(row.flight_id));
   }
 
-  createStationCost(body: CreateStationCostBody) {
+  createStationCost(body: CreateStationCostBody, actorUserId: string) {
     const id = `station-cost-${nanoid(10)}`;
     this.sqlite
       .prepare(
@@ -1503,13 +1530,13 @@ export class FlightOperationsService {
           id, flight_id, station_id, vendor_id, cost_category_id, amount, currency_id,
           description, status_id, submitted_by_user_id, created_at, updated_at
         ) VALUES (@id, @flightId, @stationId, @vendorId, @costCategoryId, @amount, @currencyId,
-          @description, 'station-cost-status-draft', 'USR-DEMO-ADMIN', @createdAt, @updatedAt)`
+          @description, 'station-cost-status-draft', @actorUserId, @createdAt, @updatedAt)`
       )
-      .run({ id, createdAt: timestamp(), updatedAt: timestamp(), ...body });
+      .run({ id, actorUserId, createdAt: timestamp(), updatedAt: timestamp(), ...body });
     return body.flightId ? this.detail(body.flightId) : this.listStationCosts();
   }
 
-  approveStationCost(id: string) {
+  approveStationCost(id: string, actorUserId: string) {
     const row = this.requireRow(
       `SELECT * FROM flight_station_costs WHERE id = ?`,
       id,
@@ -1517,9 +1544,9 @@ export class FlightOperationsService {
     );
     this.sqlite
       .prepare(
-        `UPDATE flight_station_costs SET status_id = 'station-cost-status-approved', approved_by_user_id = 'USR-DEMO-ADMIN', approved_at = ?, updated_at = ? WHERE id = ?`
+        `UPDATE flight_station_costs SET status_id = 'station-cost-status-approved', approved_by_user_id = ?, approved_at = ?, updated_at = ? WHERE id = ?`
       )
-      .run(timestamp(), timestamp(), id);
+      .run(actorUserId, timestamp(), timestamp(), id);
     if (row.flight_id) {
       this.upsertFinanceHandoff(
         String(row.flight_id),
@@ -1536,7 +1563,7 @@ export class FlightOperationsService {
     return row;
   }
 
-  createMaintenance(body: CreateMaintenanceHandoffBody) {
+  createMaintenance(body: CreateMaintenanceHandoffBody, actorUserId: string) {
     const id = `maintenance-${nanoid(10)}`;
     this.sqlite
       .prepare(
@@ -1546,13 +1573,13 @@ export class FlightOperationsService {
           recorded_by_user_id, created_at, updated_at
         ) VALUES (@id, @flightId, @aircraftId, @serviceabilityStatusId, @workOrderReference,
           @maintenanceNote, @sparePartReference, @maintenanceCost, @currencyId, 'maintenance-handoff-status-draft',
-          'USR-DEMO-ADMIN', @createdAt, @updatedAt)`
+          @actorUserId, @createdAt, @updatedAt)`
       )
-      .run({ id, createdAt: timestamp(), updatedAt: timestamp(), ...body });
+      .run({ id, actorUserId, createdAt: timestamp(), updatedAt: timestamp(), ...body });
     return body.flightId ? this.detail(body.flightId) : this.listMaintenance({});
   }
 
-  approveMaintenance(id: string) {
+  approveMaintenance(id: string, actorUserId: string) {
     const row = this.requireRow(
       `SELECT * FROM flight_maintenance_handoffs WHERE id = ?`,
       id,
@@ -1560,9 +1587,9 @@ export class FlightOperationsService {
     );
     this.sqlite
       .prepare(
-        `UPDATE flight_maintenance_handoffs SET status_id = 'maintenance-handoff-status-approved', approved_by_user_id = 'USR-DEMO-ADMIN', approved_at = ?, updated_at = ? WHERE id = ?`
+        `UPDATE flight_maintenance_handoffs SET status_id = 'maintenance-handoff-status-approved', approved_by_user_id = ?, approved_at = ?, updated_at = ? WHERE id = ?`
       )
-      .run(timestamp(), timestamp(), id);
+      .run(actorUserId, timestamp(), timestamp(), id);
     if (row.flight_id) {
       this.upsertFinanceHandoff(
         String(row.flight_id),
@@ -1889,8 +1916,8 @@ export class FlightOperationsService {
     return this.requireRow(`SELECT * FROM flight_manifests WHERE id = ?`, id, 'Manifest');
   }
 
-  private manifestFlightId(manifestId: string) {
-    return this.requireManifest(manifestId).flight_id;
+  private manifestFlightOperationId(manifestId: string) {
+    return this.requireManifest(manifestId).flight_operation_id;
   }
 
   private validateSchedule(departure: string | null, arrival: string | null) {
@@ -1991,30 +2018,36 @@ export class FlightOperationsService {
     this.ensureCrewAssignments(id, request.pilotInCommandId, request.coPilotId);
     this.ensureManifests(id);
     this.initializeFlightGovernance(id);
-    this.appendHistory(id, null, 'DRAFT', 'CREATE', {
+    this.appendHistory(id, null, 'DRAFT', 'CREATE', approvedByUserId, {
       reasonNote: `Created from approved request ${request.requestNumber}.`,
       metadata: { flightRequestId: request.id, approvedByUserId }
     });
 
     if (request.fuelSupplierId && request.requestedFuelLitre > 0) {
-      this.createFuel({
-        flightId: id,
-        fuelSupplierId: request.fuelSupplierId,
-        fuelType: request.fuelType,
-        requestedQuantityLitre: request.requestedFuelLitre,
-        referencePricePerLitre: null
-      });
+      this.createFuel(
+        {
+          flightId: id,
+          fuelSupplierId: request.fuelSupplierId,
+          fuelType: request.fuelType,
+          requestedQuantityLitre: request.requestedFuelLitre,
+          referencePricePerLitre: null
+        },
+        approvedByUserId
+      );
     }
     if (request.handlingSupplierId) {
-      this.createStationService({
-        flightId: id,
-        stationId: String(route.origin_station_id),
-        serviceSupplierId: request.handlingSupplierId,
-        serviceTypeId: 'station-service-type-handling',
-        referenceRate: null
-      });
+      this.createStationService(
+        {
+          flightId: id,
+          stationId: String(route.origin_station_id),
+          serviceSupplierId: request.handlingSupplierId,
+          serviceTypeId: 'station-service-type-handling',
+          referenceRate: null
+        },
+        approvedByUserId
+      );
     }
-    this.evaluateReadiness(id, false);
+    this.evaluateReadiness(id, false, approvedByUserId);
     return this.detail(id);
   }
 
@@ -2108,7 +2141,7 @@ export class FlightOperationsService {
       this.sqlite
         .prepare(
           `INSERT OR IGNORE INTO flight_manifests (
-             id, flight_id, manifest_type_id, status_id, approved_by_user_id, approved_at,
+             id, flight_operation_id, manifest_type_id, status_id, approved_by_user_id, approved_at,
              locked_at, created_at, updated_at
            ) VALUES (?, ?, ?, 'manifest-status-draft', NULL, NULL, NULL, ?, ?)`
         )
@@ -2127,6 +2160,7 @@ export class FlightOperationsService {
     fromStatus: FlightOperationStatus | null,
     toStatus: FlightOperationStatus,
     actionType: string,
+    actorUserId: string,
     options: {
       reasonId?: string;
       reasonNote?: string;
@@ -2139,7 +2173,7 @@ export class FlightOperationsService {
            id, flight_id, from_status_id, to_status_id, action_type_id, reason_id, reason_note,
            changed_by_user_id, changed_at, metadata_json
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'USR-DEMO-ADMIN', ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         `hist-${nanoid(12)}`,
@@ -2151,12 +2185,13 @@ export class FlightOperationsService {
         this.lookupId('flight_action_types', actionType, 'Flight action type'),
         options.reasonId ?? null,
         options.reasonNote ?? null,
+        actorUserId,
         timestamp(),
         options.metadata ? JSON.stringify(options.metadata) : null
       );
   }
 
-  private evaluateReadiness(id: string, updateStatus: boolean) {
+  private evaluateReadiness(id: string, updateStatus: boolean, actorUserId: string) {
     const flight = this.requireFlight(id);
     const now = timestamp();
     const results = this.calculateReadiness(id, flight);
@@ -2169,7 +2204,7 @@ export class FlightOperationsService {
             evaluated_by_user_id, result_note, source_reference, created_at, updated_at
           ) VALUES (
             @id, @flightId, @checkCode, @checkName, @statusId, @isRequired, @evaluatedAt,
-            'USR-DEMO-ADMIN', @resultNote, @sourceReference, @createdAt, @updatedAt
+            @actorUserId, @resultNote, @sourceReference, @createdAt, @updatedAt
           )
           ON CONFLICT(flight_id, check_code) DO UPDATE SET
             status_id = excluded.status_id,
@@ -2187,6 +2222,7 @@ export class FlightOperationsService {
           statusId: this.lookupId('readiness_statuses', result.status, 'Readiness status'),
           isRequired: 1,
           evaluatedAt: now,
+          actorUserId,
           resultNote: result.resultNote,
           sourceReference: result.sourceReference,
           createdAt: now,
@@ -2221,7 +2257,8 @@ export class FlightOperationsService {
           id,
           flight.currentStatus,
           nextStatus,
-          nextStatus === 'BLOCKED' ? 'BLOCK' : 'READINESS_EVALUATED'
+          nextStatus === 'BLOCKED' ? 'BLOCK' : 'READINESS_EVALUATED',
+          actorUserId
         );
       }
     }
@@ -2240,7 +2277,7 @@ export class FlightOperationsService {
            FROM flight_manifests m
            JOIN manifest_types type ON type.id = m.manifest_type_id
            JOIN manifest_statuses status ON status.id = m.status_id
-           WHERE m.flight_id = ? AND type.code = 'PASSENGER'`
+           WHERE m.flight_operation_id = ? AND type.code = 'PASSENGER'`
         )
         .get(id) as SqlRow | undefined,
       cargoManifest: this.sqlite
@@ -2249,7 +2286,7 @@ export class FlightOperationsService {
            FROM flight_manifests m
            JOIN manifest_types type ON type.id = m.manifest_type_id
            JOIN manifest_statuses status ON status.id = m.status_id
-           WHERE m.flight_id = ? AND type.code = 'CARGO'`
+           WHERE m.flight_operation_id = ? AND type.code = 'CARGO'`
         )
         .get(id) as SqlRow | undefined,
       dgPending: this.sqlite
@@ -2258,7 +2295,7 @@ export class FlightOperationsService {
          FROM flight_manifest_cargo_items i
          JOIN dg_acceptance_statuses dg_status ON dg_status.id = i.dg_acceptance_status_id
          JOIN flight_manifests m ON m.id = i.manifest_id
-         WHERE m.flight_id = ? AND i.dg_category_id IS NOT NULL AND dg_status.code <> 'ACCEPTED'`
+         WHERE m.flight_operation_id = ? AND i.dg_category_id IS NOT NULL AND dg_status.code <> 'ACCEPTED'`
         )
         .get(id) as SqlRow,
       fuelPosted: this.sqlite
@@ -2298,14 +2335,14 @@ export class FlightOperationsService {
       passengerCount: this.sqlite
         .prepare(
           `SELECT COUNT(*) as count FROM flight_manifest_passengers p
-           JOIN flight_manifests m ON m.id = p.manifest_id WHERE m.flight_id = ?`
+           JOIN flight_manifests m ON m.id = p.manifest_id WHERE m.flight_operation_id = ?`
         )
         .get(id) as SqlRow,
       cargoWeight: this.sqlite
         .prepare(
           `SELECT COALESCE(SUM(c.actual_weight_kg), 0) as weight
            FROM flight_manifest_cargo_items c
-           JOIN flight_manifests m ON m.id = c.manifest_id WHERE m.flight_id = ?`
+           JOIN flight_manifests m ON m.id = c.manifest_id WHERE m.flight_operation_id = ?`
         )
         .get(id) as SqlRow,
       requiredDocuments: this.sqlite
@@ -2504,12 +2541,12 @@ export class FlightOperationsService {
        FROM flight_manifests m
        JOIN manifest_types type ON type.id = m.manifest_type_id
        JOIN manifest_statuses status ON status.id = m.status_id
-       WHERE m.flight_id = ? ORDER BY type.sort_order`
+       WHERE m.flight_operation_id = ? ORDER BY type.sort_order`
         )
         .all(id) as SqlRow[]
     ).map((row) => ({
       id: String(row.id),
-      flightId: String(row.flight_id),
+      flightOperationId: String(row.flight_operation_id),
       manifestType: String(row.manifest_type) as FlightManifestDto['manifestType'],
       status: String(row.status) as FlightManifestDto['status'],
       passengerCount: num(row.passenger_count),
@@ -2527,7 +2564,7 @@ export class FlightOperationsService {
         .prepare(
           `SELECT p.* FROM flight_manifest_passengers p
        JOIN flight_manifests m ON m.id = p.manifest_id
-       WHERE m.flight_id = ?
+       WHERE m.flight_operation_id = ?
        ORDER BY p.seat_number, p.full_name`
         )
         .all(id) as SqlRow[]
@@ -2554,7 +2591,7 @@ export class FlightOperationsService {
        JOIN flight_manifests m ON m.id = c.manifest_id
        JOIN dg_acceptance_statuses dg_status ON dg_status.id = c.dg_acceptance_status_id
        LEFT JOIN dg_categories dg ON dg.id = c.dg_category_id
-       WHERE m.flight_id = ?
+       WHERE m.flight_operation_id = ?
        ORDER BY c.description`
         )
         .all(id) as SqlRow[]

@@ -1,62 +1,43 @@
-import type { AuthorizationContext } from '#shared/types/authz';
-import type { Flight, FlightStatus } from '#shared/types/ops-demo';
-import { authorizeOperation, canTransitionFlight } from '#operations/policies';
+import { demoRolePermissions } from '#shared/types/roles';
+
+const moduleCatalog = [
+  { key: 'operations', name: 'Flight Operations', category: 'Operations' },
+  { key: 'ticketing', name: 'Passenger & Cargo Ticketing', category: 'Commercial' },
+  { key: 'finance', name: 'Finance & Billing', category: 'Finance' },
+  { key: 'master-data', name: 'Master Data', category: 'Administration' }
+];
 
 export function useAuthorization() {
-  const store = useAmaDemoStore();
+  const session = useDemoSession();
 
-  function can(permissionId: string, context: AuthorizationContext = {}) {
-    return authorizeOperation(store.data.value, store.currentUserId.value, permissionId, context);
+  function can(permissionId: string) {
+    const permissions = demoRolePermissions[session.role.value];
+    const allowed = permissions.includes('*') || permissions.includes(permissionId);
+    return {
+      allowed,
+      message: allowed
+        ? 'Allowed for the active demo role.'
+        : `${session.role.value} does not have ${permissionId}.`,
+      reason: allowed ? null : 'PERMISSION_DENIED'
+    };
   }
 
-  function explain(permissionId: string, context: AuthorizationContext = {}) {
-    return can(permissionId, context).message;
+  function explain(permissionId: string) {
+    return can(permissionId).message;
   }
 
   function visibleModules() {
-    const userRoles = store.currentRoles.value;
-    const permissionIds = new Set(userRoles.flatMap((role) => role.permissionIds));
-
-    return store.data.value.moduleCatalog
-      .filter((module) =>
-        store.data.value.tenantModules.some(
-          (tenantModule) => tenantModule.moduleKey === module.key && tenantModule.status === 'ACTIVE'
-        )
-      )
-      .filter((module) =>
-        store.data.value.permissionCatalog.some(
-          (permission) => permission.moduleKey === module.key && permissionIds.has(permission.id)
-        )
-      );
+    if (session.role.value === 'Demo Admin') return moduleCatalog;
+    return moduleCatalog.filter((module) => {
+      if (module.key === 'operations') return can('flight.read').allowed;
+      if (module.key === 'master-data') return can('platform.module.manage').allowed;
+      return true;
+    });
   }
 
-  function canAccessRecord(entityType: string, record: unknown) {
-    if (entityType === 'flightRequest') {
-      return can('flight_request.read', { flightRequest: record as AuthorizationContext['flightRequest'] });
-    }
-    if (entityType === 'flight') {
-      return can('flight.read', { flight: record as AuthorizationContext['flight'] });
-    }
-    return can('platform.dashboard.view');
+  function canAccessRecord(entityType: string) {
+    return can(entityType === 'flightRequest' ? 'flight_request.read' : 'flight.read');
   }
 
-  function canTransition(flight: Flight, nextStatus: FlightStatus) {
-    const workflowAllowed = canTransitionFlight(store.data.value, flight, nextStatus);
-    if (!workflowAllowed) {
-      return {
-        allowed: false,
-        message: 'Status flight tidak dapat melompati tahapan operasi.',
-        reason: 'INVALID_TRANSITION' as const
-      };
-    }
-    return can('flight.following.update', { flight, nextStatus });
-  }
-
-  return {
-    can,
-    canAccessRecord,
-    canTransitionFlight: canTransition,
-    explain,
-    visibleModules
-  };
+  return { can, canAccessRecord, explain, visibleModules };
 }

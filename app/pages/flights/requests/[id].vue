@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import type { FlightRequestRecord } from '#shared/contracts/flight-operations';
+import { demoRoleActorIds } from '#shared/types/roles';
 
 const route = useRoute();
+const session = useDemoSession();
+const authorization = useAuthorization();
 const id = computed(() => String(route.params.id));
 const decisionDialog = ref(false);
 const decision = ref<'APPROVE' | 'REJECT' | 'REQUEST_REVISION'>('APPROVE');
 const reason = ref('');
 const actionError = ref('');
 const actionLoading = ref(false);
+const requestMissing = ref(false);
 const {
   data: request,
   pending,
@@ -15,6 +19,15 @@ const {
   refresh
 } = await useAsyncData(`flight-request-${id.value}`, () =>
   fetchApi<FlightRequestRecord>(`/api/flight-operations/requests/${id.value}`)
+);
+const isRequestCreator = computed(
+  () => request.value?.createdByUserId === demoRoleActorIds[session.role.value]
+);
+const canDecide = computed(
+  () =>
+    request.value?.status === 'SUBMITTED' &&
+    authorization.can('flight_request.approve').allowed &&
+    !isRequestCreator.value
 );
 
 function formatDate(value: string | null) {
@@ -32,6 +45,16 @@ function openDecision(value: typeof decision.value) {
   decisionDialog.value = true;
 }
 
+function isMissingRequestError(errorValue: unknown) {
+  if (!errorValue || typeof errorValue !== 'object') return false;
+
+  const statusCode = Reflect.get(errorValue, 'statusCode') ?? Reflect.get(errorValue, 'status');
+  const data = Reflect.get(errorValue, 'data');
+  const apiError = data && typeof data === 'object' ? Reflect.get(data, 'error') : undefined;
+  const code = apiError && typeof apiError === 'object' ? Reflect.get(apiError, 'code') : undefined;
+  return statusCode === 404 || code === 'NOT_FOUND';
+}
+
 async function decide() {
   actionLoading.value = true;
   actionError.value = '';
@@ -43,7 +66,15 @@ async function decide() {
     decisionDialog.value = false;
     await refresh();
   } catch (errorValue) {
-    actionError.value = errorValue instanceof Error ? errorValue.message : 'Decision failed';
+    if (isMissingRequestError(errorValue)) {
+      decisionDialog.value = false;
+      requestMissing.value = true;
+      request.value = null;
+      actionError.value =
+        'This flight request no longer exists. The demo database may have been reset.';
+    } else {
+      actionError.value = errorValue instanceof Error ? errorValue.message : 'Decision failed';
+    }
   } finally {
     actionLoading.value = false;
   }
@@ -59,9 +90,21 @@ async function decide() {
         { title: request?.requestNumber ?? 'Request' }
       ]"
     />
-    <VAlert v-if="error" type="error" variant="tonal">Unable to load flight request.</VAlert>
+    <VAlert v-if="error" type="error" variant="tonal">
+      {{
+        isMissingRequestError(error)
+          ? 'This flight request no longer exists. The demo database may have been reset.'
+          : 'Unable to load flight request.'
+      }}
+      <template v-if="isMissingRequestError(error)" #append>
+        <VBtn size="small" to="/flights/requests" variant="text">Back to requests</VBtn>
+      </template>
+    </VAlert>
     <VAlert v-if="actionError" closable class="mb-4" type="error" variant="tonal">
       {{ actionError }}
+      <template v-if="requestMissing" #append>
+        <VBtn size="small" to="/flights/requests" variant="text">Back to requests</VBtn>
+      </template>
     </VAlert>
     <VSkeletonLoader v-if="pending" type="heading, paragraph, table" />
 
@@ -87,7 +130,7 @@ async function decide() {
           Edit Request
         </VBtn>
         <VBtn
-          v-if="request.status === 'SUBMITTED'"
+          v-if="canDecide"
           color="error"
           prepend-icon="mdi-close-circle-outline"
           variant="tonal"
@@ -96,7 +139,7 @@ async function decide() {
           Reject
         </VBtn>
         <VBtn
-          v-if="request.status === 'SUBMITTED'"
+          v-if="canDecide"
           prepend-icon="mdi-file-edit-outline"
           variant="tonal"
           @click="openDecision('REQUEST_REVISION')"
@@ -104,7 +147,7 @@ async function decide() {
           Request Revision
         </VBtn>
         <VBtn
-          v-if="request.status === 'SUBMITTED'"
+          v-if="canDecide"
           color="success"
           prepend-icon="mdi-check-decagram-outline"
           @click="openDecision('APPROVE')"
@@ -244,6 +287,14 @@ async function decide() {
           <VAlert v-if="request.status === 'SUBMITTED'" type="info" variant="tonal">
             Approval creates a separate Flight Order. Operational readiness, manifest, fuel
             confirmation, and closure continue on that order.
+          </VAlert>
+          <VAlert
+            v-if="request.status === 'SUBMITTED' && !canDecide"
+            type="warning"
+            variant="tonal"
+          >
+            Switch to the Director persona to review this request. The request creator cannot
+            approve their own submission.
           </VAlert>
           <section class="detail-panel">
             <div class="panel-title">

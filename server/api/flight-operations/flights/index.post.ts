@@ -2,8 +2,10 @@ import { createFlightOperationBodySchema } from '../../../../shared/contracts/fl
 import { defineApiEventHandler } from '../../../utils/api-response';
 import { getServices } from '../../../utils/services';
 import { parseBody } from '../../../utils/validation';
+import { getDemoActorId, requireDemoPermission } from '../../../utils/auth';
 
 export default defineApiEventHandler(async (event) => {
+  requireDemoPermission(event, 'flight.following.update');
   const body = await parseBody(event, createFlightOperationBodySchema);
-  return getServices().flightOperations.create(body);
+  return getServices().flightOperations.create(body, getDemoActorId(event));
 });

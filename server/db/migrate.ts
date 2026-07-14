@@ -284,89 +284,10 @@ const createStatements = [
   ...financeMasterDataStatements,
   ...commercialMasterDataStatements,
   ...cargoMasterDataStatements,
-  `CREATE TABLE IF NOT EXISTS flight_orders (
-    id TEXT PRIMARY KEY,
-    flight_number TEXT NOT NULL UNIQUE,
-    order_number TEXT NOT NULL UNIQUE,
-    customer_id TEXT NOT NULL REFERENCES customers(id),
-    route_id TEXT NOT NULL REFERENCES routes(id),
-    aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
-    status TEXT NOT NULL DEFAULT 'draft',
-    scheduled_departure TEXT NOT NULL,
-    scheduled_arrival TEXT NOT NULL,
-    purpose TEXT NOT NULL,
-    quoted_amount REAL NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'IDR'
-  )`,
-  `CREATE TABLE IF NOT EXISTS manifests (
-    id TEXT PRIMARY KEY,
-    flight_order_id TEXT NOT NULL REFERENCES flight_orders(id) ON DELETE CASCADE,
-    passenger_name TEXT NOT NULL,
-    document_number TEXT NOT NULL,
-    seat_number TEXT NOT NULL,
-    weight_kg REAL NOT NULL,
-    remarks TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS fuel_requests (
-    id TEXT PRIMARY KEY,
-    flight_order_id TEXT NOT NULL REFERENCES flight_orders(id),
-    station_id TEXT NOT NULL REFERENCES stations(id),
-    aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
-    requested_liters REAL NOT NULL,
-    status TEXT NOT NULL DEFAULT 'requested',
-    requested_by TEXT NOT NULL,
-    required_at TEXT NOT NULL,
-    notes TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS fuel_uplifts (
-    id TEXT PRIMARY KEY,
-    fuel_request_id TEXT NOT NULL REFERENCES fuel_requests(id) ON DELETE CASCADE,
-    supplier TEXT NOT NULL,
-    liters REAL NOT NULL,
-    unit_price REAL NOT NULL,
-    total REAL NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'IDR',
-    uplifted_at TEXT NOT NULL,
-    receipt_path TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS station_expenses (
-    id TEXT PRIMARY KEY,
-    station_id TEXT NOT NULL REFERENCES stations(id),
-    flight_order_id TEXT REFERENCES flight_orders(id),
-    category TEXT NOT NULL,
-    description TEXT NOT NULL,
-    amount REAL NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'IDR',
-    status TEXT NOT NULL DEFAULT 'draft',
-    receipt_path TEXT,
-    incurred_at TEXT NOT NULL,
-    submitted_by TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS maintenance_work_orders (
-    id TEXT PRIMARY KEY,
-    aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    priority TEXT NOT NULL DEFAULT 'normal',
-    status TEXT NOT NULL DEFAULT 'open',
-    opened_at TEXT NOT NULL,
-    closed_at TEXT,
-    due_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS serialized_parts (
-    id TEXT PRIMARY KEY,
-    aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
-    part_number TEXT NOT NULL,
-    serial_number TEXT NOT NULL UNIQUE,
-    description TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available',
-    installed_at TEXT,
-    work_order_id TEXT REFERENCES maintenance_work_orders(id)
-  )`,
   `CREATE TABLE IF NOT EXISTS invoices (
     id TEXT PRIMARY KEY,
     customer_id TEXT NOT NULL REFERENCES customers(id),
-    flight_order_id TEXT NOT NULL REFERENCES flight_orders(id),
+    flight_operation_id TEXT NOT NULL UNIQUE REFERENCES flight_operations(id),
     invoice_number TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'draft',
     subtotal REAL NOT NULL,
@@ -385,29 +306,6 @@ const createStatements = [
     method TEXT NOT NULL,
     reference TEXT NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS approvals (
-    id TEXT PRIMARY KEY,
-    domain_entity TEXT NOT NULL,
-    entity_id TEXT NOT NULL,
-    requested_by TEXT NOT NULL,
-    role_required TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    decided_by TEXT,
-    decided_at TEXT,
-    reason TEXT,
-    created_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS alerts (
-    id TEXT PRIMARY KEY,
-    severity TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT NOT NULL,
-    entity_type TEXT,
-    entity_id TEXT,
-    is_read INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-  )`,
-
   ...flightOperationLookupCreateStatements,
 
   `CREATE TABLE IF NOT EXISTS flight_requests (
@@ -550,7 +448,7 @@ const createStatements = [
   )`,
   `CREATE TABLE IF NOT EXISTS flight_manifests (
     id TEXT PRIMARY KEY,
-    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    flight_operation_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
     manifest_type_id TEXT NOT NULL REFERENCES manifest_types(id),
     status_id TEXT NOT NULL REFERENCES manifest_statuses(id),
     approved_by_user_id TEXT,
@@ -558,11 +456,12 @@ const createStatements = [
     locked_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    UNIQUE (flight_id, manifest_type_id)
+    UNIQUE (flight_operation_id, manifest_type_id)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_manifest_passengers (
     id TEXT PRIMARY KEY,
     manifest_id TEXT NOT NULL REFERENCES flight_manifests(id) ON DELETE CASCADE,
+    passenger_ticket_id TEXT REFERENCES passenger_tickets(id) ON DELETE SET NULL,
     full_name TEXT NOT NULL,
     identity_type TEXT,
     identity_number TEXT,
@@ -576,6 +475,7 @@ const createStatements = [
   `CREATE TABLE IF NOT EXISTS flight_manifest_cargo_items (
     id TEXT PRIMARY KEY,
     manifest_id TEXT NOT NULL REFERENCES flight_manifests(id) ON DELETE CASCADE,
+    cargo_booking_id TEXT REFERENCES cargo_bookings(id) ON DELETE SET NULL,
     description TEXT NOT NULL,
     sender_name TEXT,
     receiver_name TEXT,
@@ -677,18 +577,13 @@ const createStatements = [
     updated_at TEXT NOT NULL
   )`,
   ...ticketingStatements,
-  `CREATE INDEX IF NOT EXISTS idx_flight_orders_status ON flight_orders(status)`,
-  `CREATE INDEX IF NOT EXISTS idx_fuel_requests_status ON fuel_requests(status)`,
-  `CREATE INDEX IF NOT EXISTS idx_station_expenses_status ON station_expenses(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
-  `CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status)`,
-  `CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_operations_status ON flight_operations(current_status_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_operations_date ON flight_operations(flight_date)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_operations_route ON flight_operations(route_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_status_histories_flight ON flight_status_histories(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_readiness_checks_flight ON flight_readiness_checks(flight_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_flight_manifests_flight ON flight_manifests(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_manifests_flight_operation ON flight_manifests(flight_operation_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_fuel_requests_flight ON flight_fuel_requests(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_station_costs_flight ON flight_station_costs(flight_id)`
 ];
@@ -736,20 +631,22 @@ const dropStatements = [
   ...commercialMasterDataDropStatements,
   ...financeMasterDataDropStatements,
   ...operationsMasterDataDropStatements,
-  'DROP TABLE IF EXISTS alerts',
-  'DROP TABLE IF EXISTS approvals',
   'DROP TABLE IF EXISTS payments',
-  'DROP TABLE IF EXISTS invoices',
-  'DROP TABLE IF EXISTS serialized_parts',
-  'DROP TABLE IF EXISTS maintenance_work_orders',
-  'DROP TABLE IF EXISTS station_expenses',
-  'DROP TABLE IF EXISTS fuel_uplifts',
-  'DROP TABLE IF EXISTS fuel_requests',
-  'DROP TABLE IF EXISTS manifests',
-  'DROP TABLE IF EXISTS flight_orders'
+  'DROP TABLE IF EXISTS invoices'
 ];
 
 const obsoleteTablePrefix = ['r', 'e', 'f', '_'].join('');
+const obsoleteOperationalTables = new Set([
+  'flight_orders',
+  'manifests',
+  'fuel_requests',
+  'fuel_uplifts',
+  'station_expenses',
+  'approvals',
+  'alerts',
+  'maintenance_work_orders',
+  'serialized_parts'
+]);
 const cleanRebuildRequiredMessage =
   'AMA demo database uses the pre-cleanup schema. Run `pnpm demo:reset` or remove the SQLite DB before starting the app.';
 
@@ -758,7 +655,22 @@ const canonicalShapeRequirements = [
   { table: 'stations', column: 'station_code' },
   { table: 'routes', column: 'route_code' },
   { table: 'customers', column: 'account_code' },
-  { table: 'passenger_tickets', column: 'ticket_status' }
+  { table: 'flight_manifests', column: 'flight_operation_id' },
+  { table: 'ticketing_sales', column: 'flight_operation_id' },
+  { table: 'passenger_tickets', column: 'flight_operation_id' },
+  { table: 'cargo_bookings', column: 'flight_operation_id' },
+  { table: 'ticketing_refund_requests', column: 'flight_operation_id' },
+  { table: 'passenger_ticket_reschedules', column: 'previous_flight_operation_id' },
+  { table: 'passenger_ticket_reschedules', column: 'new_flight_operation_id' },
+  { table: 'invoices', column: 'flight_operation_id' }
+];
+const obsoleteOperationalColumns = [
+  { table: 'ticketing_sales', column: 'flight_order_id' },
+  { table: 'passenger_tickets', column: 'flight_order_id' },
+  { table: 'cargo_bookings', column: 'flight_order_id' },
+  { table: 'passenger_ticket_reschedules', column: 'previous_flight_order_id' },
+  { table: 'passenger_ticket_reschedules', column: 'new_flight_order_id' },
+  { table: 'invoices', column: 'flight_order_id' }
 ];
 
 export function runMigrations(sqlite: Database.Database) {
@@ -909,7 +821,11 @@ function sqliteTableNames(sqlite: Database.Database) {
 function obsoleteTables(sqlite: Database.Database) {
   return sqliteTableNames(sqlite).filter((table) => {
     const normalizedTable = table.toLowerCase();
-    return normalizedTable.startsWith(obsoleteTablePrefix) || normalizedTable.includes('legacy');
+    return (
+      normalizedTable.startsWith(obsoleteTablePrefix) ||
+      normalizedTable.includes('legacy') ||
+      obsoleteOperationalTables.has(normalizedTable)
+    );
   });
 }
 
@@ -923,10 +839,17 @@ function hasCleanRebuildIncompatibleShape(sqlite: Database.Database) {
   );
 }
 
+function existingObsoleteOperationalColumns(sqlite: Database.Database) {
+  return obsoleteOperationalColumns.filter(
+    ({ table, column }) => tableExists(sqlite, table) && hasColumn(sqlite, table, column)
+  );
+}
+
 function assertCleanRebuildCompatible(sqlite: Database.Database) {
   const obsolete = obsoleteTables(sqlite);
   const incompatible = hasCleanRebuildIncompatibleShape(sqlite);
-  if (obsolete.length === 0 && incompatible.length === 0) {
+  const obsoleteColumns = existingObsoleteOperationalColumns(sqlite);
+  if (obsolete.length === 0 && incompatible.length === 0 && obsoleteColumns.length === 0) {
     return;
   }
 
@@ -935,6 +858,11 @@ function assertCleanRebuildCompatible(sqlite: Database.Database) {
     incompatible.length > 0
       ? `incompatible table shapes: ${incompatible
           .map(({ table, column }) => `${table} missing ${column}`)
+          .join(', ')}`
+      : undefined,
+    obsoleteColumns.length > 0
+      ? `obsolete columns: ${obsoleteColumns
+          .map(({ table, column }) => `${table}.${column}`)
           .join(', ')}`
       : undefined
   ]

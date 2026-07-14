@@ -38,7 +38,7 @@ const {
   pending,
   error,
   refresh
-} = await useAsyncData(`flight-order-${id.value}`, () =>
+} = await useAsyncData(`flight-operation-${id.value}`, () =>
   fetchApi<FlightOperationDetailDto>(`/api/flight-operations/flights/${id.value}`)
 );
 

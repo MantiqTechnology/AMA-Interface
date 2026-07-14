@@ -462,6 +462,8 @@ function nextStep() {
 }
 
 async function saveRequest(thenSubmit: boolean) {
+  if (submitting.value) return;
+
   errorMessage.value = '';
   submitting.value = true;
   submitAfterSave.value = thenSubmit;
@@ -962,6 +964,7 @@ function money(value: number | null | undefined) {
           </VBtn>
           <template v-else>
             <VBtn
+              :disabled="submitting"
               :loading="submitting && !submitAfterSave"
               variant="tonal"
               @click="saveRequest(false)"
@@ -971,6 +974,7 @@ function money(value: number | null | undefined) {
             <VBtn
               class="ml-2"
               color="secondary"
+              :disabled="submitting"
               :loading="submitting && submitAfterSave"
               prepend-icon="mdi-send-outline"
               @click="saveRequest(true)"

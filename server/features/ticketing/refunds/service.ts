@@ -30,6 +30,7 @@ export class TicketRefundService {
       this.repository.createPassenger(
         id,
         ticketId,
+        ticket.flightOperationId,
         input.reason,
         ticket.amount,
         ticket.currencyCode,
@@ -52,6 +53,7 @@ export class TicketRefundService {
       this.repository.createCargo(
         id,
         bookingId,
+        booking.flightOperationId,
         input.reason,
         booking.amount,
         booking.currencyCode,

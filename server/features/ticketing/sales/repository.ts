@@ -9,9 +9,7 @@ import type {
   TicketingServiceType
 } from '../../../../shared/features/ticketing/sales';
 
-type AvailableFlightRow = AvailableTicketingFlightDto & {
-  flightOperationId: string;
-};
+type AvailableFlightRow = AvailableTicketingFlightDto;
 
 type OccFlightRow = {
   flightOperationId: string;
@@ -41,7 +39,6 @@ type OccFlightRow = {
   estimatedRevenue: number | null;
   currencyCode: string;
   salesId: string | null;
-  salesFlightOrderId: string | null;
   salesServiceType: TicketingServiceType | null;
   salesOpenedAt: string | null;
 };
@@ -56,12 +53,11 @@ export type TicketingRateRecord = {
 
 const availableFlightSelect = `
   SELECT
-    fo.id,
-    fo.flight_number AS flightNumber,
-    fo.scheduled_departure AS scheduledDeparture,
-    fo.scheduled_arrival AS scheduledArrival,
+    operation.id AS flightOperationId,
+    operation.flight_number AS flightNumber,
+    operation.scheduled_departure_at AS scheduledDeparture,
+    operation.scheduled_arrival_at AS scheduledArrival,
     ts.service_type AS serviceType,
-    ts.flight_operation_id AS flightOperationId,
     r.id AS routeId,
     origin.id AS originStationId,
     origin.station_code AS originCode,
@@ -78,13 +74,12 @@ const availableFlightSelect = `
     rc.cargo_price_basis AS cargoPriceBasis,
     currency.currency_code AS currencyCode
   FROM ticketing_sales ts
-  JOIN flight_orders fo ON fo.id = ts.flight_order_id
   JOIN flight_operations operation ON operation.id = ts.flight_operation_id
   JOIN flight_operation_statuses operation_status ON operation_status.id = operation.current_status_id
-  JOIN routes r ON r.id = fo.route_id
+  JOIN routes r ON r.id = operation.route_id
   JOIN stations origin ON origin.id = r.origin_station_id
   JOIN stations destination ON destination.id = r.destination_station_id
-  JOIN aircraft a ON a.id = fo.aircraft_id
+  JOIN aircraft a ON a.id = operation.aircraft_id
   JOIN rate_cards rc ON rc.id = (
     SELECT candidate.id
     FROM rate_cards candidate
@@ -93,8 +88,8 @@ const availableFlightSelect = `
       AND candidate.destination_station_id = r.destination_station_id
       AND candidate.customer_id IS NULL
       AND candidate.is_active = 1
-      AND candidate.effective_from <= substr(fo.scheduled_departure, 1, 10)
-      AND (candidate.effective_to IS NULL OR candidate.effective_to >= substr(fo.scheduled_departure, 1, 10))
+      AND candidate.effective_from <= substr(operation.scheduled_departure_at, 1, 10)
+      AND (candidate.effective_to IS NULL OR candidate.effective_to >= substr(operation.scheduled_departure_at, 1, 10))
     ORDER BY candidate.rate_priority ASC, candidate.effective_from DESC
     LIMIT 1
   )
@@ -106,9 +101,8 @@ export class TicketingSalesRepository {
 
   listAvailable(query: AvailableTicketingFlightsQuery): AvailableTicketingFlightDto[] {
     const conditions = [
-      "fo.status IN ('scheduled', 'ready')",
       "operation_status.code IN ('SCHEDULED', 'CHECK_IN_OPEN')",
-      "julianday(fo.scheduled_departure) > julianday('now')",
+      "julianday(operation.scheduled_departure_at) > julianday('now')",
       'ts.service_type = ?'
     ];
     const parameters: string[] = [query.serviceType];
@@ -124,26 +118,25 @@ export class TicketingSalesRepository {
       .prepare(
         `${availableFlightSelect}
          WHERE ${conditions.join(' AND ')}
-         ORDER BY fo.scheduled_departure ASC`
+         ORDER BY operation.scheduled_departure_at ASC`
       )
       .all(...parameters) as AvailableTicketingFlightDto[];
   }
 
   getBookableFlight(
-    flightOrderId: string,
+    flightOperationId: string,
     serviceType: TicketingServiceType
   ): AvailableFlightRow | null {
     return (
       (this.sqlite
         .prepare(
           `${availableFlightSelect}
-           WHERE fo.id = ?
+           WHERE operation.id = ?
              AND ts.service_type = ?
-             AND fo.status IN ('scheduled', 'ready')
              AND operation_status.code IN ('SCHEDULED', 'CHECK_IN_OPEN')
-             AND julianday(fo.scheduled_departure) > julianday('now')`
+             AND julianday(operation.scheduled_departure_at) > julianday('now')`
         )
-        .get(flightOrderId, serviceType) as AvailableFlightRow | undefined) ?? null
+        .get(flightOperationId, serviceType) as AvailableFlightRow | undefined) ?? null
     );
   }
 
@@ -207,7 +200,6 @@ export class TicketingSalesRepository {
            f.estimated_revenue AS estimatedRevenue,
            f.currency_code AS currencyCode,
            sale.id AS salesId,
-           sale.flight_order_id AS salesFlightOrderId,
            sale.service_type AS salesServiceType,
            sale.opened_at AS salesOpenedAt
          FROM flight_operations f
@@ -235,45 +227,22 @@ export class TicketingSalesRepository {
     flight: OccFlightRow,
     serviceType: TicketingServiceType,
     actorId: string,
-    rate: TicketingRateRecord,
     timestamp: string
   ): TicketingSalesOpeningDto {
-    const flightOrderId = `ticket-flight-${nanoid(12)}`;
     const salesId = `ticket-sale-${nanoid(12)}`;
     const open = this.sqlite.transaction(() => {
       this.sqlite
         .prepare(
-          `INSERT INTO flight_orders (
-             id, flight_number, order_number, customer_id, route_id, aircraft_id, status,
-             scheduled_departure, scheduled_arrival, purpose, quoted_amount, currency
-           ) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?)`
-        )
-        .run(
-          flightOrderId,
-          flight.flightNumber,
-          `TKT-${flight.orderNumber}`,
-          flight.customerId,
-          flight.routeId,
-          flight.aircraftId,
-          flight.scheduledDeparture,
-          flight.scheduledArrival,
-          serviceType,
-          rate.baseRate,
-          rate.currencyCode
-        );
-      this.sqlite
-        .prepare(
           `INSERT INTO ticketing_sales (
-             id, flight_operation_id, flight_order_id, service_type, opened_by_user_id, opened_at
-           ) VALUES (?, ?, ?, ?, ?, ?)`
+             id, flight_operation_id, service_type, opened_by_user_id, opened_at
+           ) VALUES (?, ?, ?, ?, ?)`
         )
-        .run(salesId, flight.flightOperationId, flightOrderId, serviceType, actorId, timestamp);
+        .run(salesId, flight.flightOperationId, serviceType, actorId, timestamp);
     });
     open();
     return {
       id: salesId,
       flightOperationId: flight.flightOperationId,
-      flightOrderId,
       flightNumber: flight.flightNumber,
       serviceType,
       openedAt: timestamp
@@ -306,11 +275,10 @@ export function toOccFlightDto(flight: OccFlightRow, blockers: string[]): Ticket
     scheduledDeparture: flight.scheduledDeparture,
     scheduledArrival: flight.scheduledArrival,
     sales:
-      flight.salesId && flight.salesFlightOrderId && flight.salesServiceType && flight.salesOpenedAt
+      flight.salesId && flight.salesServiceType && flight.salesOpenedAt
         ? {
             id: flight.salesId,
             flightOperationId: flight.flightOperationId,
-            flightOrderId: flight.salesFlightOrderId,
             flightNumber: flight.flightNumber,
             serviceType: flight.salesServiceType,
             openedAt: flight.salesOpenedAt
