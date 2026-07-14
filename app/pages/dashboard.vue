@@ -533,11 +533,14 @@ const stationPerformance = computed(() =>
 
 const managementMetrics = computed(() => {
   const dashboard = source.value?.dashboard;
+  const financeValue = (value: number) =>
+    dashboard?.finance.isMixedCurrency ? 'Multiple currencies' : money(value);
   return [
-    { label: 'Estimated Revenue', value: money(dashboard?.finance.estimatedRevenue ?? 0) },
-    { label: 'Operational Cost', value: money(dashboard?.finance.operationalCost ?? 0) },
-    { label: 'Invoiced', value: money(dashboard?.finance.invoiced ?? 0) },
-    { label: 'Paid', value: money(dashboard?.finance.paid ?? 0) },
+    { label: 'Recognized Revenue', value: financeValue(dashboard?.finance.revenue ?? 0) },
+    { label: 'Operational Cost', value: financeValue(dashboard?.finance.operationalCost ?? 0) },
+    { label: 'Gross Margin', value: financeValue(dashboard?.finance.grossMargin ?? 0) },
+    { label: 'Invoiced', value: financeValue(dashboard?.finance.invoiced ?? 0) },
+    { label: 'Paid', value: financeValue(dashboard?.finance.paid ?? 0) },
     { label: 'Passenger Tickets', value: dashboard?.ticketing.passengerTickets ?? 0 },
     { label: 'Cargo Bookings', value: dashboard?.ticketing.cargoBookings ?? 0 }
   ];
@@ -959,11 +962,7 @@ function resetSections() {
                             <div class="text-caption">{{ row.name }}</div>
                           </td>
                           <td>
-                            <VChip
-                              :color="getStatusColor(row.status)"
-                              size="small"
-                              variant="tonal"
-                            >
+                            <VChip :color="getStatusColor(row.status)" size="small" variant="tonal">
                               {{ row.status }}
                             </VChip>
                           </td>

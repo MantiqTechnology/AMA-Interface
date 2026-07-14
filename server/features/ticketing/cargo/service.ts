@@ -68,6 +68,7 @@ export class CargoBookingService {
       Math.round(pricingWeightKg * flight.baseRate),
       flight.minimumCharge ?? 0
     );
+    const taxAmount = Math.round((totalTariff * flight.taxRateBasisPoints) / 10_000);
     const id = `AWB-${nanoid(8).toUpperCase()}`;
     const timestamp = new Date().toISOString();
     try {
@@ -90,6 +91,13 @@ export class CargoBookingService {
         agentId: input.agentId || null,
         tariffRate: flight.baseRate,
         totalTariff,
+        rateCardId: flight.rateCardId,
+        taxCodeId: flight.taxCodeId,
+        taxCode: flight.taxCode,
+        taxRateBasisPoints: flight.taxRateBasisPoints,
+        taxAmount,
+        totalAmount: totalTariff + taxAmount,
+        currencyCode: flight.currencyCode,
         cargoCapacityKg: flight.cargoCapacityKg,
         timestamp
       });

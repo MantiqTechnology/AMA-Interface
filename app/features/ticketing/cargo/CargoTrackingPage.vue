@@ -183,7 +183,12 @@ async function submitDecision() {
                   {{ booking.dgCategoryCode || 'No DG' }}
                 </VChip>
               </td>
-              <td>{{ formatTicketingCurrency(booking.totalTariff, booking.currencyCode) }}</td>
+              <td>
+                {{ formatTicketingCurrency(booking.totalAmount, booking.currencyCode) }}
+                <div class="text-xs text-text-secondary">
+                  Tax {{ formatTicketingCurrency(booking.taxAmount, booking.currencyCode) }}
+                </div>
+              </td>
               <td>
                 <VChip
                   :color="booking.paymentStatus === 'PAID' ? 'success' : 'warning'"

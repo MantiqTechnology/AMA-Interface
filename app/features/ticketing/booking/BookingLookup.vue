@@ -190,7 +190,13 @@ function onRescheduled(ticket: PassengerTicketDto) {
       <VDivider class="my-4" />
       <div class="d-flex flex-wrap align-center justify-space-between ga-4">
         <div class="text-xl font-weight-bold">
-          {{ formatTicketingCurrency(passengerTicket.ticketPrice, passengerTicket.currencyCode) }}
+          {{ formatTicketingCurrency(passengerTicket.totalAmount, passengerTicket.currencyCode) }}
+          <div class="text-xs font-weight-regular text-text-secondary">
+            Base
+            {{ formatTicketingCurrency(passengerTicket.ticketPrice, passengerTicket.currencyCode) }}
+            · {{ passengerTicket.taxCode || 'No tax code' }}
+            {{ formatTicketingCurrency(passengerTicket.taxAmount, passengerTicket.currencyCode) }}
+          </div>
         </div>
         <div class="d-flex flex-wrap ga-2">
           <VSelect
@@ -286,7 +292,13 @@ function onRescheduled(ticket: PassengerTicketDto) {
       <VDivider class="my-4" />
       <div class="d-flex flex-wrap align-center justify-space-between ga-4">
         <div class="text-xl font-weight-bold">
-          {{ formatTicketingCurrency(cargoBooking.totalTariff, cargoBooking.currencyCode) }}
+          {{ formatTicketingCurrency(cargoBooking.totalAmount, cargoBooking.currencyCode) }}
+          <div class="text-xs font-weight-regular text-text-secondary">
+            Base
+            {{ formatTicketingCurrency(cargoBooking.totalTariff, cargoBooking.currencyCode) }} ·
+            {{ cargoBooking.taxCode || 'No tax code' }}
+            {{ formatTicketingCurrency(cargoBooking.taxAmount, cargoBooking.currencyCode) }}
+          </div>
         </div>
         <div class="d-flex flex-wrap ga-2">
           <VSelect

@@ -643,6 +643,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       taxCodeId: 'tax-non-tax',
       taxAmount: null,
       totalCost: null,
+      currencyId: 'cur-idr',
       statusId: 'fuel-workflow-status-requested',
       rejectionReason: null,
       varianceNote: null,
@@ -707,6 +708,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         taxCodeId: 'tax-non-tax',
         taxAmount: flightId === 'fop-cancelled-fuel' ? null : 0,
         totalCost: flightId === 'fop-cancelled-fuel' ? null : 9250000,
+        currencyId: 'cur-idr',
         statusId:
           flightId === 'fop-cancelled-fuel'
             ? 'fuel-workflow-status-rejected'
@@ -796,8 +798,47 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       tax: 3080000,
       total: 31080000,
       currency: 'IDR',
+      createdByUserId: 'USR-001',
+      approvedByUserId: 'USR-FINANCE-REVIEWER',
+      approvedAt: '2026-07-07T11:00:00.000+07:00',
       issuedAt: '2026-07-07T11:00:00.000+07:00',
-      dueAt: '2026-07-21T23:59:59.000+07:00'
+      dueAt: '2026-07-21T23:59:59.000+07:00',
+      createdAt: seedNow,
+      updatedAt: '2026-07-08T09:00:00.000+07:00'
+    });
+    insertIgnore(sqlite, 'invoice_line_items', {
+      id: 'invoice-line-closed-djj-wmx-charter',
+      invoiceId: 'inv-closed-djj-wmx',
+      sourceType: 'CHARTER',
+      sourceId: 'fop-closed-djj-wmx',
+      description: 'Charter AMA-20260707-001 DJJ -> WMX',
+      quantity: 1,
+      unitPrice: 28000000,
+      subtotal: 28000000,
+      rateCardId: 'rate-charter-djj-wmx',
+      taxCodeId: 'tax-ppn-demo',
+      taxCode: 'PPN_DEMO',
+      taxRateBasisPoints: 1100,
+      taxAmount: 3080000,
+      total: 31080000
+    });
+    insertIgnore(sqlite, 'invoice_finance_snapshots', {
+      id: 'invoice-snapshot-closed-djj-wmx',
+      invoiceId: 'inv-closed-djj-wmx',
+      flightOperationId: 'fop-closed-djj-wmx',
+      ticketRevenue: 0,
+      cargoRevenue: 0,
+      charterRevenue: 28000000,
+      totalRevenue: 28000000,
+      fuelCost: 9250000,
+      stationCost: 2750000,
+      maintenanceCost: 0,
+      totalOperationalCost: 12000000,
+      taxAmount: 3080000,
+      invoiceTotal: 31080000,
+      grossMargin: 16000000,
+      currencyCode: 'IDR',
+      capturedAt: '2026-07-07T11:00:00.000+07:00'
     });
     insertIgnore(sqlite, 'payments', {
       id: 'pay-closed-djj-wmx',

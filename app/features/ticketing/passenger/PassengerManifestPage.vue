@@ -172,7 +172,12 @@ async function onRescheduled() {
                 </div>
               </td>
               <td>{{ ticket.seatNumber }}</td>
-              <td>{{ formatTicketingCurrency(ticket.ticketPrice, ticket.currencyCode) }}</td>
+              <td>
+                {{ formatTicketingCurrency(ticket.totalAmount, ticket.currencyCode) }}
+                <div class="text-xs text-text-secondary">
+                  Tax {{ formatTicketingCurrency(ticket.taxAmount, ticket.currencyCode) }}
+                </div>
+              </td>
               <td>
                 <VChip
                   :color="ticket.paymentStatus === 'PAID' ? 'success' : 'warning'"

@@ -78,6 +78,12 @@ export type CargoBookingDto = {
   agentName: string | null;
   tariffRate: number;
   totalTariff: number;
+  rateCardId: string | null;
+  taxCodeId: string | null;
+  taxCode: string | null;
+  taxRateBasisPoints: number;
+  taxAmount: number;
+  totalAmount: number;
   currencyCode: string;
   status: 'BOOKED' | 'DELIVERED';
   deliveredTo: string | null;

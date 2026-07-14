@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 import { setup, $fetch } from '@nuxt/test-utils/e2e';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ApiResponse } from '../../shared/contracts/api';
@@ -6,6 +7,8 @@ import type {
   FlightOperationRecord,
   FlightRequestRecord
 } from '../../shared/contracts/flight-operations';
+import type { InvoiceDetailDto, InvoiceSummaryDto } from '../../shared/features/finance/invoices';
+import { resolveDbPath } from '../../server/db/client';
 import { resetDemoDatabase } from '../../server/db/reset-demo';
 
 process.env.DEMO_MODE = 'true';
@@ -79,5 +82,77 @@ describe('flight request APIs', () => {
     if (!decided.ok) throw new Error(decided.error.message);
     expect(decided.data.request).toMatchObject({ id: created.data.id, status: 'CONVERTED' });
     expect(decided.data.flight?.flightRequestId).toBe(created.data.id);
+  });
+
+  it('lists, recovers, and approves an idempotent finance handoff', async () => {
+    const emptyQuery = await $fetch<ApiResponse<InvoiceSummaryDto[]>>(
+      '/api/invoices?status&customerId&flightId&due&search'
+    );
+    expect(emptyQuery.ok).toBe(true);
+    expect(emptyQuery.ok && emptyQuery.data.length).toBeGreaterThan(0);
+
+    const detail = await $fetch<ApiResponse<InvoiceDetailDto>>('/api/invoices/inv-closed-djj-wmx');
+    expect(detail.ok && detail.data.lineItems).toHaveLength(1);
+    expect(detail.ok && detail.data.finance.grossMargin).toBe(16_000_000);
+    expect(detail.ok && detail.data.lineItems[0]?.taxCode).toBe('PPN_DEMO');
+    expect(detail.ok && detail.data.tax).toBe(3_080_000);
+
+    const database = new Database(resolveDbPath(testDbPath));
+    database
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-closed', is_locked = 1
+         WHERE id = 'fop-ticketing-cargo'`
+      )
+      .run();
+    database.close();
+
+    const denied = await $fetch<ApiResponse<InvoiceDetailDto>>('/api/finance/handoffs/process', {
+      method: 'POST',
+      headers: { cookie: 'ama_demo_role=OCC' },
+      body: { flightId: 'fop-ticketing-cargo' },
+      ignoreResponseError: true
+    });
+    expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+
+    const recovered = await $fetch<ApiResponse<InvoiceDetailDto>>('/api/finance/handoffs/process', {
+      method: 'POST',
+      body: { flightId: 'fop-ticketing-cargo' }
+    });
+    const retried = await $fetch<ApiResponse<InvoiceDetailDto>>('/api/finance/handoffs/process', {
+      method: 'POST',
+      body: { flightId: 'fop-ticketing-cargo' }
+    });
+    expect(recovered.ok).toBe(true);
+    expect(retried.ok).toBe(true);
+    if (!recovered.ok || !retried.ok) throw new Error('Expected finance recovery to succeed.');
+    expect(retried.data.id).toBe(recovered.data.id);
+
+    const filtered = await $fetch<ApiResponse<InvoiceSummaryDto[]>>('/api/invoices', {
+      query: { status: 'draft', flightId: 'fop-ticketing-cargo', due: 'all' }
+    });
+    expect(filtered.ok && filtered.data.map((invoice) => invoice.id)).toEqual([recovered.data.id]);
+
+    const directorApproval = await $fetch<ApiResponse<InvoiceDetailDto>>(
+      `/api/invoices/${recovered.data.id}/actions/approve`,
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Director' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!directorApproval.ok && directorApproval.error.code).toBe('FORBIDDEN');
+
+    const approved = await $fetch<ApiResponse<InvoiceDetailDto>>(
+      `/api/invoices/${recovered.data.id}/actions/approve`,
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Finance%20Reviewer' },
+        body: {}
+      }
+    );
+    expect(approved.ok && approved.data.status).toBe('issued');
+    expect(approved.ok && approved.data.approvedByUserId).toBe('USR-FINANCE-REVIEWER');
   });
 });

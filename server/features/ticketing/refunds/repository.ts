@@ -83,7 +83,7 @@ export class TicketRefundRepository {
         .prepare(
           `SELECT ticket.id, ticket.flight_operation_id AS flightOperationId,
                   ticket.payment_status AS paymentStatus,
-                  ticket.check_in_status AS checkInStatus, ticket.ticket_price AS amount,
+                  ticket.check_in_status AS checkInStatus, ticket.total_amount AS amount,
                   flight.currency_code AS currencyCode
            FROM passenger_tickets ticket
            JOIN flight_operations flight ON flight.id = ticket.flight_operation_id
@@ -99,7 +99,7 @@ export class TicketRefundRepository {
         .prepare(
           `SELECT booking.id, booking.flight_operation_id AS flightOperationId,
                   booking.payment_status AS paymentStatus,
-                  booking.status AS bookingStatus, booking.total_tariff AS amount,
+                  booking.status AS bookingStatus, booking.total_amount AS amount,
                   flight.currency_code AS currencyCode
            FROM cargo_bookings booking
            JOIN flight_operations flight ON flight.id = booking.flight_operation_id

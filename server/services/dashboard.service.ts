@@ -14,23 +14,52 @@ export class DashboardService {
 
   getDashboard(query: OperationsMonitoringQuery): DashboardDto {
     const overview = this.monitoring.operationsOverview(query);
-    const finance = this.sqlite
+    const currencyBreakdown = this.sqlite
       .prepare(
         `SELECT
-           COALESCE((SELECT SUM(estimated_revenue) FROM flight_operations), 0) AS estimatedRevenue,
-           COALESCE((SELECT SUM(COALESCE(total_cost, 0)) FROM flight_fuel_requests), 0)
-             + COALESCE((SELECT SUM(amount) FROM flight_station_costs), 0)
-             + COALESCE((SELECT SUM(maintenance_cost) FROM flight_maintenance_handoffs), 0)
-             AS operationalCost,
-           COALESCE((SELECT SUM(total) FROM invoices WHERE status != 'void'), 0) AS invoiced,
-           COALESCE((SELECT SUM(amount) FROM payments), 0) AS paid`
+           snapshot.currency_code AS currencyCode,
+           SUM(snapshot.total_revenue) AS revenue,
+           SUM(snapshot.total_operational_cost) AS operationalCost,
+           SUM(snapshot.gross_margin) AS grossMargin,
+           COALESCE((
+             SELECT SUM(invoice.total) FROM invoices invoice
+             WHERE invoice.status != 'void' AND invoice.currency = snapshot.currency_code
+           ), 0) AS invoiced,
+           COALESCE((
+             SELECT SUM(payment.amount) FROM payments payment
+             WHERE payment.currency = snapshot.currency_code
+           ), 0) AS paid
+         FROM invoice_finance_snapshots snapshot
+         GROUP BY snapshot.currency_code
+         ORDER BY snapshot.currency_code`
       )
-      .get() as {
-      estimatedRevenue: number;
+      .all() as Array<{
+      currencyCode: string;
+      revenue: number;
       operationalCost: number;
+      grossMargin: number;
       invoiced: number;
       paid: number;
-    };
+    }>;
+    const isMixedCurrency = currencyBreakdown.length > 1;
+    const singleCurrency = currencyBreakdown[0];
+    const finance = isMixedCurrency
+      ? {
+          revenue: 0,
+          operationalCost: 0,
+          grossMargin: 0,
+          invoiced: 0,
+          paid: 0,
+          currencyCode: 'IDR'
+        }
+      : {
+          revenue: singleCurrency?.revenue ?? 0,
+          operationalCost: singleCurrency?.operationalCost ?? 0,
+          grossMargin: singleCurrency?.grossMargin ?? 0,
+          invoiced: singleCurrency?.invoiced ?? 0,
+          paid: singleCurrency?.paid ?? 0,
+          currencyCode: singleCurrency?.currencyCode ?? 'IDR'
+        };
     const ticketing = this.sqlite
       .prepare(
         `SELECT
@@ -42,7 +71,7 @@ export class DashboardService {
       .get() as DashboardDto['ticketing'];
     return {
       ...overview,
-      finance: { ...finance, currencyCode: 'IDR' },
+      finance: { ...finance, isMixedCurrency, currencyBreakdown },
       ticketing
     };
   }

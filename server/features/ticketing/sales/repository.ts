@@ -49,6 +49,9 @@ export type TicketingRateRecord = {
   minimumCharge: number | null;
   cargoPriceBasis: TicketingCargoPriceBasis | null;
   currencyCode: string;
+  taxCodeId: string | null;
+  taxCode: string | null;
+  taxRateBasisPoints: number;
 };
 
 const availableFlightSelect = `
@@ -72,7 +75,11 @@ const availableFlightSelect = `
     rc.base_rate AS baseRate,
     rc.minimum_charge AS minimumCharge,
     rc.cargo_price_basis AS cargoPriceBasis,
-    currency.currency_code AS currencyCode
+    rc.id AS rateCardId,
+    currency.currency_code AS currencyCode,
+    rc.tax_code_id AS taxCodeId,
+    tax.tax_code AS taxCode,
+    COALESCE(tax.tax_rate_basis_points, 0) AS taxRateBasisPoints
   FROM ticketing_sales ts
   JOIN flight_operations operation ON operation.id = ts.flight_operation_id
   JOIN flight_operation_statuses operation_status ON operation_status.id = operation.current_status_id
@@ -94,6 +101,7 @@ const availableFlightSelect = `
     LIMIT 1
   )
   JOIN currencies currency ON currency.id = rc.currency_id
+  LEFT JOIN tax_codes tax ON tax.id = rc.tax_code_id
 `;
 
 export class TicketingSalesRepository {
@@ -150,10 +158,13 @@ export class TicketingSalesRepository {
         .prepare(
           `SELECT rc.id, rc.base_rate AS baseRate, rc.minimum_charge AS minimumCharge,
                   rc.cargo_price_basis AS cargoPriceBasis,
-                  currency.currency_code AS currencyCode
+                  currency.currency_code AS currencyCode,
+                  rc.tax_code_id AS taxCodeId, tax.tax_code AS taxCode,
+                  COALESCE(tax.tax_rate_basis_points, 0) AS taxRateBasisPoints
            FROM rate_cards rc
            JOIN routes r ON r.id = ?
            JOIN currencies currency ON currency.id = rc.currency_id
+           LEFT JOIN tax_codes tax ON tax.id = rc.tax_code_id
            WHERE rc.service_type = ?
              AND rc.origin_station_id = r.origin_station_id
              AND rc.destination_station_id = r.destination_station_id

@@ -36,11 +36,13 @@ export function seedTicketingData(sqlite: Database.Database) {
       .prepare(
         `INSERT OR IGNORE INTO passenger_tickets (
           id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
-          passenger_weight_kg, baggage_weight_kg, ticket_price, payment_status, payment_method,
+          passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, tax_code_id,
+          tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
           'TKT-DEMO12', 'fop-ticketing-passenger', 'Sarah Wenda', 'KTP', 'KTP-930401-443',
-          '1A', 65, 8, 1800000, 'PAID', 'TRANSFER', ?, 'PENDING', NULL, NULL,
+          '1A', 65, 8, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
+          1800000, 'IDR', 'PAID', 'TRANSFER', ?, 'PENDING', NULL, NULL,
           'agent-djj-counter', ?, ?
         )`
       )
@@ -49,11 +51,13 @@ export function seedTicketingData(sqlite: Database.Database) {
       .prepare(
         `INSERT OR IGNORE INTO passenger_tickets (
           id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
-          passenger_weight_kg, baggage_weight_kg, ticket_price, payment_status, payment_method,
+          passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, tax_code_id,
+          tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
           'TKT-DEMO34', 'fop-ticketing-passenger', 'Alex Giai', 'KTP', 'KTP-912201-112',
-          '1B', 78, 12, 1800000, 'UNPAID', NULL, NULL, 'PENDING', NULL, NULL, NULL, ?, ?
+          '1B', 78, 12, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
+          1800000, 'IDR', 'UNPAID', NULL, NULL, 'PENDING', NULL, NULL, NULL, ?, ?
         )`
       )
       .run(ticketingSeedTime, ticketingSeedTime);
@@ -61,11 +65,13 @@ export function seedTicketingData(sqlite: Database.Database) {
       .prepare(
         `INSERT OR IGNORE INTO passenger_tickets (
           id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
-          passenger_weight_kg, baggage_weight_kg, ticket_price, payment_status, payment_method,
+          passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, tax_code_id,
+          tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
           'TKT-RESCHEDULE', 'fop-ticketing-passenger', 'Mikael Tabuni', 'KTP',
-          'KTP-920101-778', '2A', 70, 5, 1800000, 'PAID', 'TRANSFER', ?, 'PENDING',
+          'KTP-920101-778', '2A', 70, 5, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax',
+          'NON_TAX', 0, 0, 1800000, 'IDR', 'PAID', 'TRANSFER', ?, 'PENDING',
           NULL, NULL, 'agent-djj-counter', ?, ?
         )`
       )
@@ -111,11 +117,13 @@ export function seedTicketingData(sqlite: Database.Database) {
           id, flight_operation_id, sender_name, receiver_name, description, actual_weight_kg,
           length_cm, width_cm, height_cm, volume_weight_kg, chargeable_weight_kg, is_dangerous,
           dg_category_id, dg_acceptance_status, payment_method, payment_status, paid_at, agent_id,
-          tariff_rate, total_tariff, status, delivered_to, delivered_at, created_at, updated_at
+          tariff_rate, total_tariff, rate_card_id, tax_code_id, tax_code, tax_rate_basis_points,
+          tax_amount, total_amount, currency_code, status, delivered_to, delivered_at, created_at, updated_at
         ) VALUES (
           'AWB-100200', 'fop-ticketing-cargo', 'Koperasi Kopi Wamena', 'Toko Kopi Sentani',
           'Roasted coffee shipment', 45, 40, 40, 40, 10.7, 45, 0, NULL, 'NOT_APPLICABLE',
-          'TRANSFER', 'PAID', ?, 'agent-papua-cargo', 32000, 1440000, 'BOOKED', NULL, NULL, ?, ?
+          'TRANSFER', 'PAID', ?, 'agent-papua-cargo', 32000, 1440000, 'rate-cargo-djj-wmx',
+          'tax-ppn-demo', 'PPN_DEMO', 1100, 158400, 1598400, 'IDR', 'BOOKED', NULL, NULL, ?, ?
         )`
       )
       .run(ticketingSeedTime, ticketingSeedTime, ticketingSeedTime);
@@ -125,11 +133,13 @@ export function seedTicketingData(sqlite: Database.Database) {
           id, flight_operation_id, sender_name, receiver_name, description, actual_weight_kg,
           length_cm, width_cm, height_cm, volume_weight_kg, chargeable_weight_kg, is_dangerous,
           dg_category_id, dg_acceptance_status, payment_method, payment_status, paid_at, agent_id,
-          tariff_rate, total_tariff, status, delivered_to, delivered_at, created_at, updated_at
+          tariff_rate, total_tariff, rate_card_id, tax_code_id, tax_code, tax_rate_basis_points,
+          tax_amount, total_amount, currency_code, status, delivered_to, delivered_at, created_at, updated_at
         ) VALUES (
           'AWB-300400', 'fop-ticketing-cargo', 'CV Papua Logistik Mandiri',
           'Maria Jayapura', 'Lithium battery equipment', 12, 30, 30, 30, 4.5, 12, 1, 'dg-bat',
-          'PENDING', 'CASH', 'UNPAID', NULL, NULL, 32000, 384000, 'BOOKED', NULL, NULL, ?, ?
+          'PENDING', 'CASH', 'UNPAID', NULL, NULL, 32000, 384000, 'rate-cargo-djj-wmx',
+          'tax-ppn-demo', 'PPN_DEMO', 1100, 42240, 426240, 'IDR', 'BOOKED', NULL, NULL, ?, ?
         )`
       )
       .run(ticketingSeedTime, ticketingSeedTime);

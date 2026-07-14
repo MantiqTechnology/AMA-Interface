@@ -60,6 +60,13 @@ type CargoBookingInsert = {
   agentId: string | null;
   tariffRate: number;
   totalTariff: number;
+  rateCardId: string;
+  taxCodeId: string | null;
+  taxCode: string | null;
+  taxRateBasisPoints: number;
+  taxAmount: number;
+  totalAmount: number;
+  currencyCode: string;
   cargoCapacityKg: number;
   timestamp: string;
 };
@@ -99,7 +106,13 @@ const cargoBookingSelect = `
     agent.agent_name AS agentName,
     booking.tariff_rate AS tariffRate,
     booking.total_tariff AS totalTariff,
-    flight.currency_code AS currencyCode,
+    booking.rate_card_id AS rateCardId,
+    booking.tax_code_id AS taxCodeId,
+    booking.tax_code AS taxCode,
+    booking.tax_rate_basis_points AS taxRateBasisPoints,
+    booking.tax_amount AS taxAmount,
+    booking.total_amount AS totalAmount,
+    booking.currency_code AS currencyCode,
     booking.status,
     booking.delivered_to AS deliveredTo,
     booking.delivered_at AS deliveredAt,
@@ -193,8 +206,9 @@ export class CargoBookingRepository {
              id, flight_operation_id, sender_name, receiver_name, description, actual_weight_kg,
              length_cm, width_cm, height_cm, volume_weight_kg, chargeable_weight_kg,
              is_dangerous, dg_category_id, dg_acceptance_status, payment_method, payment_status,
-             agent_id, tariff_rate, total_tariff, status, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNPAID', ?, ?, ?, 'BOOKED', ?, ?)`
+             agent_id, tariff_rate, total_tariff, rate_card_id, tax_code_id, tax_code,
+             tax_rate_basis_points, tax_amount, total_amount, currency_code, status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNPAID', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOOKED', ?, ?)`
         )
         .run(
           input.id,
@@ -215,6 +229,13 @@ export class CargoBookingRepository {
           input.agentId,
           input.tariffRate,
           input.totalTariff,
+          input.rateCardId,
+          input.taxCodeId,
+          input.taxCode,
+          input.taxRateBasisPoints,
+          input.taxAmount,
+          input.totalAmount,
+          input.currencyCode,
           input.timestamp,
           input.timestamp
         );

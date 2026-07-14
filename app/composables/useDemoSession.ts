@@ -14,6 +14,11 @@ const personaDetails: Record<DemoRole, { name: string; label: string; stationSco
     label: 'Station operations',
     stationScope: ['WMX']
   },
+  'Finance Reviewer': {
+    name: 'AMA Finance Reviewer',
+    label: 'Invoice and finance review',
+    stationScope: ['ALL']
+  },
   'Maintenance Manager': {
     name: 'AMA Maintenance Manager',
     label: 'Maintenance review',

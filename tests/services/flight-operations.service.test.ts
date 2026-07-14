@@ -388,6 +388,25 @@ describe('FlightOperationsService', () => {
       services.flightOperations.closeFlight('fop-closed-djj-wmx', adminActor).currentStatus
     ).toBe('CLOSED');
     expect(
+      services.flightOperations.closeFlight('fop-closed-djj-wmx', adminActor).currentStatus
+    ).toBe('CLOSED');
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count FROM invoices
+           WHERE flight_operation_id = 'fop-closed-djj-wmx'`
+        )
+        .get()
+    ).toEqual({ count: 1 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count FROM invoice_finance_snapshots
+           WHERE flight_operation_id = 'fop-closed-djj-wmx'`
+        )
+        .get()
+    ).toEqual({ count: 1 });
+    expect(
       sqlite
         .prepare(
           `SELECT status_id FROM flight_finance_handoffs
@@ -432,7 +451,7 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
-  it('rolls back closure when the canonical invoice cannot be created', async () => {
+  it('rolls back closure when the immutable finance snapshot cannot be created', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
     sqlite.prepare("DELETE FROM payments WHERE invoice_id = 'inv-closed-djj-wmx'").run();
@@ -445,15 +464,15 @@ describe('FlightOperationsService', () => {
       )
       .run();
     sqlite.exec(
-      `CREATE TRIGGER reject_invoice_insert
-       BEFORE INSERT ON invoices
+      `CREATE TRIGGER reject_invoice_snapshot_insert
+       BEFORE INSERT ON invoice_finance_snapshots
        BEGIN
-         SELECT RAISE(ABORT, 'invoice insert rejected by test');
+         SELECT RAISE(ABORT, 'invoice snapshot insert rejected by test');
        END`
     );
 
     expect(() => services.flightOperations.closeFlight('fop-closed-djj-wmx', adminActor)).toThrow(
-      'invoice insert rejected by test'
+      'invoice snapshot insert rejected by test'
     );
     expect(
       sqlite
@@ -475,6 +494,14 @@ describe('FlightOperationsService', () => {
         )
         .get()
     ).toEqual({ status: 'POSTED' });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count FROM invoices
+           WHERE flight_operation_id = 'fop-closed-djj-wmx'`
+        )
+        .get()
+    ).toEqual({ count: 0 });
 
     sqlite.close();
   });

@@ -209,9 +209,9 @@ const navItems = computed<NavItem[]>(() =>
       children: [
         {
           label: 'Invoice',
-          to: '/invoices/inv-001',
+          to: '/invoices',
           icon: 'mdi-file-document-outline',
-          visible: true
+          visible: can('finance.invoice.read').allowed
         },
         {
           label: 'Vendors',

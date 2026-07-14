@@ -65,7 +65,7 @@ export function downloadPassengerTicket(ticket: PassengerTicketDto) {
       ['Payment', ticket.paymentStatus],
       ['Check-in', ticket.checkInStatus]
     ],
-    ticket.ticketPrice,
+    ticket.totalAmount,
     ticket.currencyCode
   );
 }
@@ -85,7 +85,7 @@ export function downloadCargoWaybill(booking: CargoBookingDto) {
       ['Payment', booking.paymentStatus],
       ['Delivery', booking.status]
     ],
-    booking.totalTariff,
+    booking.totalAmount,
     booking.currencyCode
   );
 }

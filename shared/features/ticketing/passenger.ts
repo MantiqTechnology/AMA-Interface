@@ -70,6 +70,12 @@ export type PassengerTicketDto = {
   passengerWeightKg: number;
   baggageWeightKg: number;
   ticketPrice: number;
+  rateCardId: string | null;
+  taxCodeId: string | null;
+  taxCode: string | null;
+  taxRateBasisPoints: number;
+  taxAmount: number;
+  totalAmount: number;
   currencyCode: string;
   ticketStatus: 'ACTIVE' | 'REFUNDED';
   paymentStatus: 'UNPAID' | 'PAID';

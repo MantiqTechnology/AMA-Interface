@@ -83,6 +83,11 @@ const totalTariff = computed(() => {
     selectedFlight.value.minimumCharge ?? 0
   );
 });
+const tariffTax = computed(() =>
+  selectedFlight.value
+    ? Math.round((totalTariff.value * selectedFlight.value.taxRateBasisPoints) / 10_000)
+    : 0
+);
 function flightTitle(flight: AvailableTicketingFlightDto | string | null | undefined) {
   if (typeof flight === 'string') return flight;
   if (!flight) return '';
@@ -283,7 +288,12 @@ async function submit() {
             <div>
               <div class="text-sm text-text-secondary">Estimated tariff</div>
               <div class="text-xl font-weight-bold text-primary">
-                {{ formatTicketingCurrency(totalTariff, selectedFlight.currencyCode) }}
+                {{ formatTicketingCurrency(totalTariff + tariffTax, selectedFlight.currencyCode) }}
+              </div>
+              <div class="text-xs text-text-secondary">
+                Base {{ formatTicketingCurrency(totalTariff, selectedFlight.currencyCode) }} ·
+                {{ selectedFlight.taxCode || 'No tax code' }}
+                {{ formatTicketingCurrency(tariffTax, selectedFlight.currencyCode) }}
               </div>
             </div>
           </div>

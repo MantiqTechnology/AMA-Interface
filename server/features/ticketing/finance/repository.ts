@@ -19,7 +19,7 @@ export class TicketingFinanceRepository {
              origin.station_code || ' -> ' || destination.station_code AS routeLabel,
              ticket.passenger_name AS customerName,
              agent.agent_name AS agentName,
-             ticket.ticket_price AS amount,
+             ticket.total_amount AS amount,
              flight.currency_code AS currencyCode,
              ticket.payment_status AS paymentStatus,
              COALESCE(ticket.paid_at, ticket.created_at) AS occurredAt
@@ -38,7 +38,7 @@ export class TicketingFinanceRepository {
              origin.station_code || ' -> ' || destination.station_code AS routeLabel,
              booking.sender_name || ' / ' || booking.receiver_name AS customerName,
              agent.agent_name AS agentName,
-             booking.total_tariff AS amount,
+             booking.total_amount AS amount,
              flight.currency_code AS currencyCode,
              booking.payment_status AS paymentStatus,
              COALESCE(booking.paid_at, booking.created_at) AS occurredAt

@@ -54,11 +54,21 @@ export type OperationsOverviewDto = {
 
 export type DashboardDto = OperationsOverviewDto & {
   finance: {
-    estimatedRevenue: number;
+    revenue: number;
     operationalCost: number;
+    grossMargin: number;
     invoiced: number;
     paid: number;
     currencyCode: string;
+    isMixedCurrency: boolean;
+    currencyBreakdown: Array<{
+      currencyCode: string;
+      revenue: number;
+      operationalCost: number;
+      grossMargin: number;
+      invoiced: number;
+      paid: number;
+    }>;
   };
   ticketing: {
     passengerTickets: number;

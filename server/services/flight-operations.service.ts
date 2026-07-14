@@ -38,13 +38,18 @@ import type {
 } from '../../shared/contracts/flight-operations';
 import { flightOperationStatuses } from '../../shared/contracts/flight-operations';
 import { DomainError, notFound } from '../utils/errors';
-import { InvoicesService } from './invoices.service';
+import { createInvoiceService } from '../features/finance/invoices';
 
 type SqlValue = string | number | boolean | null;
 type SqlRow = Record<string, SqlValue>;
 type ClosureEvidence = Pick<
   FlightOperationRecord,
-  'currentStatus' | 'actualDepartureAt' | 'actualArrivalAt' | 'customerId' | 'estimatedRevenue'
+  | 'id'
+  | 'currentStatus'
+  | 'actualDepartureAt'
+  | 'actualArrivalAt'
+  | 'customerId'
+  | 'estimatedRevenue'
 > & {
   manifests: FlightManifestDto[];
   fuelRequests: FlightFuelRequestDto[];
@@ -1156,6 +1161,10 @@ export class FlightOperationsService {
   closeFlight(id: string, actorUserId: string) {
     const close = this.sqlite.transaction(() => {
       const flight = this.detail(id);
+      if (flight.currentStatus === 'CLOSED') {
+        createInvoiceService(this.sqlite).finalizeClosedFlight(id, actorUserId);
+        return flight;
+      }
       if (flight.currentStatus !== 'PENDING_CLOSURE') {
         throw new DomainError(
           'INVALID_TRANSITION',
@@ -1214,7 +1223,32 @@ export class FlightOperationsService {
     ) {
       missing.push('maintenance review');
     }
-    if (!evidence.customerId || evidence.estimatedRevenue === null) {
+    const hasActualRevenue = Boolean(
+      (
+        this.sqlite
+          .prepare(
+            `SELECT EXISTS (
+               SELECT 1 FROM passenger_tickets ticket
+               WHERE ticket.flight_operation_id = @flightId
+                 AND ticket.ticket_status = 'ACTIVE' AND ticket.payment_status = 'PAID'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM ticketing_refund_requests refund
+                   WHERE refund.passenger_ticket_id = ticket.id AND refund.status = 'APPROVED'
+                 )
+               UNION ALL
+               SELECT 1 FROM cargo_bookings booking
+               WHERE booking.flight_operation_id = @flightId AND booking.payment_status = 'PAID'
+                 AND booking.status IN ('BOOKED', 'DELIVERED')
+                 AND NOT EXISTS (
+                   SELECT 1 FROM ticketing_refund_requests refund
+                   WHERE refund.cargo_booking_id = booking.id AND refund.status = 'APPROVED'
+                 )
+             ) AS hasRevenue`
+          )
+          .get({ flightId: evidence.id }) as { hasRevenue: number }
+      ).hasRevenue
+    );
+    if (!evidence.customerId || (evidence.estimatedRevenue === null && !hasActualRevenue)) {
       missing.push('invoice customer/revenue');
     }
     return {
@@ -1263,17 +1297,7 @@ export class FlightOperationsService {
     );
 
     if (toStatus === 'CLOSED') {
-      this.upsertFinanceHandoff(
-        id,
-        'flight',
-        id,
-        'FLIGHT_CLOSED_ELIGIBLE_FOR_INVOICE',
-        'READY',
-        'Closed flight is eligible for finance invoice workflow.',
-        null,
-        null
-      );
-      new InvoicesService(this.sqlite).processReadyHandoffs(id);
+      createInvoiceService(this.sqlite).finalizeClosedFlight(id, actorUserId);
     }
 
     return this.detail(id);
@@ -1416,13 +1440,20 @@ export class FlightOperationsService {
         `INSERT INTO flight_fuel_requests (
           id, flight_id, fuel_supplier_id, fuel_type, requested_quantity_litre,
           approved_quantity_litre, actual_uplift_litre, reference_price_per_litre,
-          actual_price_per_litre, tax_code_id, tax_amount, total_cost, status_id,
+          actual_price_per_litre, tax_code_id, tax_amount, total_cost, currency_id, status_id,
           requested_by_user_id, created_at, updated_at
         ) VALUES (@id, @flightId, @fuelSupplierId, @fuelType, @requestedQuantityLitre,
-          NULL, NULL, @referencePricePerLitre, NULL, NULL, NULL, NULL, 'fuel-workflow-status-requested',
+          NULL, NULL, @referencePricePerLitre, NULL, NULL, NULL, NULL, @currencyId, 'fuel-workflow-status-requested',
           @actorUserId, @createdAt, @updatedAt)`
       )
-      .run({ id, actorUserId, createdAt: timestamp(), updatedAt: timestamp(), ...body });
+      .run({
+        id,
+        actorUserId,
+        currencyId: String(supplier.currency_id),
+        createdAt: timestamp(),
+        updatedAt: timestamp(),
+        ...body
+      });
     this.evaluateReadiness(body.flightId, false, actorUserId);
     return this.detail(body.flightId);
   }
@@ -1478,7 +1509,7 @@ export class FlightOperationsService {
         'READY',
         'Fuel uplift cost posted to finance handoff preview.',
         nullableNum(latest.total_cost),
-        null
+        str(latest.currency_id)
       );
     } else {
       this.sqlite

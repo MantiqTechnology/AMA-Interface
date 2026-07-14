@@ -49,6 +49,13 @@ type PassengerTicketInsert = {
   passengerWeightKg: number;
   baggageWeightKg: number;
   ticketPrice: number;
+  rateCardId: string;
+  taxCodeId: string | null;
+  taxCode: string | null;
+  taxRateBasisPoints: number;
+  taxAmount: number;
+  totalAmount: number;
+  currencyCode: string;
   loyaltyMemberId: string | null;
   agentId: string | null;
   timestamp: string;
@@ -101,7 +108,13 @@ const passengerTicketSelect = `
     ticket.passenger_weight_kg AS passengerWeightKg,
     ticket.baggage_weight_kg AS baggageWeightKg,
     ticket.ticket_price AS ticketPrice,
-    flight.currency_code AS currencyCode,
+    ticket.rate_card_id AS rateCardId,
+    ticket.tax_code_id AS taxCodeId,
+    ticket.tax_code AS taxCode,
+    ticket.tax_rate_basis_points AS taxRateBasisPoints,
+    ticket.tax_amount AS taxAmount,
+    ticket.total_amount AS totalAmount,
+    ticket.currency_code AS currencyCode,
     ticket.ticket_status AS ticketStatus,
     ticket.payment_status AS paymentStatus,
     ticket.payment_method AS paymentMethod,
@@ -354,9 +367,10 @@ export class PassengerTicketRepository {
         .prepare(
           `INSERT INTO passenger_tickets (
              id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
-             passenger_weight_kg, baggage_weight_kg, ticket_price, ticket_status, payment_status,
+             passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, tax_code_id,
+             tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, ticket_status, payment_status,
              check_in_status, loyalty_member_id, agent_id, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'UNPAID', 'PENDING', ?, ?, ?, ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'UNPAID', 'PENDING', ?, ?, ?, ?)`
         )
         .run(
           input.id,
@@ -368,6 +382,13 @@ export class PassengerTicketRepository {
           input.passengerWeightKg,
           input.baggageWeightKg,
           input.ticketPrice,
+          input.rateCardId,
+          input.taxCodeId,
+          input.taxCode,
+          input.taxRateBasisPoints,
+          input.taxAmount,
+          input.totalAmount,
+          input.currencyCode,
           input.loyaltyMemberId,
           input.agentId,
           input.timestamp,

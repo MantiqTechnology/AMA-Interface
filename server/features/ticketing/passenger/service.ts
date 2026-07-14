@@ -157,6 +157,7 @@ export class PassengerTicketService {
     }
     const timestamp = new Date().toISOString();
     const id = `TKT-${nanoid(8).toUpperCase()}`;
+    const taxAmount = Math.round((flight.baseRate * flight.taxRateBasisPoints) / 10_000);
     try {
       this.repository.createAndSync({
         id,
@@ -168,6 +169,13 @@ export class PassengerTicketService {
         passengerWeightKg: input.passengerWeightKg,
         baggageWeightKg: input.baggageWeightKg,
         ticketPrice: flight.baseRate,
+        rateCardId: flight.rateCardId,
+        taxCodeId: flight.taxCodeId,
+        taxCode: flight.taxCode,
+        taxRateBasisPoints: flight.taxRateBasisPoints,
+        taxAmount,
+        totalAmount: flight.baseRate + taxAmount,
+        currencyCode: flight.currencyCode,
         loyaltyMemberId: input.loyaltyMemberId || null,
         agentId: input.agentId || null,
         timestamp

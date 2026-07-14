@@ -3,6 +3,7 @@ export const demoRoles = [
   'Director',
   'OCC',
   'Station Admin',
+  'Finance Reviewer',
   'Maintenance Manager'
 ] as const;
 
@@ -15,6 +16,7 @@ export const demoRoleActorIds: Record<DemoRole, string> = {
   Director: 'USR-DIRECTOR',
   OCC: 'USR-001',
   'Station Admin': 'USR-STATION-ADMIN',
+  'Finance Reviewer': 'USR-FINANCE-REVIEWER',
   'Maintenance Manager': 'USR-MAINTENANCE-MANAGER'
 };
 
@@ -29,6 +31,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight.closure.create',
     'station.cost.approve',
     'ticketing.refund.decide',
+    'finance.invoice.read',
     'finance.payment.record',
     'document.read',
     'document.verify'
@@ -55,6 +58,16 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'ticketing.operation.update',
     'document.read',
     'document.upload'
+  ],
+  'Finance Reviewer': [
+    'platform.dashboard.view',
+    'flight.read',
+    'finance.invoice.read',
+    'finance.invoice.approve',
+    'finance.handoff.process',
+    'finance.payment.record',
+    'document.read',
+    'document.verify'
   ],
   'Maintenance Manager': [
     'platform.dashboard.view',

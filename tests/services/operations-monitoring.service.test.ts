@@ -45,4 +45,34 @@ describe('OperationsMonitoringService', () => {
 
     sqlite.close();
   });
+
+  it('does not collapse multiple invoice currencies into a misleading total', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-closed', is_locked = 1
+         WHERE id = 'fop-ticketing-passenger'`
+      )
+      .run();
+    const invoice = services.invoices.finalizeClosedFlight(
+      'fop-ticketing-passenger',
+      'USR-DEMO-ADMIN'
+    );
+    sqlite.prepare("UPDATE invoices SET currency = 'USD' WHERE id = ?").run(invoice.id);
+    sqlite
+      .prepare("UPDATE invoice_finance_snapshots SET currency_code = 'USD' WHERE invoice_id = ?")
+      .run(invoice.id);
+
+    const dashboard = services.dashboard.getDashboard({});
+
+    expect(dashboard.finance.isMixedCurrency).toBe(true);
+    expect(dashboard.finance.revenue).toBe(0);
+    expect(dashboard.finance.currencyBreakdown.map((item) => item.currencyCode)).toEqual([
+      'IDR',
+      'USD'
+    ]);
+
+    sqlite.close();
+  });
 });

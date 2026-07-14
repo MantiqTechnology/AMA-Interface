@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { rateCards } from './commercial';
+import { taxCodes } from './finance';
 import { flightOperations } from './flight-operations';
 
 export const ticketingSales = sqliteTable(
@@ -30,6 +32,13 @@ export const passengerTickets = sqliteTable(
     passengerWeightKg: real('passenger_weight_kg').notNull(),
     baggageWeightKg: real('baggage_weight_kg').notNull().default(0),
     ticketPrice: integer('ticket_price').notNull(),
+    rateCardId: text('rate_card_id').references(() => rateCards.id),
+    taxCodeId: text('tax_code_id').references(() => taxCodes.id),
+    taxCode: text('tax_code'),
+    taxRateBasisPoints: integer('tax_rate_basis_points').notNull().default(0),
+    taxAmount: integer('tax_amount').notNull().default(0),
+    totalAmount: integer('total_amount').notNull(),
+    currencyCode: text('currency_code').notNull(),
     ticketStatus: text('ticket_status').$type<'ACTIVE' | 'REFUNDED'>().notNull().default('ACTIVE'),
     paymentStatus: text('payment_status').$type<'UNPAID' | 'PAID'>().notNull().default('UNPAID'),
     paymentMethod: text('payment_method'),
@@ -77,6 +86,13 @@ export const cargoBookings = sqliteTable('cargo_bookings', {
   agentId: text('agent_id'),
   tariffRate: integer('tariff_rate').notNull(),
   totalTariff: integer('total_tariff').notNull(),
+  rateCardId: text('rate_card_id').references(() => rateCards.id),
+  taxCodeId: text('tax_code_id').references(() => taxCodes.id),
+  taxCode: text('tax_code'),
+  taxRateBasisPoints: integer('tax_rate_basis_points').notNull().default(0),
+  taxAmount: integer('tax_amount').notNull().default(0),
+  totalAmount: integer('total_amount').notNull(),
+  currencyCode: text('currency_code').notNull(),
   status: text('status').$type<'BOOKED' | 'DELIVERED'>().notNull().default('BOOKED'),
   deliveredTo: text('delivered_to'),
   deliveredAt: text('delivered_at'),

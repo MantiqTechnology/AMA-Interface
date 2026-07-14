@@ -68,6 +68,11 @@ const flightOptions = computed(() =>
 const selectedFlight = computed(() =>
   flights.value.find((flight) => flight.flightOperationId === form.flightOperationId)
 );
+const fareTax = computed(() =>
+  selectedFlight.value
+    ? Math.round((selectedFlight.value.baseRate * selectedFlight.value.taxRateBasisPoints) / 10_000)
+    : 0
+);
 function flightTitle(flight: AvailableTicketingFlightDto | string | null | undefined) {
   if (typeof flight === 'string') return flight;
   if (!flight) return '';
@@ -252,7 +257,18 @@ function agentCreated(record: AgentDto) {
           <VDivider class="my-3" />
           <div class="text-sm text-text-secondary">Fare</div>
           <div class="text-xl font-weight-bold text-primary">
-            {{ formatTicketingCurrency(selectedFlight.baseRate, selectedFlight.currencyCode) }}
+            {{
+              formatTicketingCurrency(
+                selectedFlight.baseRate + fareTax,
+                selectedFlight.currencyCode
+              )
+            }}
+          </div>
+          <div class="mt-1 text-xs text-text-secondary">
+            Base
+            {{ formatTicketingCurrency(selectedFlight.baseRate, selectedFlight.currencyCode) }} ·
+            {{ selectedFlight.taxCode || 'No tax code' }}
+            {{ formatTicketingCurrency(fareTax, selectedFlight.currencyCode) }}
           </div>
         </div>
       </VCol>

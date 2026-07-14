@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 
 const screens = [
   ['/dashboard', 'PT AMA Aviation Dashboard'],
-  ['/admin/access-demo', 'Access Demo']
+  ['/admin/access-demo', 'Access Demo'],
+  ['/invoices', 'Invoices'],
+  ['/invoices/inv-closed-djj-wmx', 'AMA-INV-2026-0707-001']
 ] as const;
 
 for (const [path, heading] of screens) {
@@ -14,6 +16,15 @@ for (const [path, heading] of screens) {
     await expect(page.locator('text=undefined')).toHaveCount(0);
     if (path === '/dashboard') {
       await expect(page.locator('a[href="/flights/requests"]')).toHaveCount(1);
+    }
+    if (path === '/invoices') {
+      await expect(page.getByText('Visible Margin', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('PT Papua Logistics Demo').first()).toBeVisible();
+    }
+    if (path === '/invoices/inv-closed-djj-wmx') {
+      await expect(page.getByText('Revenue Lines')).toBeVisible();
+      await expect(page.getByText('Finance Handoff Timeline')).toBeVisible();
+      await expect(page.getByText('Operational Cost', { exact: true }).first()).toBeVisible();
     }
     expect(runtimeErrors).toEqual([]);
   });
@@ -33,6 +44,13 @@ test('canonical operational screens remain usable on mobile', async ({ page }) =
   await page.goto('/admin/access-demo', { waitUntil: 'networkidle' });
   await expect(page.getByText('Demo personas', { exact: true })).toBeVisible();
   await expect(page.getByText('Visible modules', { exact: true })).toBeVisible();
+
+  await page.goto('/invoices', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('heading', { level: 1, name: 'Invoices' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open invoice' }).first()).toBeVisible();
+  await page.getByRole('link', { name: 'Open invoice' }).first().click();
+  await expect(page.getByText('Revenue Lines')).toBeVisible();
+  await expect(page.locator('text=undefined')).toHaveCount(0);
 
   const dimensions = await page.evaluate(() => ({
     viewport: window.innerWidth,

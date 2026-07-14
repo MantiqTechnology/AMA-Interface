@@ -83,6 +83,20 @@ describe('database migrations', () => {
     sqlite.close();
   });
 
+  it('rejects the pre-FIN invoice and pricing snapshot shape', () => {
+    const sqlite = new Database(':memory:');
+
+    sqlite.exec(
+      `CREATE TABLE invoices (
+         id TEXT PRIMARY KEY,
+         flight_operation_id TEXT NOT NULL
+       )`
+    );
+
+    expect(() => runMigrations(sqlite)).toThrow(/invoices missing created_by_user_id/u);
+    sqlite.close();
+  });
+
   it('drops obsolete pre-cleanup tables during demo reset', () => {
     const sqlite = new Database(':memory:');
 
@@ -150,7 +164,9 @@ describe('database migrations', () => {
         'passenger_tickets',
         'cargo_bookings',
         'ticketing_refund_requests',
-        'passenger_ticket_reschedules'
+        'passenger_ticket_reschedules',
+        'invoice_line_items',
+        'invoice_finance_snapshots'
       ])
     );
 
@@ -191,6 +207,12 @@ describe('database migrations', () => {
       expect.arrayContaining(['passenger_tickets', 'flight_operations'])
     );
     expect(foreignKeyParents(sqlite, 'invoices')).toContain('flight_operations');
+    expect(foreignKeyParents(sqlite, 'invoice_line_items')).toEqual(
+      expect.arrayContaining(['invoices', 'rate_cards', 'tax_codes'])
+    );
+    expect(foreignKeyParents(sqlite, 'invoice_finance_snapshots')).toEqual(
+      expect.arrayContaining(['invoices', 'flight_operations'])
+    );
     expect(foreignKeyParents(sqlite, 'flight_manifest_passengers')).toContain('passenger_tickets');
     expect(foreignKeyParents(sqlite, 'flight_manifest_cargo_items')).toContain('cargo_bookings');
     const passengerIndexes = sqlite
@@ -232,6 +254,50 @@ describe('database migrations', () => {
       })
     );
 
+    sqlite.close();
+  });
+
+  it('creates immutable invoice and booking finance snapshot constraints', () => {
+    const sqlite = new Database(':memory:');
+
+    runMigrations(sqlite);
+
+    const invoiceColumns = sqlite.prepare("PRAGMA table_info('invoices')").all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
+    expect(invoiceColumns.find((column) => column.name === 'issued_at')?.notnull).toBe(0);
+    expect(invoiceColumns.find((column) => column.name === 'due_at')?.notnull).toBe(0);
+
+    const sourceIndexes = sqlite.prepare("PRAGMA index_list('invoice_line_items')").all() as Array<{
+      name: string;
+      unique: number;
+      origin: string;
+    }>;
+    expect(sourceIndexes).toContainEqual(expect.objectContaining({ unique: 1, origin: 'u' }));
+
+    for (const table of ['passenger_tickets', 'cargo_bookings']) {
+      const columns = sqlite.prepare(`PRAGMA table_info('${table}')`).all() as Array<{
+        name: string;
+      }>;
+      expect(columns.map((column) => column.name)).toEqual(
+        expect.arrayContaining([
+          'rate_card_id',
+          'tax_code_id',
+          'tax_code',
+          'tax_rate_basis_points',
+          'tax_amount',
+          'total_amount',
+          'currency_code'
+        ])
+      );
+    }
+    const fuelColumns = sqlite.prepare("PRAGMA table_info('flight_fuel_requests')").all() as Array<{
+      name: string;
+    }>;
+    expect(fuelColumns.map((column) => column.name)).toContain('currency_id');
+
+    expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     sqlite.close();
   });
 
