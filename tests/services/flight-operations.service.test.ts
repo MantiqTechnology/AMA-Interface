@@ -344,6 +344,128 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
+  it('builds enriched maintenance workbench records and posts approved maintenance cost', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    expect(() =>
+      services.flightOperations.createMaintenance(
+        {
+          flightId: 'fop-in-progress',
+          aircraftId: 'ac-pk-ama',
+          serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+          workOrderReference: 'WO-WRONG-AIRCRAFT',
+          maintenanceNote: null,
+          sparePartReference: null,
+          maintenanceCost: 0,
+          currencyId: 'cur-idr'
+        },
+        adminActor
+      )
+    ).toThrowError(expect.objectContaining({ code: 'MAINTENANCE_AIRCRAFT_MISMATCH' }));
+
+    const standaloneResult = services.flightOperations.createMaintenance(
+      {
+        flightId: null,
+        aircraftId: 'ac-pk-ama',
+        serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+        workOrderReference: 'WO-STANDALONE',
+        maintenanceNote: null,
+        sparePartReference: null,
+        maintenanceCost: 0,
+        currencyId: 'cur-idr'
+      },
+      adminActor
+    );
+    expect(Array.isArray(standaloneResult)).toBe(true);
+    expect(
+      Array.isArray(standaloneResult)
+        ? standaloneResult.find((handoff) => handoff.flightId === null)
+        : null
+    ).toMatchObject({
+      closureReady: false,
+      needsAttention: true,
+      attentionReasons: expect.arrayContaining(['Maintenance handoff is not linked to a flight'])
+    });
+
+    const pending = services.flightOperations
+      .listMaintenance({ search: 'AMA-20260707-005', status: 'DRAFT', stationId: 'st-wmx' })
+      .at(0);
+    expect(pending).toMatchObject({
+      id: 'fop-in-progress-maintenance-draft',
+      routeCode: 'WMX-OKS',
+      serviceabilityStatus: 'SERVICEABLE',
+      handoffServiceabilityStatus: 'SERVICEABLE_WITH_RESTRICTIONS',
+      pendingApproval: true,
+      evidenceComplete: false,
+      blockers: expect.arrayContaining([
+        'Maintenance approval is missing',
+        'Work order evidence has not been recorded'
+      ])
+    });
+
+    services.flightOperations.approveMaintenance('fop-in-progress-maintenance-draft', adminActor);
+    expect(
+      sqlite
+        .prepare(
+          `SELECT amount FROM flight_finance_handoffs
+           WHERE source_id = 'fop-in-progress-maintenance-draft'
+             AND event_type_id = 'finance-event-type-maintenance-expense-draft'`
+        )
+        .get()
+    ).toEqual({ amount: 1250000 });
+    expect(
+      services.flightOperations.listMaintenance({ flightId: 'fop-in-progress' }).at(0)
+    ).toMatchObject({
+      approvedMaintenanceCost: 1250000,
+      fuelCost: 9250000,
+      stationCost: 2750000,
+      totalOperationalCost: 13250000,
+      financeCurrencyCode: 'IDR',
+      financeCurrencyMismatch: false
+    });
+
+    expect(() =>
+      services.flightOperations.approveMaintenance('fop-in-progress-maintenance-draft', adminActor)
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_TRANSITION' }));
+    expect(() =>
+      services.flightOperations.approveMaintenance(
+        'fop-cancelled-maintenance-unserviceable',
+        adminActor
+      )
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_TRANSITION' }));
+
+    sqlite
+      .prepare(
+        "UPDATE aircraft SET serviceability_status = 'SERVICEABLE_WITH_RESTRICTIONS' WHERE id = 'ac-pk-amb'"
+      )
+      .run();
+    expect(
+      services.flightOperations.listMaintenance({ flightId: 'fop-in-progress' }).at(0)
+    ).toMatchObject({
+      closureReady: false,
+      needsAttention: true,
+      attentionReasons: ['Aircraft is serviceable with restrictions and requires review']
+    });
+
+    sqlite
+      .prepare(
+        "UPDATE flight_station_costs SET currency_id = 'cur-usd' WHERE flight_id = 'fop-in-progress'"
+      )
+      .run();
+    expect(
+      services.flightOperations.listMaintenance({ flightId: 'fop-in-progress' }).at(0)
+    ).toMatchObject({
+      financeCurrencyMismatch: true,
+      fuelCost: null,
+      stationCost: null,
+      approvedMaintenanceCost: null,
+      totalOperationalCost: null,
+      projectedGrossMargin: null
+    });
+
+    sqlite.close();
+  });
+
   it('rejects closure while mandatory operational evidence is incomplete', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
@@ -361,7 +483,8 @@ describe('FlightOperationsService', () => {
         'actual departure/arrival',
         'final manifest',
         'actual fuel uplift',
-        'approved station cost'
+        'approved station cost',
+        'approved maintenance handoff'
       ])
     });
     expect(() => services.flightOperations.closeFlight('fop-dg-pending', adminActor)).toThrow(
@@ -379,6 +502,13 @@ describe('FlightOperationsService', () => {
         `UPDATE flight_operations
          SET current_status_id = 'flight-operation-status-pending-closure', is_locked = 0
          WHERE id = 'fop-closed-djj-wmx'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE flight_maintenance_handoffs
+         SET status_id = 'maintenance-handoff-status-posted'
+         WHERE id = 'fop-closed-maintenance'`
       )
       .run();
 
@@ -414,6 +544,36 @@ describe('FlightOperationsService', () => {
         )
         .get()
     ).toEqual({ status_id: 'finance-handoff-status-posted' });
+
+    sqlite.close();
+  });
+
+  it('rejects closure when the approved handoff belongs to another aircraft', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-pending-closure', is_locked = 0
+         WHERE id = 'fop-closed-djj-wmx'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE flight_maintenance_handoffs
+         SET aircraft_id = 'ac-pk-amb'
+         WHERE flight_id = 'fop-closed-djj-wmx'`
+      )
+      .run();
+
+    const detail = services.flightOperations.detail('fop-closed-djj-wmx');
+    expect(detail.closureReadiness).toEqual({
+      allowed: false,
+      missing: ['approved maintenance handoff']
+    });
+    expect(() => services.flightOperations.closeFlight('fop-closed-djj-wmx', adminActor)).toThrow(
+      'Flight cannot be closed'
+    );
 
     sqlite.close();
   });

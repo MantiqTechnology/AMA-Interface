@@ -133,6 +133,13 @@ describe('InvoicesService', () => {
   it('creates cargo revenue from paid bookings with persisted tax snapshot', async () => {
     const { services, sqlite } = await createSeededTestServices();
     markFlightClosed(sqlite, 'fop-ticketing-cargo');
+    sqlite
+      .prepare(
+        `UPDATE flight_maintenance_handoffs
+         SET status_id = 'maintenance-handoff-status-posted'
+         WHERE id = 'fop-ticketing-cargo-maintenance-approved'`
+      )
+      .run();
 
     const invoice = services.invoices.finalizeClosedFlight('fop-ticketing-cargo', adminActor);
 
@@ -150,9 +157,11 @@ describe('InvoicesService', () => {
     });
     expect(invoice.finance).toMatchObject({
       cargoRevenue: 1_440_000,
+      maintenanceCost: 1_750_000,
+      totalOperationalCost: 1_750_000,
       taxAmount: 158_400,
       invoiceTotal: 1_598_400,
-      grossMargin: 1_440_000
+      grossMargin: -310_000
     });
 
     sqlite

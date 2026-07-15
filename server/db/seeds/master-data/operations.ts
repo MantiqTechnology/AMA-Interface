@@ -173,6 +173,24 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
+      },
+      {
+        id: 'ac-pk-amd',
+        registrationNumber: 'PK-AMD',
+        serialNumber: '208B-AMD-DEMO',
+        aircraftType: 'Cessna Caravan 208B',
+        manufacturer: 'Cessna',
+        model: 'Caravan 208B Maintenance Demo',
+        fleetCode: 'CVN-02',
+        passengerCapacity: 12,
+        cargoCapacityKg: 1400,
+        fuelType: 'AVTUR',
+        operationalStatus: 'ACTIVE',
+        serviceabilityStatus: 'MAINTENANCE_DUE',
+        baseStationId: 'st-djj',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
       }
     ])
     .onConflictDoNothing();
@@ -695,8 +713,15 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       id: 'ac-pk-amc',
       currentStationId: 'st-wmx',
       lastMaintenanceCheckAt: '2026-06-14',
-      nextMaintenanceDueAt: '2026-07-06',
+      nextMaintenanceDueAt: '2026-08-06',
       serviceabilityNote: 'Unserviceable demo aircraft for maintenance blocker scenarios.'
+    },
+    {
+      id: 'ac-pk-amd',
+      currentStationId: 'st-djj',
+      lastMaintenanceCheckAt: '2026-06-14',
+      nextMaintenanceDueAt: '2026-07-06',
+      serviceabilityNote: 'Maintenance-due demo aircraft positioned at DJJ for readiness review.'
     }
   ]) {
     await db

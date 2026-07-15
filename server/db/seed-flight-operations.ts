@@ -301,7 +301,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         originStationId: 'st-djj',
         destinationStationId: 'st-wmx',
         customerId: 'cust-individual-1',
-        aircraftId: 'ac-pk-ama',
+        aircraftId: 'ac-pk-amd',
         pilotInCommandId: 'crew-pic-expired',
         coPilotId: 'crew-cop-valid',
         scheduledDepartureAt: '2026-07-07T11:00:00.000+07:00',
@@ -313,7 +313,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         approvedByUserId: null,
         remarks: 'Blocked by expired pilot licence/medical.',
         isLocked: 0,
-        blockingReason: 'PIC licence or medical has expired.'
+        blockingReason: 'PIC licence or medical has expired; aircraft maintenance is overdue.'
       },
       {
         id: 'fop-cancelled-fuel',
@@ -324,7 +324,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         originStationId: 'st-djj',
         destinationStationId: 'st-tim',
         customerId: 'cust-mission-air',
-        aircraftId: 'ac-pk-amb',
+        aircraftId: 'ac-pk-amc',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid-2',
         scheduledDepartureAt: '2026-07-07T13:00:00.000+07:00',
@@ -527,11 +527,23 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
 
     seedReadiness(sqlite, 'fop-closed-djj-wmx');
     seedReadiness(sqlite, 'fop-blocked-crew-expired', {
+      AIRCRAFT_SERVICEABILITY: {
+        status: 'FAIL',
+        note: 'Aircraft PK-AMD maintenance was due on 2026-07-06.'
+      },
       CREW_LICENSE_MEDICAL: { status: 'FAIL', note: 'PIC licence or medical is expired.' },
       FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel request not confirmed.' },
       HANDLING_CONFIRMED: { status: 'PENDING', note: 'Handling not confirmed.' }
     });
     seedReadiness(sqlite, 'fop-cancelled-fuel', {
+      AIRCRAFT_SERVICEABILITY: {
+        status: 'FAIL',
+        note: 'Aircraft PK-AMC is currently unserviceable.'
+      },
+      AIRCRAFT_LOCATION: {
+        status: 'FAIL',
+        note: 'Aircraft PK-AMC is positioned at WMX, not departure station DJJ.'
+      },
       FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel request voided by cancellation.' }
     });
     seedReadiness(sqlite, 'fop-dg-pending', {
@@ -769,6 +781,74 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       statusId: 'maintenance-handoff-status-approved',
       recordedByUserId: 'USR-DEMO-ADMIN',
       approvedByUserId: 'USR-DEMO-ADMIN',
+      approvedAt: seedNow,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'fop-in-progress-maintenance-draft',
+      flightId: 'fop-in-progress',
+      aircraftId: 'ac-pk-amb',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable-with-restrictions',
+      workOrderReference: null,
+      maintenanceNote: 'Transit inspection note is still being consolidated by maintenance.',
+      sparePartReference: null,
+      maintenanceCost: 1250000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-draft',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'fop-blocked-maintenance-due',
+      flightId: 'fop-blocked-crew-expired',
+      aircraftId: 'ac-pk-amd',
+      serviceabilityStatusId: 'aircraft-serviceability-status-maintenance-due',
+      workOrderReference: 'WO-DEMO-0707-002',
+      maintenanceNote: 'Maintenance due before departure; readiness must remain blocked.',
+      sparePartReference: 'SP-DEMO-FILTER-01',
+      maintenanceCost: 950000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-submitted',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'fop-cancelled-maintenance-unserviceable',
+      flightId: 'fop-cancelled-fuel',
+      aircraftId: 'ac-pk-amc',
+      serviceabilityStatusId: 'aircraft-serviceability-status-unserviceable',
+      workOrderReference: 'WO-DEMO-0707-003',
+      maintenanceNote: 'Aircraft marked unserviceable after cancellation review.',
+      sparePartReference: 'SP-DEMO-BRAKE-01',
+      maintenanceCost: 3200000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-rejected',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'fop-ticketing-cargo-maintenance-approved',
+      flightId: 'fop-ticketing-cargo',
+      aircraftId: 'ac-pk-amb',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+      workOrderReference: 'WO-DEMO-0716-001',
+      maintenanceNote: 'Pre-flight inspection clear for cargo service.',
+      sparePartReference: null,
+      maintenanceCost: 1750000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-approved',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: 'USR-MAINTENANCE-MANAGER',
       approvedAt: seedNow,
       createdAt: seedNow,
       updatedAt: seedNow

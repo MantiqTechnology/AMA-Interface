@@ -367,9 +367,11 @@ export class InvoiceRepository {
       .prepare(
         `SELECT handoff.maintenance_cost AS amount, currency.currency_code AS currencyCode
          FROM flight_maintenance_handoffs handoff
+         JOIN flight_operations flight ON flight.id = handoff.flight_id
          JOIN maintenance_handoff_statuses status ON status.id = handoff.status_id
          JOIN currencies currency ON currency.id = handoff.currency_id
-         WHERE handoff.flight_id = ? AND status.code = 'APPROVED'`
+         WHERE handoff.flight_id = ? AND handoff.aircraft_id = flight.aircraft_id
+           AND status.code IN ('APPROVED', 'POSTED')`
       )
       .all(flightId) as CostSource[];
   }

@@ -4,6 +4,7 @@ import { setup, $fetch } from '@nuxt/test-utils/e2e';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ApiResponse } from '../../shared/contracts/api';
 import type {
+  FlightMaintenanceHandoffDto,
   FlightOperationRecord,
   FlightRequestRecord
 } from '../../shared/contracts/flight-operations';
@@ -154,5 +155,91 @@ describe('flight request APIs', () => {
     );
     expect(approved.ok && approved.data.status).toBe('issued');
     expect(approved.ok && approved.data.approvedByUserId).toBe('USR-FINANCE-REVIEWER');
+  });
+
+  it('serves the maintenance handoff workbench with filters and permissioned approval', async () => {
+    const list = await $fetch<ApiResponse<FlightMaintenanceHandoffDto[]>>(
+      '/api/flight-operations/maintenance'
+    );
+    expect(list.ok).toBe(true);
+    if (!list.ok) throw new Error(list.error.message);
+    expect(list.data).toContainEqual(
+      expect.objectContaining({
+        id: 'fop-in-progress-maintenance-draft',
+        flightNumber: 'AMA-20260707-005',
+        routeCode: 'WMX-OKS',
+        currentStatus: 'IN_PROGRESS',
+        pendingApproval: true,
+        evidenceComplete: false,
+        blockers: expect.arrayContaining([
+          'Maintenance approval is missing',
+          'Work order evidence has not been recorded'
+        ]),
+        handoffServiceabilityStatus: 'SERVICEABLE_WITH_RESTRICTIONS',
+        serviceabilityStatus: 'SERVICEABLE',
+        approvedMaintenanceCost: 0,
+        totalOperationalCost: 12000000,
+        projectedGrossMargin: 6500000
+      })
+    );
+
+    const filtered = await $fetch<ApiResponse<FlightMaintenanceHandoffDto[]>>(
+      '/api/flight-operations/maintenance',
+      { query: { search: 'PK-AMB', status: 'DRAFT', stationId: 'st-wmx' } }
+    );
+    expect(filtered.ok && filtered.data.map((item) => item.id)).toEqual([
+      'fop-in-progress-maintenance-draft'
+    ]);
+
+    const operationalFilter = await $fetch<ApiResponse<FlightMaintenanceHandoffDto[]>>(
+      '/api/flight-operations/maintenance',
+      { query: { date: '2026-07-07', serviceability: 'SERVICEABLE' } }
+    );
+    expect(operationalFilter.ok && operationalFilter.data.map((item) => item.id)).toContain(
+      'fop-in-progress-maintenance-draft'
+    );
+
+    const invalidDate = await $fetch<ApiResponse<unknown>>('/api/flight-operations/maintenance', {
+      query: { date: '2026-99-99' },
+      ignoreResponseError: true
+    });
+    expect(!invalidDate.ok && invalidDate.error.code).toBe('VALIDATION_ERROR');
+
+    const denied = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/maintenance/fop-in-progress-maintenance-draft/actions/approve',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=OCC' },
+        ignoreResponseError: true
+      }
+    );
+    expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+
+    const approved = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/maintenance/fop-in-progress-maintenance-draft/actions/approve',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' }
+      }
+    );
+    expect(approved.ok).toBe(true);
+    const refreshed = await $fetch<ApiResponse<FlightMaintenanceHandoffDto[]>>(
+      '/api/flight-operations/maintenance',
+      { query: { search: 'AMA-20260707-005' } }
+    );
+    expect(refreshed.ok && refreshed.data[0]).toMatchObject({
+      id: 'fop-in-progress-maintenance-draft',
+      status: 'APPROVED'
+    });
+
+    const repeated = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/maintenance/fop-in-progress-maintenance-draft/actions/approve',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+        ignoreResponseError: true
+      }
+    );
+    expect(!repeated.ok && repeated.error.code).toBe('INVALID_TRANSITION');
   });
 });

@@ -114,6 +114,12 @@ export const maintenanceHandoffStatusSchema = z.enum([
   'REJECTED',
   'POSTED'
 ]);
+export const aircraftServiceabilityStatusSchema = z.enum([
+  'SERVICEABLE',
+  'SERVICEABLE_WITH_RESTRICTIONS',
+  'MAINTENANCE_DUE',
+  'UNSERVICEABLE'
+]);
 export const financeHandoffStatusSchema = z.enum(['DRAFT', 'READY', 'POSTED', 'VOID']);
 export const financeHandoffEventTypeSchema = z.enum([
   'FUEL_COST_DRAFT',
@@ -127,6 +133,9 @@ const blankToNull = (value: unknown) =>
   typeof value === 'string' && value.trim() === '' ? null : value;
 
 const blankToUndefined = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+const emptyQueryValue = (value: unknown) =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
 
 const localDateTimeToIso = (value: unknown) => {
@@ -170,6 +179,7 @@ export type StationServiceType = z.infer<typeof stationServiceTypeSchema>;
 export type StationServiceStatus = z.infer<typeof stationServiceStatusSchema>;
 export type StationCostStatus = z.infer<typeof stationCostStatusSchema>;
 export type MaintenanceHandoffStatus = z.infer<typeof maintenanceHandoffStatusSchema>;
+export type AircraftServiceabilityStatus = z.infer<typeof aircraftServiceabilityStatusSchema>;
 export type FinanceHandoffEventType = z.infer<typeof financeHandoffEventTypeSchema>;
 export type FinanceHandoffStatus = z.infer<typeof financeHandoffStatusSchema>;
 
@@ -386,9 +396,20 @@ export type FlightMaintenanceHandoffDto = {
   id: string;
   flightId: string | null;
   flightNumber: string | null;
+  flightDate: string | null;
+  currentStatus: FlightOperationStatus | null;
+  routeCode: string | null;
+  originStationId: string | null;
+  originStationCode: string | null;
+  destinationStationId: string | null;
+  destinationStationCode: string | null;
+  scheduledDepartureAt: string | null;
   aircraftId: string;
   aircraftRegistration: string;
-  serviceabilityStatus: string;
+  aircraftType: string;
+  aircraftNextMaintenanceDueAt: string | null;
+  serviceabilityStatus: AircraftServiceabilityStatus;
+  handoffServiceabilityStatus: AircraftServiceabilityStatus;
   workOrderReference: string | null;
   maintenanceNote: string | null;
   sparePartReference: string | null;
@@ -396,6 +417,20 @@ export type FlightMaintenanceHandoffDto = {
   currencyId: string;
   currencyCode: string;
   status: MaintenanceHandoffStatus;
+  closureReady: boolean;
+  needsAttention: boolean;
+  pendingApproval: boolean;
+  evidenceComplete: boolean;
+  blockers: string[];
+  attentionReasons: string[];
+  financeCurrencyCode: string;
+  financeCurrencyMismatch: boolean;
+  fuelCost: number | null;
+  stationCost: number | null;
+  approvedMaintenanceCost: number | null;
+  totalOperationalCost: number | null;
+  estimatedRevenue: number | null;
+  projectedGrossMargin: number | null;
 };
 
 export type FlightFinanceHandoffDto = {
@@ -737,6 +772,24 @@ export const createMaintenanceHandoffBodySchema = z.object({
   currencyId: z.string().min(1)
 });
 
+export const listMaintenanceHandoffsQuerySchema = z.object({
+  search: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
+  date: z.preprocess(
+    emptyQueryValue,
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u, 'Expected YYYY-MM-DD')
+      .refine((value) => {
+        const parsed = new Date(`${value}T00:00:00.000Z`);
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      }, 'Expected a valid calendar date')
+      .optional()
+  ),
+  stationId: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
+  serviceability: z.preprocess(emptyQueryValue, aircraftServiceabilityStatusSchema.optional()),
+  status: z.preprocess(emptyQueryValue, maintenanceHandoffStatusSchema.optional())
+});
+
 export type ListFlightOperationsQuery = z.infer<typeof listFlightOperationsQuerySchema>;
 export type ListFlightRequestsQuery = z.infer<typeof listFlightRequestsQuerySchema>;
 export type CreateFlightOperationBody = z.infer<typeof createFlightOperationBodySchema>;
@@ -751,3 +804,4 @@ export type CreateFuelRequestBody = z.infer<typeof createFuelRequestBodySchema>;
 export type CreateStationServiceBody = z.infer<typeof createStationServiceBodySchema>;
 export type CreateStationCostBody = z.infer<typeof createStationCostBodySchema>;
 export type CreateMaintenanceHandoffBody = z.infer<typeof createMaintenanceHandoffBodySchema>;
+export type ListMaintenanceHandoffsQuery = z.infer<typeof listMaintenanceHandoffsQuerySchema>;

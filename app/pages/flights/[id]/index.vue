@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import FlightReasonSelect from '../../features/operations/flight-reasons/FlightReasonSelect.vue';
-import StationSelect from '../../features/operations/stations/StationSelect.vue';
+import FlightReasonSelect from '../../../features/operations/flight-reasons/FlightReasonSelect.vue';
+import StationSelect from '../../../features/operations/stations/StationSelect.vue';
 import type { AircraftOption } from '#shared/features/operations/aircraft';
 import type { StationOption } from '#shared/features/operations/stations';
 import type {
@@ -207,7 +207,7 @@ const closureItems = computed(() => {
     ['Final manifest', 'final manifest'],
     ['Actual fuel uplift', 'actual fuel uplift'],
     ['Approved station cost', 'approved station cost'],
-    ['Maintenance review', 'maintenance review']
+    ['Approved maintenance handoff', 'approved maintenance handoff']
   ].map(([label, requirement]) => ({ label, done: !missing.has(requirement) }));
 });
 const filteredHistory = computed(() => {

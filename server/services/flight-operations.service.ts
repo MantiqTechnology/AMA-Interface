@@ -32,6 +32,7 @@ import type {
   FlightReasonActionBody,
   FlightStationCostDto,
   FlightStationServiceDto,
+  ListMaintenanceHandoffsQuery,
   FlightStatusHistoryDto,
   ListFlightOperationsQuery,
   ListFlightRequestsQuery
@@ -48,6 +49,7 @@ type ClosureEvidence = Pick<
   | 'currentStatus'
   | 'actualDepartureAt'
   | 'actualArrivalAt'
+  | 'aircraftId'
   | 'customerId'
   | 'estimatedRevenue'
 > & {
@@ -56,6 +58,8 @@ type ClosureEvidence = Pick<
   stationCosts: FlightStationCostDto[];
   maintenanceHandoffs: FlightMaintenanceHandoffDto[];
 };
+
+type MaintenanceHandoffQuery = ListMaintenanceHandoffsQuery & { flightId?: string };
 
 const readinessDefinitions = [
   ['AIRCRAFT_SERVICEABILITY', 'Aircraft serviceability'],
@@ -101,6 +105,48 @@ function num(value: SqlValue) {
 
 function nullableNum(value: SqlValue) {
   return typeof value === 'number' ? value : null;
+}
+
+function isApprovedMaintenanceStatus(status: string) {
+  return status === 'APPROVED' || status === 'POSTED';
+}
+
+function maintenanceIsDue(
+  nextMaintenanceDueAt: string | null,
+  scheduledDepartureAt: string | null
+) {
+  if (!nextMaintenanceDueAt || !scheduledDepartureAt) return false;
+  return nextMaintenanceDueAt.slice(0, 10) <= scheduledDepartureAt.slice(0, 10);
+}
+
+function maintenanceBlockers(row: {
+  serviceabilityStatus: string;
+  status: string;
+  workOrderReference: string | null;
+  aircraftNextMaintenanceDueAt: string | null;
+  scheduledDepartureAt: string | null;
+}) {
+  const blockers: string[] = [];
+  if (!isApprovedMaintenanceStatus(row.status)) {
+    blockers.push(
+      row.status === 'REJECTED'
+        ? 'Maintenance review was rejected'
+        : 'Maintenance approval is missing'
+    );
+  }
+  if (row.serviceabilityStatus === 'UNSERVICEABLE') {
+    blockers.push('Aircraft is currently unserviceable');
+  }
+  if (
+    row.serviceabilityStatus === 'MAINTENANCE_DUE' ||
+    maintenanceIsDue(row.aircraftNextMaintenanceDueAt, row.scheduledDepartureAt)
+  ) {
+    blockers.push('Maintenance is due before scheduled departure');
+  }
+  if (!row.workOrderReference) {
+    blockers.push('Work order evidence has not been recorded');
+  }
+  return blockers;
 }
 
 function timestamp() {
@@ -1218,10 +1264,13 @@ export class FlightOperationsService {
       missing.push('approved station cost');
     }
     if (
-      evidence.maintenanceHandoffs.length > 0 &&
-      evidence.maintenanceHandoffs.some((handoff) => handoff.status !== 'APPROVED')
+      evidence.maintenanceHandoffs.length === 0 ||
+      !evidence.maintenanceHandoffs.some(
+        (handoff) =>
+          handoff.aircraftId === evidence.aircraftId && isApprovedMaintenanceStatus(handoff.status)
+      )
     ) {
-      missing.push('maintenance review');
+      missing.push('approved maintenance handoff');
     }
     const hasActualRevenue = Boolean(
       (
@@ -1595,6 +1644,33 @@ export class FlightOperationsService {
   }
 
   createMaintenance(body: CreateMaintenanceHandoffBody, actorUserId: string) {
+    this.requireRow(
+      'SELECT id FROM aircraft WHERE id = ? AND is_active = 1',
+      body.aircraftId,
+      'Aircraft'
+    );
+    if (body.flightId) {
+      const flight = this.requireRow(
+        'SELECT aircraft_id FROM flight_operations WHERE id = ?',
+        body.flightId,
+        'Flight operation'
+      );
+      if (!flight.aircraft_id) {
+        throw new DomainError(
+          'MAINTENANCE_FLIGHT_AIRCRAFT_REQUIRED',
+          'Assign an aircraft to the flight before recording a maintenance handoff.',
+          422
+        );
+      }
+      if (String(flight.aircraft_id) !== body.aircraftId) {
+        throw new DomainError(
+          'MAINTENANCE_AIRCRAFT_MISMATCH',
+          'Maintenance handoff aircraft must match the aircraft assigned to the flight.',
+          422,
+          { flightAircraftId: String(flight.aircraft_id), handoffAircraftId: body.aircraftId }
+        );
+      }
+    }
     const id = `maintenance-${nanoid(10)}`;
     this.sqlite
       .prepare(
@@ -1616,6 +1692,17 @@ export class FlightOperationsService {
       id,
       'Maintenance handoff'
     );
+    if (
+      !['maintenance-handoff-status-draft', 'maintenance-handoff-status-submitted'].includes(
+        String(row.status_id)
+      )
+    ) {
+      throw new DomainError(
+        'INVALID_TRANSITION',
+        'Only draft or submitted maintenance handoffs can be approved.',
+        409
+      );
+    }
     this.sqlite
       .prepare(
         `UPDATE flight_maintenance_handoffs SET status_id = 'maintenance-handoff-status-approved', approved_by_user_id = ?, approved_at = ?, updated_at = ? WHERE id = ?`
@@ -1737,39 +1824,193 @@ export class FlightOperationsService {
     }));
   }
 
-  listMaintenance(params: { flightId?: string } = {}): FlightMaintenanceHandoffDto[] {
-    const where = params.flightId ? 'WHERE f.id = @flightId' : '';
+  listMaintenance(params: MaintenanceHandoffQuery = {}): FlightMaintenanceHandoffDto[] {
+    const conditions: string[] = [];
+    const queryParams: Record<string, SqlValue> = {};
+    if (params.flightId) {
+      conditions.push('f.id = @flightId');
+      queryParams.flightId = params.flightId;
+    }
+    if (params.search) {
+      conditions.push('(f.flight_number LIKE @search OR a.registration_number LIKE @search)');
+      queryParams.search = `%${params.search}%`;
+    }
+    if (params.date) {
+      conditions.push('f.flight_date = @date');
+      queryParams.date = params.date;
+    }
+    if (params.stationId) {
+      conditions.push(
+        '(f.origin_station_id = @stationId OR f.destination_station_id = @stationId)'
+      );
+      queryParams.stationId = params.stationId;
+    }
+    if (params.serviceability) {
+      conditions.push('a.serviceability_status = @serviceability');
+      queryParams.serviceability = params.serviceability;
+    }
+    if (params.status) {
+      conditions.push('status.code = @status');
+      queryParams.status = params.status;
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     return (
       this.sqlite
         .prepare(
-          `SELECT m.*, serviceability.code as serviceability_status, status.code as status,
-              f.flight_number, a.registration_number, cur.currency_code
+          `SELECT m.*, handoff_serviceability.code as handoff_serviceability_status,
+              a.serviceability_status as serviceability_status, status.code as status,
+              f.flight_number, f.flight_date, current_status.code as current_status,
+              f.scheduled_departure_at, f.estimated_revenue, f.currency_code as flight_currency_code,
+              r.route_code, origin.id as origin_station_id, origin.station_code as origin_station_code,
+              destination.id as destination_station_id,
+              destination.station_code as destination_station_code,
+              a.registration_number, a.aircraft_type, a.next_maintenance_due_at,
+              cur.currency_code,
+              COALESCE((
+                SELECT SUM(fuel.total_cost)
+                FROM flight_fuel_requests fuel
+                JOIN fuel_workflow_statuses fuel_status ON fuel_status.id = fuel.status_id
+                WHERE fuel.flight_id = f.id AND fuel_status.code = 'POSTED'
+              ), 0) AS fuel_cost,
+              COALESCE((
+                SELECT SUM(cost.amount)
+                FROM flight_station_costs cost
+                JOIN station_cost_statuses cost_status ON cost_status.id = cost.status_id
+                WHERE cost.flight_id = f.id AND cost_status.code = 'APPROVED'
+              ), 0) AS station_cost,
+              COALESCE((
+                SELECT SUM(approved_handoff.maintenance_cost)
+                FROM flight_maintenance_handoffs approved_handoff
+                JOIN maintenance_handoff_statuses approved_status
+                  ON approved_status.id = approved_handoff.status_id
+                WHERE approved_handoff.flight_id = f.id
+                  AND approved_handoff.aircraft_id = f.aircraft_id
+                  AND approved_status.code IN ('APPROVED', 'POSTED')
+              ), 0) AS approved_maintenance_cost,
+              COALESCE((
+                SELECT COUNT(*)
+                FROM flight_fuel_requests fuel
+                JOIN fuel_workflow_statuses fuel_status ON fuel_status.id = fuel.status_id
+                JOIN currencies fuel_currency ON fuel_currency.id = fuel.currency_id
+                WHERE fuel.flight_id = f.id AND fuel_status.code = 'POSTED'
+                  AND fuel_currency.currency_code <> f.currency_code
+              ), 0) + COALESCE((
+                SELECT COUNT(*)
+                FROM flight_station_costs cost
+                JOIN station_cost_statuses cost_status ON cost_status.id = cost.status_id
+                JOIN currencies cost_currency ON cost_currency.id = cost.currency_id
+                WHERE cost.flight_id = f.id AND cost_status.code = 'APPROVED'
+                  AND cost_currency.currency_code <> f.currency_code
+              ), 0) + COALESCE((
+                SELECT COUNT(*)
+                FROM flight_maintenance_handoffs approved_handoff
+                JOIN maintenance_handoff_statuses approved_status
+                  ON approved_status.id = approved_handoff.status_id
+                JOIN currencies maintenance_currency
+                  ON maintenance_currency.id = approved_handoff.currency_id
+                WHERE approved_handoff.flight_id = f.id
+                  AND approved_handoff.aircraft_id = f.aircraft_id
+                  AND approved_status.code IN ('APPROVED', 'POSTED')
+                  AND maintenance_currency.currency_code <> f.currency_code
+              ), 0) AS finance_currency_mismatch_count
        FROM flight_maintenance_handoffs m
        LEFT JOIN flight_operations f ON f.id = m.flight_id
+       LEFT JOIN flight_operation_statuses current_status ON current_status.id = f.current_status_id
+       LEFT JOIN routes r ON r.id = f.route_id
+       LEFT JOIN stations origin ON origin.id = f.origin_station_id
+       LEFT JOIN stations destination ON destination.id = f.destination_station_id
        JOIN aircraft a ON a.id = m.aircraft_id
        JOIN currencies cur ON cur.id = m.currency_id
-       JOIN aircraft_serviceability_statuses serviceability
-         ON serviceability.id = m.serviceability_status_id
+       JOIN aircraft_serviceability_statuses handoff_serviceability
+         ON handoff_serviceability.id = m.serviceability_status_id
        JOIN maintenance_handoff_statuses status ON status.id = m.status_id
        ${where}
        ORDER BY m.updated_at DESC`
         )
-        .all(params) as SqlRow[]
-    ).map((row) => ({
-      id: String(row.id),
-      flightId: str(row.flight_id),
-      flightNumber: str(row.flight_number),
-      aircraftId: String(row.aircraft_id),
-      aircraftRegistration: String(row.registration_number),
-      serviceabilityStatus: String(row.serviceability_status),
-      workOrderReference: str(row.work_order_reference),
-      maintenanceNote: str(row.maintenance_note),
-      sparePartReference: str(row.spare_part_reference),
-      maintenanceCost: num(row.maintenance_cost),
-      currencyId: String(row.currency_id),
-      currencyCode: String(row.currency_code),
-      status: String(row.status) as FlightMaintenanceHandoffDto['status']
-    }));
+        .all(queryParams) as SqlRow[]
+    ).map((row) => {
+      const status = String(row.status) as FlightMaintenanceHandoffDto['status'];
+      const serviceabilityStatus = String(
+        row.serviceability_status
+      ) as FlightMaintenanceHandoffDto['serviceabilityStatus'];
+      const handoffServiceabilityStatus = String(
+        row.handoff_serviceability_status
+      ) as FlightMaintenanceHandoffDto['handoffServiceabilityStatus'];
+      const workOrderReference = str(row.work_order_reference);
+      const aircraftNextMaintenanceDueAt = str(row.next_maintenance_due_at);
+      const scheduledDepartureAt = str(row.scheduled_departure_at);
+      const blockers = maintenanceBlockers({
+        serviceabilityStatus,
+        status,
+        workOrderReference,
+        aircraftNextMaintenanceDueAt,
+        scheduledDepartureAt
+      });
+      const maintenanceCost = num(row.maintenance_cost);
+      const financeCurrencyMismatch = num(row.finance_currency_mismatch_count) > 0;
+      const fuelCost = financeCurrencyMismatch ? null : num(row.fuel_cost);
+      const stationCost = financeCurrencyMismatch ? null : num(row.station_cost);
+      const approvedMaintenanceCost = financeCurrencyMismatch
+        ? null
+        : num(row.approved_maintenance_cost);
+      const totalOperationalCost = financeCurrencyMismatch
+        ? null
+        : num(row.fuel_cost) + num(row.station_cost) + num(row.approved_maintenance_cost);
+      const estimatedRevenue = nullableNum(row.estimated_revenue);
+      const attentionReasons = [
+        ...(!row.flight_id ? ['Maintenance handoff is not linked to a flight'] : []),
+        ...(serviceabilityStatus === 'SERVICEABLE_WITH_RESTRICTIONS'
+          ? ['Aircraft is serviceable with restrictions and requires review']
+          : []),
+        ...(financeCurrencyMismatch
+          ? ['Operational costs contain a currency that does not match the flight']
+          : [])
+      ];
+      return {
+        id: String(row.id),
+        flightId: str(row.flight_id),
+        flightNumber: str(row.flight_number),
+        flightDate: str(row.flight_date),
+        currentStatus: str(row.current_status) as FlightOperationStatus | null,
+        routeCode: str(row.route_code),
+        originStationId: str(row.origin_station_id),
+        originStationCode: str(row.origin_station_code),
+        destinationStationId: str(row.destination_station_id),
+        destinationStationCode: str(row.destination_station_code),
+        scheduledDepartureAt,
+        aircraftId: String(row.aircraft_id),
+        aircraftRegistration: String(row.registration_number),
+        aircraftType: String(row.aircraft_type),
+        aircraftNextMaintenanceDueAt,
+        serviceabilityStatus,
+        handoffServiceabilityStatus,
+        workOrderReference,
+        maintenanceNote: str(row.maintenance_note),
+        sparePartReference: str(row.spare_part_reference),
+        maintenanceCost,
+        currencyId: String(row.currency_id),
+        currencyCode: String(row.currency_code),
+        status,
+        closureReady:
+          Boolean(row.flight_id) && blockers.length === 0 && serviceabilityStatus === 'SERVICEABLE',
+        needsAttention: blockers.length > 0 || attentionReasons.length > 0,
+        pendingApproval: ['DRAFT', 'SUBMITTED'].includes(status),
+        evidenceComplete: Boolean(workOrderReference) && isApprovedMaintenanceStatus(status),
+        blockers,
+        attentionReasons,
+        financeCurrencyCode: str(row.flight_currency_code) ?? String(row.currency_code),
+        financeCurrencyMismatch,
+        fuelCost,
+        stationCost,
+        approvedMaintenanceCost,
+        totalOperationalCost,
+        estimatedRevenue,
+        projectedGrossMargin:
+          estimatedRevenue === null || totalOperationalCost === null
+            ? null
+            : estimatedRevenue - totalOperationalCost
+      };
+    });
   }
 
   private queryFlights(query: ListFlightOperationsQuery) {
