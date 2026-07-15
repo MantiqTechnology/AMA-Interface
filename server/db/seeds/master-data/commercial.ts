@@ -142,6 +142,32 @@ export async function seedCommercialMasterData(db: AppDatabase) {
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
+      },
+      {
+        id: 'agent-traveloka',
+        agentCode: 'TRAVELOKA',
+        agentName: 'Traveloka',
+        agentType: 'OTA',
+        stationId: null,
+        commissionBasisPoints: 500,
+        contactPerson: 'Traveloka Support',
+        phone: '+62-21-2977-5800',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'agent-tiket-com',
+        agentCode: 'TIKET_COM',
+        agentName: 'Tiket.com',
+        agentType: 'OTA',
+        stationId: null,
+        commissionBasisPoints: 500,
+        contactPerson: 'Tiket.com Support',
+        phone: '+62-21-3973-0888',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
       }
     ])
     .onConflictDoNothing();
