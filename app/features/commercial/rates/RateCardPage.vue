@@ -102,18 +102,40 @@ async function toggle(record: RateCardDto) {
                   </VChip>
                 </td>
                 <td class="text-right">
-                  <VBtn
+                  <DsTooltipIconButton
                     icon="mdi-open-in-new"
                     :to="'/master-data/rates/' + record.id"
+                    tooltip="Open details"
                     variant="text"
-                  /><VBtn icon="mdi-pencil-outline" variant="text" @click="edit(record)" /><VBtn
+                  />
+                  <DsTooltipIconButton
+                    icon="mdi-pencil-outline"
+                    tooltip="Edit"
+                    variant="text"
+                    @click="edit(record)"
+                  />
+                  <DsConfirmIconButton
+                    :action="() => toggle(record)"
+                    :confirm-icon="
+                      record.isActive
+                        ? 'mdi-toggle-switch-off-outline'
+                        : 'mdi-toggle-switch-outline'
+                    "
+                    :confirm-text="record.isActive ? 'Deactivate' : 'Activate'"
                     :icon="
                       record.isActive
                         ? 'mdi-toggle-switch-off-outline'
                         : 'mdi-toggle-switch-outline'
                     "
+                    :message="
+                      record.isActive
+                        ? 'This record will be hidden from active lists.'
+                        : 'This record will become available in active lists.'
+                    "
+                    :title="record.isActive ? 'Deactivate record?' : 'Activate record?'"
+                    :tone="record.isActive ? 'warning' : 'success'"
+                    :tooltip="record.isActive ? 'Deactivate' : 'Activate'"
                     variant="text"
-                    @click="toggle(record)"
                   />
                 </td>
               </tr>

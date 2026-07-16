@@ -110,10 +110,11 @@ defineExpose({ invalidate, invalidateAll, refreshRow, refreshAllExpanded });
     </template>
 
     <template #[`item.data-table-expand`]="{ internalItem, isExpanded, toggleExpand }">
-      <VBtn
+      <DsTooltipIconButton
         :aria-label="isExpanded(internalItem) ? 'Collapse row details' : 'Expand row details'"
         :icon="isExpanded(internalItem) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
         size="small"
+        :tooltip="isExpanded(internalItem) ? 'Collapse row details' : 'Expand row details'"
         variant="text"
         @click="toggleExpand(internalItem)"
       />
@@ -127,10 +128,11 @@ defineExpose({ invalidate, invalidateAll, refreshRow, refreshAllExpanded });
               <VProgressLinear v-if="loadingKeys.has(getKey(item))" indeterminate size="24" />
               <slot v-else name="detail" :item="item" :detail="detailData[getKey(item)]" />
             </div>
-            <VBtn
+            <DsTooltipIconButton
               aria-label="Refresh row details"
               icon="mdi-refresh"
               size="small"
+              tooltip="Refresh row details"
               variant="text"
               :loading="loadingKeys.has(getKey(item))"
               @click="refreshRow(item)"

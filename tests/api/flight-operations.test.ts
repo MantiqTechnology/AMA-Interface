@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { ApiResponse } from '../../shared/contracts/api';
 import type {
   FlightMaintenanceHandoffDto,
+  FlightOperationOverviewDto,
   FlightOperationRecord,
   FlightRequestRecord
 } from '../../shared/contracts/flight-operations';
@@ -27,6 +28,27 @@ await setup({
 });
 
 describe('flight request APIs', () => {
+  it('returns the nearest upcoming non-terminal assignment for an aircraft', async () => {
+    const response = await $fetch<ApiResponse<FlightOperationOverviewDto>>(
+      '/api/flight-operations/flights',
+      {
+        query: {
+          aircraftId: 'ac-pk-ama',
+          scheduledFrom: '2026-07-16T00:00:00.000+09:00',
+          excludeTerminal: true,
+          sortDirection: 'asc',
+          limit: 1
+        }
+      }
+    );
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) throw new Error(response.error.message);
+    expect(response.data.flights.map((flight) => flight.id)).toEqual([
+      'fop-ticketing-passenger-later'
+    ]);
+  });
+
   it('keeps the created request ID available through submit and decision', async () => {
     const created = await $fetch<ApiResponse<FlightRequestRecord>>(
       '/api/flight-operations/requests',

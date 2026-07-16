@@ -2049,11 +2049,19 @@ export class FlightOperationsService {
       conditions.push('f.flight_date <= @dateTo');
       params.dateTo = query.dateTo;
     }
+    if (query.scheduledFrom) {
+      conditions.push('datetime(f.scheduled_departure_at) >= datetime(@scheduledFrom)');
+      params.scheduledFrom = query.scheduledFrom;
+    }
+    if (query.excludeTerminal) {
+      conditions.push("current_status.code NOT IN ('CANCELLED', 'CLOSED')");
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const order = query.sortDirection === 'asc' ? 'ASC' : 'DESC';
     return this.sqlite
       .prepare(
-        `${this.flightSelectSql()} ${where} ORDER BY f.flight_date DESC, f.flight_number DESC LIMIT @limit OFFSET @offset`
+        `${this.flightSelectSql()} ${where} ORDER BY datetime(f.scheduled_departure_at) ${order}, f.flight_number ${order} LIMIT @limit OFFSET @offset`
       )
       .all(params) as SqlRow[];
   }

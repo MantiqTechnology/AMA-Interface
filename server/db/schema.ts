@@ -5,3 +5,4 @@ export * from './schema/cargo';
 export * from './schema/flight-operations';
 export * from './schema/billing';
 export * from './schema/ticketing';
+export * from './schema/inventory';

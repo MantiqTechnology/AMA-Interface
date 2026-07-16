@@ -3,6 +3,7 @@ import { runMigrations } from '../db/migrate';
 import { seedDemoData } from '../db/seed';
 import { seedFlightOperationsData } from '../db/seed-flight-operations';
 import { seedTicketingData } from '../db/seeds/ticketing';
+import { seedInventoryData } from '../db/seeds/inventory';
 
 export default defineNitroPlugin(async () => {
   const config = useRuntimeConfig();
@@ -19,4 +20,5 @@ export default defineNitroPlugin(async () => {
 
   seedFlightOperationsData(sqlite);
   seedTicketingData(sqlite);
+  seedInventoryData(sqlite);
 });

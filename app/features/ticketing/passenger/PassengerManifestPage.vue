@@ -10,9 +10,6 @@ const paymentStatus = ref<'UNPAID' | 'PAID' | undefined>();
 const checkInStatus = ref<'PENDING' | 'CHECKED_IN' | undefined>();
 const actionId = ref('');
 const actionError = ref('');
-const decisionOpen = ref(false);
-const decisionTicket = ref<PassengerTicketDto | null>(null);
-const decision = ref<'APPROVE' | 'REJECT'>('APPROVE');
 const decisionNote = ref('');
 const rescheduleOpen = ref(false);
 const rescheduleTicket = ref<PassengerTicketDto | null>(null);
@@ -54,25 +51,17 @@ async function checkIn(ticket: PassengerTicketDto) {
   }
 }
 
-function openDecision(ticket: PassengerTicketDto, nextDecision: 'APPROVE' | 'REJECT') {
-  decisionTicket.value = ticket;
-  decision.value = nextDecision;
-  decisionNote.value = '';
-  actionError.value = '';
-  decisionOpen.value = true;
-}
-
-async function submitDecision() {
-  const requestId = decisionTicket.value?.refundRequest?.id;
+async function submitDecision(ticket: PassengerTicketDto, nextDecision: 'APPROVE' | 'REJECT') {
+  const requestId = ticket.refundRequest?.id;
   if (!requestId || decisionNote.value.trim().length < 3) return;
-  actionId.value = decisionTicket.value!.id;
+  actionId.value = ticket.id;
   actionError.value = '';
   try {
     await fetchApi<TicketRefundRequestDto>(`/api/ticketing/refund-requests/${requestId}/decision`, {
       method: 'PATCH',
-      body: { decision: decision.value, note: decisionNote.value }
+      body: { decision: nextDecision, note: decisionNote.value }
     });
-    decisionOpen.value = false;
+    decisionNote.value = '';
     await refresh();
   } catch (error) {
     actionError.value = error instanceof Error ? error.message : 'Refund decision failed.';
@@ -211,25 +200,32 @@ async function onRescheduled() {
                 <span v-else class="text-text-secondary">-</span>
               </td>
               <td class="text-right text-no-wrap">
-                <VBtn
+                <DsTooltipIconButton
                   aria-label="Download ticket PDF"
                   icon="mdi-file-pdf-box"
+                  tooltip="Download ticket PDF"
                   variant="text"
                   @click="downloadPassengerTicket(ticket)"
                 />
-                <VBtn
+                <DsConfirmIconButton
                   v-if="ticket.ticketStatus === 'ACTIVE' && ticket.checkInStatus === 'PENDING'"
+                  :action="() => checkIn(ticket)"
                   aria-label="Check in passenger"
+                  confirm-icon="mdi-account-check-outline"
+                  confirm-text="Check in"
                   :disabled="
                     ticket.paymentStatus !== 'PAID' ||
                       ['REQUESTED', 'APPROVED'].includes(ticket.refundRequest?.status ?? '')
                   "
                   icon="mdi-account-check-outline"
                   :loading="actionId === ticket.id"
+                  :message="`Check in ${ticket.passengerName} for ${ticket.flightNumber}.`"
+                  title="Check in passenger?"
+                  tone="success"
+                  tooltip="Check in passenger"
                   variant="text"
-                  @click="checkIn(ticket)"
                 />
-                <VBtn
+                <DsTooltipIconButton
                   v-if="
                     ticket.ticketStatus === 'ACTIVE' &&
                       ticket.paymentStatus === 'PAID' &&
@@ -238,25 +234,114 @@ async function onRescheduled() {
                   "
                   aria-label="Reschedule passenger ticket"
                   icon="mdi-calendar-sync"
+                  tooltip="Reschedule passenger ticket"
                   variant="text"
                   @click="openReschedule(ticket)"
                 />
-                <VBtn
+                <DsConfirmIconButton
                   v-if="ticket.refundRequest?.status === 'REQUESTED'"
+                  :action="() => submitDecision(ticket, 'APPROVE')"
                   aria-label="Approve refund"
                   color="success"
+                  :confirm-disabled="decisionNote.trim().length < 3"
+                  confirm-icon="mdi-check-circle-outline"
+                  confirm-text="Approve refund"
                   icon="mdi-check-circle-outline"
+                  max-width="560"
+                  persistent
+                  title="Approve passenger refund?"
+                  tone="success"
+                  tooltip="Approve refund"
                   variant="text"
-                  @click="openDecision(ticket, 'APPROVE')"
-                />
-                <VBtn
+                >
+                  <p class="mb-2 font-weight-medium">
+                    {{ ticket.id }} · {{ ticket.passengerName }}
+                  </p>
+                  <p class="mb-4 text-text-secondary">{{ ticket.refundRequest.reason }}</p>
+                  <VTextarea
+                    v-model="decisionNote"
+                    label="Decision note"
+                    :rules="[
+                      (value: string) => value.trim().length >= 3 || 'Enter a decision note.'
+                    ]"
+                    variant="outlined"
+                  />
+                  <template #actions="{ cancel, confirm, loading }">
+                    <VBtn
+                      :disabled="loading"
+                      variant="text"
+                      @click="
+                        () => {
+                          decisionNote = '';
+                          cancel();
+                        }
+                      "
+                    >
+                      Cancel
+                    </VBtn>
+                    <VBtn
+                      color="success"
+                      :disabled="decisionNote.trim().length < 3"
+                      :loading="loading || actionId === ticket.id"
+                      prepend-icon="mdi-check"
+                      @click="confirm"
+                    >
+                      Approve refund
+                    </VBtn>
+                  </template>
+                </DsConfirmIconButton>
+                <DsConfirmIconButton
                   v-if="ticket.refundRequest?.status === 'REQUESTED'"
+                  :action="() => submitDecision(ticket, 'REJECT')"
                   aria-label="Reject refund"
                   color="error"
+                  :confirm-disabled="decisionNote.trim().length < 3"
+                  confirm-icon="mdi-close-circle-outline"
+                  confirm-text="Reject refund"
                   icon="mdi-close-circle-outline"
+                  max-width="560"
+                  persistent
+                  title="Reject passenger refund?"
+                  tone="error"
+                  tooltip="Reject refund"
                   variant="text"
-                  @click="openDecision(ticket, 'REJECT')"
-                />
+                >
+                  <p class="mb-2 font-weight-medium">
+                    {{ ticket.id }} · {{ ticket.passengerName }}
+                  </p>
+                  <p class="mb-4 text-text-secondary">{{ ticket.refundRequest.reason }}</p>
+                  <VTextarea
+                    v-model="decisionNote"
+                    label="Decision note"
+                    :rules="[
+                      (value: string) => value.trim().length >= 3 || 'Enter a decision note.'
+                    ]"
+                    variant="outlined"
+                  />
+                  <template #actions="{ cancel, confirm, loading }">
+                    <VBtn
+                      :disabled="loading"
+                      variant="text"
+                      @click="
+                        () => {
+                          decisionNote = '';
+                          cancel();
+                        }
+                      "
+                    >
+                      Cancel
+                    </VBtn>
+                    <VBtn
+                      color="error"
+                      :disabled="decisionNote.trim().length < 3"
+                      :loading="loading || actionId === ticket.id"
+                      prepend-icon="mdi-close"
+                      @click="confirm"
+                    >
+                      Reject refund
+                    </VBtn>
+                  </template>
+                </DsConfirmIconButton>
               </td>
             </tr>
             <tr v-if="tickets.length === 0">
@@ -268,43 +353,6 @@ async function onRescheduled() {
         </VTable>
       </VCardText>
     </VCard>
-
-    <VDialog v-model="decisionOpen" max-width="560">
-      <VCard>
-        <VCardTitle>
-          {{ decision === 'APPROVE' ? 'Approve' : 'Reject' }} passenger refund
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <p class="mb-2 font-weight-medium">
-            {{ decisionTicket?.id }} · {{ decisionTicket?.passengerName }}
-          </p>
-          <p class="mb-4 text-text-secondary">
-            {{ decisionTicket?.refundRequest?.reason }}
-          </p>
-          <VTextarea
-            v-model="decisionNote"
-            label="Decision note"
-            :rules="[(value: string) => value.trim().length >= 3 || 'Enter a decision note.']"
-            variant="outlined"
-          />
-        </VCardText>
-        <VDivider />
-        <VCardActions>
-          <VSpacer />
-          <VBtn variant="text" @click="decisionOpen = false">Cancel</VBtn>
-          <VBtn
-            :color="decision === 'APPROVE' ? 'success' : 'error'"
-            :disabled="decisionNote.trim().length < 3"
-            :loading="Boolean(actionId)"
-            :prepend-icon="decision === 'APPROVE' ? 'mdi-check' : 'mdi-close'"
-            @click="submitDecision"
-          >
-            {{ decision === 'APPROVE' ? 'Approve refund' : 'Reject refund' }}
-          </VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
 
     <PassengerRescheduleDialog
       v-model="rescheduleOpen"

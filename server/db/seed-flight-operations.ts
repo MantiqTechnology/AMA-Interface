@@ -579,6 +579,13 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         .run(lookupId('readiness-status', status), note, seedNow, checkCode);
     }
     seedReadiness(sqlite, 'fop-in-progress');
+    seedReadiness(sqlite, 'fop-ticketing-passenger-later', {
+      FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel confirmation has not been recorded.' },
+      HANDLING_CONFIRMED: {
+        status: 'PENDING',
+        note: 'Departure and destination handling confirmations are pending.'
+      }
+    });
 
     insertIgnore(sqlite, 'flight_manifest_passengers', {
       id: 'fop-closed-pax-1',

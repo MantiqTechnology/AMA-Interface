@@ -95,16 +95,36 @@ async function toggle(station: StationDto) {
                 </VChip>
               </td>
               <td class="text-right">
-                <VBtn
+                <DsTooltipIconButton
                   icon="mdi-open-in-new"
                   :to="`/master-data/stations/${station.id}`"
+                  tooltip="Open details"
                   variant="text"
-                /><VBtn icon="mdi-pencil-outline" variant="text" @click="edit(station)" /><VBtn
+                />
+                <DsTooltipIconButton
+                  icon="mdi-pencil-outline"
+                  tooltip="Edit"
+                  variant="text"
+                  @click="edit(station)"
+                />
+                <DsConfirmIconButton
+                  :action="() => toggle(station)"
+                  :confirm-icon="
+                    station.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'
+                  "
+                  :confirm-text="station.isActive ? 'Deactivate' : 'Activate'"
                   :icon="
                     station.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'
                   "
+                  :message="
+                    station.isActive
+                      ? 'This record will be hidden from active lists.'
+                      : 'This record will become available in active lists.'
+                  "
+                  :title="station.isActive ? 'Deactivate record?' : 'Activate record?'"
+                  :tone="station.isActive ? 'warning' : 'success'"
+                  :tooltip="station.isActive ? 'Deactivate' : 'Activate'"
                   variant="text"
-                  @click="toggle(station)"
                 />
               </td>
             </tr>

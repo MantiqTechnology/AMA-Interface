@@ -3,6 +3,7 @@ import { dropDemoDatabase, runMigrations } from '../../server/db/migrate';
 import { seedDemoData } from '../../server/db/seed';
 import { seedFlightOperationsData } from '../../server/db/seed-flight-operations';
 import { seedTicketingData } from '../../server/db/seeds/ticketing';
+import { seedInventoryData } from '../../server/db/seeds/inventory';
 import { createServices } from '../../server/services';
 
 export async function createSeededTestServices() {
@@ -12,6 +13,7 @@ export async function createSeededTestServices() {
   await seedDemoData(client.db);
   seedFlightOperationsData(client.sqlite);
   seedTicketingData(client.sqlite);
+  seedInventoryData(client.sqlite);
 
   return {
     ...client,

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { setup, $fetch } from '@nuxt/test-utils/e2e';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ApiResponse } from '../../shared/contracts/api';
-import type { AircraftOption } from '../../shared/features/operations/aircraft';
+import type { AircraftDto, AircraftOption } from '../../shared/features/operations/aircraft';
 import type { FlightCapacityProfileOption } from '../../shared/features/operations/flight-capacity-profiles';
 import type { FlightScheduleTemplateOption } from '../../shared/features/operations/flight-schedule-templates';
 import type { PersonnelOption } from '../../shared/features/operations/personnel';
@@ -161,5 +161,21 @@ describe('operations master data APIs', () => {
         seatCapacity: expect.any(Number)
       })
     );
+  });
+
+  it('protects aircraft mutations with the master-data permission', async () => {
+    const detail = await $fetch<ApiResponse<AircraftDto>>('/api/master-data/aircraft/ac-pk-ama');
+    if (!detail.ok) throw new Error(detail.error.message);
+
+    const denied = await $fetch<ApiResponse<AircraftDto>>('/api/master-data/aircraft/ac-pk-ama', {
+      method: 'PUT',
+      headers: { cookie: 'ama_demo_role=OCC' },
+      body: detail.data,
+      ignoreResponseError: true
+    });
+
+    expect(denied.ok).toBe(false);
+    if (denied.ok) throw new Error('Expected aircraft update to be denied.');
+    expect(denied.error.code).toBe('FORBIDDEN');
   });
 });

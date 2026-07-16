@@ -113,46 +113,43 @@ async function toggle(record: FlightReasonDto) {
           </template>
           <template #[`item.actions`]="{ item }">
             <div class="d-flex justify-end">
-              <VTooltip location="top" text="Open details">
-                <template #activator="{ props: tooltipProps }">
-                  <VBtn
-                    v-bind="tooltipProps"
-                    aria-label="Open flight reason"
-                    icon="mdi-open-in-new"
-                    size="small"
-                    :to="'/master-data/flight-reasons/' + item.id"
-                    variant="text"
-                  />
-                </template>
-              </VTooltip>
-              <VTooltip location="top" text="Edit">
-                <template #activator="{ props: tooltipProps }">
-                  <VBtn
-                    v-bind="tooltipProps"
-                    aria-label="Edit flight reason"
-                    icon="mdi-pencil-outline"
-                    size="small"
-                    variant="text"
-                    @click="edit(item)"
-                  />
-                </template>
-              </VTooltip>
-              <VTooltip location="top" :text="item.isActive ? 'Deactivate' : 'Activate'">
-                <template #activator="{ props: tooltipProps }">
-                  <VBtn
-                    v-bind="tooltipProps"
-                    :aria-label="
-                      item.isActive ? 'Deactivate flight reason' : 'Activate flight reason'
-                    "
-                    :icon="
-                      item.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'
-                    "
-                    size="small"
-                    variant="text"
-                    @click="toggle(item)"
-                  />
-                </template>
-              </VTooltip>
+              <DsTooltipIconButton
+                aria-label="Open flight reason"
+                icon="mdi-open-in-new"
+                size="small"
+                :to="'/master-data/flight-reasons/' + item.id"
+                tooltip="Open details"
+                variant="text"
+              />
+              <DsTooltipIconButton
+                aria-label="Edit flight reason"
+                icon="mdi-pencil-outline"
+                size="small"
+                tooltip="Edit"
+                variant="text"
+                @click="edit(item)"
+              />
+              <DsConfirmIconButton
+                :action="() => toggle(item)"
+                :aria-label="item.isActive ? 'Deactivate flight reason' : 'Activate flight reason'"
+                :confirm-icon="
+                  item.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'
+                "
+                :confirm-text="item.isActive ? 'Deactivate' : 'Activate'"
+                :icon="
+                  item.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'
+                "
+                :message="
+                  item.isActive
+                    ? 'This flight reason will be hidden from active lists.'
+                    : 'This flight reason will become available in active lists.'
+                "
+                size="small"
+                :title="item.isActive ? 'Deactivate flight reason?' : 'Activate flight reason?'"
+                :tone="item.isActive ? 'warning' : 'success'"
+                :tooltip="item.isActive ? 'Deactivate' : 'Activate'"
+                variant="text"
+              />
             </div>
           </template>
           <template #detail="{ item, detail }">

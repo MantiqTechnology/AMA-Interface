@@ -10,6 +10,27 @@ export type DocumentTypeConfig = {
 
 export const documentTypes: readonly DocumentTypeConfig[] = [
   {
+    value: 'PART_CERTIFICATE',
+    label: 'Part Certificate',
+    ownerTypes: ['inventory_part', 'inventory_lot', 'inventory_serial']
+  },
+  {
+    value: 'AUTHORIZED_RELEASE_CERTIFICATE',
+    label: 'Authorized Release Certificate',
+    ownerTypes: ['inventory_lot', 'inventory_serial'],
+    mandatory: true
+  },
+  {
+    value: 'PURCHASE_ORDER_DOCUMENT',
+    label: 'Purchase Order Document',
+    ownerTypes: ['purchase_order']
+  },
+  {
+    value: 'GOODS_RECEIPT_DOCUMENT',
+    label: 'Goods Receipt Document',
+    ownerTypes: ['goods_receipt']
+  },
+  {
     value: 'AIRCRAFT_CERTIFICATE_OF_REGISTRATION',
     label: 'Certificate of Registration',
     ownerTypes: ['aircraft'],

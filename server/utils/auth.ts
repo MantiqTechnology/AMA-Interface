@@ -4,6 +4,7 @@ import {
   defaultDemoRole,
   demoRoleActorIds,
   demoRolePermissions,
+  demoRoleStationScopes,
   type DemoRole
 } from '../../shared/types/roles';
 import { DomainError } from './errors';
@@ -29,6 +30,22 @@ export function getDemoActorId(event: H3Event) {
   return demoRoleActorIds[getDemoRole(event)];
 }
 
+export function getDemoStationScope(event: H3Event) {
+  return demoRoleStationScopes[getDemoRole(event)];
+}
+
+export function requireDemoStationAccess(event: H3Event, stationCode: string) {
+  const scope = getDemoStationScope(event);
+  if (!scope.includes('ALL') && !scope.includes(stationCode)) {
+    throw new DomainError(
+      'INVENTORY_STATION_FORBIDDEN',
+      `${getDemoRole(event)} cannot access inventory at station ${stationCode}.`,
+      403,
+      { stationCode, scope }
+    );
+  }
+}
+
 export function requireDemoPermission(event: H3Event, permissionId: string) {
   const rawRole = getCookie(event, roleCookieName);
   if (rawRole !== undefined && !demoRoleSchema.safeParse(rawRole).success) {
@@ -48,4 +65,10 @@ export function requireDemoPermission(event: H3Event, permissionId: string) {
     );
   }
   return role;
+}
+
+export function hasDemoPermission(event: H3Event, permissionId: string) {
+  const role = getDemoRole(event);
+  const permissions = demoRolePermissions[role];
+  return permissions.includes('*') || permissions.includes(permissionId);
 }

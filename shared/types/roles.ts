@@ -4,7 +4,8 @@ export const demoRoles = [
   'OCC',
   'Station Admin',
   'Finance Reviewer',
-  'Maintenance Manager'
+  'Maintenance Manager',
+  'Inventory Controller'
 ] as const;
 
 export type DemoRole = (typeof demoRoles)[number];
@@ -17,7 +18,18 @@ export const demoRoleActorIds: Record<DemoRole, string> = {
   OCC: 'USR-001',
   'Station Admin': 'USR-STATION-ADMIN',
   'Finance Reviewer': 'USR-FINANCE-REVIEWER',
-  'Maintenance Manager': 'USR-MAINTENANCE-MANAGER'
+  'Maintenance Manager': 'USR-MAINTENANCE-MANAGER',
+  'Inventory Controller': 'USR-INVENTORY-CONTROLLER'
+};
+
+export const demoRoleStationScopes: Record<DemoRole, readonly string[]> = {
+  'Demo Admin': ['ALL'],
+  Director: ['ALL'],
+  OCC: ['DJJ', 'WMX'],
+  'Station Admin': ['WMX'],
+  'Finance Reviewer': ['ALL'],
+  'Maintenance Manager': ['DJJ'],
+  'Inventory Controller': ['ALL']
 };
 
 export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
@@ -34,7 +46,10 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'finance.invoice.read',
     'finance.payment.record',
     'document.read',
-    'document.verify'
+    'document.verify',
+    'inventory.read',
+    'inventory.po.approve',
+    'inventory.valuation.read'
   ],
   OCC: [
     'platform.dashboard.view',
@@ -47,7 +62,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'ticketing.sales.open',
     'ticketing.operation.update',
     'document.read',
-    'document.upload'
+    'document.upload',
+    'inventory.read'
   ],
   'Station Admin': [
     'platform.dashboard.view',
@@ -57,7 +73,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'station.operation.update',
     'ticketing.operation.update',
     'document.read',
-    'document.upload'
+    'document.upload',
+    'inventory.read'
   ],
   'Finance Reviewer': [
     'platform.dashboard.view',
@@ -67,13 +84,35 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'finance.handoff.process',
     'finance.payment.record',
     'document.read',
-    'document.verify'
+    'document.verify',
+    'inventory.read',
+    'inventory.valuation.read'
   ],
   'Maintenance Manager': [
     'platform.dashboard.view',
     'flight.read',
     'maintenance.handoff.update',
     'document.read',
-    'document.verify'
+    'document.verify',
+    'inventory.read',
+    'inventory.procurement.request',
+    'inventory.issue',
+    'inventory.repair.manage'
+  ],
+  'Inventory Controller': [
+    'platform.dashboard.view',
+    'inventory.read',
+    'inventory.catalog.manage',
+    'inventory.procurement.request',
+    'inventory.procurement.manage',
+    'inventory.receive',
+    'inventory.transfer',
+    'inventory.adjust',
+    'inventory.count',
+    'inventory.issue',
+    'inventory.repair.manage',
+    'inventory.valuation.read',
+    'document.read',
+    'document.upload'
   ]
 };

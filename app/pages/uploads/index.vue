@@ -57,9 +57,6 @@ async function uploadFile() {
 }
 
 async function deleteUpload(upload: LocalUploadDto) {
-  const confirmed = window.confirm(`Delete ${upload.originalName}?`);
-  if (!confirmed) return;
-
   errorMessage.value = '';
   deletingId.value = upload.id;
 
@@ -174,27 +171,35 @@ async function deleteUpload(upload: LocalUploadDto) {
               <td>{{ formatFileSize(upload.size) }}</td>
               <td>{{ formatDate(upload.uploadedAt) }}</td>
               <td class="text-right">
-                <VBtn
+                <DsTooltipIconButton
                   :href="upload.viewUrl"
                   icon="mdi-eye-outline"
                   rel="noopener"
                   size="small"
                   target="_blank"
+                  tooltip="View upload"
                   variant="text"
                 />
-                <VBtn
+                <DsTooltipIconButton
                   :href="upload.downloadUrl"
                   icon="mdi-download-outline"
                   size="small"
+                  tooltip="Download upload"
                   variant="text"
                 />
-                <VBtn
+                <DsConfirmIconButton
+                  :action="() => deleteUpload(upload)"
                   color="error"
+                  confirm-icon="mdi-delete-outline"
+                  confirm-text="Delete"
                   :loading="deletingId === upload.id"
                   icon="mdi-delete-outline"
+                  :message="`This will permanently delete ${upload.originalName}.`"
                   size="small"
+                  title="Delete upload?"
+                  tone="error"
+                  tooltip="Delete upload"
                   variant="text"
-                  @click="deleteUpload(upload)"
                 />
               </td>
             </tr>

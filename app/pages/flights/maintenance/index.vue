@@ -1,17 +1,38 @@
 <script setup lang="ts">
 import type { FlightMaintenanceHandoffDto } from '#shared/contracts/flight-operations';
+import type {
+  InventorySerializedPartDto,
+  InventoryStockDto,
+  InventoryWarehouseDto,
+  MaintenancePartIssueDto
+} from '#shared/features/inventory';
 import type { StationOption } from '#shared/features/operations/stations';
 
+const route = useRoute();
 const loadingId = ref('');
 const actionError = ref('');
 const selectedId = ref<string | null>(null);
+const issueDialog = ref(false);
+const issueSaving = ref(false);
+const issueForm = reactive({
+  warehouseId: '',
+  reason: '',
+  lines: [{ partId: '', quantity: 1, serialIds: [] as string[], note: '' }]
+});
 const filters = reactive({
-  search: '',
+  search: typeof route.query.search === 'string' ? route.query.search : '',
   date: '',
   stationId: '',
   serviceability: '',
   status: ''
 });
+
+watch(
+  () => route.query.search,
+  (search) => {
+    filters.search = typeof search === 'string' ? search : '';
+  }
+);
 
 const { can } = useAuthorization();
 const canApprove = computed(() => can('maintenance.handoff.update').allowed);
@@ -22,6 +43,21 @@ const { data, pending, error, refresh } = await useAsyncData('flight-maintenance
 
 const { data: stationOptions } = await useAsyncData('maintenance-station-options', () =>
   fetchApi<StationOption[]>('/api/master-data/stations/options')
+);
+const { data: issuedParts, refresh: refreshIssuedParts } = await useAsyncData(
+  'maintenance-inventory-issues',
+  () => fetchApi<MaintenancePartIssueDto[]>('/api/inventory/maintenance-issues')
+);
+const { data: inventoryStock, refresh: refreshInventoryStock } = await useAsyncData(
+  'maintenance-inventory-stock',
+  () => fetchApi<InventoryStockDto[]>('/api/inventory/stock')
+);
+const { data: inventoryWarehouses } = await useAsyncData('maintenance-inventory-warehouses', () =>
+  fetchApi<InventoryWarehouseDto[]>('/api/inventory/warehouses')
+);
+const { data: inventorySerialized, refresh: refreshInventorySerialized } = await useAsyncData(
+  'maintenance-inventory-serialized',
+  () => fetchApi<InventorySerializedPartDto[]>('/api/inventory/repairables')
 );
 
 const records = computed(() => data.value ?? []);
@@ -34,6 +70,51 @@ const drawerOpen = computed({
     if (!value) selectedId.value = null;
   }
 });
+const selectedIssues = computed(() =>
+  (issuedParts.value ?? []).filter(
+    (issue) => issue.maintenanceHandoffId === selectedRecord.value?.id
+  )
+);
+const selectedPartsValue = computed(() =>
+  selectedIssues.value
+    .filter((issue) => issue.status === 'ISSUED')
+    .reduce((total, issue) => total + (issue.totalPartsValueIdr ?? 0), 0)
+);
+const issuePartOptions = computed(() => {
+  const options = (inventoryStock.value ?? [])
+    .filter((stock) => stock.warehouseId === issueForm.warehouseId && stock.availableQuantity > 0)
+    .map(
+      (stock) =>
+        [
+          stock.partId,
+          { title: `${stock.partNumber} · ${stock.partName}`, value: stock.partId }
+        ] as const
+    );
+  return [...new Map(options).values()];
+});
+const warehouseBinIds = computed(
+  () =>
+    new Set(
+      (inventoryWarehouses.value ?? [])
+        .find((warehouse) => warehouse.id === issueForm.warehouseId)
+        ?.bins.map((bin) => bin.id) ?? []
+    )
+);
+
+function partTracking(partId: string) {
+  return (inventoryStock.value ?? []).find((stock) => stock.partId === partId)?.trackingType;
+}
+
+function serialOptions(partId: string) {
+  return (inventorySerialized.value ?? [])
+    .filter(
+      (serial) =>
+        serial.partId === partId &&
+        serial.condition === 'SERVICEABLE' &&
+        Boolean(serial.binId && warehouseBinIds.value.has(serial.binId))
+    )
+    .map((serial) => ({ title: serial.serialNumber, value: serial.id }));
+}
 
 const serviceabilityOptions = computed(() =>
   [...new Set(records.value.map((record) => record.serviceabilityStatus))].sort()
@@ -142,6 +223,50 @@ async function approve(row: FlightMaintenanceHandoffDto) {
     loadingId.value = '';
   }
 }
+
+function openIssueDialog() {
+  Object.assign(issueForm, {
+    warehouseId: '',
+    reason: '',
+    lines: [{ partId: '', quantity: 1, serialIds: [], note: '' }]
+  });
+  actionError.value = '';
+  issueDialog.value = true;
+}
+
+function addIssueLine() {
+  issueForm.lines.push({ partId: '', quantity: 1, serialIds: [], note: '' });
+}
+
+async function issueParts() {
+  if (!selectedRecord.value) return;
+  issueSaving.value = true;
+  actionError.value = '';
+  try {
+    await fetchApi('/api/inventory/maintenance-issues', {
+      method: 'POST',
+      body: {
+        maintenanceHandoffId: selectedRecord.value.id,
+        aircraftId: selectedRecord.value.aircraftId,
+        flightId: selectedRecord.value.flightId,
+        warehouseId: issueForm.warehouseId,
+        reason: issueForm.reason,
+        lines: issueForm.lines
+      }
+    });
+    issueDialog.value = false;
+    await Promise.all([
+      refreshIssuedParts(),
+      refreshInventoryStock(),
+      refreshInventorySerialized()
+    ]);
+  } catch (errorValue) {
+    actionError.value =
+      errorValue instanceof Error ? errorValue.message : 'Maintenance part issue failed';
+  } finally {
+    issueSaving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -158,9 +283,10 @@ async function approve(row: FlightMaintenanceHandoffDto) {
         </p>
       </div>
       <VSpacer />
-      <VBtn
+      <DsTooltipIconButton
         aria-label="Refresh maintenance handoffs"
         icon="mdi-refresh"
+        tooltip="Refresh maintenance handoffs"
         variant="text"
         @click="refresh"
       />
@@ -336,24 +462,31 @@ async function approve(row: FlightMaintenanceHandoffDto) {
               </VChip>
             </td>
             <td class="text-right" @click.stop>
-              <VBtn
+              <DsTooltipIconButton
                 v-if="row.flightId"
                 class="mr-1"
                 density="comfortable"
                 icon="mdi-open-in-new"
                 :aria-label="`View flight ${row.flightNumber ?? ''}`"
                 :to="`/flights/${row.flightId}`"
+                tooltip="View flight"
                 variant="text"
               />
-              <VBtn
+              <DsConfirmIconButton
                 v-if="canApproveRecord(row)"
+                :action="() => approve(row)"
                 color="success"
+                confirm-icon="mdi-check-decagram-outline"
+                confirm-text="Approve"
                 density="comfortable"
                 icon="mdi-check-decagram-outline"
                 :aria-label="`Approve maintenance handoff for ${row.flightNumber ?? row.aircraftRegistration}`"
                 :loading="loadingId === row.id"
+                :message="`Approve maintenance handoff for ${row.flightNumber ?? row.aircraftRegistration}.`"
+                title="Approve maintenance handoff?"
+                tone="success"
+                tooltip="Approve maintenance handoff"
                 variant="tonal"
-                @click="approve(row)"
               />
             </td>
           </tr>
@@ -474,6 +607,56 @@ async function approve(row: FlightMaintenanceHandoffDto) {
           </VCard>
 
           <VCard border>
+            <VCardTitle class="maintenance-section-title d-flex align-center">
+              Issued Spare Parts
+              <VSpacer />
+              <DsTooltipIconButton
+                v-if="can('inventory.issue').allowed"
+                icon="mdi-package-up"
+                tooltip="Issue spare parts"
+                variant="text"
+                @click="openIssueDialog"
+              />
+            </VCardTitle>
+            <VDivider />
+            <VCardText>
+              <VAlert
+                v-if="selectedRecord.sparePartReference"
+                class="mb-3"
+                color="info"
+                density="compact"
+                variant="tonal"
+              >
+                Legacy reference: {{ selectedRecord.sparePartReference }}
+              </VAlert>
+              <div v-for="issue in selectedIssues" :key="issue.id" class="mb-3">
+                <div class="mb-1 d-flex align-center">
+                  <strong>{{ issue.issueNumber }}</strong>
+                  <VSpacer />
+                  <DsStatusBadge :value="issue.status" />
+                </div>
+                <div v-for="line in issue.lines" :key="line.id" class="text-body-2">
+                  {{ line.partNumber }} · {{ line.quantity }}
+                  <span v-if="line.serialNumbers.length">
+                    · {{ line.serialNumbers.join(', ') }}</span>
+                </div>
+              </div>
+              <div v-if="!selectedIssues.length" class="text-body-2 text-medium-emphasis">
+                No inventory issue posted.
+              </div>
+              <VDivider class="my-3" />
+              <div class="d-flex align-center font-weight-bold">
+                <span>Calculated parts value</span>
+                <VSpacer />
+                <span>{{ money(selectedPartsValue, 'IDR') }}</span>
+              </div>
+              <div class="mt-1 text-caption text-medium-emphasis">
+                Inventory valuation only; excluded from recorded maintenance cost.
+              </div>
+            </VCardText>
+          </VCard>
+
+          <VCard border>
             <VCardTitle class="maintenance-section-title">Finance Impact</VCardTitle>
             <VDivider />
             <VCardText>
@@ -525,20 +708,115 @@ async function approve(row: FlightMaintenanceHandoffDto) {
             >
               View flight
             </VBtn>
-            <VBtn
+            <DsConfirmIconButton
               v-if="canApproveRecord(selectedRecord)"
+              :action="() => approve(selectedRecord)"
+              aria-label="Review and approve maintenance handoff"
               color="success"
-              prepend-icon="mdi-check-decagram-outline"
+              confirm-icon="mdi-check-decagram-outline"
+              confirm-text="Approve"
+              icon="mdi-check-decagram-outline"
               :loading="loadingId === selectedRecord.id"
+              :message="`Approve maintenance handoff for ${selectedRecord.flightNumber ?? selectedRecord.aircraftRegistration}.`"
+              title="Approve maintenance handoff?"
+              tone="success"
+              tooltip="Review and approve"
               variant="flat"
-              @click="approve(selectedRecord)"
-            >
-              Review & approve
-            </VBtn>
+            />
           </div>
         </div>
       </template>
     </VNavigationDrawer>
+
+    <VDialog v-model="issueDialog" max-width="760" persistent scrollable>
+      <VCard>
+        <VCardTitle>Issue maintenance parts</VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
+            {{ actionError }}
+          </VAlert>
+          <VSelect
+            v-model="issueForm.warehouseId"
+            class="mb-3"
+            item-title="warehouseCode"
+            item-value="id"
+            :items="inventoryWarehouses ?? []"
+            label="Issue warehouse"
+            variant="outlined"
+          />
+          <VTextarea
+            v-model="issueForm.reason"
+            class="mb-3"
+            label="Issue reason"
+            rows="2"
+            variant="outlined"
+          />
+          <div class="mb-2 d-flex align-center">
+            <div class="text-subtitle-2 font-weight-bold">Parts</div>
+            <VSpacer />
+            <DsTooltipIconButton
+              icon="mdi-plus"
+              tooltip="Add issue line"
+              size="small"
+              variant="tonal"
+              @click="addIssueLine"
+            />
+          </div>
+          <VRow v-for="(line, index) in issueForm.lines" :key="index" dense>
+            <VCol cols="12" md="5">
+              <VSelect
+                v-model="line.partId"
+                :items="issuePartOptions"
+                label="Part"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="6" md="2">
+              <VTextField
+                v-model.number="line.quantity"
+                label="Quantity"
+                min="1"
+                type="number"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="10" md="4">
+              <VSelect
+                v-if="partTracking(line.partId) === 'SERIAL'"
+                v-model="line.serialIds"
+                chips
+                :items="serialOptions(line.partId)"
+                label="Serial numbers"
+                multiple
+                variant="outlined"
+              />
+              <VTextField v-else v-model="line.note" label="Note" variant="outlined" />
+            </VCol>
+            <VCol class="d-flex align-center" cols="2" md="1">
+              <DsTooltipIconButton
+                :disabled="issueForm.lines.length === 1"
+                icon="mdi-delete-outline"
+                tooltip="Remove issue line"
+                variant="text"
+                @click="issueForm.lines.splice(index, 1)"
+              />
+            </VCol>
+          </VRow>
+        </VCardText>
+        <VDivider />
+        <VCardActions>
+          <VSpacer />
+          <VBtn :disabled="issueSaving" text="Cancel" variant="text" @click="issueDialog = false" />
+          <VBtn
+            :loading="issueSaving"
+            prepend-icon="mdi-package-up"
+            text="Issue parts"
+            @click="issueParts"
+          />
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </VContainer>
 </template>
 

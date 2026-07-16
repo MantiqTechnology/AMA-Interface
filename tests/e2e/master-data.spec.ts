@@ -165,6 +165,10 @@ async function selectFirstDropdownOption(page: Page, dropdown: Locator) {
   await dropdown.press('ArrowDown');
   await dropdown.press('Enter');
   await expect(dropdown).not.toHaveValue(/undefined/i);
+  if (await menu.isVisible()) {
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+  }
 }
 
 test.describe('feature-owned master data pages', () => {
@@ -221,6 +225,83 @@ test.describe('feature-owned master data pages', () => {
     const capacity = await openCreateDialog(page, 'flight-capacity-profiles');
     await expect(capacity.getByLabel('Aircraft', { exact: true })).toBeVisible();
     await expect(capacity.getByLabel('Route', { exact: true })).toBeVisible();
+  });
+
+  test('aircraft detail presents an operational profile', async ({ page }) => {
+    await page.goto('/master-data/aircraft', { waitUntil: 'networkidle' });
+    await waitForNuxtReady(page);
+    await page.clock.setFixedTime(new Date('2026-07-16T00:00:00.000Z'));
+    await page
+      .getByRole('row')
+      .filter({ hasText: 'PK-AMA' })
+      .getByRole('link', { name: 'Open details' })
+      .click();
+
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'PK-AMA', exact: true })
+    ).toBeVisible();
+    await expect(page.getByText('Aircraft Operational Profile', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Representative aircraft image/)).toBeVisible();
+    await expect(page.getByText(/DJJ - Sentani \/ Jayapura Demo Station/).first()).toBeVisible();
+    await expect(page.getByText('Operational readiness', { exact: true })).toBeVisible();
+    await expect(page.getByText('Review required', { exact: true })).toBeVisible();
+    await expect(page.getByText(/^8 configured/)).toBeVisible();
+    await expect(page.getByText('Upcoming flight assignment', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'AMA-20260717-008' })).toBeVisible();
+    await expect(page.getByText('Maintenance snapshot', { exact: true })).toBeVisible();
+    const maintenanceLink = page.getByRole('link', { name: 'Open Maintenance Handoff' });
+    await expect(maintenanceLink).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit aircraft' })).toBeVisible();
+
+    await maintenanceLink.click();
+    await expect(page.getByLabel('Search flight or aircraft', { exact: true })).toHaveValue(
+      'PK-AMA'
+    );
+  });
+
+  test('aircraft profile handles image fallback, empty assignment, and not found on mobile', async ({
+    page
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/master-data/aircraft/ac-pk-amc', { waitUntil: 'networkidle' });
+    await waitForNuxtReady(page);
+
+    await expect(page.getByRole('img', { name: 'PAC 750XL' })).toBeVisible();
+    await expect(page.getByText('No upcoming flight assignment', { exact: true })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+      )
+    ).toBe(false);
+
+    await page.goto('/master-data/aircraft/not-a-real-aircraft', { waitUntil: 'networkidle' });
+    await expect(page.getByText('Aircraft profile is unavailable', { exact: true })).toBeVisible();
+  });
+
+  test('master data row actions expose tooltips and confirm status changes', async ({ page }) => {
+    await page.goto('/master-data/currencies', { waitUntil: 'networkidle' });
+    await waitForNuxtReady(page);
+
+    const firstRow = page.getByRole('row').filter({ hasText: 'IDR' }).first();
+    await expect(firstRow.getByRole('link', { name: 'Open details' })).toBeVisible();
+    await expect(firstRow.getByRole('button', { name: 'Edit' })).toBeVisible();
+
+    const deactivate = firstRow.getByRole('button', { name: 'Deactivate' });
+    await expect(deactivate).toBeVisible();
+    await deactivate.hover();
+    await expect(
+      page.locator('.v-overlay__content').filter({ hasText: 'Deactivate' }).first()
+    ).toBeVisible();
+    await deactivate.click();
+
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Deactivate record?' });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText('This record will be hidden from active lists.', { exact: true })
+    ).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(firstRow.getByText('Active', { exact: true })).toBeVisible();
   });
 
   test('flight reasons use the expandable common table', async ({ page }) => {
@@ -288,5 +369,38 @@ test.describe('feature-owned master data pages', () => {
     await customerDialog.getByRole('button', { name: 'Save customers' }).click();
     await expect(customerDialog).toBeHidden();
     await expect(page.getByText(`${code} - Inline E2E Customer`, { exact: true })).toBeVisible();
+  });
+
+  test('upload delete action uses a confirmation dialog', async ({ page }) => {
+    await page.goto('/uploads', { waitUntil: 'networkidle' });
+    await waitForNuxtReady(page);
+
+    const uploadName = `delete-confirm-${Date.now()}.txt`;
+    await page.locator('input[type="file"]').setInputFiles({
+      name: uploadName,
+      mimeType: 'text/plain',
+      buffer: Buffer.from('delete confirmation fixture')
+    });
+    await page.getByRole('button', { name: 'Upload', exact: true }).click();
+
+    const row = page.getByRole('row').filter({ hasText: uploadName });
+    await expect(row).toBeVisible();
+    await row.getByRole('button', { name: 'Delete upload' }).click();
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Delete upload?' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/This will permanently delete/)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(row).toBeVisible();
+
+    await row.getByRole('button', { name: 'Delete upload' }).click();
+    await page
+      .getByRole('dialog')
+      .filter({ hasText: 'Delete upload?' })
+      .getByRole('button', {
+        name: 'Delete'
+      })
+      .click();
+    await expect(row).toBeHidden();
   });
 });

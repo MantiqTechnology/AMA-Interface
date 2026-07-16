@@ -1,5 +1,5 @@
 import type { DemoSessionDto } from '#shared/contracts/auth';
-import { demoRoles, type DemoRole } from '#shared/types/roles';
+import { demoRoles, demoRoleStationScopes, type DemoRole } from '#shared/types/roles';
 
 const personaDetails: Record<DemoRole, { name: string; label: string; stationScope: string[] }> = {
   'Demo Admin': {
@@ -22,7 +22,12 @@ const personaDetails: Record<DemoRole, { name: string; label: string; stationSco
   'Maintenance Manager': {
     name: 'AMA Maintenance Manager',
     label: 'Maintenance review',
-    stationScope: ['DJJ']
+    stationScope: [...demoRoleStationScopes['Maintenance Manager']]
+  },
+  'Inventory Controller': {
+    name: 'AMA Inventory Controller',
+    label: 'Inventory and procurement control',
+    stationScope: [...demoRoleStationScopes['Inventory Controller']]
   }
 };
 

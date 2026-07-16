@@ -95,10 +95,11 @@ function formatDate(value: string | null) {
         </td>
         <td>{{ formatDate(flight.scheduledDepartureAt) }}</td>
         <td class="text-right">
-          <VBtn
+          <DsTooltipIconButton
             density="comfortable"
             icon="mdi-open-in-new"
             :to="`/flights/${flight.id}`"
+            tooltip="Open flight"
             variant="text"
           />
         </td>

@@ -341,18 +341,61 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     documentNumber: 'SIM-RTE-DJJ-WMX',
     issuer: 'AMA Demo OCC',
     expiresAt: '2026-07-16'
+  },
+  {
+    ownerType: 'inventory_part',
+    ownerId: 'inv-part-filter-pc6',
+    documentType: 'PART_CERTIFICATE',
+    title: 'PC-6 Oil Filter Authorized Release',
+    documentNumber: 'ARC-DEMO-PC6-260701',
+    issuer: 'Demo Aviation Components',
+    expiresAt: '2028-06-19'
+  },
+  {
+    ownerType: 'inventory_lot',
+    ownerId: 'inv-lot-filter-260701',
+    documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
+    title: 'Filter Lot Authorized Release',
+    documentNumber: 'ARC-DEMO-PC6-260701',
+    issuer: 'Demo Aviation Components',
+    expiresAt: '2028-06-19'
+  },
+  {
+    ownerType: 'inventory_serial',
+    ownerId: 'inv-serial-brake-001',
+    documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
+    title: 'Brake Assembly Authorized Release',
+    documentNumber: 'ARC-DEMO-BRAKE-260701',
+    issuer: 'Demo Aviation Components',
+    expiresAt: '2028-06-19'
+  },
+  {
+    ownerType: 'inventory_serial',
+    ownerId: 'inv-serial-starter-installed',
+    documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
+    title: 'Starter Generator Authorized Release',
+    documentNumber: 'ARC-DEMO-SG-001',
+    issuer: 'Demo Aero Electric',
+    expiresAt: '2028-06-19'
   }
 ];
 
 async function ensureDemoDocuments(manifest: DocumentManifest) {
-  if (process.env.NODE_ENV === 'test' || manifest.documents.length > 0) {
+  if (process.env.NODE_ENV === 'test') {
     return manifest;
   }
 
   const timestamp = new Date().toISOString();
-  const documents: MasterDocument[] = [];
+  const documents: MasterDocument[] = [...manifest.documents];
+  const existingSeeds = new Set(
+    manifest.documents.map(
+      (document) => `${document.ownerType}:${document.ownerId}:${document.documentType}`
+    )
+  );
 
   for (const seed of demoDocumentSeeds) {
+    const seedKey = `${seed.ownerType}:${seed.ownerId}:${seed.documentType}`;
+    if (existingSeeds.has(seedKey)) continue;
     const type = getDocumentTypeConfig(seed.documentType);
     const upload = await saveLocalUpload({
       originalName: `${seed.documentNumber}.pdf`,
@@ -389,8 +432,10 @@ async function ensureDemoDocuments(manifest: DocumentManifest) {
       verifiedBy: seed.verificationStatus === 'PENDING_VERIFICATION' ? undefined : DEMO_USER,
       verifiedAt: seed.verificationStatus === 'PENDING_VERIFICATION' ? undefined : timestamp
     });
+    existingSeeds.add(seedKey);
   }
 
+  if (documents.length === manifest.documents.length) return manifest;
   const seeded = { documents };
   await writeManifest(seeded);
   return seeded;

@@ -173,6 +173,40 @@ describe('database migrations', () => {
     sqlite.close();
   });
 
+  it('adds station ownership to inventory repair orders created by an older schema', () => {
+    const sqlite = new Database(':memory:');
+
+    runMigrations(sqlite);
+    sqlite.exec('DROP TABLE inventory_repair_orders');
+    sqlite.exec(`CREATE TABLE inventory_repair_orders (
+      id TEXT PRIMARY KEY,
+      repair_number TEXT NOT NULL UNIQUE,
+      serial_id TEXT NOT NULL,
+      vendor_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      expected_return_at TEXT,
+      status TEXT NOT NULL,
+      source_repair_cost_minor INTEGER NOT NULL DEFAULT 0,
+      currency_id TEXT,
+      exchange_rate_to_idr_micros INTEGER NOT NULL DEFAULT 1000000,
+      base_repair_cost_idr INTEGER NOT NULL DEFAULT 0,
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+
+    runMigrations(sqlite);
+
+    expect(
+      (
+        sqlite.prepare('PRAGMA table_info(inventory_repair_orders)').all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name)
+    ).toContain('station_id');
+    sqlite.close();
+  });
+
   it('keeps manifest child foreign keys pointing at flight_manifests', () => {
     const sqlite = new Database(':memory:');
 

@@ -76,8 +76,10 @@ async function approveCost(row: FlightStationCostDto) {
         </p>
       </div>
       <VSpacer />
-      <VBtn
+      <DsTooltipIconButton
+        aria-label="Refresh station operations"
         icon="mdi-refresh"
+        tooltip="Refresh station operations"
         variant="text"
         @click="
           refreshServices();
@@ -130,21 +132,28 @@ async function approveCost(row: FlightStationCostDto) {
                 <td>{{ row.referenceRate ?? '-' }}</td>
                 <td><FlightsFlightStatusChip :status="row.status" /></td>
                 <td class="text-right">
-                  <VBtn
+                  <DsTooltipIconButton
                     class="mr-1"
                     density="comfortable"
                     icon="mdi-open-in-new"
                     :to="`/flights/${row.flightId}`"
+                    tooltip="View flight"
                     variant="text"
                   />
-                  <VBtn
+                  <DsConfirmIconButton
                     v-if="row.status === 'REQUESTED'"
+                    :action="() => confirmService(row)"
                     color="success"
+                    confirm-icon="mdi-check"
+                    confirm-text="Confirm"
                     density="comfortable"
                     icon="mdi-check"
                     :loading="loadingId === row.id"
+                    :message="`Confirm station service for ${row.flightNumber}.`"
+                    title="Confirm station service?"
+                    tone="success"
+                    tooltip="Confirm service"
                     variant="tonal"
-                    @click="confirmService(row)"
                   />
                 </td>
               </tr>
@@ -183,22 +192,29 @@ async function approveCost(row: FlightStationCostDto) {
                 <td>{{ money(row.amount, row.currencyCode) }}</td>
                 <td><FlightsFlightStatusChip :status="row.status" /></td>
                 <td class="text-right">
-                  <VBtn
+                  <DsTooltipIconButton
                     v-if="row.flightId"
                     class="mr-1"
                     density="comfortable"
                     icon="mdi-open-in-new"
                     :to="`/flights/${row.flightId}`"
+                    tooltip="View flight"
                     variant="text"
                   />
-                  <VBtn
+                  <DsConfirmIconButton
                     v-if="row.status !== 'APPROVED'"
+                    :action="() => approveCost(row)"
                     color="success"
+                    confirm-icon="mdi-check-decagram-outline"
+                    confirm-text="Approve"
                     density="comfortable"
                     icon="mdi-check-decagram-outline"
                     :loading="loadingId === row.id"
+                    :message="`Approve ${money(row.amount, row.currencyCode)} station cost for ${row.flightNumber ?? row.stationCode}.`"
+                    title="Approve station cost?"
+                    tone="success"
+                    tooltip="Approve station cost"
                     variant="tonal"
-                    @click="approveCost(row)"
                   />
                 </td>
               </tr>

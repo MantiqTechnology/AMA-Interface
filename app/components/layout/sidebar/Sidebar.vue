@@ -172,6 +172,67 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
+      label: 'Inventory',
+      icon: 'mdi-package-variant-closed',
+      visible: can('inventory.read').allowed,
+      children: [
+        {
+          label: 'Dashboard',
+          to: '/inventory',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Stock',
+          to: '/inventory/stock',
+          icon: 'mdi-layers-triple-outline',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Parts',
+          to: '/inventory/parts',
+          icon: 'mdi-cog-outline',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Warehouses & Bins',
+          to: '/inventory/warehouses',
+          icon: 'mdi-warehouse',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Purchase Requests',
+          to: '/inventory/purchase-requests',
+          icon: 'mdi-clipboard-text-outline',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Purchase Orders',
+          to: '/inventory/purchase-orders',
+          icon: 'mdi-file-sign',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Receipts',
+          to: '/inventory/receipts',
+          icon: 'mdi-truck-check-outline',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Movements & Counts',
+          to: '/inventory/movements',
+          icon: 'mdi-swap-horizontal',
+          visible: can('inventory.read').allowed
+        },
+        {
+          label: 'Repairables',
+          to: '/inventory/repairables',
+          icon: 'mdi-wrench-cog-outline',
+          visible: can('inventory.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
+    {
       label: 'Ticketing',
       icon: 'mdi-ticket-confirmation-outline',
       visible: true,

@@ -7,9 +7,21 @@ const normalizedValue = computed(() => props.value.toLowerCase());
 
 const color = computed(() => {
   if (
-    ['pass', 'paid', 'approved', 'completed', 'available', 'closed', 'confirmed'].includes(
-      normalizedValue.value
-    )
+    [
+      'pass',
+      'paid',
+      'approved',
+      'completed',
+      'available',
+      'closed',
+      'confirmed',
+      'serviceable',
+      'posted',
+      'received',
+      'issued',
+      'ordered',
+      'verified'
+    ].includes(normalizedValue.value)
   ) {
     return 'success';
   }
@@ -23,15 +35,31 @@ const color = computed(() => {
       'in_progress',
       'draft',
       'scheduled',
-      'airborne'
+      'airborne',
+      'quarantine',
+      'in_repair',
+      'partially_received',
+      'partially_ordered',
+      'pending_approval',
+      'counted'
     ].includes(normalizedValue.value)
   ) {
     return 'warning';
   }
   if (
-    ['critical', 'blocker', 'blocked', 'rejected', 'grounded', 'cancelled', 'aog'].includes(
-      normalizedValue.value
-    )
+    [
+      'critical',
+      'blocker',
+      'blocked',
+      'rejected',
+      'grounded',
+      'cancelled',
+      'aog',
+      'unserviceable',
+      'scrapped',
+      'expired',
+      'reversed'
+    ].includes(normalizedValue.value)
   ) {
     return 'danger';
   }

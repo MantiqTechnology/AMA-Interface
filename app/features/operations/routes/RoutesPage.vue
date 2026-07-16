@@ -97,16 +97,36 @@ async function toggle(route: RouteDto) {
                 </VChip>
               </td>
               <td class="text-right">
-                <VBtn
+                <DsTooltipIconButton
                   icon="mdi-open-in-new"
                   :to="`/master-data/routes/${route.id}`"
+                  tooltip="Open details"
                   variant="text"
-                /><VBtn icon="mdi-pencil-outline" variant="text" @click="edit(route)" /><VBtn
+                />
+                <DsTooltipIconButton
+                  icon="mdi-pencil-outline"
+                  tooltip="Edit"
+                  variant="text"
+                  @click="edit(route)"
+                />
+                <DsConfirmIconButton
+                  :action="() => toggle(route)"
+                  :confirm-icon="
+                    route.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'
+                  "
+                  :confirm-text="route.isActive ? 'Deactivate' : 'Activate'"
                   :icon="
                     route.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'
                   "
+                  :message="
+                    route.isActive
+                      ? 'This record will be hidden from active lists.'
+                      : 'This record will become available in active lists.'
+                  "
+                  :title="route.isActive ? 'Deactivate record?' : 'Activate record?'"
+                  :tone="route.isActive ? 'warning' : 'success'"
+                  :tooltip="route.isActive ? 'Deactivate' : 'Activate'"
                   variant="text"
-                  @click="toggle(route)"
                 />
               </td>
             </tr>

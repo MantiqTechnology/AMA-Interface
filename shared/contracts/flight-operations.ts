@@ -608,6 +608,9 @@ export const listFlightOperationsQuerySchema = z.object({
   customerId: z.string().trim().optional(),
   dateFrom: z.string().trim().optional(),
   dateTo: z.string().trim().optional(),
+  scheduledFrom: z.string().datetime({ offset: true }).optional(),
+  excludeTerminal: z.coerce.boolean().optional(),
+  sortDirection: z.enum(['asc', 'desc']).optional(),
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0)
 });

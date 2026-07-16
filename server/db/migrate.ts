@@ -16,6 +16,11 @@ import {
   cargoMasterDataDropStatements
 } from './migrations/master-data/cargo';
 import { ticketingDropStatements, ticketingStatements } from './migrations/ticketing';
+import {
+  inventoryDropStatements,
+  inventoryImmutabilityStatements,
+  inventoryStatements
+} from './migrations/inventory';
 
 type FlightOperationLookupSeed = {
   table: string;
@@ -618,6 +623,7 @@ const createStatements = [
     updated_at TEXT NOT NULL
   )`,
   ...ticketingStatements,
+  ...inventoryStatements,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_due_at ON invoices(due_at)`,
@@ -633,6 +639,7 @@ const createStatements = [
 ];
 
 const dropStatements = [
+  ...inventoryDropStatements,
   ...ticketingDropStatements,
   'DROP TABLE IF EXISTS flight_finance_handoffs',
   'DROP TABLE IF EXISTS flight_maintenance_handoffs',
@@ -770,6 +777,37 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'aircraft', 'last_maintenance_check_at', 'TEXT');
     ensureColumn(sqlite, 'aircraft', 'next_maintenance_due_at', 'TEXT');
     ensureColumn(sqlite, 'aircraft', 'serviceability_note', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'inventory_movements',
+      'destination_station_id',
+      'TEXT REFERENCES stations(id)'
+    );
+    ensureColumn(sqlite, 'inventory_movements', 'is_finalized', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'inventory_repair_orders', 'station_id', 'TEXT REFERENCES stations(id)');
+    sqlite.exec(
+      `UPDATE inventory_repair_orders
+       SET station_id = COALESCE(
+         (SELECT warehouse.station_id
+          FROM inventory_serialized_parts serial
+          JOIN inventory_bins bin ON bin.id = serial.bin_id
+          JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
+          WHERE serial.id = inventory_repair_orders.serial_id),
+         (SELECT aircraft.current_station_id
+          FROM inventory_serialized_parts serial
+          JOIN aircraft ON aircraft.id = serial.aircraft_id
+          WHERE serial.id = inventory_repair_orders.serial_id),
+         (SELECT movement.station_id
+          FROM inventory_movements movement
+          WHERE movement.source_type = 'REPAIR_ORDER'
+            AND movement.source_id = inventory_repair_orders.id
+          ORDER BY movement.rowid DESC LIMIT 1)
+       )
+       WHERE station_id IS NULL`
+    );
+    for (const statement of inventoryImmutabilityStatements) {
+      sqlite.exec(statement);
+    }
     ensureColumn(
       sqlite,
       'crews',

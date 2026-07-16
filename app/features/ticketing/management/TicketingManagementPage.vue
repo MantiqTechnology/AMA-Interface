@@ -154,18 +154,20 @@ async function routeSaved() {
                     </VChip>
                   </td>
                   <td class="text-right text-no-wrap">
-                    <VBtn
+                    <DsTooltipIconButton
                       v-if="routeRate(route, 'PASSENGER')"
                       aria-label="Edit passenger rate"
                       icon="mdi-account-cash-outline"
                       :to="`/master-data/rates/${routeRate(route, 'PASSENGER')!.id}`"
+                      tooltip="Edit passenger rate"
                       variant="text"
                     />
-                    <VBtn
+                    <DsTooltipIconButton
                       v-if="routeRate(route, 'CARGO')"
                       aria-label="Edit cargo rate"
                       icon="mdi-package-variant-closed-edit"
                       :to="`/master-data/rates/${routeRate(route, 'CARGO')!.id}`"
+                      tooltip="Edit cargo rate"
                       variant="text"
                     />
                   </td>

@@ -27,12 +27,18 @@ const props = defineProps<{
 }>();
 
 const { can } = useAuthorization();
-const canManageDocuments = computed(() => !props.readonly && can('platform.module.manage').allowed);
+const canUploadDocuments = computed(
+  () => !props.readonly && (can('document.upload').allowed || can('platform.module.manage').allowed)
+);
+const canVerifyDocuments = computed(
+  () => !props.readonly && (can('document.verify').allowed || can('platform.module.manage').allowed)
+);
 const dialog = ref(false);
 const submitting = ref(false);
 const selectedFile = ref<File | File[] | null>(null);
 const supersedingDocument = ref<MasterDocumentDto | null>(null);
 const errorMessage = ref('');
+const rejectionReason = ref('');
 
 const typeOptions = computed(() =>
   documentTypesForOwner(props.ownerType).map((item) => ({
@@ -247,14 +253,15 @@ async function verify(document: MasterDocumentDto) {
   await refresh();
 }
 
-async function reject(document: MasterDocumentDto) {
-  const reason = window.prompt('Rejection reason');
-  if (!reason) return;
+async function reject(document: MasterDocumentDto, reason: string) {
+  const rejectionReasonText = reason.trim();
+  if (!rejectionReasonText) return;
 
   await fetchApi<MasterDocumentDto>(`/api/documents/${document.id}/reject`, {
     method: 'POST',
-    body: { rejectionReason: reason }
+    body: { rejectionReason: rejectionReasonText }
   });
+  rejectionReason.value = '';
   await refresh();
 }
 </script>
@@ -288,7 +295,7 @@ async function reject(document: MasterDocumentDto) {
       </VCard>
       <VSpacer />
       <VBtn
-        v-if="canManageDocuments"
+        v-if="canUploadDocuments"
         color="primary"
         prepend-icon="mdi-file-upload-outline"
         @click="openCreate"
@@ -359,42 +366,94 @@ async function reject(document: MasterDocumentDto) {
                 <DocumentStatusBadge :value="document.visibility" kind="visibility" />
               </td>
               <td class="text-right">
-                <VBtn
+                <DsTooltipIconButton
+                  aria-label="View document"
                   :disabled="!document.upload"
                   :href="document.upload?.viewUrl"
                   icon="mdi-eye-outline"
                   rel="noopener"
                   size="small"
                   target="_blank"
+                  tooltip="View document"
                   variant="text"
                 />
-                <VBtn
+                <DsTooltipIconButton
+                  aria-label="Download document"
                   :disabled="!document.upload"
                   :href="document.upload?.downloadUrl"
                   icon="mdi-download-outline"
                   size="small"
+                  tooltip="Download document"
                   variant="text"
                 />
-                <VBtn
-                  v-if="canManageDocuments && document.verificationStatus !== 'VERIFIED'"
+                <DsConfirmIconButton
+                  v-if="canVerifyDocuments && document.verificationStatus !== 'VERIFIED'"
+                  :action="() => verify(document)"
+                  aria-label="Verify document"
                   color="success"
+                  confirm-icon="mdi-check-decagram-outline"
+                  confirm-text="Verify"
                   icon="mdi-check-decagram-outline"
+                  message="This document will be marked as verified for its owner."
                   size="small"
+                  title="Verify document?"
+                  tone="success"
+                  tooltip="Verify document"
                   variant="text"
-                  @click="verify(document)"
                 />
-                <VBtn
-                  v-if="canManageDocuments && document.verificationStatus !== 'REJECTED'"
+                <DsConfirmIconButton
+                  v-if="canVerifyDocuments && document.verificationStatus !== 'REJECTED'"
+                  :action="() => reject(document, rejectionReason)"
+                  aria-label="Reject document"
                   color="error"
+                  :confirm-disabled="!rejectionReason.trim()"
+                  confirm-icon="mdi-close-octagon-outline"
+                  confirm-text="Reject"
                   icon="mdi-close-octagon-outline"
+                  max-width="520"
+                  persistent
                   size="small"
+                  title="Reject document?"
+                  tone="error"
+                  tooltip="Reject document"
                   variant="text"
-                  @click="reject(document)"
-                />
-                <VBtn
-                  v-if="canManageDocuments && document.lifecycleStatus !== 'SUPERSEDED'"
+                >
+                  <VTextField
+                    v-model="rejectionReason"
+                    autofocus
+                    label="Rejection reason"
+                    variant="outlined"
+                  />
+                  <template #actions="{ cancel, confirm, loading }">
+                    <VBtn
+                      :disabled="loading"
+                      variant="text"
+                      @click="
+                        () => {
+                          rejectionReason = '';
+                          cancel();
+                        }
+                      "
+                    >
+                      Cancel
+                    </VBtn>
+                    <VBtn
+                      color="error"
+                      :disabled="!rejectionReason.trim()"
+                      :loading="loading"
+                      prepend-icon="mdi-close-octagon-outline"
+                      @click="confirm"
+                    >
+                      Reject
+                    </VBtn>
+                  </template>
+                </DsConfirmIconButton>
+                <DsTooltipIconButton
+                  v-if="canUploadDocuments && document.lifecycleStatus !== 'SUPERSEDED'"
+                  aria-label="Upload new document version"
                   icon="mdi-file-replace-outline"
                   size="small"
+                  tooltip="Upload new version"
                   variant="text"
                   @click="openSupersede(document)"
                 />

@@ -12,9 +12,6 @@ const selectedBooking = ref<CargoBookingDto | null>(null);
 const deliveredTo = ref('');
 const submitting = ref(false);
 const actionError = ref('');
-const decisionOpen = ref(false);
-const decisionBooking = ref<CargoBookingDto | null>(null);
-const decision = ref<'APPROVE' | 'REJECT'>('APPROVE');
 const decisionNote = ref('');
 
 function listQuery() {
@@ -63,25 +60,17 @@ async function deliver() {
   }
 }
 
-function openDecision(booking: CargoBookingDto, nextDecision: 'APPROVE' | 'REJECT') {
-  decisionBooking.value = booking;
-  decision.value = nextDecision;
-  decisionNote.value = '';
-  actionError.value = '';
-  decisionOpen.value = true;
-}
-
-async function submitDecision() {
-  const requestId = decisionBooking.value?.refundRequest?.id;
+async function submitDecision(booking: CargoBookingDto, nextDecision: 'APPROVE' | 'REJECT') {
+  const requestId = booking.refundRequest?.id;
   if (!requestId || decisionNote.value.trim().length < 3) return;
   submitting.value = true;
   actionError.value = '';
   try {
     await fetchApi<TicketRefundRequestDto>(`/api/ticketing/refund-requests/${requestId}/decision`, {
       method: 'PATCH',
-      body: { decision: decision.value, note: decisionNote.value }
+      body: { decision: nextDecision, note: decisionNote.value }
     });
-    decisionOpen.value = false;
+    decisionNote.value = '';
     await refresh();
   } catch (error) {
     actionError.value = error instanceof Error ? error.message : 'Refund decision failed.';
@@ -219,13 +208,14 @@ async function submitDecision() {
                 <span v-else class="text-text-secondary">-</span>
               </td>
               <td class="text-right text-no-wrap">
-                <VBtn
+                <DsTooltipIconButton
                   aria-label="Download AWB PDF"
                   icon="mdi-file-pdf-box"
+                  tooltip="Download AWB PDF"
                   variant="text"
                   @click="downloadCargoWaybill(booking)"
                 />
-                <VBtn
+                <DsTooltipIconButton
                   v-if="booking.status === 'BOOKED'"
                   aria-label="Record proof of delivery"
                   :disabled="
@@ -233,25 +223,110 @@ async function submitDecision() {
                       ['REQUESTED', 'APPROVED'].includes(booking.refundRequest?.status ?? '')
                   "
                   icon="mdi-package-variant-closed-check"
+                  tooltip="Record proof of delivery"
                   variant="text"
                   @click="openDelivery(booking)"
                 />
-                <VBtn
+                <DsConfirmIconButton
                   v-if="booking.refundRequest?.status === 'REQUESTED'"
+                  :action="() => submitDecision(booking, 'APPROVE')"
                   aria-label="Approve cargo refund"
                   color="success"
+                  :confirm-disabled="decisionNote.trim().length < 3"
+                  confirm-icon="mdi-check-circle-outline"
+                  confirm-text="Approve refund"
                   icon="mdi-check-circle-outline"
+                  max-width="560"
+                  persistent
+                  title="Approve cargo refund?"
+                  tone="success"
+                  tooltip="Approve cargo refund"
                   variant="text"
-                  @click="openDecision(booking, 'APPROVE')"
-                />
-                <VBtn
+                >
+                  <p class="mb-2 font-weight-medium">{{ booking.id }} · {{ booking.senderName }}</p>
+                  <p class="mb-4 text-text-secondary">{{ booking.refundRequest.reason }}</p>
+                  <VTextarea
+                    v-model="decisionNote"
+                    label="Decision note"
+                    :rules="[
+                      (value: string) => value.trim().length >= 3 || 'Enter a decision note.'
+                    ]"
+                    variant="outlined"
+                  />
+                  <template #actions="{ cancel, confirm, loading }">
+                    <VBtn
+                      :disabled="loading"
+                      variant="text"
+                      @click="
+                        () => {
+                          decisionNote = '';
+                          cancel();
+                        }
+                      "
+                    >
+                      Cancel
+                    </VBtn>
+                    <VBtn
+                      color="success"
+                      :disabled="decisionNote.trim().length < 3"
+                      :loading="loading || submitting"
+                      prepend-icon="mdi-check"
+                      @click="confirm"
+                    >
+                      Approve refund
+                    </VBtn>
+                  </template>
+                </DsConfirmIconButton>
+                <DsConfirmIconButton
                   v-if="booking.refundRequest?.status === 'REQUESTED'"
+                  :action="() => submitDecision(booking, 'REJECT')"
                   aria-label="Reject cargo refund"
                   color="error"
+                  :confirm-disabled="decisionNote.trim().length < 3"
+                  confirm-icon="mdi-close-circle-outline"
+                  confirm-text="Reject refund"
                   icon="mdi-close-circle-outline"
+                  max-width="560"
+                  persistent
+                  title="Reject cargo refund?"
+                  tone="error"
+                  tooltip="Reject cargo refund"
                   variant="text"
-                  @click="openDecision(booking, 'REJECT')"
-                />
+                >
+                  <p class="mb-2 font-weight-medium">{{ booking.id }} · {{ booking.senderName }}</p>
+                  <p class="mb-4 text-text-secondary">{{ booking.refundRequest.reason }}</p>
+                  <VTextarea
+                    v-model="decisionNote"
+                    label="Decision note"
+                    :rules="[
+                      (value: string) => value.trim().length >= 3 || 'Enter a decision note.'
+                    ]"
+                    variant="outlined"
+                  />
+                  <template #actions="{ cancel, confirm, loading }">
+                    <VBtn
+                      :disabled="loading"
+                      variant="text"
+                      @click="
+                        () => {
+                          decisionNote = '';
+                          cancel();
+                        }
+                      "
+                    >
+                      Cancel
+                    </VBtn>
+                    <VBtn
+                      color="error"
+                      :disabled="decisionNote.trim().length < 3"
+                      :loading="loading || submitting"
+                      prepend-icon="mdi-close"
+                      @click="confirm"
+                    >
+                      Reject refund
+                    </VBtn>
+                  </template>
+                </DsConfirmIconButton>
               </td>
             </tr>
             <tr v-if="bookings.length === 0">
@@ -290,41 +365,6 @@ async function submitDecision() {
             @click="deliver"
           >
             Confirm delivery
-          </VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
-
-    <VDialog v-model="decisionOpen" max-width="560">
-      <VCard>
-        <VCardTitle>{{ decision === 'APPROVE' ? 'Approve' : 'Reject' }} cargo refund</VCardTitle>
-        <VDivider />
-        <VCardText>
-          <p class="mb-2 font-weight-medium">
-            {{ decisionBooking?.id }} · {{ decisionBooking?.senderName }}
-          </p>
-          <p class="mb-4 text-text-secondary">
-            {{ decisionBooking?.refundRequest?.reason }}
-          </p>
-          <VTextarea
-            v-model="decisionNote"
-            label="Decision note"
-            :rules="[(value: string) => value.trim().length >= 3 || 'Enter a decision note.']"
-            variant="outlined"
-          />
-        </VCardText>
-        <VDivider />
-        <VCardActions>
-          <VSpacer />
-          <VBtn variant="text" @click="decisionOpen = false">Cancel</VBtn>
-          <VBtn
-            :color="decision === 'APPROVE' ? 'success' : 'error'"
-            :disabled="decisionNote.trim().length < 3"
-            :loading="submitting"
-            :prepend-icon="decision === 'APPROVE' ? 'mdi-check' : 'mdi-close'"
-            @click="submitDecision"
-          >
-            {{ decision === 'APPROVE' ? 'Approve refund' : 'Reject refund' }}
           </VBtn>
         </VCardActions>
       </VCard>

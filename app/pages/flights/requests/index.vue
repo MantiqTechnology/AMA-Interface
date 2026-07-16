@@ -158,25 +158,33 @@ async function submitRequest(id: string) {
             <td><FlightsFlightStatusChip :status="request.priority" /></td>
             <td><FlightsFlightStatusChip :status="request.status" /></td>
             <td class="text-right">
-              <VBtn
+              <DsTooltipIconButton
                 v-if="canEdit(request)"
                 :aria-label="`Edit ${request.requestNumber}`"
                 icon="mdi-pencil-outline"
                 :to="`/flights/requests/${request.id}/edit`"
+                tooltip="Edit request"
                 variant="text"
               />
-              <VBtn
+              <DsConfirmIconButton
                 v-if="request.status === 'DRAFT'"
+                :action="() => submitRequest(request.id)"
                 :aria-label="`Submit ${request.requestNumber}`"
                 color="secondary"
+                confirm-icon="mdi-send-outline"
+                confirm-text="Submit"
                 icon="mdi-send-outline"
+                :message="`Submit ${request.requestNumber} for operational review.`"
+                title="Submit flight request?"
+                tone="secondary"
+                tooltip="Submit request"
                 variant="tonal"
-                @click="submitRequest(request.id)"
               />
-              <VBtn
+              <DsTooltipIconButton
                 :aria-label="`Open ${request.requestNumber}`"
                 icon="mdi-open-in-new"
                 :to="`/flights/requests/${request.id}`"
+                tooltip="Open request"
                 variant="text"
               />
             </td>

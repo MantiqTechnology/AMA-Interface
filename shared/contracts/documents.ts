@@ -12,7 +12,12 @@ export const documentOwnerTypes = [
   'vendor',
   'customer',
   'route',
-  'flight'
+  'flight',
+  'inventory_part',
+  'inventory_lot',
+  'inventory_serial',
+  'purchase_order',
+  'goods_receipt'
 ] as const;
 
 export const documentVisibilityValues = ['INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'] as const;
