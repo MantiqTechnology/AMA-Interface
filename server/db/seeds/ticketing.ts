@@ -85,8 +85,8 @@ export function seedTicketingData(sqlite: Database.Database) {
           tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
-          'TKT-TRAVELOKA', 'fop-ticketing-passenger', 'Rian Sitorus', 'KTP', 'KTP-940505-123',
-          '2B', 75, 10, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
+          'TKT-TRAVELOKA', 'fop-ticketing-passenger-later', 'Rian Sitorus', 'KTP', 'KTP-940505-123',
+          '1B', 75, 10, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
           1800000, 'IDR', 'PAID', 'TRANSFER', ?, 'PENDING', NULL, NULL,
           'agent-traveloka', ?, ?
         )`
@@ -101,8 +101,8 @@ export function seedTicketingData(sqlite: Database.Database) {
           tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, payment_status, payment_method,
           paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
         ) VALUES (
-          'TKT-TIKETCOM', 'fop-ticketing-passenger', 'Dian Lestari', 'KTP', 'KTP-950812-456',
-          '3A', 62, 15, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
+          'TKT-TIKETCOM', 'fop-ticketing-passenger-later', 'Dian Lestari', 'KTP', 'KTP-950812-456',
+          '1C', 62, 15, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
           1800000, 'IDR', 'PAID', 'TRANSFER', ?, 'PENDING', NULL, NULL,
           'agent-tiket-com', ?, ?
         )`
@@ -148,8 +148,8 @@ export function seedTicketingData(sqlite: Database.Database) {
           id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
           baggage_weight_kg, remarks, created_at, updated_at
         ) VALUES (
-          'ticket-sync-TKT-TRAVELOKA', 'fop-ticketing-passenger-manifest-pax', 'TKT-TRAVELOKA', 'Rian Sitorus',
-          'KTP', 'KTP-940505-123', 75, '2B', 10, 'Ticket TKT-TRAVELOKA', ?, ?
+          'ticket-sync-TKT-TRAVELOKA', 'fop-ticketing-passenger-later-manifest-pax', 'TKT-TRAVELOKA', 'Rian Sitorus',
+          'KTP', 'KTP-940505-123', 75, '1B', 10, 'Ticket TKT-TRAVELOKA', ?, ?
         )`
       )
       .run(ticketingSeedTime, ticketingSeedTime);
@@ -159,8 +159,8 @@ export function seedTicketingData(sqlite: Database.Database) {
           id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
           baggage_weight_kg, remarks, created_at, updated_at
         ) VALUES (
-          'ticket-sync-TKT-TIKETCOM', 'fop-ticketing-passenger-manifest-pax', 'TKT-TIKETCOM', 'Dian Lestari',
-          'KTP', 'KTP-950812-456', 62, '3A', 15, 'Ticket TKT-TIKETCOM', ?, ?
+          'ticket-sync-TKT-TIKETCOM', 'fop-ticketing-passenger-later-manifest-pax', 'TKT-TIKETCOM', 'Dian Lestari',
+          'KTP', 'KTP-950812-456', 62, '1C', 15, 'Ticket TKT-TIKETCOM', ?, ?
         )`
       )
       .run(ticketingSeedTime, ticketingSeedTime);
