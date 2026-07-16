@@ -79,6 +79,38 @@ export function seedTicketingData(sqlite: Database.Database) {
 
     sqlite
       .prepare(
+        `INSERT OR IGNORE INTO passenger_tickets (
+          id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
+          passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, tax_code_id,
+          tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, payment_status, payment_method,
+          paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
+        ) VALUES (
+          'TKT-TRAVELOKA', 'fop-ticketing-passenger', 'Rian Sitorus', 'KTP', 'KTP-940505-123',
+          '2B', 75, 10, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
+          1800000, 'IDR', 'PAID', 'TRANSFER', ?, 'PENDING', NULL, NULL,
+          'agent-traveloka', ?, ?
+        )`
+      )
+      .run(ticketingSeedTime, ticketingSeedTime, ticketingSeedTime);
+
+    sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO passenger_tickets (
+          id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
+          passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, tax_code_id,
+          tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, payment_status, payment_method,
+          paid_at, check_in_status, checked_in_at, loyalty_member_id, agent_id, created_at, updated_at
+        ) VALUES (
+          'TKT-TIKETCOM', 'fop-ticketing-passenger', 'Dian Lestari', 'KTP', 'KTP-950812-456',
+          '3A', 62, 15, 1800000, 'rate-passenger-djj-wmx', 'tax-non-tax', 'NON_TAX', 0, 0,
+          1800000, 'IDR', 'PAID', 'TRANSFER', ?, 'PENDING', NULL, NULL,
+          'agent-tiket-com', ?, ?
+        )`
+      )
+      .run(ticketingSeedTime, ticketingSeedTime, ticketingSeedTime);
+
+    sqlite
+      .prepare(
         `INSERT OR IGNORE INTO flight_manifest_passengers (
           id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
           baggage_weight_kg, remarks, created_at, updated_at
@@ -107,6 +139,28 @@ export function seedTicketingData(sqlite: Database.Database) {
         ) VALUES (
           'ticket-sync-TKT-DEMO34', 'fop-ticketing-passenger-manifest-pax', 'TKT-DEMO34', 'Alex Giai', 'KTP',
           'KTP-912201-112', 78, '1B', 12, 'Ticket TKT-DEMO34', ?, ?
+        )`
+      )
+      .run(ticketingSeedTime, ticketingSeedTime);
+    sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO flight_manifest_passengers (
+          id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+          baggage_weight_kg, remarks, created_at, updated_at
+        ) VALUES (
+          'ticket-sync-TKT-TRAVELOKA', 'fop-ticketing-passenger-manifest-pax', 'TKT-TRAVELOKA', 'Rian Sitorus',
+          'KTP', 'KTP-940505-123', 75, '2B', 10, 'Ticket TKT-TRAVELOKA', ?, ?
+        )`
+      )
+      .run(ticketingSeedTime, ticketingSeedTime);
+    sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO flight_manifest_passengers (
+          id, manifest_id, passenger_ticket_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+          baggage_weight_kg, remarks, created_at, updated_at
+        ) VALUES (
+          'ticket-sync-TKT-TIKETCOM', 'fop-ticketing-passenger-manifest-pax', 'TKT-TIKETCOM', 'Dian Lestari',
+          'KTP', 'KTP-950812-456', 62, '3A', 15, 'Ticket TKT-TIKETCOM', ?, ?
         )`
       )
       .run(ticketingSeedTime, ticketingSeedTime);
