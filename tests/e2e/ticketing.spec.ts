@@ -105,7 +105,7 @@ test.describe('ticketing feature', () => {
     await chooseFirst(page, dialog.getByRole('combobox', { name: 'Replacement flight' }));
     await chooseFirst(page, dialog.getByRole('combobox', { name: 'New seat' }));
     await dialog.getByRole('button', { name: 'Confirm reschedule' }).click();
-    await expect(lookup.getByText('AMA-20260717-008')).toBeVisible();
+    await expect(lookup.getByText('AMA-20260721-008')).toBeVisible();
     await expect(lookup.locator('text=undefined')).toHaveCount(0);
   });
 

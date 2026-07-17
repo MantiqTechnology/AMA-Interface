@@ -3,6 +3,10 @@ import type { FlightScheduleTemplateDto } from '#shared/features/operations/flig
 import FlightScheduleTemplateFormDialog from './FlightScheduleTemplateFormDialog.vue';
 const active = ref<'active' | 'inactive' | 'all'>('active');
 const search = ref('');
+const currentRoute = useRoute();
+const routeId = ref<string | undefined>(
+  typeof currentRoute.query.routeId === 'string' ? currentRoute.query.routeId : undefined
+);
 const dialog = ref(false);
 const editing = ref<FlightScheduleTemplateDto | null>(null);
 const {
@@ -14,9 +18,9 @@ const {
   'flight-schedule-templates-page',
   () =>
     fetchApi<FlightScheduleTemplateDto[]>('/api/master-data/flight-schedule-templates', {
-      query: { active: active.value, search: search.value }
+      query: { active: active.value, search: search.value, routeId: routeId.value }
     }),
-  { default: () => [], watch: [active, search] }
+  { default: () => [], watch: [active, search, routeId] }
 );
 const display = (value: unknown) =>
   Array.isArray(value)

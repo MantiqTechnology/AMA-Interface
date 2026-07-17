@@ -32,6 +32,9 @@ type NavItem = {
 };
 
 const masterDataVisible = computed(() => can('platform.module.manage').allowed);
+const routeMasterDataVisible = computed(
+  () => masterDataVisible.value || can('master_data.read').allowed
+);
 
 const navItems = computed<NavItem[]>(() =>
   [
@@ -39,7 +42,8 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'Ops',
       icon: 'mdi-airport',
-      visible: can('flight.read').allowed || masterDataVisible.value,
+      visible:
+        can('flight.read').allowed || masterDataVisible.value || routeMasterDataVisible.value,
       children: [
         {
           label: 'Following',
@@ -57,7 +61,7 @@ const navItems = computed<NavItem[]>(() =>
           label: 'Routes',
           to: '/master-data/routes',
           icon: 'mdi-map-marker-path',
-          visible: masterDataVisible.value
+          visible: routeMasterDataVisible.value
         },
         {
           label: 'Schedule Templates',

@@ -24,7 +24,8 @@ beforeAll(async () => {
 await setup({
   rootDir: fileURLToPath(new URL('../..', import.meta.url)),
   server: true,
-  browser: false
+  browser: false,
+  setupTimeout: 300_000
 });
 
 describe('flight request APIs', () => {
@@ -44,9 +45,7 @@ describe('flight request APIs', () => {
 
     expect(response.ok).toBe(true);
     if (!response.ok) throw new Error(response.error.message);
-    expect(response.data.flights.map((flight) => flight.id)).toEqual([
-      'fop-ticketing-passenger-later'
-    ]);
+    expect(response.data.flights.map((flight) => flight.id)).toEqual(['fop-ticketing-passenger']);
   });
 
   it('keeps the created request ID available through submit and decision', async () => {

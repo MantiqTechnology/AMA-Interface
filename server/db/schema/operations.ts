@@ -59,6 +59,9 @@ export const routes = sqliteTable(
       .references(() => stations.id),
     estimatedDurationMinutes: integer('estimated_duration_minutes').notNull(),
     distanceKm: integer('distance_km').notNull(),
+    operationalNotes: text('operational_notes'),
+    restrictionLevel: text('restriction_level').notNull().default('NONE'),
+    restrictionNote: text('restriction_note'),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull()

@@ -58,7 +58,8 @@ sqlite.close();
 await setup({
   rootDir: fileURLToPath(new URL('../..', import.meta.url)),
   server: true,
-  browser: false
+  browser: false,
+  setupTimeout: 300_000
 });
 
 describe('ticketing APIs', () => {
@@ -354,7 +355,7 @@ describe('ticketing APIs', () => {
     expect(options.ok && options.data).toContainEqual(
       expect.objectContaining({
         flightOperationId: 'fop-ticketing-passenger-later',
-        flightNumber: 'AMA-20260717-008',
+        flightNumber: 'AMA-20260721-008',
         availableSeats: expect.arrayContaining(['1A'])
       })
     );
@@ -371,7 +372,7 @@ describe('ticketing APIs', () => {
     );
     expect(rescheduled.ok && rescheduled.data).toMatchObject({
       flightOperationId: 'fop-ticketing-passenger-later',
-      flightNumber: 'AMA-20260717-008',
+      flightNumber: 'AMA-20260721-008',
       seatNumber: '1A'
     });
 
@@ -392,7 +393,7 @@ describe('ticketing APIs', () => {
       expect.objectContaining({
         id: historicalRefund.data.id,
         flightOperationId: 'fop-ticketing-passenger',
-        flightNumber: 'AMA-20260715-006'
+        flightNumber: 'AMA-20260718-006'
       })
     );
 

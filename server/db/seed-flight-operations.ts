@@ -386,8 +386,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       },
       {
         id: 'fop-ticketing-passenger',
-        flightNumber: 'AMA-20260715-006',
-        flightDate: '2026-07-15',
+        flightNumber: 'AMA-20260718-006',
+        flightDate: '2026-07-18',
         flightType: 'PASSENGER',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -396,8 +396,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-ama',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid-2',
-        scheduledDepartureAt: '2026-07-15T08:00:00.000+09:00',
-        scheduledArrivalAt: '2026-07-15T08:55:00.000+09:00',
+        scheduledDepartureAt: '2026-07-18T08:00:00.000+09:00',
+        scheduledArrivalAt: '2026-07-18T08:55:00.000+09:00',
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
@@ -409,8 +409,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       },
       {
         id: 'fop-ticketing-cargo',
-        flightNumber: 'AMA-20260716-007',
-        flightDate: '2026-07-16',
+        flightNumber: 'AMA-20260719-007',
+        flightDate: '2026-07-19',
         flightType: 'CARGO',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -419,8 +419,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-amb',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: '2026-07-16T09:30:00.000+09:00',
-        scheduledArrivalAt: '2026-07-16T10:25:00.000+09:00',
+        scheduledDepartureAt: '2026-07-19T09:30:00.000+09:00',
+        scheduledArrivalAt: '2026-07-19T10:25:00.000+09:00',
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
@@ -432,8 +432,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       },
       {
         id: 'fop-ticketing-passenger-later',
-        flightNumber: 'AMA-20260717-008',
-        flightDate: '2026-07-17',
+        flightNumber: 'AMA-20260721-008',
+        flightDate: '2026-07-21',
         flightType: 'PASSENGER',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -442,14 +442,37 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-ama',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid-2',
-        scheduledDepartureAt: '2026-07-17T08:00:00.000+09:00',
-        scheduledArrivalAt: '2026-07-17T08:55:00.000+09:00',
+        scheduledDepartureAt: '2026-07-21T08:00:00.000+09:00',
+        scheduledArrivalAt: '2026-07-21T08:55:00.000+09:00',
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
         createdByUserId: 'USR-001',
         approvedByUserId: 'USR-DEMO-ADMIN',
         remarks: 'Later passenger service available for ticket rescheduling.',
+        isLocked: 0,
+        blockingReason: null
+      },
+      {
+        id: 'fop-route-profile-djj-nbx',
+        flightNumber: 'AMA-20260720-009',
+        flightDate: '2026-07-20',
+        flightType: 'PASSENGER',
+        routeId: 'route-djj-nbx',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-nbx',
+        customerId: 'cust-individual-1',
+        aircraftId: 'ac-pk-amb',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: '2026-07-20T10:00:00.000+09:00',
+        scheduledArrivalAt: '2026-07-20T11:20:00.000+09:00',
+        actualDepartureAt: null,
+        actualArrivalAt: null,
+        currentStatus: 'SCHEDULED',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-DEMO-ADMIN',
+        remarks: 'Scheduled DJJ-NBX passenger flight for route operational profile preview.',
         isLocked: 0,
         blockingReason: null
       }
@@ -466,7 +489,9 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         flightRequestId: flight.id === 'fop-dg-pending' ? 'fr-2026-00124' : null,
         flightTypeId: lookupId('flight-type', flightType),
         serviceTypeId:
-          flight.id === 'fop-ticketing-passenger' || flight.id === 'fop-ticketing-passenger-later'
+          flight.id === 'fop-ticketing-passenger' ||
+          flight.id === 'fop-ticketing-passenger-later' ||
+          flight.id === 'fop-route-profile-djj-nbx'
             ? 'flight-service-type-scheduled-passenger'
             : flightType === 'PASSENGER'
               ? 'flight-service-type-charter-passenger'

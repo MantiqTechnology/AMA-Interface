@@ -5,7 +5,8 @@ const emptyToNull = (value: unknown) =>
 
 export const flightScheduleTemplatesListQuerySchema = z.object({
   active: z.enum(['active', 'inactive', 'all']).default('active'),
-  search: z.string().trim().max(80).optional().default('')
+  search: z.string().trim().max(80).optional().default(''),
+  routeId: z.string().trim().min(1).optional()
 });
 export const flightScheduleTemplatesIdParamsSchema = z.object({ id: z.string().min(1) });
 export const flightScheduleTemplatesStatusSchema = z.object({ isActive: z.boolean() });

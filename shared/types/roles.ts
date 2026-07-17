@@ -49,7 +49,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'document.verify',
     'inventory.read',
     'inventory.po.approve',
-    'inventory.valuation.read'
+    'inventory.valuation.read',
+    'master_data.read'
   ],
   OCC: [
     'platform.dashboard.view',
@@ -63,7 +64,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'ticketing.operation.update',
     'document.read',
     'document.upload',
-    'inventory.read'
+    'inventory.read',
+    'master_data.read'
   ],
   'Station Admin': [
     'platform.dashboard.view',
@@ -74,7 +76,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'ticketing.operation.update',
     'document.read',
     'document.upload',
-    'inventory.read'
+    'inventory.read',
+    'master_data.read'
   ],
   'Finance Reviewer': [
     'platform.dashboard.view',

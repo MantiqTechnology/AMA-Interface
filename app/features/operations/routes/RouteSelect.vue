@@ -16,6 +16,8 @@ const emit = defineEmits<{
   'update:modelValue': [value: string | null];
   created: [route: RouteDto];
 }>();
+const { can } = useAuthorization();
+const canManage = computed(() => can('master_data.manage').allowed);
 const createOpen = ref(false);
 const {
   data: options,
@@ -29,6 +31,10 @@ const {
 const rules = computed(() =>
   props.required ? [(value: unknown) => Boolean(value) || `${props.label} is required`] : []
 );
+const selectedOption = computed(
+  () => options.value.find((option) => option.id === props.modelValue) ?? null
+);
+const searchText = ref('');
 async function created(route: RouteDto) {
   await refresh();
   emit('update:modelValue', route.id);
@@ -39,11 +45,22 @@ function optionTitle(option: RouteOption | string | null | undefined) {
   if (!option) return '';
   return `${option.routeCode} (${option.originStationCode} -> ${option.destinationStationCode})`;
 }
+watch(
+  selectedOption,
+  (option) => {
+    searchText.value = optionTitle(option);
+  },
+  { immediate: true }
+);
+function updateValue(option: RouteOption | null) {
+  emit('update:modelValue', option?.id ?? null);
+}
 </script>
 <template>
   <div>
     <div class="d-flex align-start ga-2">
       <VAutocomplete
+        v-model:search="searchText"
         :clearable="clearable"
         density="compact"
         :disabled="disabled"
@@ -52,12 +69,13 @@ function optionTitle(option: RouteOption | string | null | undefined) {
         :items="options"
         :label="label"
         :loading="pending"
-        :model-value="modelValue"
+        :model-value="selectedOption"
+        return-object
         :rules="rules"
         variant="outlined"
-        @update:model-value="emit('update:modelValue', $event)"
+        @update:model-value="updateValue"
       /><VBtn
-        v-if="allowCreate && !disabled"
+        v-if="allowCreate && canManage && !disabled"
         aria-label="Add route"
         icon="mdi-plus"
         variant="tonal"

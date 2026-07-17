@@ -367,6 +367,11 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         destinationStationId: 'st-nbx',
         estimatedDurationMinutes: 80,
         distanceKm: 390,
+        operationalNotes:
+          'Handling is available at Nabire. Destination fuel uplift requires advance planning.',
+        restrictionLevel: 'ADVISORY',
+        restrictionNote:
+          'Fuel service is not available at NBX; dispatch must confirm round-trip fuel planning before release.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -422,6 +427,22 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         bookingOpenHoursBefore: 168,
         bookingCloseMinutesBefore: 90,
         scheduleNote: 'Passenger-heavy morning rotation for counter/ticketing preview.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'schedule-djj-nbx-mon-thu',
+        templateCode: 'SCH_DJJ_NBX_MON_THU',
+        routeId: 'route-djj-nbx',
+        serviceTypeId: 'flight-service-type-scheduled-passenger',
+        defaultAircraftId: 'ac-pk-amb',
+        operatingDays: 'MON,THU',
+        departureTimeLocal: '10:00',
+        arrivalTimeLocal: '11:20',
+        bookingOpenHoursBefore: 168,
+        bookingCloseMinutesBefore: 90,
+        scheduleNote: 'Scheduled passenger rotation prepared for the route profile demo.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -492,6 +513,22 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         reservedSeatCount: 1,
         reservedCargoKg: 50,
         capacityNote: 'Passenger-heavy profile with one operational seat reserved.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'cap-caravan-djj-nbx-pax',
+        profileCode: 'CAP_C208_DJJ_NBX_PAX',
+        profileName: 'Caravan DJJ-NBX Passenger Standard',
+        aircraftId: 'ac-pk-amb',
+        routeId: 'route-djj-nbx',
+        serviceTypeId: 'flight-service-type-scheduled-passenger',
+        seatCapacity: 10,
+        cargoCapacityKg: 350,
+        reservedSeatCount: 1,
+        reservedCargoKg: 50,
+        capacityNote: 'Passenger profile with operational seat and cargo reserve.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow

@@ -169,7 +169,45 @@ describe('database migrations', () => {
         'invoice_finance_snapshots'
       ])
     );
+    const routeColumns = (
+      sqlite.prepare('PRAGMA table_info(routes)').all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(routeColumns).toEqual(
+      expect.arrayContaining(['operational_notes', 'restriction_level', 'restriction_note'])
+    );
+    expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
 
+    sqlite.close();
+  });
+
+  it('enforces positive distance and duration for fresh route tables', () => {
+    const sqlite = new Database(':memory:');
+    runMigrations(sqlite);
+    const station = sqlite.prepare(`INSERT INTO stations (
+      id, station_code, station_name, city_or_region, province, airport_type, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    station.run('origin', 'ORG', 'Origin', 'Origin', 'Papua', 'AIRPORT', 'now', 'now');
+    station.run(
+      'destination',
+      'DST',
+      'Destination',
+      'Destination',
+      'Papua',
+      'AIRPORT',
+      'now',
+      'now'
+    );
+
+    expect(() =>
+      sqlite
+        .prepare(
+          `INSERT INTO routes (
+          id, route_code, origin_station_id, destination_station_id,
+          estimated_duration_minutes, distance_km, created_at, updated_at
+        ) VALUES ('route-zero', 'ORG-DST', 'origin', 'destination', 20, 0, 'now', 'now')`
+        )
+        .run()
+    ).toThrow(/CHECK constraint failed/u);
     sqlite.close();
   });
 

@@ -764,6 +764,14 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'stations', 'operational_notes', 'TEXT');
     ensureColumn(sqlite, 'stations', 'is_remote_station', 'INTEGER NOT NULL DEFAULT 0');
     ensureColumn(sqlite, 'stations', 'low_connectivity_mode', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'routes', 'operational_notes', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'routes',
+      'restriction_level',
+      "TEXT NOT NULL DEFAULT 'NONE' CHECK (restriction_level IN ('NONE', 'ADVISORY', 'BLOCKING'))"
+    );
+    ensureColumn(sqlite, 'routes', 'restriction_note', 'TEXT');
     ensureColumn(sqlite, 'aircraft', 'serial_number', 'TEXT');
     ensureColumn(sqlite, 'aircraft', 'fleet_code', 'TEXT');
     ensureColumn(sqlite, 'aircraft', 'operational_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");

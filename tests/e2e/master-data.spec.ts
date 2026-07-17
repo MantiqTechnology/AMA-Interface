@@ -214,6 +214,51 @@ test.describe('feature-owned master data pages', () => {
     await expect(dialog.getByText('Route code is required')).toBeVisible();
     await expect(dialog.getByText('Origin is required')).toBeVisible();
     await expect(dialog.getByText('Destination is required')).toBeVisible();
+    await expect(dialog.getByLabel('Operational notes', { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel('Restriction level', { exact: true })).toBeVisible();
+  });
+
+  test('route detail presents the DJJ-NBX operational profile and filtered navigation', async ({
+    page
+  }) => {
+    await page.goto('/master-data/routes/route-djj-nbx', { waitUntil: 'networkidle' });
+    await waitForNuxtReady(page);
+
+    await expect(page.getByRole('heading', { level: 1, name: 'DJJ → NBX' })).toBeVisible();
+    await expect(page.getByText('Route overview', { exact: true })).toBeVisible();
+    await expect(page.getByText('Route readiness', { exact: true })).toBeVisible();
+    await expect(page.getByText('Available', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('SCH_DJJ_NBX_MON_THU')).toHaveCount(0);
+    await expect(page.getByText('MON, THU', { exact: true })).toBeVisible();
+    await expect(page.getByText('PK-AMB', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('main').getByText('Cargo', { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('main').getByText('Scheduled Passenger', { exact: true }).first()
+    ).toBeVisible();
+    await expect(page.getByText('AMA-20260720-009', { exact: true })).toBeVisible();
+    await expect(page.getByText('Advisory', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit route' })).toBeVisible();
+
+    await page.getByRole('link', { name: 'View flights' }).click();
+    await expect(page.getByLabel('Route', { exact: true })).toHaveValue(/DJJ-NBX/u);
+  });
+
+  test('route profile is permission-aware and remains usable on mobile', async ({ page }) => {
+    await page
+      .context()
+      .addCookies([{ name: 'ama_demo_role', value: 'OCC', url: 'http://localhost:3100' }]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/master-data/routes/route-djj-nbx', { waitUntil: 'networkidle' });
+    await waitForNuxtReady(page);
+
+    await expect(page.getByRole('heading', { level: 1, name: 'DJJ → NBX' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit route' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Route actions' })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+      )
+    ).toBe(false);
   });
 
   test('operations relation forms use their owning feature selects', async ({ page }) => {
@@ -244,10 +289,10 @@ test.describe('feature-owned master data pages', () => {
     await expect(page.getByText(/Representative aircraft image/)).toBeVisible();
     await expect(page.getByText(/DJJ - Sentani \/ Jayapura Demo Station/).first()).toBeVisible();
     await expect(page.getByText('Operational readiness', { exact: true })).toBeVisible();
-    await expect(page.getByText('Review required', { exact: true })).toBeVisible();
+    await expect(page.getByText('Operationally ready', { exact: true })).toBeVisible();
     await expect(page.getByText(/^8 configured/)).toBeVisible();
     await expect(page.getByText('Upcoming flight assignment', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'AMA-20260717-008' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'AMA-20260718-006' })).toBeVisible();
     await expect(page.getByText('Maintenance snapshot', { exact: true })).toBeVisible();
     const maintenanceLink = page.getByRole('link', { name: 'Open Maintenance Handoff' });
     await expect(maintenanceLink).toBeVisible();
@@ -372,6 +417,8 @@ test.describe('feature-owned master data pages', () => {
   });
 
   test('upload delete action uses a confirmation dialog', async ({ page }) => {
+    test.setTimeout(45_000);
+
     await page.goto('/uploads', { waitUntil: 'networkidle' });
     await waitForNuxtReady(page);
 

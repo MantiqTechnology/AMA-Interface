@@ -34,6 +34,7 @@ export class FlightScheduleTemplateRepository {
     const conditions: SQL[] = [];
     if (query.active === 'active') conditions.push(eq(flightScheduleTemplates.isActive, true));
     if (query.active === 'inactive') conditions.push(eq(flightScheduleTemplates.isActive, false));
+    if (query.routeId) conditions.push(eq(flightScheduleTemplates.routeId, query.routeId));
     if (query.search) {
       const term = `%${query.search}%`;
       conditions.push(

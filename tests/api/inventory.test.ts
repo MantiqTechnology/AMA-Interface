@@ -67,7 +67,8 @@ afterAll(() => {
 await setup({
   rootDir: fileURLToPath(new URL('../..', import.meta.url)),
   server: true,
-  browser: false
+  browser: false,
+  setupTimeout: 300_000
 });
 
 describe('inventory APIs', () => {

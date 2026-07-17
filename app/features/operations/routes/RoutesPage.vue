@@ -6,6 +6,8 @@ const active = ref<'active' | 'inactive' | 'all'>('active');
 const search = ref('');
 const dialog = ref(false);
 const editing = ref<RouteDto | null>(null);
+const { can } = useAuthorization();
+const canManage = computed(() => can('master_data.manage').allowed);
 const {
   data: routes,
   pending,
@@ -49,7 +51,9 @@ async function toggle(route: RouteDto) {
         <h1 class="text-h4 font-weight-bold">Routes</h1>
         <p class="text-text-secondary">Station-to-station route references for flight planning.</p>
       </div>
-      <VSpacer /><VBtn color="primary" prepend-icon="mdi-plus" @click="add">Add data</VBtn>
+      <VSpacer /><VBtn v-if="canManage" color="primary" prepend-icon="mdi-plus" @click="add">
+        Add data
+      </VBtn>
     </div>
     <VCard border>
       <VCardText>
@@ -104,12 +108,14 @@ async function toggle(route: RouteDto) {
                   variant="text"
                 />
                 <DsTooltipIconButton
+                  v-if="canManage"
                   icon="mdi-pencil-outline"
                   tooltip="Edit"
                   variant="text"
                   @click="edit(route)"
                 />
                 <DsConfirmIconButton
+                  v-if="canManage"
                   :action="() => toggle(route)"
                   :confirm-icon="
                     route.isActive ? 'mdi-toggle-switch-off-outline' : 'mdi-toggle-switch-outline'

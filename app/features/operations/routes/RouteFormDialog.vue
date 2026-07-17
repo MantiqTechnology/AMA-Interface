@@ -12,12 +12,19 @@ const form = reactive<RouteInput>({
   originStationId: '',
   destinationStationId: '',
   estimatedDurationMinutes: 0,
-  distanceKm: 0
+  distanceKm: 0,
+  operationalNotes: null,
+  restrictionLevel: 'NONE',
+  restrictionNote: null
 });
 const required = (label: string) => (value: unknown) =>
   value !== null && value !== '' ? true : `${label} is required`;
-const nonnegative = (label: string) => (value: unknown) =>
-  Number(value) >= 0 ? true : `${label} cannot be negative`;
+const positive = (label: string) => (value: unknown) =>
+  Number(value) > 0 ? true : `${label} must be greater than zero`;
+const restrictionNoteRequired = (value: unknown) =>
+  form.restrictionLevel === 'NONE' || (typeof value === 'string' && value.trim())
+    ? true
+    : 'Restriction note is required';
 
 watch(
   () => props.modelValue,
@@ -32,14 +39,20 @@ watch(
             originStationId: props.route.originStationId,
             destinationStationId: props.route.destinationStationId,
             estimatedDurationMinutes: props.route.estimatedDurationMinutes,
-            distanceKm: props.route.distanceKm
+            distanceKm: props.route.distanceKm,
+            operationalNotes: props.route.operationalNotes,
+            restrictionLevel: props.route.restrictionLevel,
+            restrictionNote: props.route.restrictionNote
           }
         : {
             routeCode: '',
             originStationId: '',
             destinationStationId: '',
             estimatedDurationMinutes: 0,
-            distanceKm: 0
+            distanceKm: 0,
+            operationalNotes: null,
+            restrictionLevel: 'NONE',
+            restrictionNote: null
           }
     );
   }
@@ -101,7 +114,7 @@ async function submit() {
               <VTextField
                 v-model.number="form.estimatedDurationMinutes"
                 label="Duration minutes"
-                :rules="[required('Duration'), nonnegative('Duration')]"
+                :rules="[required('Duration'), positive('Duration')]"
                 suffix="min"
                 type="number"
                 variant="outlined"
@@ -111,9 +124,42 @@ async function submit() {
               <VTextField
                 v-model.number="form.distanceKm"
                 label="Distance"
-                :rules="[required('Distance'), nonnegative('Distance')]"
+                :rules="[required('Distance'), positive('Distance')]"
                 suffix="km"
                 type="number"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VTextarea
+                v-model="form.operationalNotes"
+                auto-grow
+                counter="1000"
+                label="Operational notes"
+                rows="3"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="5">
+              <VSelect
+                v-model="form.restrictionLevel"
+                :items="[
+                  { title: 'No restriction', value: 'NONE' },
+                  { title: 'Advisory', value: 'ADVISORY' },
+                  { title: 'Blocking', value: 'BLOCKING' }
+                ]"
+                label="Restriction level"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol v-if="form.restrictionLevel !== 'NONE'" cols="12" md="7">
+              <VTextarea
+                v-model="form.restrictionNote"
+                auto-grow
+                counter="1000"
+                label="Restriction note"
+                :rules="[restrictionNoteRequired]"
+                rows="2"
                 variant="outlined"
               />
             </VCol>

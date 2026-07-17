@@ -8,9 +8,12 @@ import type {
 } from '#shared/contracts/flight-operations';
 
 const search = ref('');
+const currentRoute = useRoute();
 const statusId = ref<string | undefined>();
 const flightTypeId = ref<string | undefined>();
-const routeId = ref<string | null>(null);
+const routeId = ref<string | null>(
+  typeof currentRoute.query.routeId === 'string' ? currentRoute.query.routeId : null
+);
 const aircraftId = ref<string | null>(null);
 const customerId = ref<string | undefined>();
 
