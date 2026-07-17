@@ -2,8 +2,38 @@ import type Database from 'better-sqlite3';
 
 const ticketingSeedTime = '2026-07-13T09:00:00.000+07:00';
 
+function seedOtaAgents(sqlite: Database.Database) {
+  const insertAgent = sqlite.prepare(
+    `INSERT OR IGNORE INTO agents (
+      id, agent_code, agent_name, agent_type, station_id, commission_basis_points,
+      contact_person, phone, is_active, created_at, updated_at
+    ) VALUES (?, ?, ?, 'OTA', NULL, 500, ?, ?, 1, ?, ?)`
+  );
+
+  insertAgent.run(
+    'agent-traveloka',
+    'TRAVELOKA',
+    'Traveloka',
+    'Traveloka Support',
+    '+62-21-2977-5800',
+    ticketingSeedTime,
+    ticketingSeedTime
+  );
+  insertAgent.run(
+    'agent-tiket-com',
+    'TIKET_COM',
+    'Tiket.com',
+    'Tiket.com Support',
+    '+62-21-3973-0888',
+    ticketingSeedTime,
+    ticketingSeedTime
+  );
+}
+
 export function seedTicketingData(sqlite: Database.Database) {
   const seed = sqlite.transaction(() => {
+    seedOtaAgents(sqlite);
+
     const insertSale = sqlite.prepare(
       `INSERT OR IGNORE INTO ticketing_sales (
         id, flight_operation_id, service_type, opened_by_user_id, opened_at

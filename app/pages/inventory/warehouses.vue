@@ -34,6 +34,13 @@ const { data: parts } = await useAsyncData('inventory-reorder-parts', () =>
   fetchApi<InventoryPartDto[]>('/api/inventory/parts')
 );
 
+const stationItems = computed(() =>
+  (stations.value ?? []).map((station) => ({
+    ...station,
+    label: `${station.stationCode} · ${station.stationName}`
+  }))
+);
+
 function addBin() {
   form.bins.push({ binCode: '', binName: '', binType: 'USABLE' });
 }
@@ -171,9 +178,7 @@ async function saveReorder() {
         <VCardTitle>Add warehouse</VCardTitle><VDivider />
         <VCardText>
           <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
-            {{
-              actionError
-            }}
+            {{ actionError }}
           </VAlert>
           <VRow dense>
             <VCol cols="12" md="4">
@@ -181,7 +186,7 @@ async function saveReorder() {
                 v-model="form.stationId"
                 item-title="label"
                 item-value="id"
-                :items="stations ?? []"
+                :items="stationItems"
                 label="Station"
                 variant="outlined"
               />
@@ -250,9 +255,7 @@ async function saveReorder() {
         <VCardTitle>Configure reorder rule</VCardTitle><VDivider />
         <VCardText>
           <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
-            {{
-              actionError
-            }}
+            {{ actionError }}
           </VAlert>
           <VSelect
             v-model="reorder.partId"
