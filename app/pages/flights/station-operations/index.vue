@@ -1,27 +1,4 @@
 <script setup lang="ts">
-/**
- * Station Operations Desk
- * ------------------------------------------------------------------------
- * Halaman ini adalah tampilan FRONTEND DEMO (tidak ada pemanggilan API asli).
- * Seluruh data (flights, services, costs, KPI, daily report) dibangkitkan
- * secara lokal oleh `buildStationDataset()` berdasarkan station + tanggal
- * operasional yang dipilih, supaya satu sumber data yang sama dipakai oleh
- * KPI strip, flight board, services/costs panel, daily report, donut chart,
- * dan exception row (sesuai requirement "scope station & tanggal yang sama").
- *
- * Catatan integrasi ke backend nanti:
- * - Ganti `buildStationDataset()` dengan pemanggilan `useAsyncData` + `fetchApi`
- *   ke endpoint station-operations (services, costs, flights, daily-report).
- * - Ganti komponen chip status flight (`flightStatusMeta`) agar konsisten
- *   dengan `FlightsFlightStatusChip` yang sudah ada, setelah enum status
- *   flight (LANDED/ARRIVING/SCHEDULED/DELAYED/DEPARTED/BOARDING) didaftarkan
- *   di komponen tersebut.
- * - `stationScope` di bawah mensimulasikan user Station Admin dengan satu
- *   station (selector jadi disabled & auto-terpilih, sesuai spec). Untuk OCC
- *   yang punya banyak station, isi `stationScope` dengan lebih dari satu kode
- *   station dan selector otomatis menjadi multi-select & enabled.
- */
-
 type FlightDirection = 'INBOUND' | 'OUTBOUND';
 type FlightStatus = 'SCHEDULED' | 'ARRIVING' | 'LANDED' | 'DELAYED' | 'DEPARTED' | 'BOARDING';
 type ReadinessStatus = 'READY' | 'CHECK' | 'NOT_READY';
@@ -1532,9 +1509,7 @@ function exportDailyReportCsv() {
                     <td>{{ money(row.amount, row.currencyCode) }}</td>
                     <td>
                       <VChip size="small" :color="costStatusColor[row.status]" variant="tonal">
-                        {{
-                          row.status
-                        }}
+                        {{ row.status }}
                       </VChip>
                     </td>
                     <td class="text-right">
