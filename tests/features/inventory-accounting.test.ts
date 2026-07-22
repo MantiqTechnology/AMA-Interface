@@ -104,9 +104,11 @@ function insertMaintenanceOperationalEvent(
   sqlite
     .prepare(
       `INSERT INTO maintenance_part_issues (
-        id, issue_number, maintenance_handoff_id, aircraft_id, flight_id, warehouse_id,
+        id, issue_number, maintenance_handoff_id, target_type, target_id,
+        asset_maintenance_work_order_id, aircraft_id, flight_id, warehouse_id,
         reason, movement_id, status, total_parts_value_idr, issued_by_user_id, issued_at
-      ) VALUES (?, ?, 'maintenance-landed-filter-draft', 'ac-pk-ama', NULL,
+      ) VALUES (?, ?, 'maintenance-landed-filter-draft', 'AIRCRAFT', 'ac-pk-ama', NULL,
+        'ac-pk-ama', NULL,
         'inv-wh-djj-main', 'Accounting test heavy issue', ?, 'ISSUED', 3200000,
         'USR-INVENTORY-CONTROLLER', '2026-07-17T10:00:00.000Z')`
     )
@@ -187,10 +189,10 @@ describe('inventory accounting integration', () => {
         aircraftId: 'ac-pk-ama',
         flightId: null,
         warehouseId: 'inv-wh-djj-main',
-        reason: 'Routine filter replacement.',
+        reason: 'Routine oil replenishment.',
         lines: [
           {
-            partId: 'inv-part-filter-pc6',
+            partId: 'inv-part-oil',
             quantity: 1,
             serialIds: [],
             note: 'Routine maintenance'
@@ -204,10 +206,10 @@ describe('inventory accounting integration', () => {
     services.accounting.processInventoryEvents({ batchSize: 25 }, 'USR-FINANCE-REVIEWER');
     const journal = journalForEvent(sqlite, 'MAINTENANCE_PART_ISSUED', issue.id);
 
-    expect(journal).toMatchObject({ status: 'DRAFT', amount: 950_000 });
+    expect(journal).toMatchObject({ status: 'DRAFT', amount: 175_000 });
     expect(journalLines(sqlite, journal!.id)).toEqual([
-      { account_code: '5400', debit: 950_000, credit: 0 },
-      { account_code: '1200', debit: 0, credit: 950_000 }
+      { account_code: '5400', debit: 175_000, credit: 0 },
+      { account_code: '1200', debit: 0, credit: 175_000 }
     ]);
 
     postJournal(context, journal!.id);

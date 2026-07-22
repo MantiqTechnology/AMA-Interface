@@ -131,7 +131,7 @@ export function seedCorporateAssets(
       insert(sqlite, 'managed_assets', { ...asset, createdAt: seedNow, updatedAt: seedNow });
 
     insert(sqlite, 'asset_assignments', {
-      id: 'asg-demo-laptop',
+      id: 'asg-laptop-primary',
       assignmentNumber: 'ASG-00001',
       assetId: 'asset-it-laptop-01',
       employeeId: 'emp-anisa',
@@ -142,11 +142,11 @@ export function seedCorporateAssets(
       reason: 'Primary work device assignment.',
       startedAt: '2024-02-05T08:00:00.000+09:00',
       endedAt: null,
-      createdByUserId: 'USR-DEMO-ADMIN',
+      createdByUserId: 'USR-STATION-ADMIN',
       createdAt: seedNow
     });
     insert(sqlite, 'asset_maintenance_work_orders', {
-      id: 'amw-demo-gpu',
+      id: 'amw-gpu-maintenance',
       workOrderNumber: 'AMW-00001',
       assetId: 'asset-gse-gpu-01',
       maintenanceType: 'CORRECTIVE',
@@ -166,12 +166,12 @@ export function seedCorporateAssets(
     insert(sqlite, 'asset_insurance_policies', {
       id: 'policy-gpu-01',
       assetId: 'asset-gse-gpu-01',
-      insurer: 'Demo Papua Insurance',
-      policyNumber: 'POL-GSE-2026-001',
+      insurer: 'Papua Aviation Insurance',
+      policyNumber: `POL-GSE-${context.anchorDate.slice(0, 4)}-001`,
       coverageMinor: 850000000,
       premiumMinor: 9500000,
-      effectiveDate: '2026-01-01',
-      expiryDate: '2026-08-15',
+      effectiveDate: context.date(-180),
+      expiryDate: context.date(180),
       status: 'ACTIVE',
       createdAt: seedNow,
       updatedAt: seedNow
@@ -182,7 +182,7 @@ export function seedCorporateAssets(
       assetId: 'asset-vehicle-wmx-01',
       auditorEmployeeId: 'emp-hendra',
       auditorNameSnapshot: 'Hendra Gunawan',
-      auditedAt: '2026-07-21T10:00:00.000+09:00',
+      auditedAt: context.at(-1, '10:00'),
       notes: 'Minor body damage requires verification.',
       hasDiscrepancy: 1,
       reconciledAt: null,
@@ -210,7 +210,7 @@ export function seedCorporateAssets(
       idempotencyKey: 'corporate-asset:asset-gse-gpu-01:acquisition',
       productAccountingProfileId: null,
       policyId: null,
-      policyCode: 'CORPORATE_ASSET_ACQUISITION_DEMO_V1',
+      policyCode: 'CORPORATE_ASSET_ACQUISITION_V1',
       policyVersion: 1,
       accountingDate: acquisitionDate,
       transactionDate: acquisitionDate,
@@ -246,7 +246,7 @@ export function seedCorporateAssets(
       serviceDate: null,
       currencyCode: 'IDR',
       exchangeRateToIdrMicros: 1000000,
-      policyCode: 'CORPORATE_ASSET_ACQUISITION_DEMO_V1',
+      policyCode: 'CORPORATE_ASSET_ACQUISITION_V1',
       policyVersion: 1,
       reversalOfJournalEntryId: null,
       createdByUserId: 'USR-FINANCE-REVIEWER',
@@ -257,26 +257,33 @@ export function seedCorporateAssets(
       createdAt: seedNow,
       updatedAt: seedNow
     });
-    for (const [id, lineNumber, accountId, debitMinor, creditMinor] of [
-      ['journal-line-corporate-gpu-asset', 1, 'coa-1300', 850000000, 0],
-      ['journal-line-corporate-gpu-payable', 2, 'coa-2000', 0, 850000000]
-    ] as const)
-      insert(sqlite, 'journal_lines', {
-        id,
-        journalEntryId: 'journal-corporate-gpu',
-        lineNumber,
-        accountId,
-        debitMinor,
-        creditMinor,
-        baseDebitIdr: debitMinor,
-        baseCreditIdr: creditMinor,
-        stationId: 'st-djj',
-        aircraftId: null,
-        flightId: null,
-        workOrderReference: null,
-        costCenterId: null,
-        description: 'Ground Power Unit GPU-01 acquisition.'
-      });
+    const corporateJournalHasLines = sqlite
+      .prepare(
+        "SELECT 1 FROM journal_lines WHERE journal_entry_id = 'journal-corporate-gpu' LIMIT 1"
+      )
+      .get();
+    if (!corporateJournalHasLines) {
+      for (const [id, lineNumber, accountId, debitMinor, creditMinor] of [
+        ['journal-line-corporate-gpu-asset', 1, 'coa-1300', 850000000, 0],
+        ['journal-line-corporate-gpu-payable', 2, 'coa-2000', 0, 850000000]
+      ] as const)
+        insert(sqlite, 'journal_lines', {
+          id,
+          journalEntryId: 'journal-corporate-gpu',
+          lineNumber,
+          accountId,
+          debitMinor,
+          creditMinor,
+          baseDebitIdr: debitMinor,
+          baseCreditIdr: creditMinor,
+          stationId: 'st-djj',
+          aircraftId: null,
+          flightId: null,
+          workOrderReference: null,
+          costCenterId: null,
+          description: 'Ground Power Unit GPU-01 acquisition.'
+        });
+    }
     insert(sqlite, 'asset_register', {
       id: 'financial-asset-gpu-01',
       assetNumber: 'FA-GSE-00001',
@@ -301,11 +308,13 @@ export function seedCorporateAssets(
       updatedAt: seedNow
     });
     sqlite
-      .prepare("UPDATE journal_entries SET status = 'POSTED' WHERE id = 'journal-corporate-gpu'")
+      .prepare(
+        "UPDATE journal_entries SET status = 'POSTED' WHERE id = 'journal-corporate-gpu' AND status != 'POSTED'"
+      )
       .run();
     sqlite
       .prepare(
-        "UPDATE accounting_events SET posting_status = 'POSTED' WHERE id = 'accounting-event-corporate-gpu'"
+        "UPDATE accounting_events SET posting_status = 'POSTED' WHERE id = 'accounting-event-corporate-gpu' AND posting_status != 'POSTED'"
       )
       .run();
     for (const [type, value] of [
@@ -323,13 +332,13 @@ export function seedCorporateAssets(
         'asset-history-gpu-created',
         'asset-gse-gpu-01',
         'ASSET_CREATED',
-        'Deterministic Corporate Assets demo seed.'
+        'Deterministic Corporate Assets scenario seed.'
       ],
       [
         'asset-history-laptop-created',
         'asset-it-laptop-01',
         'ASSET_CREATED',
-        'Deterministic Corporate Assets demo seed.'
+        'Deterministic Corporate Assets scenario seed.'
       ],
       [
         'asset-history-vehicle-audit',
@@ -342,11 +351,11 @@ export function seedCorporateAssets(
         id,
         assetId,
         actionType: action,
-        actorUserId: 'USR-DEMO-ADMIN',
+        actorUserId: 'USR-DIRECTOR',
         reason,
         beforeJson: '{}',
         afterJson: '{}',
-        requestContextJson: '{"source":"demo-seed"}',
+        requestContextJson: '{"source":"scenario-seed"}',
         createdAt: seedNow
       });
   });

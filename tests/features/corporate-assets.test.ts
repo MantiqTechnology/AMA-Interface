@@ -243,7 +243,7 @@ describe('Corporate Assets domain', () => {
     ).toThrow(/already has an active maintenance work order/u);
 
     const completed = assets.completeMaintenance(
-      'amw-demo-gpu',
+      'amw-gpu-maintenance',
       {
         expectedVersion: asset.version,
         completionResult: 'Electrical output restored and verified.',
@@ -312,7 +312,7 @@ describe('Corporate Assets domain', () => {
       {
         targetType: 'CORPORATE_ASSET',
         targetId: before.id,
-        assetMaintenanceWorkOrderId: 'amw-demo-gpu',
+        assetMaintenanceWorkOrderId: 'amw-gpu-maintenance',
         expectedAssetVersion: before.version,
         aircraftId: null,
         flightId: null,
@@ -326,7 +326,7 @@ describe('Corporate Assets domain', () => {
     );
     expect(issue?.targetType).toBe('CORPORATE_ASSET');
     expect(issue?.aircraftId).toBeNull();
-    const work = assets.requireWorkOrder('amw-demo-gpu');
+    const work = assets.requireWorkOrder('amw-gpu-maintenance');
     expect(work.status).toBe('WAITING_PARTS');
     const movement = sqlite
       .prepare('SELECT id FROM inventory_movements WHERE source_id = ?')
