@@ -13,7 +13,7 @@ export type DemoRole = (typeof demoRoles)[number];
 export const defaultDemoRole: DemoRole = 'Demo Admin';
 
 export const demoRoleActorIds: Record<DemoRole, string> = {
-  'Demo Admin': 'USR-DEMO-ADMIN',
+  'Demo Admin': 'USR-ADMIN',
   Director: 'USR-DIRECTOR',
   OCC: 'USR-001',
   'Station Admin': 'USR-STATION-ADMIN',
@@ -44,6 +44,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'station.cost.approve',
     'ticketing.refund.decide',
     'finance.invoice.read',
+    'finance.accounting.read',
+    'finance.accounting.post',
     'finance.payment.record',
     'document.read',
     'document.verify',
@@ -59,7 +61,11 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight_request.read',
     'flight_request.create',
     'flight.read',
-    'flight.following.update',
+    'flight.create.direct',
+    'flight.readiness.evaluate',
+    'flight.schedule',
+    'flight.movement.update',
+    'flight.exception.update',
     'flight.manifest.update',
     'flight.fuel.update',
     'ticketing.sales.open',
@@ -72,6 +78,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
   'Station Admin': [
     'platform.dashboard.view',
     'flight.read',
+    'flight.readiness.evaluate',
+    'flight.movement.update',
     'flight.manifest.update',
     'flight.fuel.update',
     'station.operation.update',
@@ -89,6 +97,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight.read',
     'finance.invoice.read',
     'finance.invoice.approve',
+    'finance.accounting.read',
+    'finance.accounting.post',
     'finance.handoff.process',
     'finance.payment.record',
     'document.read',

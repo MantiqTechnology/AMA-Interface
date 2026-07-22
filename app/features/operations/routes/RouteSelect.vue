@@ -74,13 +74,18 @@ function updateValue(option: RouteOption | null) {
         :rules="rules"
         variant="outlined"
         @update:model-value="updateValue"
-      /><VBtn
-        v-if="allowCreate && canManage && !disabled"
-        aria-label="Add route"
-        icon="mdi-plus"
-        variant="tonal"
-        @click="createOpen = true"
       />
+      <VTooltip v-if="allowCreate && canManage && !disabled" text="Add route">
+        <template #activator="{ props: tooltipProps }">
+          <VBtn
+            v-bind="tooltipProps"
+            aria-label="Add route"
+            icon="mdi-plus"
+            variant="tonal"
+            @click="createOpen = true"
+          />
+        </template>
+      </VTooltip>
     </div>
     <RouteFormDialog v-model="createOpen" @saved="created" />
   </div>

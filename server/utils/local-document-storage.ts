@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
@@ -17,9 +17,11 @@ import {
 import { getDocumentTypeConfig } from '../../shared/constants/document-types';
 import { DomainError, notFound } from './errors';
 import { getLocalUpload, saveLocalUpload } from './local-upload-storage';
+import { resetLocalUploadStorage } from './local-upload-storage';
+import { createDemoSeedContext, type DemoSeedContext } from '../db/seeds/context';
 
 const DEFAULT_MANIFEST_PATH = join(process.cwd(), 'data', 'local-documents.json');
-const DEMO_USER = 'Demo Admin';
+const SYSTEM_USER = 'AMA System Administrator';
 
 const documentManifestSchema = z.object({
   documents: z.array(masterDocumentSchema)
@@ -111,7 +113,7 @@ function buildDocument(input: CreateDocumentBody, timestamp: string, version = 1
     visibility: input.visibility,
     notes: normalizeOptional(input.notes),
     version,
-    uploadedBy: DEMO_USER,
+    uploadedBy: SYSTEM_USER,
     uploadedAt: timestamp,
     createdAt: timestamp,
     updatedAt: timestamp
@@ -168,14 +170,8 @@ function escapePdfText(value: string) {
   return value.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
 }
 
-function createDemoPdf(title: string, lines: string[]) {
-  const contentLines = [
-    'SIMULATED DOCUMENT - FOR DEMO ONLY',
-    'NOT VALID FOR OPERATIONAL OR LEGAL USE',
-    '',
-    title,
-    ...lines
-  ];
+function createSeededPdf(title: string, lines: string[]) {
+  const contentLines = ['PT AMA AVIATION', 'CONTROLLED OPERATIONAL RECORD', '', title, ...lines];
   const stream = [
     'BT',
     '/F1 18 Tf',
@@ -218,8 +214,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_CERTIFICATE_OF_REGISTRATION',
     title: 'PK-AMA Certificate of Registration',
-    documentNumber: 'SIM-COR-PKAMA-2026',
-    issuer: 'AMA Demo Registry',
+    documentNumber: 'AMA-COR-PKAMA-2026',
+    issuer: 'PT AMA Aircraft Registry',
     expiresAt: '2027-03-30'
   },
   {
@@ -227,8 +223,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_CERTIFICATE_OF_AIRWORTHINESS',
     title: 'PK-AMA Certificate of Airworthiness',
-    documentNumber: 'SIM-COA-PKAMA-2026',
-    issuer: 'AMA Demo Airworthiness Office',
+    documentNumber: 'AMA-COA-PKAMA-2026',
+    issuer: 'PT AMA Airworthiness Office',
     expiresAt: '2026-07-19'
   },
   {
@@ -236,8 +232,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_INSURANCE_CERTIFICATE',
     title: 'PK-AMA Insurance Certificate',
-    documentNumber: 'SIM-INS-PKAMA-2026',
-    issuer: 'Demo Aviation Insurance',
+    documentNumber: 'AMA-INS-PKAMA-2026',
+    issuer: 'Nusantara Aviation Insurance',
     expiresAt: '2027-01-15'
   },
   {
@@ -245,26 +241,26 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'ac-pk-ama',
     documentType: 'AIRCRAFT_WEIGHT_AND_BALANCE',
     title: 'PK-AMA Weight & Balance Report',
-    documentNumber: 'SIM-WB-PKAMA-2026',
-    issuer: 'AMA Demo Maintenance',
+    documentNumber: 'AMA-WB-PKAMA-2026',
+    issuer: 'PT AMA Maintenance Control',
     expiresAt: '2026-06-24'
   },
   {
     ownerType: 'personnel',
     ownerId: 'crew-pic-expired',
     documentType: 'PILOT_LICENSE',
-    title: 'Pilot Licence - Yohanis Tabuni Demo',
-    documentNumber: 'SIM-LIC-PIC-003',
-    issuer: 'AMA Demo Licensing',
+    title: 'Pilot Licence - Yohanis Tabuni',
+    documentNumber: 'AMA-LIC-PIC-003',
+    issuer: 'Directorate of Flight Operations',
     expiresAt: '2026-06-25'
   },
   {
     ownerType: 'personnel',
     ownerId: 'crew-pic-expired',
     documentType: 'PILOT_MEDICAL_CERTIFICATE',
-    title: 'Medical Certificate - Yohanis Tabuni Demo',
-    documentNumber: 'SIM-MED-PIC-003',
-    issuer: 'Demo Aviation Medical',
+    title: 'Medical Certificate - Yohanis Tabuni',
+    documentNumber: 'AMA-MED-PIC-003',
+    issuer: 'Papua Aviation Medical Centre',
     expiresAt: '2026-06-30',
     visibility: 'RESTRICTED'
   },
@@ -272,9 +268,9 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerType: 'personnel',
     ownerId: 'crew-pic-expiring',
     documentType: 'PILOT_RECURRENCY_TRAINING',
-    title: 'Recurrency Training - Mikael Kogoya Demo',
-    documentNumber: 'SIM-TRN-PIC-002',
-    issuer: 'AMA Demo Training',
+    title: 'Recurrency Training - Mikael Kogoya',
+    documentNumber: 'AMA-TRN-PIC-002',
+    issuer: 'PT AMA Training Centre',
     expiresAt: '2026-07-27',
     verificationStatus: 'PENDING_VERIFICATION'
   },
@@ -283,8 +279,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'st-djj',
     documentType: 'STATION_INFORMATION_SHEET',
     title: 'Sentani Station Information Sheet',
-    documentNumber: 'SIM-STN-DJJ-INFO',
-    issuer: 'AMA Demo Station Ops',
+    documentNumber: 'AMA-STN-DJJ-INFO',
+    issuer: 'PT AMA Station Operations',
     expiresAt: '2027-04-01'
   },
   {
@@ -292,8 +288,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'st-djj',
     documentType: 'STATION_LOCAL_SOP',
     title: 'Sentani Local SOP',
-    documentNumber: 'SIM-STN-DJJ-SOP',
-    issuer: 'AMA Demo Station Ops',
+    documentNumber: 'AMA-STN-DJJ-SOP',
+    issuer: 'PT AMA Station Operations',
     expiresAt: '2026-08-04'
   },
   {
@@ -301,8 +297,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'vendor-maintenance',
     documentType: 'VENDOR_LEGAL_DOCUMENT',
     title: 'Maintenance Vendor Legal Document',
-    documentNumber: 'SIM-VND-MAINT-LEGAL',
-    issuer: 'Demo Vendor Registry',
+    documentNumber: 'AMA-VND-MAINT-LEGAL',
+    issuer: 'Papua Aero Services Registry',
     expiresAt: '2027-02-01'
   },
   {
@@ -310,8 +306,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'vendor-maintenance',
     documentType: 'VENDOR_BANK_VERIFICATION',
     title: 'Maintenance Vendor Bank Verification',
-    documentNumber: 'SIM-VND-MAINT-BANK',
-    issuer: 'Demo Finance Review',
+    documentNumber: 'AMA-VND-MAINT-BANK',
+    issuer: 'PT AMA Finance Control',
     expiresAt: '2026-07-28',
     visibility: 'RESTRICTED'
   },
@@ -320,8 +316,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'cust-papua-logistics',
     documentType: 'CHARTER_AGREEMENT',
     title: 'Papua Logistics Charter Agreement',
-    documentNumber: 'SIM-CUST-PLG-AGR',
-    issuer: 'AMA Demo Commercial',
+    documentNumber: 'AMA-CUST-PLG-AGR',
+    issuer: 'PT AMA Commercial',
     expiresAt: '2026-12-31'
   },
   {
@@ -329,8 +325,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'cust-papua-logistics',
     documentType: 'CUSTOMER_RATE_CARD',
     title: 'Papua Logistics Rate Card',
-    documentNumber: 'SIM-CUST-PLG-RATE',
-    issuer: 'AMA Demo Commercial',
+    documentNumber: 'AMA-CUST-PLG-RATE',
+    issuer: 'PT AMA Commercial',
     expiresAt: '2026-08-01'
   },
   {
@@ -338,8 +334,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'route-djj-wmx',
     documentType: 'ROUTE_RISK_ASSESSMENT',
     title: 'DJJ-WMX Route Risk Assessment',
-    documentNumber: 'SIM-RTE-DJJ-WMX',
-    issuer: 'AMA Demo OCC',
+    documentNumber: 'AMA-RTE-DJJ-WMX',
+    issuer: 'PT AMA Operations Control Centre',
     expiresAt: '2026-07-16'
   },
   {
@@ -347,8 +343,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'inv-part-filter-pc6',
     documentType: 'PART_CERTIFICATE',
     title: 'PC-6 Oil Filter Authorized Release',
-    documentNumber: 'ARC-DEMO-PC6-260701',
-    issuer: 'Demo Aviation Components',
+    documentNumber: 'ARC-PC6-260701',
+    issuer: 'Papua Aero Components',
     expiresAt: '2028-06-19'
   },
   {
@@ -356,8 +352,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'inv-lot-filter-260701',
     documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
     title: 'Filter Lot Authorized Release',
-    documentNumber: 'ARC-DEMO-PC6-260701',
-    issuer: 'Demo Aviation Components',
+    documentNumber: 'ARC-PC6-260701',
+    issuer: 'Papua Aero Components',
     expiresAt: '2028-06-19'
   },
   {
@@ -365,8 +361,8 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'inv-serial-brake-001',
     documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
     title: 'Brake Assembly Authorized Release',
-    documentNumber: 'ARC-DEMO-BRAKE-260701',
-    issuer: 'Demo Aviation Components',
+    documentNumber: 'ARC-BRK-260701',
+    issuer: 'Papua Aero Components',
     expiresAt: '2028-06-19'
   },
   {
@@ -374,18 +370,89 @@ const demoDocumentSeeds: DemoDocumentSeed[] = [
     ownerId: 'inv-serial-starter-installed',
     documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
     title: 'Starter Generator Authorized Release',
-    documentNumber: 'ARC-DEMO-SG-001',
-    issuer: 'Demo Aero Electric',
+    documentNumber: 'ARC-SG-260115',
+    issuer: 'Nusantara Aero Electric',
     expiresAt: '2028-06-19'
   }
 ];
 
-async function ensureDemoDocuments(manifest: DocumentManifest) {
-  if (process.env.NODE_ENV === 'test') {
+function seededDocuments(context: DemoSeedContext) {
+  const expiryOffsets: Record<string, number> = {
+    'AMA-COA-PKAMA-2026': 2,
+    'AMA-WB-PKAMA-2026': -23,
+    'AMA-LIC-PIC-003': -22,
+    'AMA-MED-PIC-003': -17,
+    'AMA-TRN-PIC-002': 10,
+    'AMA-STN-DJJ-SOP': 18,
+    'AMA-VND-MAINT-BANK': 11,
+    'AMA-CUST-PLG-RATE': 15,
+    'AMA-RTE-DJJ-WMX': -1
+  };
+  const scenarioDocuments: DemoDocumentSeed[] = [
+    {
+      ownerType: 'flight',
+      ownerId: 'fop-closed-djj-wmx',
+      documentType: 'FLIGHT_CLOSURE_REPORT',
+      title: 'Flight Closure Report',
+      documentNumber: `CLS-${context.compactDate(-10)}-001`,
+      issuer: 'PT AMA Operations Control Centre'
+    },
+    {
+      ownerType: 'flight',
+      ownerId: 'fop-dg-pending',
+      documentType: 'DANGEROUS_GOODS_DECLARATION',
+      title: 'Dangerous Goods Declaration',
+      documentNumber: `DGD-${context.compactDate(2)}-001`,
+      issuer: 'PT Papua Kargo Mandiri',
+      verificationStatus: 'PENDING_VERIFICATION'
+    },
+    {
+      ownerType: 'flight',
+      ownerId: 'fop-pending-closure',
+      documentType: 'FUEL_UPLIFT_EVIDENCE',
+      title: 'Fuel Uplift Evidence',
+      documentNumber: `FUL-${context.compactDate(-1)}-014`,
+      issuer: 'Nusantara Fuel Services'
+    },
+    {
+      ownerType: 'purchase_order',
+      ownerId: 'inv-po-replenishment-001',
+      documentType: 'PURCHASE_ORDER_DOCUMENT',
+      title: 'Approved Purchase Order',
+      documentNumber: `PO-${context.compactDate(-1)}-001`,
+      issuer: 'PT AMA Procurement'
+    },
+    {
+      ownerType: 'goods_receipt',
+      ownerId: 'inv-gr-replenishment-001',
+      documentType: 'GOODS_RECEIPT_DOCUMENT',
+      title: 'Warehouse Goods Receipt',
+      documentNumber: `GR-${context.compactDate(0)}-001`,
+      issuer: 'PT AMA Inventory Control'
+    }
+  ];
+  return [
+    ...demoDocumentSeeds.map((seed) => ({
+      ...seed,
+      expiresAt:
+        expiryOffsets[seed.documentNumber] === undefined
+          ? seed.expiresAt
+          : context.date(expiryOffsets[seed.documentNumber]!)
+    })),
+    ...scenarioDocuments
+  ];
+}
+
+async function ensureDemoDocuments(
+  manifest: DocumentManifest,
+  force = false,
+  context: DemoSeedContext = createDemoSeedContext()
+) {
+  if (process.env.NODE_ENV === 'test' && !force) {
     return manifest;
   }
 
-  const timestamp = new Date().toISOString();
+  const timestamp = force ? context.now : new Date().toISOString();
   const documents: MasterDocument[] = [...manifest.documents];
   const existingSeeds = new Set(
     manifest.documents.map(
@@ -393,14 +460,16 @@ async function ensureDemoDocuments(manifest: DocumentManifest) {
     )
   );
 
-  for (const seed of demoDocumentSeeds) {
+  for (const [index, seed] of seededDocuments(context).entries()) {
     const seedKey = `${seed.ownerType}:${seed.ownerId}:${seed.documentType}`;
     if (existingSeeds.has(seedKey)) continue;
     const type = getDocumentTypeConfig(seed.documentType);
     const upload = await saveLocalUpload({
+      id: `seed-evidence-${String(index + 1).padStart(3, '0')}`,
+      uploadedAt: timestamp,
       originalName: `${seed.documentNumber}.pdf`,
       contentType: 'application/pdf',
-      data: createDemoPdf(seed.title, [
+      data: createSeededPdf(seed.title, [
         `Document number: ${seed.documentNumber}`,
         `Issuer: ${seed.issuer}`,
         `Owner: ${seed.ownerType} ${seed.ownerId}`,
@@ -428,8 +497,9 @@ async function ensureDemoDocuments(manifest: DocumentManifest) {
 
     documents.push({
       ...document,
+      id: `doc-evidence-${String(index + 1).padStart(3, '0')}`,
       verificationStatus: seed.verificationStatus ?? 'VERIFIED',
-      verifiedBy: seed.verificationStatus === 'PENDING_VERIFICATION' ? undefined : DEMO_USER,
+      verifiedBy: seed.verificationStatus === 'PENDING_VERIFICATION' ? undefined : SYSTEM_USER,
       verifiedAt: seed.verificationStatus === 'PENDING_VERIFICATION' ? undefined : timestamp
     });
     existingSeeds.add(seedKey);
@@ -444,6 +514,18 @@ async function ensureDemoDocuments(manifest: DocumentManifest) {
 async function readSeededManifest() {
   const manifest = await readManifest();
   return await ensureDemoDocuments(manifest);
+}
+
+export async function resetLocalDocumentStorage() {
+  await rm(getManifestPath(), { force: true });
+}
+
+export async function resetAndSeedLocalDocuments(
+  context: DemoSeedContext = createDemoSeedContext()
+) {
+  await resetLocalUploadStorage();
+  await resetLocalDocumentStorage();
+  await ensureDemoDocuments({ documents: [] }, true, context);
 }
 
 export async function listDocuments(filters: DocumentListQuery = { search: '' }) {
@@ -529,7 +611,7 @@ export async function verifyDocument(id: string) {
     ...manifest.documents[index],
     verificationStatus: 'VERIFIED',
     rejectionReason: undefined,
-    verifiedBy: DEMO_USER,
+    verifiedBy: SYSTEM_USER,
     verifiedAt: timestamp,
     updatedAt: timestamp
   };

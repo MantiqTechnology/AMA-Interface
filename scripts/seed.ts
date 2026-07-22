@@ -1,20 +1,21 @@
 import { createDbClient } from '../server/db/client';
 import { runMigrations } from '../server/db/migrate';
-import { seedDemoData } from '../server/db/seed';
-import { seedFlightOperationsData } from '../server/db/seed-flight-operations';
-import { seedTicketingData } from '../server/db/seeds/ticketing';
-import { seedInventoryData } from '../server/db/seeds/inventory';
-import { seedCorporateAssets } from '../server/db/seeds/corporate-assets';
+import { createDemoSeedContext } from '../server/db/seeds/context';
+import { seedScenarioDatabase } from '../server/db/seeds/scenario-database';
 
 const dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite';
 const { db, sqlite } = createDbClient(dbPath);
 
-runMigrations(sqlite);
-await seedDemoData(db);
-seedFlightOperationsData(sqlite);
-seedTicketingData(sqlite);
-seedInventoryData(sqlite);
-seedCorporateAssets(sqlite);
-sqlite.close();
-
-console.log(`Seeded fictional PT AMA demo data at ${dbPath}`);
+try {
+  runMigrations(sqlite);
+  const existing = sqlite.prepare('SELECT COUNT(*) AS count FROM flight_operations').get() as {
+    count: number;
+  };
+  if (existing.count > 0) {
+    throw new Error('Scenario data already exists. Run `pnpm demo:reset` for a clean baseline.');
+  }
+  await seedScenarioDatabase({ db, sqlite }, { context: createDemoSeedContext() });
+  console.log(`Seeded fictional PT AMA operational scenarios at ${dbPath}`);
+} finally {
+  sqlite.close();
+}

@@ -34,7 +34,14 @@ const install = reactive({
   position: '',
   installedAt: '',
   hoursAtInstall: 0,
-  cyclesAtInstall: 0
+  cyclesAtInstall: 0,
+  capitalizationCandidate: false,
+  workOrderId: '',
+  workOrderCategory: 'HEAVY_MAINTENANCE' as 'HEAVY_MAINTENANCE' | 'MAJOR_REPLACEMENT',
+  capitalizationThresholdMinor: 1_000_000,
+  expectedBenefitMonths: 60,
+  technicalAcceptanceStatus: 'PENDING' as 'PENDING' | 'APPROVED' | 'REJECTED',
+  readyForUseDate: ''
 });
 const removal = reactive({
   quarantineBinId: '',
@@ -116,7 +123,14 @@ function selectInstall(item: InventorySerializedPartDto) {
     position: '',
     installedAt: currentDateTime(),
     hoursAtInstall: item.hoursSinceNew,
-    cyclesAtInstall: item.cyclesSinceNew
+    cyclesAtInstall: item.cyclesSinceNew,
+    capitalizationCandidate: false,
+    workOrderId: '',
+    workOrderCategory: 'HEAVY_MAINTENANCE',
+    capitalizationThresholdMinor: 1_000_000,
+    expectedBenefitMonths: 60,
+    technicalAcceptanceStatus: 'PENDING',
+    readyForUseDate: new Date().toISOString().slice(0, 10)
   });
 }
 
@@ -146,9 +160,24 @@ async function mutate(path: string, body?: unknown) {
 }
 
 function installSelected() {
+  const accountingContext = install.capitalizationCandidate
+    ? {
+        workOrderId: install.workOrderId,
+        workOrderCategory: install.workOrderCategory,
+        capitalizationCandidate: true,
+        capitalizationThresholdMinor: install.capitalizationThresholdMinor,
+        expectedBenefitMonths: install.expectedBenefitMonths,
+        technicalAcceptanceStatus: install.technicalAcceptanceStatus,
+        readyForUseDate: install.readyForUseDate
+      }
+    : { capitalizationCandidate: false };
   return mutate(`/api/inventory/repairables/${selected.value!.id}/install`, {
-    ...install,
-    installedAt: new Date(install.installedAt).toISOString()
+    aircraftId: install.aircraftId,
+    position: install.position,
+    installedAt: new Date(install.installedAt).toISOString(),
+    hoursAtInstall: install.hoursAtInstall,
+    cyclesAtInstall: install.cyclesAtInstall,
+    ...accountingContext
   });
 }
 
@@ -202,9 +231,7 @@ function returnServiceable(order: RepairOrder) {
       />
     </template>
     <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{
-        actionError || 'Repairable components could not be loaded.'
-      }}
+      {{ actionError || 'Repairable components could not be loaded.' }}
     </VAlert>
     <VBtnToggle v-model="tab" class="mb-4" color="primary" mandatory variant="outlined">
       <VBtn prepend-icon="mdi-cog-sync-outline" text="Serialized components" value="components" />
@@ -313,7 +340,7 @@ function returnServiceable(order: RepairOrder) {
                   type="datetime-local"
                   variant="outlined"
                 />
-                <VRow dense>
+                <VRow density="comfortable">
                   <VCol cols="6">
                     <VTextField
                       v-model.number="install.hoursAtInstall"
@@ -332,6 +359,62 @@ function returnServiceable(order: RepairOrder) {
                     />
                   </VCol>
                 </VRow>
+                <VSwitch
+                  v-model="install.capitalizationCandidate"
+                  color="primary"
+                  label="Capitalization candidate"
+                />
+                <template v-if="install.capitalizationCandidate">
+                  <VTextField
+                    v-model="install.workOrderId"
+                    class="mb-3"
+                    label="Work order"
+                    variant="outlined"
+                  />
+                  <VSelect
+                    v-model="install.workOrderCategory"
+                    class="mb-3"
+                    :items="[
+                      { title: 'Heavy maintenance', value: 'HEAVY_MAINTENANCE' },
+                      { title: 'Major replacement', value: 'MAJOR_REPLACEMENT' }
+                    ]"
+                    label="Work order category"
+                    variant="outlined"
+                  />
+                  <VSelect
+                    v-model="install.technicalAcceptanceStatus"
+                    class="mb-3"
+                    :items="['PENDING', 'APPROVED', 'REJECTED']"
+                    label="Technical acceptance"
+                    variant="outlined"
+                  />
+                  <VRow density="comfortable">
+                    <VCol cols="12" md="6">
+                      <VTextField
+                        v-model.number="install.capitalizationThresholdMinor"
+                        label="Capitalization threshold (IDR)"
+                        min="0"
+                        type="number"
+                        variant="outlined"
+                      />
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <VTextField
+                        v-model.number="install.expectedBenefitMonths"
+                        label="Useful life (months)"
+                        min="1"
+                        type="number"
+                        variant="outlined"
+                      />
+                    </VCol>
+                  </VRow>
+                  <VTextField
+                    v-model="install.readyForUseDate"
+                    label="Ready for use date"
+                    type="date"
+                    variant="outlined"
+                  />
+                </template>
               </DsConfirmIconButton>
               <DsConfirmIconButton
                 v-if="can('inventory.repair.manage').allowed && item.condition === 'INSTALLED'"
@@ -364,7 +447,7 @@ function returnServiceable(order: RepairOrder) {
                   type="datetime-local"
                   variant="outlined"
                 />
-                <VRow dense>
+                <VRow density="comfortable">
                   <VCol cols="6">
                     <VTextField
                       v-model.number="removal.hoursAtRemove"
@@ -542,7 +625,7 @@ function returnServiceable(order: RepairOrder) {
                 label="Verified certificate reference"
                 variant="outlined"
               />
-              <VRow dense>
+              <VRow density="comfortable">
                 <VCol cols="12" md="4">
                   <VSelect
                     v-model="returned.currencyId"

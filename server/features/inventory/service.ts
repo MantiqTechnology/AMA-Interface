@@ -1530,6 +1530,7 @@ export class InventoryService {
           assetMaintenanceWorkOrderId: input.assetMaintenanceWorkOrderId,
           targetType: input.targetType,
           targetId: input.targetId ?? input.aircraftId,
+          maintenanceCategory: input.maintenanceCategory ?? 'ROUTINE',
           lineCount: input.lines.length
         }
       });
@@ -1905,7 +1906,7 @@ export class InventoryService {
     const issuedFrom = !sourceWarehouse
       ? (sqlite
           .prepare(
-            `SELECT movement.station_id FROM inventory_movement_lines line
+            `SELECT movement.station_id, line.base_value_idr FROM inventory_movement_lines line
              JOIN inventory_movements movement ON movement.id = line.movement_id
              WHERE line.serial_id = ? AND movement.movement_type = 'ISSUE'
                AND movement.is_finalized = 1
@@ -1933,7 +1934,7 @@ export class InventoryService {
       );
     }
     const transaction = sqlite.transaction(() => {
-      let value = 0;
+      let value = num(issuedFrom?.base_value_idr);
       const movementId = this.insertMovement({
         movementType: 'INSTALL',
         sourceType: 'COMPONENT_INSTALLATION',
@@ -2028,7 +2029,25 @@ export class InventoryService {
         sourceAmountMinor: value,
         exchangeRateToIdrMicros: 1_000_000,
         baseAmountIdr: value,
-        payload: { serialNumber: serial.serial_number, position: input.position }
+        payload: {
+          serialNumber: serial.serial_number,
+          position: input.position,
+          ...(input.workOrderId ? { workOrderId: input.workOrderId } : {}),
+          ...(input.workOrderCategory ? { workOrderCategory: input.workOrderCategory } : {}),
+          ...(input.capitalizationCandidate !== undefined
+            ? { capitalizationCandidate: input.capitalizationCandidate }
+            : {}),
+          ...(input.capitalizationThresholdMinor !== undefined
+            ? { capitalizationThresholdMinor: input.capitalizationThresholdMinor }
+            : {}),
+          ...(input.expectedBenefitMonths !== undefined
+            ? { expectedBenefitMonths: input.expectedBenefitMonths }
+            : {}),
+          ...(input.technicalAcceptanceStatus
+            ? { technicalAcceptanceStatus: input.technicalAcceptanceStatus }
+            : {}),
+          ...(input.readyForUseDate ? { readyForUseDate: input.readyForUseDate } : {})
+        }
       });
     });
     transaction.immediate();

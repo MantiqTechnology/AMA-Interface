@@ -96,9 +96,9 @@ test('Director can cancel and then approve a submitted purchase order', async ({
 
 test('repairable custom modal and inventory pages remain usable on mobile', async ({ page }) => {
   await page.goto('/inventory/repairables', { waitUntil: 'networkidle' });
-  const brakeRow = page.getByRole('row').filter({ hasText: 'BRAKE-PC6-0001' });
-  await expect(brakeRow).toBeVisible();
-  await brakeRow.getByRole('button', { name: 'Install to aircraft' }).click();
+  const serviceableRow = page.getByRole('row').filter({ hasText: 'SG-PC6-REVERSED-001' });
+  await expect(serviceableRow).toBeVisible();
+  await serviceableRow.getByRole('button', { name: 'Install to aircraft' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('Aircraft', { exact: true })).toBeVisible();
   await expect(dialog.getByLabel('Position', { exact: true })).toBeVisible();

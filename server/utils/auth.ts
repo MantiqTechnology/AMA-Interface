@@ -46,6 +46,22 @@ export function requireDemoStationAccess(event: H3Event, stationCode: string) {
   }
 }
 
+export function requireDemoFlightStationAccess(
+  event: H3Event,
+  stationCodes: Array<string | null | undefined>
+) {
+  const scope = getDemoStationScope(event);
+  const relevantCodes = stationCodes.filter((code): code is string => Boolean(code));
+  if (!scope.includes('ALL') && !relevantCodes.some((stationCode) => scope.includes(stationCode))) {
+    throw new DomainError(
+      'FLIGHT_STATION_FORBIDDEN',
+      `${getDemoRole(event)} cannot perform this action for the flight station.`,
+      403,
+      { stationCodes: relevantCodes, scope }
+    );
+  }
+}
+
 export function requireDemoPermission(event: H3Event, permissionId: string) {
   const rawRole = getCookie(event, roleCookieName);
   if (rawRole !== undefined && !demoRoleSchema.safeParse(rawRole).success) {

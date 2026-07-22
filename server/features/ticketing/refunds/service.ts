@@ -5,10 +5,14 @@ import type {
   TicketRefundListQuery
 } from '../../../../shared/features/ticketing/refunds';
 import { DomainError, notFound } from '../../../utils/errors';
+import type { AccountingService } from '../../finance/accounting/service';
 import { TicketRefundRepository } from './repository';
 
 export class TicketRefundService {
-  constructor(private readonly repository: TicketRefundRepository) {}
+  constructor(
+    private readonly repository: TicketRefundRepository,
+    private readonly accountingService?: AccountingService
+  ) {}
 
   list(query: TicketRefundListQuery) {
     return this.repository.list(query);
@@ -70,13 +74,17 @@ export class TicketRefundService {
     const current = this.get(id);
     if (current.status !== 'REQUESTED') return current;
     try {
-      return this.repository.decide(
+      const decided = this.repository.decide(
         id,
         input.decision,
         input.note,
         actorId,
         new Date().toISOString()
       );
+      if (decided.status === 'APPROVED') {
+        this.accountingService?.recordTicketRefundApproved(decided.id, actorId);
+      }
+      return decided;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('TICKETING_MANIFEST_LOCKED')) {

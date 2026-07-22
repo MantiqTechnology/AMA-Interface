@@ -265,8 +265,21 @@ export class CorporateAssetService {
       .prepare(`SELECT * FROM asset_action_history WHERE asset_id = ? ORDER BY created_at DESC`)
       .all(id) as Row[];
     const financial = includeFinancial
-      ? (this.sqlite.prepare('SELECT * FROM asset_register WHERE managed_asset_id = ?').get(id) as
-          Row | undefined)
+      ? (this.sqlite
+          .prepare(
+            `SELECT ar.*, ar.cost_minor acquisition_value_minor,
+              COALESCE(SUM(CASE WHEN schedule.status = 'POSTED'
+                THEN schedule.depreciation_amount_minor ELSE 0 END), 0) accumulated_depreciation_minor,
+              ar.cost_minor - COALESCE(SUM(CASE WHEN schedule.status = 'POSTED'
+                THEN schedule.depreciation_amount_minor ELSE 0 END), 0) current_book_value_minor,
+              COALESCE(MAX(CASE WHEN schedule.status = 'POSTED' THEN period.end_date END),
+                ar.acquisition_date) as_of_date
+             FROM asset_register ar
+             LEFT JOIN depreciation_schedules schedule ON schedule.asset_id = ar.id
+             LEFT JOIN accounting_periods period ON period.id = schedule.period_id
+             WHERE ar.managed_asset_id = ? GROUP BY ar.id`
+          )
+          .get(id) as Row | undefined)
       : undefined;
     return {
       ...asset,
@@ -894,8 +907,16 @@ export class CorporateAssetService {
       includeFinancial && ids.length
         ? (this.sqlite
             .prepare(
-              `SELECT * FROM asset_register
-      WHERE managed_asset_id IN (${ids.map(() => '?').join(',')})`
+              `SELECT ar.*, ar.cost_minor acquisition_value_minor,
+                ar.cost_minor - COALESCE(SUM(CASE WHEN schedule.status = 'POSTED'
+                  THEN schedule.depreciation_amount_minor ELSE 0 END), 0) current_book_value_minor,
+                COALESCE(MAX(CASE WHEN schedule.status = 'POSTED' THEN period.end_date END),
+                  ar.acquisition_date) as_of_date
+               FROM asset_register ar
+               LEFT JOIN depreciation_schedules schedule ON schedule.asset_id = ar.id
+               LEFT JOIN accounting_periods period ON period.id = schedule.period_id
+               WHERE ar.managed_asset_id IN (${ids.map(() => '?').join(',')})
+               GROUP BY ar.id`
             )
             .all(...ids) as Row[])
         : [];

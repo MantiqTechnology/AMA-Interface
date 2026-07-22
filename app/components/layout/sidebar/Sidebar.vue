@@ -285,7 +285,7 @@ const navItems = computed<NavItem[]>(() =>
           visible: masterDataVisible.value
         },
         {
-          label: 'Station Ledger',
+          label: 'Operational Ledger',
           to: '/ticketing/finance',
           icon: 'mdi-cash-register',
           visible: true
@@ -302,6 +302,12 @@ const navItems = computed<NavItem[]>(() =>
           to: '/invoices',
           icon: 'mdi-file-document-outline',
           visible: can('finance.invoice.read').allowed
+        },
+        {
+          label: 'Accounting Workbench',
+          to: '/finance/accounting',
+          icon: 'mdi-book-open-page-variant-outline',
+          visible: can('finance.accounting.read').allowed
         },
         {
           label: 'Vendors',

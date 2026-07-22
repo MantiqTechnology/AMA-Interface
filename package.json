@@ -15,6 +15,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "demo:reset": "tsx scripts/reset-demo.ts",
+    "demo:scenarios": "tsx scripts/scenarios.ts",
     "demo:export": "tsx scripts/export-demo.ts",
     "uploads:migrate-local": "tsx scripts/migrate-local-uploads.ts",
     "test:prepare": "nuxt prepare",

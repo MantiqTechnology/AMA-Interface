@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ActualTimeDialog from '../../../features/operations/flight-operations/ActualTimeDialog.vue';
 import type {
   FlightOperationDetailDto,
   FlightOperationOverviewDto
@@ -6,6 +7,9 @@ import type {
 
 const loadingId = ref('');
 const actionError = ref('');
+const actualTimeDialog = ref(false);
+const actualTimeAction = ref<'depart' | 'land'>('depart');
+const selectedActualFlight = ref<FlightOperationOverviewDto['flights'][number] | null>(null);
 
 const { data, pending, error, refresh } = await useAsyncData('flight-actual-closure', () =>
   fetchApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
@@ -15,7 +19,7 @@ const { data, pending, error, refresh } = await useAsyncData('flight-actual-clos
 
 const rows = computed(() =>
   (data.value?.flights ?? []).filter((flight) =>
-    ['SCHEDULED', 'CHECK_IN_OPEN', 'IN_PROGRESS', 'LANDED', 'PENDING_CLOSURE'].includes(
+    ['SCHEDULED', 'CHECK_IN_OPEN', 'IN_PROGRESS', 'LANDED', 'DIVERTED', 'PENDING_CLOSURE'].includes(
       flight.currentStatus
     )
   )
@@ -34,6 +38,12 @@ function nextAction(status: string) {
       action: 'pending-closure',
       icon: 'mdi-clipboard-check-outline'
     };
+  if (status === 'DIVERTED')
+    return {
+      label: 'Diversion Closure',
+      action: 'pending-closure',
+      icon: 'mdi-map-marker-check-outline'
+    };
   if (status === 'PENDING_CLOSURE')
     return { label: 'Close', action: 'close', icon: 'mdi-lock-check-outline' };
   return null;
@@ -47,22 +57,46 @@ function formatDate(value: string | null) {
 }
 
 async function runAction(id: string, action: string) {
+  if (action === 'depart' || action === 'land') {
+    selectedActualFlight.value = rows.value.find((flight) => flight.id === id) ?? null;
+    actualTimeAction.value = action;
+    actualTimeDialog.value = true;
+    return;
+  }
   loadingId.value = `${id}-${action}`;
   actionError.value = '';
   try {
-    const body =
-      action === 'depart' || action === 'land' ? { actualAt: new Date().toISOString() } : {};
     await fetchApi<FlightOperationDetailDto>(
       `/api/flight-operations/flights/${id}/actions/${action}`,
       {
         method: 'POST',
-        body
+        body: {}
       }
     );
     await refresh();
   } catch (errorValue) {
     actionError.value =
       errorValue instanceof Error ? errorValue.message : 'Actual and closure action failed';
+  } finally {
+    loadingId.value = '';
+  }
+}
+
+async function submitActualTime(body: { actualAt: string; stationId: string; note?: string }) {
+  const flight = selectedActualFlight.value;
+  if (!flight) return;
+  loadingId.value = `${flight.id}-${actualTimeAction.value}`;
+  actionError.value = '';
+  try {
+    await fetchApi<FlightOperationDetailDto>(
+      `/api/flight-operations/flights/${flight.id}/actions/${actualTimeAction.value}`,
+      { method: 'POST', body }
+    );
+    actualTimeDialog.value = false;
+    selectedActualFlight.value = null;
+    await refresh();
+  } catch (errorValue) {
+    actionError.value = errorValue instanceof Error ? errorValue.message : 'Actual time failed';
   } finally {
     loadingId.value = '';
   }
@@ -79,7 +113,17 @@ async function runAction(id: string, action: string) {
         </p>
       </div>
       <VSpacer />
-      <VBtn icon="mdi-refresh" variant="text" @click="refresh" />
+      <VTooltip text="Refresh worklist">
+        <template #activator="{ props }">
+          <VBtn
+            v-bind="props"
+            aria-label="Refresh worklist"
+            icon="mdi-refresh"
+            variant="text"
+            @click="refresh"
+          />
+        </template>
+      </VTooltip>
     </div>
 
     <VAlert v-if="error" class="mb-4" type="error" variant="tonal">
@@ -126,28 +170,62 @@ async function runAction(id: string, action: string) {
             <td>{{ formatDate(flight.actualArrivalAt) }}</td>
             <td>{{ flight.isLocked ? 'Locked' : (flight.blockingReason ?? 'Open') }}</td>
             <td class="text-right">
-              <VBtn
-                class="mr-1"
-                density="comfortable"
-                icon="mdi-open-in-new"
-                :to="`/flights/${flight.id}`"
-                variant="text"
-              />
-              <VBtn
+              <VTooltip text="Open flight detail">
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    aria-label="Open flight detail"
+                    class="mr-1"
+                    density="comfortable"
+                    icon="mdi-open-in-new"
+                    :to="`/flights/${flight.id}`"
+                    variant="text"
+                  />
+                </template>
+              </VTooltip>
+              <VTooltip
                 v-if="nextAction(flight.currentStatus)"
-                color="secondary"
-                density="comfortable"
-                :prepend-icon="nextAction(flight.currentStatus)?.icon"
-                :loading="loadingId === `${flight.id}-${nextAction(flight.currentStatus)?.action}`"
-                variant="tonal"
-                @click="runAction(flight.id, String(nextAction(flight.currentStatus)?.action))"
+                :text="String(nextAction(flight.currentStatus)?.label)"
               >
-                {{ nextAction(flight.currentStatus)?.label }}
-              </VBtn>
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    color="secondary"
+                    density="comfortable"
+                    :prepend-icon="nextAction(flight.currentStatus)?.icon"
+                    :loading="
+                      loadingId === `${flight.id}-${nextAction(flight.currentStatus)?.action}`
+                    "
+                    variant="tonal"
+                    @click="runAction(flight.id, String(nextAction(flight.currentStatus)?.action))"
+                  >
+                    {{ nextAction(flight.currentStatus)?.label }}
+                  </VBtn>
+                </template>
+              </VTooltip>
             </td>
           </tr>
         </tbody>
       </VTable>
     </VCard>
+
+    <ActualTimeDialog
+      v-if="selectedActualFlight"
+      v-model="actualTimeDialog"
+      :action="actualTimeAction"
+      :flight-number="selectedActualFlight.flightNumber"
+      :loading="Boolean(loadingId)"
+      :station-code="
+        actualTimeAction === 'depart'
+          ? selectedActualFlight.originStationCode
+          : selectedActualFlight.destinationStationCode
+      "
+      :station-id="
+        actualTimeAction === 'depart'
+          ? selectedActualFlight.originStationId
+          : selectedActualFlight.destinationStationId
+      "
+      @submit="submitActualTime"
+    />
   </VContainer>
 </template>

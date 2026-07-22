@@ -1,9 +1,12 @@
 import type { AppDatabase } from '../../client';
+import { createDemoSeedContext, type DemoSeedContext } from '../context';
 import { dgCategories } from '../../schema/cargo';
 
-const referenceNow = '2026-07-07T09:00:00.000+07:00';
-
-export async function seedCargoMasterData(db: AppDatabase) {
+export async function seedCargoMasterData(
+  db: AppDatabase,
+  context: DemoSeedContext = createDemoSeedContext()
+) {
+  const referenceNow = context.now;
   await db
     .insert(dgCategories)
     .values([
@@ -11,8 +14,8 @@ export async function seedCargoMasterData(db: AppDatabase) {
         id: 'dg-gen',
         dgCode: 'DG-GEN',
         dgClass: 'GENERAL',
-        description: 'General dangerous goods demo category.',
-        handlingInstruction: 'Demo review required before acceptance.',
+        description: 'General dangerous goods operational category.',
+        handlingInstruction: 'Operations review required before acceptance.',
         requiresSpecialApproval: true,
         isActive: true,
         createdAt: referenceNow,
@@ -22,8 +25,8 @@ export async function seedCargoMasterData(db: AppDatabase) {
         id: 'dg-bat',
         dgCode: 'DG-BAT',
         dgClass: 'BATTERY',
-        description: 'Battery cargo demo category.',
-        handlingInstruction: 'Confirm packaging and state of charge in demo manifest.',
+        description: 'Battery cargo operational category.',
+        handlingInstruction: 'Confirm packaging and state of charge in cargo manifest.',
         requiresSpecialApproval: true,
         isActive: true,
         createdAt: referenceNow,
@@ -33,7 +36,7 @@ export async function seedCargoMasterData(db: AppDatabase) {
         id: 'dg-fl',
         dgCode: 'DG-FL',
         dgClass: 'FLAMMABLE',
-        description: 'Flammable goods demo category.',
+        description: 'Flammable goods operational category.',
         handlingInstruction: 'Hold for simulated DG approval.',
         requiresSpecialApproval: true,
         isActive: true,
@@ -44,8 +47,8 @@ export async function seedCargoMasterData(db: AppDatabase) {
         id: 'dg-med',
         dgCode: 'DG-MED',
         dgClass: 'MEDICAL',
-        description: 'Medical cargo demo category.',
-        handlingInstruction: 'Validate demo documentation before loading.',
+        description: 'Medical cargo operational category.',
+        handlingInstruction: 'Validate shipping documentation before loading.',
         requiresSpecialApproval: false,
         isActive: true,
         createdAt: referenceNow,

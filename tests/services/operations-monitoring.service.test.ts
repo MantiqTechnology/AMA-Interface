@@ -20,6 +20,14 @@ describe('OperationsMonitoringService', () => {
         severity: 'critical'
       })
     );
+    expect(following.find((flight) => flight.id === 'fop-in-progress')).toMatchObject({
+      delayMinutes: 6,
+      urgency: 'warning',
+      nextAction: 'Record landing / diversion',
+      plannedDestinationCode: 'OKS',
+      actualArrivalStationCode: null,
+      stationScopeMatch: true
+    });
 
     sqlite.close();
   });
@@ -55,10 +63,7 @@ describe('OperationsMonitoringService', () => {
          WHERE id = 'fop-ticketing-passenger'`
       )
       .run();
-    const invoice = services.invoices.finalizeClosedFlight(
-      'fop-ticketing-passenger',
-      'USR-DEMO-ADMIN'
-    );
+    const invoice = services.invoices.finalizeClosedFlight('fop-ticketing-passenger', 'USR-ADMIN');
     sqlite.prepare("UPDATE invoices SET currency = 'USD' WHERE id = ?").run(invoice.id);
     sqlite
       .prepare("UPDATE invoice_finance_snapshots SET currency_code = 'USD' WHERE invoice_id = ?")

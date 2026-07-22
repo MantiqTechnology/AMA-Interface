@@ -22,9 +22,9 @@ describe('inventory service', () => {
     process.env.AMA_DOCUMENT_MANIFEST = join(documentDirectory, 'documents.json');
     const timestamp = '2026-07-16T00:00:00.000Z';
     const certificates = [
-      ['doc-filter-seed', 'inventory_lot', 'inv-lot-filter-260701', 'ARC-DEMO-PC6-260701'],
+      ['doc-filter-seed', 'inventory_lot', 'inv-lot-filter-260701', 'ARC-PC6-260701'],
       ['doc-filter-fefo', 'inventory_part', 'inv-part-filter-pc6', 'ARC-FEFO-TEST'],
-      ['doc-brake-seed', 'inventory_serial', 'inv-serial-brake-001', 'ARC-DEMO-BRAKE-260701'],
+      ['doc-brake-seed', 'inventory_serial', 'inv-serial-brake-001', 'ARC-BRK-260701'],
       [
         'doc-starter-return',
         'inventory_serial',
@@ -65,9 +65,9 @@ describe('inventory service', () => {
   it('picks physical stock by FEFO while valuing the issue by FIFO', async () => {
     const receipt = await inventory.postGoodsReceipt(
       {
-        purchaseOrderId: 'inv-po-demo-001',
+        purchaseOrderId: 'inv-po-replenishment-001',
         warehouseId: 'inv-wh-djj-main',
-        receivedAt: '2026-07-16T08:00:00.000+09:00',
+        receivedAt: '2026-07-18T08:00:00.000+09:00',
         documentReference: 'DO-FEFO-TEST',
         lines: [
           {
@@ -118,6 +118,9 @@ describe('inventory service', () => {
   });
 
   it('rolls back every line when one maintenance issue line is short', async () => {
+    const issueCountBefore = sqlite
+      .prepare(`SELECT COUNT(*) count FROM maintenance_part_issues`)
+      .get() as SqlRow;
     const before = sqlite
       .prepare(
         `SELECT on_hand_quantity quantity FROM inventory_stock_balances WHERE id = 'inv-bal-oil-djj'`
@@ -148,9 +151,9 @@ describe('inventory service', () => {
       )
       .get() as SqlRow;
     expect(after.quantity).toBe(before.quantity);
-    expect(
-      sqlite.prepare(`SELECT COUNT(*) count FROM maintenance_part_issues`).get()
-    ).toMatchObject({ count: 0 });
+    expect(sqlite.prepare(`SELECT COUNT(*) count FROM maintenance_part_issues`).get()).toEqual(
+      issueCountBefore
+    );
   });
 
   it('preserves unit cost on transfer and never creates negative stock', async () => {
@@ -320,7 +323,7 @@ describe('inventory service', () => {
   it('releases quarantine stock only after a matching document is verified', async () => {
     await inventory.postGoodsReceipt(
       {
-        purchaseOrderId: 'inv-po-demo-001',
+        purchaseOrderId: 'inv-po-replenishment-001',
         warehouseId: 'inv-wh-djj-main',
         receivedAt: '2026-07-16T08:00:00.000+09:00',
         documentReference: 'DO-QUARANTINE-TEST',
@@ -855,7 +858,7 @@ describe('inventory service', () => {
     );
 
     await expect(
-      inventory.reverseMovement('inv-move-receipt-demo-001', 'USR-INVENTORY-CONTROLLER', ['ALL'])
+      inventory.reverseMovement('inv-move-receipt-001', 'USR-INVENTORY-CONTROLLER', ['ALL'])
     ).rejects.toThrow(/physical stock has moved/u);
   });
 
@@ -915,7 +918,7 @@ describe('inventory service', () => {
     await expect(
       inventory.postGoodsReceipt(
         {
-          purchaseOrderId: 'inv-po-demo-001',
+          purchaseOrderId: 'inv-po-replenishment-001',
           warehouseId: 'inv-wh-djj-main',
           receivedAt: '2026-07-16T08:00:00.000+09:00',
           documentReference: 'DO-INVALID-DATE',
@@ -943,7 +946,7 @@ describe('inventory service', () => {
     await expect(
       inventory.postGoodsReceipt(
         {
-          purchaseOrderId: 'inv-po-demo-001',
+          purchaseOrderId: 'inv-po-replenishment-001',
           warehouseId: 'inv-wh-djj-main',
           receivedAt: '2026-07-16T08:00:00.000+09:00',
           documentReference: 'DO-SPLIT-OVER-RECEIPT',
@@ -1154,7 +1157,7 @@ describe('inventory service', () => {
       sqlite
         .prepare(
           `UPDATE inventory_movements SET reason = 'Tampered'
-           WHERE id = 'inv-move-receipt-demo-001'`
+           WHERE id = 'inv-move-receipt-001'`
         )
         .run()
     ).toThrow(/immutable/u);
@@ -1166,7 +1169,7 @@ describe('inventory service', () => {
         .prepare(
           `INSERT INTO inventory_movement_lines
            (id, movement_id, part_id, from_bin_id, to_bin_id, quantity, currency_id)
-           VALUES ('inv-ml-tamper', 'inv-move-receipt-demo-001', 'inv-part-oil', NULL,
+           VALUES ('inv-ml-tamper', 'inv-move-receipt-001', 'inv-part-oil', NULL,
                    'inv-bin-djj-usable', 1, 'cur-idr')`
         )
         .run()

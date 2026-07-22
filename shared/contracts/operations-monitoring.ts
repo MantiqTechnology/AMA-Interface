@@ -27,6 +27,12 @@ export type OperationalFlightMonitorDto = {
   scheduledArrivalAt: string | null;
   actualDepartureAt: string | null;
   actualArrivalAt: string | null;
+  delayMinutes: number;
+  urgency: 'normal' | 'warning' | 'critical';
+  nextAction: string | null;
+  plannedDestinationCode: string;
+  actualArrivalStationCode: string | null;
+  stationScopeMatch: boolean;
   readinessPercent: number;
   blockingReason: string | null;
 };

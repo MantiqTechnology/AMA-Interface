@@ -72,8 +72,8 @@ describe('operations master data services', () => {
       routes.create({
         ...routeInputDefaults,
         routeCode: 'DJJ-TIM',
-        originStationId: 'st-mkq',
-        destinationStationId: 'st-wmx',
+        originStationId: 'st-nbx',
+        destinationStationId: 'st-tim',
         estimatedDurationMinutes: 90,
         distanceKm: 400
       })

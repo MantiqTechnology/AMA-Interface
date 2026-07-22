@@ -18,6 +18,7 @@ import type {
   CreateFlightRequestBody,
   FlightOperationLookupsDto,
   FlightOperationLookupOption,
+  FlightPlanningContextDto,
   FlightRatePreviewDto,
   FlightRequestRecord
 } from '#shared/contracts/flight-operations';
@@ -55,10 +56,10 @@ const form = reactive<CreateFlightRequestBody>({
   requestSource: 'Corporate Charter Request',
   priorityId: 'flight-priority-normal',
   passengerEstimate: 0,
-  cargoWeightEstimateKg: 0,
   cargoCategory: null,
-  dangerousGoods: false,
+  cargoWeightEstimateKg: 0,
   fuelType: 'AVTUR',
+  dangerousGoods: false,
   requestedFuelLitre: 0,
   fuelSupplierId: null,
   handlingSupplierId: null,
@@ -113,6 +114,55 @@ const selectedScheduleTemplateId = ref<string | null>(null);
 const selectedCapacityProfileId = ref<string | null>(null);
 const ratePreview = ref<FlightRatePreviewDto | null>(null);
 const ratePreviewPending = ref(false);
+const planningQuery = computed(() => ({
+  routeId: form.routeId,
+  flightDate: form.flightDate,
+  serviceTypeId: form.serviceTypeId,
+  scheduledDepartureAt: isoFromInput(form.scheduledDepartureAt) ?? undefined,
+  scheduledArrivalAt: isoFromInput(form.scheduledArrivalAt) ?? undefined,
+  passengerEstimate: form.passengerEstimate,
+  cargoWeightEstimateKg: form.cargoWeightEstimateKg
+}));
+const {
+  data: planningContext,
+  pending: planningPending,
+  error: planningError
+} = await useAsyncData(
+  'new-flight-request-planning-context',
+  () =>
+    form.routeId
+      ? fetchApi<FlightPlanningContextDto>('/api/flight-operations/planning-context', {
+          query: planningQuery.value
+        })
+      : Promise.resolve(null),
+  { default: () => null, watch: [planningQuery] }
+);
+
+const requestSourceOptions = [
+  'Corporate Charter Request',
+  'Scheduled Service Plan',
+  'Cargo Booking',
+  'Medevac Request',
+  'Positioning Instruction',
+  'Ops Recovery'
+];
+const cargoCategoryOptions = [
+  'General Cargo',
+  'Perishable',
+  'Medical Supplies',
+  'AOG Parts',
+  'Dangerous Goods',
+  'Mail',
+  'Baggage'
+];
+const fuelTypeOptions = ['AVTUR', 'Jet A-1', 'No Uplift Required'];
+const billingTypeOptions = [
+  'CHARTER',
+  'SCHEDULED_PASSENGER',
+  'CARGO',
+  'INTERNAL_POSITIONING',
+  'NON_REVENUE'
+];
 
 const defaultFlightTypeOptions: FlightOperationLookupOption[] = [
   {
@@ -222,6 +272,40 @@ const selectedFlightType = computed(() =>
 const selectedServiceType = computed(() =>
   serviceTypeOptions.value.find((item) => item.value === form.serviceTypeId)
 );
+const commercialService = computed(() =>
+  ['CHARTER_CARGO', 'CHARTER_PASSENGER', 'SCHEDULED_PASSENGER'].includes(
+    selectedServiceType.value?.code ?? ''
+  )
+);
+const picCandidates = computed(() =>
+  (planningContext.value?.crewCandidates ?? []).filter(
+    (candidate) => candidate.crewRole === 'PILOT_IN_COMMAND'
+  )
+);
+const coPilotCandidates = computed(() =>
+  (planningContext.value?.crewCandidates ?? []).filter(
+    (candidate) => candidate.crewRole === 'CO_PILOT'
+  )
+);
+const planningBlockers = computed(() => planningContext.value?.routeReadiness.blockers ?? []);
+const planningWarnings = computed(() => planningContext.value?.routeReadiness.warnings ?? []);
+const selectedAircraftCandidate = computed(() =>
+  planningContext.value?.aircraftCandidates.find((item) => item.id === form.aircraftId)
+);
+const selectedPicCandidate = computed(() =>
+  picCandidates.value.find((item) => item.id === form.pilotInCommandId)
+);
+const selectedCoPilotCandidate = computed(() =>
+  coPilotCandidates.value.find((item) => item.id === form.coPilotId)
+);
+const hasPlanningBlocker = computed(
+  () =>
+    planningBlockers.value.length > 0 ||
+    selectedAircraftCandidate.value?.available === false ||
+    selectedPicCandidate.value?.available === false ||
+    selectedCoPilotCandidate.value?.available === false ||
+    Boolean(capacityWarning.value)
+);
 const selectedScheduleTemplate = computed(() =>
   scheduleTemplateOptions.value.find((item) => item.id === selectedScheduleTemplateId.value)
 );
@@ -308,6 +392,13 @@ const assignmentWarnings = computed(() => {
   }
   if (form.pilotInCommandId && form.pilotInCommandId === form.coPilotId) {
     warnings.push('PIC and co-pilot must be different people.');
+  }
+  for (const candidate of [
+    selectedAircraftCandidate.value,
+    selectedPicCandidate.value,
+    selectedCoPilotCandidate.value
+  ]) {
+    if (candidate) warnings.push(...candidate.warnings, ...candidate.blockers);
   }
   return warnings;
 });
@@ -416,6 +507,13 @@ async function refreshRatePreview() {
 
 watch(selectedScheduleTemplateId, () => applyScheduleTemplate());
 watch(
+  () => form.serviceTypeId,
+  () => {
+    const code = selectedServiceType.value?.code;
+    if (code) form.flightTypeId = flightTypeIdFromServiceTypeCode(code);
+  }
+);
+watch(
   () => form.flightDate,
   () => {
     if (selectedScheduleTemplateId.value) applyScheduleTemplate();
@@ -449,9 +547,18 @@ function nextStep() {
   errorMessage.value = '';
   if (
     step.value === 1 &&
-    (!form.routeId || !form.customerId || !form.scheduledDepartureAt || !form.scheduledArrivalAt)
+    (!form.routeId ||
+      (commercialService.value && !form.customerId) ||
+      !form.scheduledDepartureAt ||
+      !form.scheduledArrivalAt)
   ) {
-    errorMessage.value = 'Route, customer, ETD, and ETA are required before continuing.';
+    errorMessage.value = commercialService.value
+      ? 'Route, customer, ETD, and ETA are required before continuing.'
+      : 'Route, ETD, and ETA are required before continuing.';
+    return;
+  }
+  if (step.value === 1 && planningBlockers.value.length) {
+    errorMessage.value = planningBlockers.value.join(' ');
     return;
   }
   if (step.value === 2 && (!form.aircraftId || !form.pilotInCommandId)) {
@@ -530,6 +637,27 @@ function money(value: number | null | undefined) {
     <VAlert v-if="errorMessage" closable class="mb-4" type="error" variant="tonal">
       {{ errorMessage }}
     </VAlert>
+    <VAlert v-if="planningError" class="mb-4" type="error" variant="tonal">
+      Planning availability could not be refreshed. Review the selected route and schedule.
+    </VAlert>
+    <VAlert
+      v-for="blocker in planningBlockers"
+      :key="blocker"
+      class="mb-3"
+      type="error"
+      variant="tonal"
+    >
+      {{ blocker }}
+    </VAlert>
+    <VAlert
+      v-for="warning in planningWarnings"
+      :key="warning"
+      class="mb-3"
+      type="warning"
+      variant="tonal"
+    >
+      {{ warning }}
+    </VAlert>
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section class="border bg-surface pa-5">
@@ -575,8 +703,10 @@ function money(value: number | null | undefined) {
                 <FlightScheduleTemplateSelect
                   v-model="selectedScheduleTemplateId"
                   :allow-create="true"
+                  :candidates="planningContext?.scheduleTemplates ?? null"
                   clearable
                   label="Schedule template"
+                  :loading="planningPending"
                 />
               </VCol>
               <VCol cols="12" md="6">
@@ -611,8 +741,9 @@ function money(value: number | null | undefined) {
                 />
               </VCol>
               <VCol cols="12" md="6">
-                <VTextField
+                <VSelect
                   v-model="form.requestSource"
+                  :items="requestSourceOptions"
                   label="Request source"
                   variant="outlined"
                 />
@@ -648,13 +779,21 @@ function money(value: number | null | undefined) {
             </div>
             <VRow>
               <VCol cols="12">
-                <AircraftSelect v-model="form.aircraftId" :allow-create="true" label="Aircraft" />
+                <AircraftSelect
+                  v-model="form.aircraftId"
+                  :allow-create="true"
+                  :candidates="planningContext?.aircraftCandidates ?? null"
+                  label="Aircraft"
+                  :loading="planningPending"
+                />
               </VCol>
               <VCol cols="12" md="6">
                 <PersonnelSelect
                   v-model="form.pilotInCommandId"
                   :allow-create="true"
+                  :candidates="picCandidates"
                   label="Pilot in command"
+                  :loading="planningPending"
                 />
               </VCol>
               <VCol cols="12" md="6">
@@ -662,7 +801,9 @@ function money(value: number | null | undefined) {
                   v-model="form.coPilotId"
                   clearable
                   :allow-create="true"
+                  :candidates="coPilotCandidates"
                   label="Co-pilot"
+                  :loading="planningPending"
                 />
               </VCol>
             </VRow>
@@ -715,8 +856,10 @@ function money(value: number | null | undefined) {
                 <FlightCapacityProfileSelect
                   v-model="selectedCapacityProfileId"
                   :allow-create="true"
+                  :candidates="planningContext?.capacityProfiles ?? null"
                   clearable
                   label="Capacity profile"
+                  :loading="planningPending"
                 />
               </VCol>
               <VCol cols="12" md="4">
@@ -738,8 +881,10 @@ function money(value: number | null | undefined) {
                 />
               </VCol>
               <VCol cols="12" md="4">
-                <VTextField
+                <VSelect
                   v-model="form.cargoCategory"
+                  clearable
+                  :items="cargoCategoryOptions"
                   label="Cargo category"
                   variant="outlined"
                 />
@@ -789,7 +934,12 @@ function money(value: number | null | undefined) {
             </div>
             <VRow>
               <VCol cols="12" md="4">
-                <VTextField v-model="form.fuelType" label="Fuel type" variant="outlined" />
+                <VSelect
+                  v-model="form.fuelType"
+                  :items="fuelTypeOptions"
+                  label="Fuel type"
+                  variant="outlined"
+                />
               </VCol>
               <VCol cols="12" md="4">
                 <VTextField
@@ -833,7 +983,12 @@ function money(value: number | null | undefined) {
                 />
               </VCol>
               <VCol cols="12" md="6">
-                <VTextField v-model="form.billingType" label="Billing type" variant="outlined" />
+                <VSelect
+                  v-model="form.billingType"
+                  :items="billingTypeOptions"
+                  label="Billing type"
+                  variant="outlined"
+                />
               </VCol>
               <VCol cols="12" md="6">
                 <VTextField
@@ -941,14 +1096,14 @@ function money(value: number | null | undefined) {
               </div>
             </div>
             <VAlert
-              v-if="assignmentWarnings.length || capacityWarning"
+              v-if="assignmentWarnings.length || capacityWarning || planningWarnings.length"
               class="mt-4"
               type="warning"
               variant="tonal"
             >
               This request contains
-              {{ assignmentWarnings.length + (capacityWarning ? 1 : 0) }} readiness warning(s). The
-              Flight Order will require resolution before approval.
+              {{ assignmentWarnings.length + planningWarnings.length + (capacityWarning ? 1 : 0) }}
+              readiness warning(s). The Flight Order will require resolution before approval.
             </VAlert>
           </VWindowItem>
         </VWindow>
@@ -964,7 +1119,7 @@ function money(value: number | null | undefined) {
           </VBtn>
           <template v-else>
             <VBtn
-              :disabled="submitting"
+              :disabled="submitting || planningBlockers.length > 0 || planningPending"
               :loading="submitting && !submitAfterSave"
               variant="tonal"
               @click="saveRequest(false)"
@@ -974,7 +1129,7 @@ function money(value: number | null | undefined) {
             <VBtn
               class="ml-2"
               color="secondary"
-              :disabled="submitting"
+              :disabled="submitting || hasPlanningBlocker || planningPending"
               :loading="submitting && submitAfterSave"
               prepend-icon="mdi-send-outline"
               @click="saveRequest(true)"

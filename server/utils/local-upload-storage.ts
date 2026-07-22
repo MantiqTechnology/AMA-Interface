@@ -22,6 +22,8 @@ export type SaveLocalUploadInput = {
   data: Buffer | Uint8Array;
   originalName: string;
   contentType?: string;
+  id?: string;
+  uploadedAt?: string;
 };
 
 export type LocalUploadFile = {
@@ -172,10 +174,14 @@ export async function saveLocalUpload(input: SaveLocalUploadInput) {
   const uploadDir = getUploadDir();
   await mkdir(uploadDir, { recursive: true });
 
-  const id = nanoid(14);
+  const id = input.id ?? nanoid(14);
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new DomainError('INVALID_UPLOAD_ID', 'Upload ID contains unsupported characters', 400);
+  }
+  const uploadedAt = input.uploadedAt ?? new Date().toISOString();
   const originalName = cleanOriginalName(input.originalName);
   const extension = safeExtension(originalName);
-  const filename = `${Date.now()}-${id}${extension}`;
+  const filename = `${Date.parse(uploadedAt)}-${id}${extension}`;
   const absolutePath = uploadPathFor(filename);
 
   await writeFile(absolutePath, buffer);
@@ -190,7 +196,7 @@ export async function saveLocalUpload(input: SaveLocalUploadInput) {
     size: buffer.byteLength,
     contentType: input.contentType || 'application/octet-stream',
     isImage: Boolean(input.contentType?.startsWith('image/')),
-    uploadedAt: new Date().toISOString()
+    uploadedAt
   };
 
   const manifest = await readManifest();
@@ -232,4 +238,9 @@ export async function deleteLocalUpload(id: string) {
   await writeManifest({ uploads: manifest.uploads.filter((item) => item.id !== id) });
 
   return upload;
+}
+
+export async function resetLocalUploadStorage() {
+  await rm(getUploadDir(), { recursive: true, force: true });
+  await rm(getManifestPath(), { force: true });
 }

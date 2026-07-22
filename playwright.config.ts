@@ -22,7 +22,7 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: `env -u BASH_ENV PATH=${nodeBinDirectory}:/usr/local/bin:/usr/bin:/bin bash --noprofile --norc -c 'export NUXT_BUILD_DIR=.nuxt-playwright AMA_DB_PATH=./data/playwright.sqlite; corepack pnpm exec nuxi cleanup && corepack pnpm exec nuxi prepare && corepack pnpm demo:reset && corepack pnpm dev --port 3100'`,
+    command: `env -u BASH_ENV PATH=${nodeBinDirectory}:/usr/local/bin:/usr/bin:/bin bash --noprofile --norc -c 'export DEMO_SEED_DATE=2026-07-17 NUXT_BUILD_DIR=.nuxt-playwright AMA_DB_PATH=./data/playwright.sqlite AMA_DOCUMENT_MANIFEST=./data/playwright-documents.json AMA_UPLOAD_MANIFEST=./data/playwright-uploads.json AMA_UPLOAD_DIR=./data/uploads/playwright; corepack pnpm exec nuxi cleanup && corepack pnpm exec nuxi prepare && corepack pnpm dev --port 3100'`,
     url: `http://localhost:${port}`,
     reuseExistingServer: false,
     timeout: 120_000

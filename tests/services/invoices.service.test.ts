@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createSeededTestServices } from '../helpers/demo-db';
 
-const adminActor = 'USR-DEMO-ADMIN';
+const adminActor = 'USR-ADMIN';
 const financeReviewerActor = 'USR-FINANCE-REVIEWER';
 
 function markFlightClosed(
@@ -67,7 +67,7 @@ describe('InvoicesService', () => {
     expect(invoice.lineItems).toHaveLength(1);
     expect(invoice.lineItems[0]).toMatchObject({
       sourceType: 'CHARTER',
-      taxCodeId: 'tax-ppn-demo',
+      taxCodeId: 'tax-ppn',
       taxRateBasisPoints: 1100,
       taxAmount: 3_080_000,
       total: 31_080_000
@@ -110,9 +110,9 @@ describe('InvoicesService', () => {
 
     expect(invoice.status).toBe('draft');
     expect(invoice.lineItems.map((line) => line.sourceId)).toEqual(
-      expect.arrayContaining(['TKT-DEMO12', 'TKT-RESCHEDULE'])
+      expect.arrayContaining(['AMA-TKT-20260718-001', 'AMA-TKT-20260718-003'])
     );
-    expect(invoice.lineItems.map((line) => line.sourceId)).not.toContain('TKT-DEMO34');
+    expect(invoice.lineItems.map((line) => line.sourceId)).not.toContain('AMA-TKT-20260718-002');
     expect(invoice.lineItems.every((line) => line.sourceType === 'PASSENGER_TICKET')).toBe(true);
     expect(invoice.finance).toMatchObject({
       ticketRevenue: 3_600_000,
@@ -146,11 +146,11 @@ describe('InvoicesService', () => {
     expect(invoice.lineItems).toHaveLength(1);
     expect(invoice.lineItems[0]).toMatchObject({
       sourceType: 'CARGO_BOOKING',
-      sourceId: 'AWB-100200',
+      sourceId: 'AMA-AWB-20260719-001',
       quantity: 45,
       unitPrice: 32_000,
       subtotal: 1_440_000,
-      taxCode: 'PPN_DEMO',
+      taxCode: 'PPN_11',
       taxRateBasisPoints: 1100,
       taxAmount: 158_400,
       total: 1_598_400
@@ -166,7 +166,7 @@ describe('InvoicesService', () => {
 
     sqlite
       .prepare('UPDATE cargo_bookings SET total_tariff = 1, total_amount = 1 WHERE id = ?')
-      .run('AWB-100200');
+      .run('AMA-AWB-20260719-001');
     expect(services.invoices.get(invoice.id).finance.invoiceTotal).toBe(1_598_400);
 
     sqlite.close();
@@ -177,7 +177,7 @@ describe('InvoicesService', () => {
     markFlightClosed(sqlite, 'fop-ticketing-cargo');
     sqlite
       .prepare('UPDATE cargo_bookings SET tax_amount = 123, total_amount = 1440123 WHERE id = ?')
-      .run('AWB-100200');
+      .run('AMA-AWB-20260719-001');
 
     expect(() =>
       services.invoices.finalizeClosedFlight('fop-ticketing-cargo', adminActor)
@@ -205,7 +205,7 @@ describe('InvoicesService', () => {
       .run(
         'refund-before-invoice',
         'fop-ticketing-passenger',
-        'TKT-DEMO12',
+        'AMA-TKT-20260718-001',
         'Customer cancellation',
         1_800_000,
         adminActor,
@@ -220,7 +220,7 @@ describe('InvoicesService', () => {
 
     const invoice = services.invoices.finalizeClosedFlight('fop-ticketing-passenger', adminActor);
 
-    expect(invoice.lineItems.map((line) => line.sourceId)).toEqual(['TKT-RESCHEDULE']);
+    expect(invoice.lineItems.map((line) => line.sourceId)).toEqual(['AMA-TKT-20260718-003']);
     expect(invoice.finance.ticketRevenue).toBe(1_800_000);
 
     sqlite.close();
@@ -230,7 +230,9 @@ describe('InvoicesService', () => {
     const { services, sqlite } = await createSeededTestServices();
     markFlightClosed(sqlite, 'fop-ticketing-passenger');
     sqlite
-      .prepare("UPDATE passenger_tickets SET currency_code = 'USD' WHERE id = 'TKT-DEMO12'")
+      .prepare(
+        "UPDATE passenger_tickets SET currency_code = 'USD' WHERE id = 'AMA-TKT-20260718-001'"
+      )
       .run();
 
     expect(() =>

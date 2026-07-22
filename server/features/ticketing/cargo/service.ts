@@ -8,6 +8,7 @@ import type {
 import { DomainError, notFound } from '../../../utils/errors';
 import type { DgCategoryRepository } from '../../cargo/dg-categories/repository';
 import type { AgentRepository } from '../../commercial/agents/repository';
+import type { AccountingService } from '../../finance/accounting/service';
 import type { TicketingSalesRepository } from '../sales/repository';
 import { CargoBookingRepository, CargoCapacityExceededError } from './repository';
 
@@ -16,7 +17,8 @@ export class CargoBookingService {
     private readonly repository: CargoBookingRepository,
     private readonly salesRepository: TicketingSalesRepository,
     private readonly agentRepository: AgentRepository,
-    private readonly dgCategoryRepository: DgCategoryRepository
+    private readonly dgCategoryRepository: DgCategoryRepository,
+    private readonly accountingService?: AccountingService
   ) {}
 
   list(query: CargoBookingListQuery) {
@@ -127,6 +129,7 @@ export class CargoBookingService {
     const booking = this.get(id);
     if (booking.paymentStatus === 'PAID') return booking;
     this.repository.markPaid(id, input.paymentMethod, new Date().toISOString());
+    this.accountingService?.recordCargoBookingPayment(id, 'USR-FINANCE-REVIEWER');
     return this.get(id);
   }
 

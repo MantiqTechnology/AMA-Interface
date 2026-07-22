@@ -5,11 +5,18 @@ import {
 import { defineApiEventHandler } from '../../../utils/api-response';
 import { getServices } from '../../../utils/services';
 import { parseBody, parseParams } from '../../../utils/validation';
-import { getDemoActorId, requireDemoPermission } from '../../../utils/auth';
+import {
+  getDemoActorId,
+  requireDemoFlightStationAccess,
+  requireDemoPermission
+} from '../../../utils/auth';
 
 export default defineApiEventHandler(async (event) => {
-  requireDemoPermission(event, 'flight.following.update');
+  requireDemoPermission(event, 'flight.create.direct');
   const params = parseParams(event, flightOperationIdParamsSchema);
   const body = await parseBody(event, createFlightOperationBodySchema);
-  return getServices().flightOperations.update(params.id, body, getDemoActorId(event));
+  const service = getServices().flightOperations;
+  const stations = service.routeStationCodes(body.routeId);
+  requireDemoFlightStationAccess(event, [stations.originStationCode]);
+  return service.update(params.id, body, getDemoActorId(event));
 });

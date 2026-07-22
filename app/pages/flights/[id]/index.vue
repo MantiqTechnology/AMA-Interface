@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import FlightReasonSelect from '../../../features/operations/flight-reasons/FlightReasonSelect.vue';
 import StationSelect from '../../../features/operations/stations/StationSelect.vue';
+import ActualTimeDialog from '../../../features/operations/flight-operations/ActualTimeDialog.vue';
 import type { AircraftOption } from '#shared/features/operations/aircraft';
 import type { StationOption } from '#shared/features/operations/stations';
 import type {
@@ -22,6 +23,8 @@ const diversionStationId = ref('');
 const issueDrawer = ref(false);
 const selectedIssue = ref<FlightReadinessCheckDto | null>(null);
 const historyFilter = ref('ALL');
+const actualTimeDialog = ref(false);
+const actualTimeAction = ref<'depart' | 'land'>('depart');
 
 const { data: aircraftOptions } = await useAsyncData(
   'aircraft-options',
@@ -285,6 +288,11 @@ function actionUrl(action: string) {
 
 async function runAction(action: string) {
   actionError.value = '';
+  if (action === 'depart' || action === 'land') {
+    actualTimeAction.value = action;
+    actualTimeDialog.value = true;
+    return;
+  }
   if (['cancel', 'divert', 'reopen'].includes(action)) {
     reasonAction.value = action as typeof reasonAction.value;
     reasonDialog.value = true;
@@ -292,12 +300,27 @@ async function runAction(action: string) {
   }
   actionLoading.value = true;
   try {
-    const body =
-      action === 'depart' || action === 'land' ? { actualAt: new Date().toISOString() } : {};
-    await fetchApi<FlightOperationDetailDto>(actionUrl(action), { method: 'POST', body });
+    await fetchApi<FlightOperationDetailDto>(actionUrl(action), { method: 'POST', body: {} });
     await refresh();
   } catch (errorValue) {
     actionError.value = errorValue instanceof Error ? errorValue.message : 'Action failed';
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function submitActualTime(body: { actualAt: string; stationId: string; note?: string }) {
+  actionLoading.value = true;
+  actionError.value = '';
+  try {
+    await fetchApi<FlightOperationDetailDto>(actionUrl(actualTimeAction.value), {
+      method: 'POST',
+      body
+    });
+    actualTimeDialog.value = false;
+    await refresh();
+  } catch (errorValue) {
+    actionError.value = errorValue instanceof Error ? errorValue.message : 'Actual time failed';
   } finally {
     actionLoading.value = false;
   }
@@ -328,7 +351,7 @@ async function submitReasonAction() {
 }
 
 function historyActor(item: FlightStatusHistoryDto) {
-  if (item.changedByUserId === 'USR-DEMO-ADMIN') return 'Sinta - Operation Manager';
+  if (item.changedByUserId === 'USR-ADMIN') return 'Sinta - Operation Manager';
   if (item.changedByUserId === 'USR-001') return 'Rian - OCC Staff';
   return item.changedByUserId ?? 'System';
 }
@@ -417,28 +440,35 @@ function historyActor(item: FlightStatusHistoryDto) {
 
           <VSpacer />
           <div class="flex flex-wrap gap-2">
-            <VBtn
-              v-for="action in validActions"
-              :key="action.action"
-              :color="action.color"
-              :disabled="action.disabled"
-              :loading="actionLoading"
-              :prepend-icon="action.icon"
-              size="small"
-              :variant="action.color ? 'flat' : 'tonal'"
-              @click="runAction(action.action)"
-            >
-              {{ action.label }}
-            </VBtn>
-            <VMenu>
-              <template #activator="{ props }">
+            <VTooltip v-for="action in validActions" :key="action.action" :text="action.label">
+              <template #activator="{ props: tooltipProps }">
                 <VBtn
-                  v-bind="props"
-                  aria-label="More flight actions"
-                  icon="mdi-dots-vertical"
+                  v-bind="tooltipProps"
+                  :color="action.color"
+                  :disabled="action.disabled"
+                  :loading="actionLoading"
+                  :prepend-icon="action.icon"
                   size="small"
-                  variant="text"
-                />
+                  :variant="action.color ? 'flat' : 'tonal'"
+                  @click="runAction(action.action)"
+                >
+                  {{ action.label }}
+                </VBtn>
+              </template>
+            </VTooltip>
+            <VMenu>
+              <template #activator="{ props: menuProps }">
+                <VTooltip text="More flight actions">
+                  <template #activator="{ props: tooltipProps }">
+                    <VBtn
+                      v-bind="{ ...menuProps, ...tooltipProps }"
+                      aria-label="More flight actions"
+                      icon="mdi-dots-vertical"
+                      size="small"
+                      variant="text"
+                    />
+                  </template>
+                </VTooltip>
               </template>
               <VList density="compact">
                 <VListItem
@@ -1282,12 +1312,17 @@ function historyActor(item: FlightStatusHistoryDto) {
               <h2 class="text-h6">{{ selectedIssue.checkName }}</h2>
             </div>
             <VSpacer />
-            <VBtn
-              aria-label="Close issue drawer"
-              icon="mdi-close"
-              variant="text"
-              @click="issueDrawer = false"
-            />
+            <VTooltip text="Close issue details">
+              <template #activator="{ props }">
+                <VBtn
+                  v-bind="props"
+                  aria-label="Close issue drawer"
+                  icon="mdi-close"
+                  variant="text"
+                  @click="issueDrawer = false"
+                />
+              </template>
+            </VTooltip>
           </div>
           <VAlert :type="selectedIssue.status === 'FAIL' ? 'error' : 'warning'" variant="tonal">
             {{ selectedIssue.resultNote }}
@@ -1311,6 +1346,21 @@ function historyActor(item: FlightStatusHistoryDto) {
           </VBtn>
         </div>
       </VNavigationDrawer>
+
+      <ActualTimeDialog
+        v-if="flight"
+        v-model="actualTimeDialog"
+        :action="actualTimeAction"
+        :flight-number="flight.flightNumber"
+        :loading="actionLoading"
+        :station-code="
+          actualTimeAction === 'depart' ? flight.originStationCode : flight.destinationStationCode
+        "
+        :station-id="
+          actualTimeAction === 'depart' ? flight.originStationId : flight.destinationStationId
+        "
+        @submit="submitActualTime"
+      />
 
       <VDialog v-model="reasonDialog" max-width="540">
         <VCard>

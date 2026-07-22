@@ -287,12 +287,12 @@ test.describe('feature-owned master data pages', () => {
     ).toBeVisible();
     await expect(page.getByText('Aircraft Operational Profile', { exact: true })).toBeVisible();
     await expect(page.getByText(/Representative aircraft image/)).toBeVisible();
-    await expect(page.getByText(/DJJ - Sentani \/ Jayapura Demo Station/).first()).toBeVisible();
+    await expect(page.getByText(/DJJ - Sentani \/ Jayapura Station/).first()).toBeVisible();
     await expect(page.getByText('Operational readiness', { exact: true })).toBeVisible();
     await expect(page.getByText('Operationally ready', { exact: true })).toBeVisible();
-    await expect(page.getByText(/^8 configured/)).toBeVisible();
+    await expect(page.getByText(/^3 configured/)).toBeVisible();
     await expect(page.getByText('Upcoming flight assignment', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'AMA-20260718-006' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'AMA-20260717-010' })).toBeVisible();
     await expect(page.getByText('Maintenance snapshot', { exact: true })).toBeVisible();
     const maintenanceLink = page.getByRole('link', { name: 'Open Maintenance Handoff' });
     await expect(maintenanceLink).toBeVisible();

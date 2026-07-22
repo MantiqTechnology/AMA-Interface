@@ -199,20 +199,115 @@ export function seedCorporateAssets(
       discrepancyType: 'CONDITION_MISMATCH',
       notes: 'Rear body panel damaged.'
     });
-    insert(sqlite, 'asset_register', {
-      id: 'financial-asset-gpu-01',
-      assetNumber: 'FA-GSE-00001',
-      managedAssetId: 'asset-gse-gpu-01',
-      assetName: 'Ground Power Unit GPU-01',
-      acquisitionValueMinor: 850000000,
-      accumulatedDepreciationMinor: 230000000,
-      currentBookValueMinor: 620000000,
+    const acquisitionDate = context.date(-30);
+    const periodId = `period-${acquisitionDate.slice(0, 7)}`;
+    insert(sqlite, 'accounting_events', {
+      id: 'accounting-event-corporate-gpu',
+      eventNumber: `EVT-${context.compactDate(-30)}-CORP-001`,
+      eventType: 'CORPORATE_ASSET_ACQUIRED',
+      sourceType: 'MANAGED_ASSET',
+      sourceId: 'asset-gse-gpu-01',
+      idempotencyKey: 'corporate-asset:asset-gse-gpu-01:acquisition',
+      productAccountingProfileId: null,
+      policyId: null,
+      policyCode: 'CORPORATE_ASSET_ACQUISITION_DEMO_V1',
+      policyVersion: 1,
+      accountingDate: acquisitionDate,
+      transactionDate: acquisitionDate,
+      documentDate: acquisitionDate,
+      serviceDate: null,
+      amountMinor: 850000000,
+      currencyId: 'cur-idr',
       currencyCode: 'IDR',
-      status: 'ACTIVE',
-      asOfDate: context.anchorDate,
+      exchangeRateToIdrMicros: 1000000,
+      baseAmountIdr: 850000000,
+      postingStatus: 'DRAFT',
+      journalEntryId: 'journal-corporate-gpu',
+      stationId: 'st-djj',
+      aircraftId: null,
+      flightId: null,
+      workOrderReference: null,
+      costCenterId: null,
+      payloadJson: JSON.stringify({ managedAssetId: 'asset-gse-gpu-01' }),
       createdAt: seedNow,
       updatedAt: seedNow
     });
+    insert(sqlite, 'journal_entries', {
+      id: 'journal-corporate-gpu',
+      journalNumber: `JRN-${context.compactDate(-30)}-CORP-001`,
+      accountingEventId: 'accounting-event-corporate-gpu',
+      periodId,
+      status: 'DRAFT',
+      sourceType: 'MANAGED_ASSET',
+      sourceId: 'asset-gse-gpu-01',
+      transactionDate: acquisitionDate,
+      documentDate: acquisitionDate,
+      postingDate: acquisitionDate,
+      serviceDate: null,
+      currencyCode: 'IDR',
+      exchangeRateToIdrMicros: 1000000,
+      policyCode: 'CORPORATE_ASSET_ACQUISITION_DEMO_V1',
+      policyVersion: 1,
+      reversalOfJournalEntryId: null,
+      createdByUserId: 'USR-FINANCE-REVIEWER',
+      approvedByUserId: 'USR-DIRECTOR',
+      postedByUserId: 'USR-FINANCE-REVIEWER',
+      postedAt: seedNow,
+      memo: 'Deterministic corporate GPU acquisition.',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    for (const [id, lineNumber, accountId, debitMinor, creditMinor] of [
+      ['journal-line-corporate-gpu-asset', 1, 'coa-1300', 850000000, 0],
+      ['journal-line-corporate-gpu-payable', 2, 'coa-2000', 0, 850000000]
+    ] as const)
+      insert(sqlite, 'journal_lines', {
+        id,
+        journalEntryId: 'journal-corporate-gpu',
+        lineNumber,
+        accountId,
+        debitMinor,
+        creditMinor,
+        baseDebitIdr: debitMinor,
+        baseCreditIdr: creditMinor,
+        stationId: 'st-djj',
+        aircraftId: null,
+        flightId: null,
+        workOrderReference: null,
+        costCenterId: null,
+        description: 'Ground Power Unit GPU-01 acquisition.'
+      });
+    insert(sqlite, 'asset_register', {
+      id: 'financial-asset-gpu-01',
+      assetNumber: 'FA-GSE-00001',
+      sourceJournalEntryId: 'journal-corporate-gpu',
+      sourceType: 'MANAGED_ASSET',
+      sourceId: 'asset-gse-gpu-01',
+      assetAccountId: 'coa-1300',
+      assetName: 'Ground Power Unit GPU-01',
+      aircraftId: null,
+      inventoryPartId: null,
+      componentSerialId: null,
+      serialNumber: 'GPU-DJJ-001',
+      managedAssetId: 'asset-gse-gpu-01',
+      acquisitionDate,
+      readyForUseDate: acquisitionDate,
+      costMinor: 850000000,
+      currencyCode: 'IDR',
+      usefulLifeMonths: 60,
+      status: 'ACTIVE',
+      reversalJournalEntryId: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    sqlite
+      .prepare("UPDATE journal_entries SET status = 'POSTED' WHERE id = 'journal-corporate-gpu'")
+      .run();
+    sqlite
+      .prepare(
+        "UPDATE accounting_events SET posting_status = 'POSTED' WHERE id = 'accounting-event-corporate-gpu'"
+      )
+      .run();
     for (const [type, value] of [
       ['GSE', 1],
       ['IT_EQUIPMENT', 1],

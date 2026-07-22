@@ -227,6 +227,9 @@ export const maintenancePartIssueInputSchema = z
     assetMaintenanceWorkOrderId: z.string().trim().min(1).nullable().default(null),
     expectedAssetVersion: z.coerce.number().int().positive().optional(),
     maintenanceHandoffId: z.string().trim().min(1).nullable().default(null),
+    maintenanceCategory: z
+      .enum(['ROUTINE', 'MINOR_REPAIR', 'HEAVY_MAINTENANCE', 'MAJOR_REPLACEMENT'])
+      .optional(),
     aircraftId: z.string().trim().min(1).nullable().default(null),
     flightId: z.string().trim().min(1).nullable().default(null),
     warehouseId: z.string().trim().min(1),
@@ -291,7 +294,14 @@ export const installSerializedPartInputSchema = z.object({
   position: z.string().trim().min(1).max(120),
   installedAt: z.string().datetime({ offset: true }),
   hoursAtInstall: z.coerce.number().nonnegative().default(0),
-  cyclesAtInstall: z.coerce.number().int().nonnegative().default(0)
+  cyclesAtInstall: z.coerce.number().int().nonnegative().default(0),
+  workOrderId: z.string().trim().min(1).optional(),
+  workOrderCategory: z.enum(['HEAVY_MAINTENANCE', 'MAJOR_REPLACEMENT']).optional(),
+  capitalizationCandidate: z.boolean().optional(),
+  capitalizationThresholdMinor: z.coerce.number().int().nonnegative().optional(),
+  expectedBenefitMonths: z.coerce.number().int().positive().optional(),
+  technicalAcceptanceStatus: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
+  readyForUseDate: z.string().date().optional()
 });
 
 export const removeSerializedPartInputSchema = z.object({

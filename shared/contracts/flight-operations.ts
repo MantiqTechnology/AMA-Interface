@@ -234,7 +234,11 @@ export type FlightOperationRecord = {
   scheduledDepartureAt: string | null;
   scheduledArrivalAt: string | null;
   actualDepartureAt: string | null;
+  actualDepartureStationId: string | null;
+  actualDepartureStationCode: string | null;
   actualArrivalAt: string | null;
+  actualArrivalStationId: string | null;
+  actualArrivalStationCode: string | null;
   currentStatusId: string;
   currentStatusCode: FlightOperationStatus;
   currentStatusLabel: string;
@@ -639,6 +643,61 @@ export const flightRatePreviewQuerySchema = z.object({
     .optional()
 });
 
+export const flightPlanningContextQuerySchema = z.object({
+  routeId: z.string().trim().min(1),
+  flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  serviceTypeId: z.preprocess(blankToUndefined, z.string().trim().min(1).optional()),
+  scheduledDepartureAt: z.preprocess(blankToUndefined, isoDateTimeSchema.optional()),
+  scheduledArrivalAt: z.preprocess(blankToUndefined, isoDateTimeSchema.optional()),
+  passengerEstimate: z.preprocess(
+    blankToUndefined,
+    z.coerce.number().int().nonnegative().optional()
+  ),
+  cargoWeightEstimateKg: z.preprocess(blankToUndefined, z.coerce.number().nonnegative().optional())
+});
+
+export type FlightPlanningOptionDto = {
+  id: string;
+  label: string;
+  recommended: boolean;
+};
+
+export type FlightPlanningAircraftCandidateDto = {
+  id: string;
+  label: string;
+  registrationNumber: string;
+  aircraftType: string;
+  currentStationCode: string | null;
+  serviceabilityStatus: string;
+  available: boolean;
+  warnings: string[];
+  blockers: string[];
+};
+
+export type FlightPlanningCrewCandidateDto = {
+  id: string;
+  label: string;
+  employeeCode: string;
+  crewRole: string;
+  baseStationCode: string | null;
+  dutyStationCode: string | null;
+  available: boolean;
+  warnings: string[];
+  blockers: string[];
+};
+
+export type FlightPlanningContextDto = {
+  routeReadiness: {
+    availableForScheduling: boolean;
+    blockers: string[];
+    warnings: string[];
+  };
+  scheduleTemplates: FlightPlanningOptionDto[];
+  capacityProfiles: FlightPlanningOptionDto[];
+  aircraftCandidates: FlightPlanningAircraftCandidateDto[];
+  crewCandidates: FlightPlanningCrewCandidateDto[];
+};
+
 export const createFlightOperationBodySchema = z.object({
   flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   flightTypeId: referenceIdSchema,
@@ -708,7 +767,9 @@ export const flightReasonActionBodySchema = z.object({
 });
 
 export const actualTimeBodySchema = z.object({
-  actualAt: isoDateTimeSchema
+  actualAt: isoDateTimeSchema,
+  stationId: z.preprocess(blankToUndefined, z.string().trim().min(1).optional()),
+  note: z.preprocess(blankToUndefined, z.string().trim().max(1000).optional())
 });
 
 export const createPassengerBodySchema = z.object({
@@ -794,6 +855,7 @@ export const listMaintenanceHandoffsQuerySchema = z.object({
 });
 
 export type ListFlightOperationsQuery = z.infer<typeof listFlightOperationsQuerySchema>;
+export type FlightPlanningContextQuery = z.infer<typeof flightPlanningContextQuerySchema>;
 export type ListFlightRequestsQuery = z.infer<typeof listFlightRequestsQuerySchema>;
 export type CreateFlightOperationBody = z.infer<typeof createFlightOperationBodySchema>;
 export type CreateFlightRequestBody = z.infer<typeof createFlightRequestBodySchema>;

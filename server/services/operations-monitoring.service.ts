@@ -6,15 +6,49 @@ import type {
   OperationsMonitoringQuery
 } from '../../shared/contracts/operations-monitoring';
 
-type FlightRow = Omit<OperationalFlightMonitorDto, 'readinessPercent'> & {
+type FlightRow = Omit<
+  OperationalFlightMonitorDto,
+  | 'readinessPercent'
+  | 'delayMinutes'
+  | 'urgency'
+  | 'nextAction'
+  | 'plannedDestinationCode'
+  | 'actualArrivalStationCode'
+  | 'stationScopeMatch'
+> & {
   requiredChecks: number;
   completedChecks: number;
+  actualArrivalStationCode: string | null;
 };
+
+function nextAction(status: string) {
+  const actions: Record<string, string> = {
+    SCHEDULED: 'Open check-in',
+    CHECK_IN_OPEN: 'Record departure',
+    IN_PROGRESS: 'Record landing / diversion',
+    LANDED: 'Submit actual closure',
+    DIVERTED: 'Submit diversion closure',
+    PENDING_CLOSURE: 'Complete closure',
+    BLOCKED: 'Resolve readiness blockers'
+  };
+  return actions[status] ?? null;
+}
+
+function minutesBetween(later: string | null, earlier: string | null) {
+  if (!later || !earlier) return 0;
+  return Math.max(
+    0,
+    Math.round((new Date(later).getTime() - new Date(earlier).getTime()) / 60_000)
+  );
+}
 
 export class OperationsMonitoringService {
   constructor(private readonly sqlite: Database.Database) {}
 
-  flightFollowing(query: OperationsMonitoringQuery): OperationalFlightMonitorDto[] {
+  flightFollowing(
+    query: OperationsMonitoringQuery,
+    stationScope: readonly string[] = ['ALL']
+  ): OperationalFlightMonitorDto[] {
     const conditions: string[] = [];
     const parameters: Record<string, string> = {};
     if (query.date) {
@@ -23,13 +57,25 @@ export class OperationsMonitoringService {
     }
     if (query.stationId) {
       conditions.push(
-        '(flight.origin_station_id = @stationId OR flight.destination_station_id = @stationId)'
+        '(flight.origin_station_id = @stationId OR flight.destination_station_id = @stationId OR flight.actual_arrival_station_id = @stationId)'
       );
       parameters.stationId = query.stationId;
     }
     if (query.status) {
       conditions.push('status.code = @status');
       parameters.status = query.status;
+    }
+    if (!stationScope.includes('ALL')) {
+      const scopeBindings = stationScope.map((stationCode, index) => {
+        const key = `scope${index}`;
+        parameters[key] = stationCode;
+        return `@${key}`;
+      });
+      if (scopeBindings.length === 0) return [];
+      const values = scopeBindings.join(', ');
+      conditions.push(
+        `(origin.station_code IN (${values}) OR destination.station_code IN (${values}) OR actual_arrival_station.station_code IN (${values}))`
+      );
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = this.sqlite
@@ -46,6 +92,7 @@ export class OperationsMonitoringService {
            flight.scheduled_arrival_at AS scheduledArrivalAt,
            flight.actual_departure_at AS actualDepartureAt,
            flight.actual_arrival_at AS actualArrivalAt,
+           actual_arrival_station.station_code AS actualArrivalStationCode,
            flight.blocking_reason AS blockingReason,
            (SELECT COUNT(*) FROM flight_readiness_checks check_row
              WHERE check_row.flight_id = flight.id AND check_row.is_required = 1) AS requiredChecks,
@@ -57,17 +104,40 @@ export class OperationsMonitoringService {
          JOIN flight_operation_statuses status ON status.id = flight.current_status_id
          JOIN stations origin ON origin.id = flight.origin_station_id
          JOIN stations destination ON destination.id = flight.destination_station_id
+         LEFT JOIN stations actual_arrival_station ON actual_arrival_station.id = flight.actual_arrival_station_id
          LEFT JOIN aircraft aircraft ON aircraft.id = flight.aircraft_id
          LEFT JOIN crews crew ON crew.id = flight.pilot_in_command_id
          ${where}
          ORDER BY COALESCE(flight.scheduled_departure_at, flight.flight_date) ASC`
       )
       .all(parameters) as FlightRow[];
-    return rows.map(({ requiredChecks, completedChecks, ...row }) => ({
-      ...row,
-      readinessPercent:
-        requiredChecks > 0 ? Math.round((completedChecks / requiredChecks) * 100) : 0
-    }));
+    return rows.map(({ requiredChecks, completedChecks, ...row }) => {
+      const readinessPercent =
+        requiredChecks > 0 ? Math.round((completedChecks / requiredChecks) * 100) : 0;
+      const delayMinutes = row.actualArrivalAt
+        ? minutesBetween(row.actualArrivalAt, row.scheduledArrivalAt)
+        : row.actualDepartureAt
+          ? minutesBetween(row.actualDepartureAt, row.scheduledDepartureAt)
+          : ['SCHEDULED', 'CHECK_IN_OPEN'].includes(row.currentStatus)
+            ? minutesBetween(new Date().toISOString(), row.scheduledDepartureAt)
+            : 0;
+      const urgency =
+        row.currentStatus === 'BLOCKED' || delayMinutes >= 30
+          ? 'critical'
+          : delayMinutes > 0 || readinessPercent < 100
+            ? 'warning'
+            : 'normal';
+      return {
+        ...row,
+        readinessPercent,
+        delayMinutes,
+        urgency,
+        nextAction: nextAction(row.currentStatus),
+        plannedDestinationCode: row.destinationCode,
+        actualArrivalStationCode: row.actualArrivalStationCode,
+        stationScopeMatch: true
+      };
+    });
   }
 
   operationsOverview(query: OperationsMonitoringQuery): OperationsOverviewDto {

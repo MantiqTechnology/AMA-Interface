@@ -16,6 +16,8 @@ const issueDialog = ref(false);
 const issueSaving = ref(false);
 const issueForm = reactive({
   warehouseId: '',
+  maintenanceCategory: 'ROUTINE' as
+    'ROUTINE' | 'MINOR_REPAIR' | 'HEAVY_MAINTENANCE' | 'MAJOR_REPLACEMENT',
   reason: '',
   lines: [{ partId: '', quantity: 1, serialIds: [] as string[], note: '' }]
 });
@@ -227,6 +229,7 @@ async function approve(row: FlightMaintenanceHandoffDto) {
 function openIssueDialog() {
   Object.assign(issueForm, {
     warehouseId: '',
+    maintenanceCategory: 'ROUTINE',
     reason: '',
     lines: [{ partId: '', quantity: 1, serialIds: [], note: '' }]
   });
@@ -247,6 +250,7 @@ async function issueParts() {
       method: 'POST',
       body: {
         maintenanceHandoffId: selectedRecord.value.id,
+        maintenanceCategory: issueForm.maintenanceCategory,
         aircraftId: selectedRecord.value.aircraftId,
         flightId: selectedRecord.value.flightId,
         warehouseId: issueForm.warehouseId,
@@ -318,7 +322,7 @@ async function issueParts() {
 
     <VCard border class="mb-4">
       <VCardText>
-        <VRow dense>
+        <VRow density="comfortable">
           <VCol cols="12" md="3">
             <VTextField
               v-model="filters.search"
@@ -743,6 +747,18 @@ async function issueParts() {
             item-value="id"
             :items="inventoryWarehouses ?? []"
             label="Issue warehouse"
+            variant="outlined"
+          />
+          <VSelect
+            v-model="issueForm.maintenanceCategory"
+            class="mb-3"
+            :items="[
+              { title: 'Routine maintenance', value: 'ROUTINE' },
+              { title: 'Minor maintenance', value: 'MINOR_REPAIR' },
+              { title: 'Heavy maintenance', value: 'HEAVY_MAINTENANCE' },
+              { title: 'Major replacement', value: 'MAJOR_REPLACEMENT' }
+            ]"
+            label="Maintenance category"
             variant="outlined"
           />
           <VTextarea

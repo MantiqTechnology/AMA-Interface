@@ -2,6 +2,10 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  define: {
+    'process.env.DEMO_SEED_DATE': JSON.stringify('2026-07-17'),
+    'process.env.AMA_SKIP_STARTUP_RESET': JSON.stringify('true')
+  },
   resolve: {
     alias: {
       '#operations': fileURLToPath(new URL('./app/utils/operations', import.meta.url)),

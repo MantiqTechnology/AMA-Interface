@@ -49,7 +49,7 @@ sqlite.exec(
        'API integration test', 'flight-priority-normal', 'route-djj-wmx', 'st-djj', 'st-wmx',
        'cust-individual-1', 'ac-pk-ama', 'crew-pic-valid', 'crew-cop-valid',
        '2026-07-18T08:00:00.000+09:00', '2026-07-18T08:55:00.000+09:00',
-       'flight-operation-status-scheduled', 'USR-001', 'USR-DEMO-ADMIN', 'CHARTER', 'IDR',
+       'flight-operation-status-scheduled', 'USR-001', 'USR-ADMIN', 'CHARTER', 'IDR',
        0, '2026-07-13T10:00:00.000+07:00', '2026-07-13T10:00:00.000+07:00'
    )`
 );
@@ -122,9 +122,9 @@ describe('ticketing APIs', () => {
              id, flight_operation_id, subject_type, passenger_ticket_id, reason, status,
              amount, currency_code, requested_by_user_id, requested_at, created_at, updated_at
            ) VALUES (
-             'refund-invalid-owner', 'fop-ticketing-cargo', 'PASSENGER', 'TKT-DEMO34',
+             'refund-invalid-owner', 'fop-ticketing-cargo', 'PASSENGER', 'AMA-TKT-20260718-002',
              'Ownership mismatch regression test', 'REQUESTED', 1800000, 'IDR',
-             'USR-DEMO-ADMIN', '2026-07-14T00:00:00.000Z',
+             'USR-ADMIN', '2026-07-14T00:00:00.000Z',
              '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z'
            )`
         )
@@ -260,7 +260,7 @@ describe('ticketing APIs', () => {
 
   it('requests and approves a passenger refund with an auditable finance reversal', async () => {
     const requested = await $fetch<ApiResponse<TicketRefundRequestDto>>(
-      '/api/ticketing/passenger-tickets/TKT-DEMO12/refund-request',
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-001/refund-request',
       {
         method: 'POST',
         body: { reason: 'Unable to travel due to a medical appointment.' }
@@ -270,13 +270,13 @@ describe('ticketing APIs', () => {
     if (!requested.ok) throw new Error(requested.error.message);
     expect(requested.data).toMatchObject({
       subjectType: 'PASSENGER',
-      subjectId: 'TKT-DEMO12',
+      subjectId: 'AMA-TKT-20260718-001',
       status: 'REQUESTED',
       amount: 1800000
     });
 
     const duplicate = await $fetch<ApiResponse<TicketRefundRequestDto>>(
-      '/api/ticketing/passenger-tickets/TKT-DEMO12/refund-request',
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-001/refund-request',
       {
         method: 'POST',
         body: { reason: 'A second request must not be accepted.' },
@@ -301,7 +301,7 @@ describe('ticketing APIs', () => {
     expect(approved.ok && approved.data.status).toBe('APPROVED');
 
     const ticket = await $fetch<ApiResponse<PassengerTicketDto>>(
-      '/api/ticketing/passenger-tickets/TKT-DEMO12'
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-001'
     );
     expect(ticket.ok && ticket.data.refundRequest).toMatchObject({ status: 'APPROVED' });
     const occupiedSeats = await $fetch<ApiResponse<string[]>>(
@@ -310,7 +310,7 @@ describe('ticketing APIs', () => {
     expect(occupiedSeats.ok && occupiedSeats.data).not.toContain('1A');
 
     const refundedCheckIn = await $fetch<ApiResponse<PassengerTicketDto>>(
-      '/api/ticketing/passenger-tickets/TKT-DEMO12/check-in',
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-001/check-in',
       { method: 'PATCH', ignoreResponseError: true }
     );
     expect(!refundedCheckIn.ok && refundedCheckIn.error.code).toBe(
@@ -321,7 +321,7 @@ describe('ticketing APIs', () => {
     expect(ledger.ok && ledger.data.entries).toContainEqual(
       expect.objectContaining({
         entryType: 'PASSENGER_REFUND',
-        referenceNumber: 'TKT-DEMO12',
+        referenceNumber: 'AMA-TKT-20260718-001',
         amount: -1800000,
         paymentStatus: 'REFUNDED'
       })
@@ -330,7 +330,7 @@ describe('ticketing APIs', () => {
 
   it('reschedules an active passenger ticket and moves its OCC manifest entry atomically', async () => {
     const historicalRefund = await $fetch<ApiResponse<TicketRefundRequestDto>>(
-      '/api/ticketing/passenger-tickets/TKT-RESCHEDULE/refund-request',
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-003/refund-request',
       {
         method: 'POST',
         body: { reason: 'Passenger requested review before changing the original flight.' }
@@ -350,7 +350,7 @@ describe('ticketing APIs', () => {
     );
 
     const options = await $fetch<ApiResponse<PassengerRescheduleOptionDto[]>>(
-      '/api/ticketing/passenger-tickets/TKT-RESCHEDULE/reschedule-options'
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-003/reschedule-options'
     );
     expect(options.ok && options.data).toContainEqual(
       expect.objectContaining({
@@ -361,7 +361,7 @@ describe('ticketing APIs', () => {
     );
 
     const rescheduled = await $fetch<ApiResponse<PassengerTicketDto>>(
-      '/api/ticketing/passenger-tickets/TKT-RESCHEDULE/reschedule',
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-003/reschedule',
       {
         method: 'POST',
         body: {
@@ -398,7 +398,7 @@ describe('ticketing APIs', () => {
     );
 
     const duplicateSeat = await $fetch<ApiResponse<PassengerTicketDto>>(
-      '/api/ticketing/passenger-tickets/TKT-DEMO34/reschedule',
+      '/api/ticketing/passenger-tickets/AMA-TKT-20260718-002/reschedule',
       {
         method: 'POST',
         body: {
@@ -532,7 +532,7 @@ describe('ticketing APIs', () => {
 
   it('requests and rejects a cargo refund without removing the booking from OCC', async () => {
     const requested = await $fetch<ApiResponse<TicketRefundRequestDto>>(
-      '/api/ticketing/cargo-bookings/AWB-100200/refund-request',
+      '/api/ticketing/cargo-bookings/AMA-AWB-20260719-001/refund-request',
       {
         method: 'POST',
         body: { reason: 'Sender requested cancellation after cargo acceptance.' }
@@ -551,15 +551,15 @@ describe('ticketing APIs', () => {
     expect(rejected.ok && rejected.data.status).toBe('REJECTED');
 
     const booking = await $fetch<ApiResponse<CargoBookingDto>>(
-      '/api/ticketing/cargo-bookings/AWB-100200'
+      '/api/ticketing/cargo-bookings/AMA-AWB-20260719-001'
     );
     expect(booking.ok && booking.data.refundRequest).toMatchObject({ status: 'REJECTED' });
     const sqlite = new Database(resolveDbPath(process.env.AMA_DB_PATH), { readonly: true });
     expect(
       sqlite
         .prepare('SELECT id FROM flight_manifest_cargo_items WHERE id = ?')
-        .get('ticket-sync-AWB-100200')
-    ).toEqual({ id: 'ticket-sync-AWB-100200' });
+        .get('ticket-sync-AMA-AWB-20260719-001')
+    ).toEqual({ id: 'ticket-sync-AMA-AWB-20260719-001' });
     sqlite.close();
   });
 

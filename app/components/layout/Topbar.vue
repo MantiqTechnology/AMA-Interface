@@ -28,6 +28,7 @@ const pageTitle = computed(() => {
     return mdAndUp.value ? 'Flight Operations Workspace' : 'Flight';
   }
   if (route.path.startsWith('/flights')) return 'Flight Control';
+  if (route.path.startsWith('/finance/accounting')) return 'Finance';
   if (route.path.startsWith('/invoices')) return 'Invoice';
   return 'Dashboard';
 });

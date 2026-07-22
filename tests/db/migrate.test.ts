@@ -165,6 +165,15 @@ describe('database migrations', () => {
         'cargo_bookings',
         'ticketing_refund_requests',
         'passenger_ticket_reschedules',
+        'accounting_periods',
+        'product_accounting_profiles',
+        'accounting_policies',
+        'accounting_events',
+        'accounting_exceptions',
+        'journal_entries',
+        'journal_lines',
+        'asset_register',
+        'depreciation_schedules',
         'invoice_line_items',
         'invoice_finance_snapshots'
       ])
@@ -177,6 +186,33 @@ describe('database migrations', () => {
     );
     expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
 
+    sqlite.close();
+  });
+
+  it('upgrades depreciation schedules to support cancellation on asset reversal', () => {
+    const sqlite = new Database(':memory:');
+    runMigrations(sqlite);
+    sqlite.exec('DROP TABLE depreciation_schedules');
+    sqlite.exec(`CREATE TABLE depreciation_schedules (
+      id TEXT PRIMARY KEY,
+      asset_id TEXT NOT NULL REFERENCES asset_register(id) ON DELETE CASCADE,
+      period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+      depreciation_amount_minor INTEGER NOT NULL CHECK (depreciation_amount_minor >= 0),
+      status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED', 'POSTED')),
+      journal_entry_id TEXT REFERENCES journal_entries(id),
+      created_at TEXT NOT NULL,
+      UNIQUE (asset_id, period_id)
+    )`);
+
+    runMigrations(sqlite);
+
+    const table = sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'depreciation_schedules'"
+      )
+      .get() as { sql: string };
+    expect(table.sql).toContain("'CANCELLED'");
+    expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     sqlite.close();
   });
 

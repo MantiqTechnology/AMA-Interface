@@ -22,7 +22,7 @@ const {
 <template>
   <VContainer class="px-3 py-5" fluid>
     <div class="mb-5">
-      <h1 class="text-h4 font-weight-bold">Station Ledger</h1>
+      <h1 class="text-h4 font-weight-bold">Ticketing Operational Ledger</h1>
       <p class="text-text-secondary">
         Passenger and cargo collections from ticketing transactions.
       </p>
@@ -56,7 +56,7 @@ const {
       </VCol>
     </VRow>
     <VCard border>
-      <VCardTitle>Transaction ledger</VCardTitle><VDivider />
+      <VCardTitle>Operational transactions</VCardTitle><VDivider />
       <VCardText>
         <VSkeletonLoader v-if="pending" type="table" />
         <VTable v-else class="ledger-table">

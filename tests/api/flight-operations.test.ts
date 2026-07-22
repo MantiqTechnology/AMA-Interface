@@ -3,10 +3,13 @@ import Database from 'better-sqlite3';
 import { setup, $fetch } from '@nuxt/test-utils/e2e';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ApiResponse } from '../../shared/contracts/api';
+import type { OperationalFlightMonitorDto } from '../../shared/contracts/operations-monitoring';
 import type {
   FlightMaintenanceHandoffDto,
+  FlightOperationDetailDto,
   FlightOperationOverviewDto,
   FlightOperationRecord,
+  FlightPlanningContextDto,
   FlightRequestRecord
 } from '../../shared/contracts/flight-operations';
 import type { InvoiceDetailDto, InvoiceSummaryDto } from '../../shared/features/finance/invoices';
@@ -29,13 +32,96 @@ await setup({
 });
 
 describe('flight request APIs', () => {
+  it('passes readiness for ON_DUTY crew already assigned to the flight', async () => {
+    const response = await $fetch<ApiResponse<FlightOperationDetailDto>>(
+      '/api/flight-operations/flights/fop-ticketing-passenger/actions/evaluate',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=OCC' }
+      }
+    );
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) throw new Error(response.error.message);
+    expect(
+      response.data.readinessChecks.find((check) => check.checkCode === 'CREW_AVAILABILITY')
+    ).toMatchObject({
+      status: 'PASS',
+      resultNote: 'Assigned crew are available for this flight.',
+      sourceReference: 'flight_crew_assignments'
+    });
+  });
+
+  it('returns route readiness and explainable planning candidates', async () => {
+    const response = await $fetch<ApiResponse<FlightPlanningContextDto>>(
+      '/api/flight-operations/planning-context',
+      {
+        headers: { cookie: 'ama_demo_role=OCC' },
+        query: {
+          routeId: 'route-djj-wmx',
+          flightDate: '2026-08-20',
+          serviceTypeId: 'flight-service-type-scheduled-passenger',
+          scheduledDepartureAt: '2026-08-20T01:00:00.000Z',
+          scheduledArrivalAt: '2026-08-20T02:00:00.000Z',
+          passengerEstimate: 6,
+          cargoWeightEstimateKg: 100
+        }
+      }
+    );
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) throw new Error(response.error.message);
+    expect(response.data.routeReadiness.availableForScheduling).toBe(true);
+    expect(response.data.aircraftCandidates).toContainEqual(
+      expect.objectContaining({ id: 'ac-pk-ama', available: true })
+    );
+    expect(response.data.crewCandidates).toContainEqual(
+      expect.objectContaining({ id: 'crew-pic-expiring', available: false })
+    );
+  });
+
+  it('enforces flight read permission and station scope in Flight Following', async () => {
+    const denied = await $fetch<ApiResponse<OperationalFlightMonitorDto[]>>(
+      '/api/flight-operations/flight-following',
+      {
+        headers: { cookie: 'ama_demo_role=Inventory%20Controller' },
+        ignoreResponseError: true
+      }
+    );
+    expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+
+    const scoped = await $fetch<ApiResponse<OperationalFlightMonitorDto[]>>(
+      '/api/flight-operations/flight-following',
+      { headers: { cookie: 'ama_demo_role=Station%20Admin' } }
+    );
+    expect(scoped.ok).toBe(true);
+    if (!scoped.ok) throw new Error(scoped.error.message);
+    expect(scoped.data.length).toBeGreaterThan(0);
+    expect(
+      scoped.data.every((flight) =>
+        [flight.originCode, flight.destinationCode, flight.actualArrivalStationCode].includes('WMX')
+      )
+    ).toBe(true);
+
+    const movementDenied = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/flights/fop-checkin-open/actions/depart',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Station%20Admin' },
+        body: { actualAt: '2026-07-17T07:05:00.000Z' },
+        ignoreResponseError: true
+      }
+    );
+    expect(!movementDenied.ok && movementDenied.error.code).toBe('FLIGHT_STATION_FORBIDDEN');
+  });
+
   it('returns the nearest upcoming non-terminal assignment for an aircraft', async () => {
     const response = await $fetch<ApiResponse<FlightOperationOverviewDto>>(
       '/api/flight-operations/flights',
       {
         query: {
           aircraftId: 'ac-pk-ama',
-          scheduledFrom: '2026-07-16T00:00:00.000+09:00',
+          scheduledFrom: '2026-07-18T00:00:00.000+09:00',
           excludeTerminal: true,
           sortDirection: 'asc',
           limit: 1
@@ -55,8 +141,8 @@ describe('flight request APIs', () => {
         method: 'POST',
         body: {
           flightDate: '2026-07-15',
-          flightTypeId: 'flight-type-cargo',
-          serviceTypeId: 'flight-service-type-charter-cargo',
+          flightTypeId: 'flight-type-passenger',
+          serviceTypeId: 'flight-service-type-scheduled-passenger',
           routeId: 'route-djj-wmx',
           customerId: 'cust-papua-logistics',
           aircraftId: 'ac-pk-ama',
@@ -67,7 +153,7 @@ describe('flight request APIs', () => {
           requestSource: 'API integration test',
           priorityId: 'flight-priority-normal',
           passengerEstimate: 2,
-          cargoWeightEstimateKg: 640,
+          cargoWeightEstimateKg: 100,
           cargoCategory: 'General Cargo',
           dangerousGoods: false,
           fuelType: 'AVTUR',
@@ -76,7 +162,7 @@ describe('flight request APIs', () => {
           handlingSupplierId: 'hp-angkasa-djj',
           parkingRequired: true,
           destinationHandlingRequired: true,
-          billingType: 'CHARTER',
+          billingType: 'SCHEDULED_PASSENGER',
           estimatedRevenue: 28000000,
           remarks: 'Create, submit, and decide through Nitro'
         }
@@ -116,7 +202,7 @@ describe('flight request APIs', () => {
     const detail = await $fetch<ApiResponse<InvoiceDetailDto>>('/api/invoices/inv-closed-djj-wmx');
     expect(detail.ok && detail.data.lineItems).toHaveLength(1);
     expect(detail.ok && detail.data.finance.grossMargin).toBe(16_000_000);
-    expect(detail.ok && detail.data.lineItems[0]?.taxCode).toBe('PPN_DEMO');
+    expect(detail.ok && detail.data.lineItems[0]?.taxCode).toBe('PPN_11');
     expect(detail.ok && detail.data.tax).toBe(3_080_000);
 
     const database = new Database(resolveDbPath(testDbPath));
@@ -187,7 +273,7 @@ describe('flight request APIs', () => {
     expect(list.data).toContainEqual(
       expect.objectContaining({
         id: 'fop-in-progress-maintenance-draft',
-        flightNumber: 'AMA-20260707-005',
+        flightNumber: 'AMA-20260717-005',
         routeCode: 'WMX-OKS',
         currentStatus: 'IN_PROGRESS',
         pendingApproval: true,
@@ -214,7 +300,7 @@ describe('flight request APIs', () => {
 
     const operationalFilter = await $fetch<ApiResponse<FlightMaintenanceHandoffDto[]>>(
       '/api/flight-operations/maintenance',
-      { query: { date: '2026-07-07', serviceability: 'SERVICEABLE' } }
+      { query: { date: '2026-07-17', serviceability: 'SERVICEABLE' } }
     );
     expect(operationalFilter.ok && operationalFilter.data.map((item) => item.id)).toContain(
       'fop-in-progress-maintenance-draft'
@@ -246,7 +332,7 @@ describe('flight request APIs', () => {
     expect(approved.ok).toBe(true);
     const refreshed = await $fetch<ApiResponse<FlightMaintenanceHandoffDto[]>>(
       '/api/flight-operations/maintenance',
-      { query: { search: 'AMA-20260707-005' } }
+      { query: { search: 'AMA-20260717-005' } }
     );
     expect(refreshed.ok && refreshed.data[0]).toMatchObject({
       id: 'fop-in-progress-maintenance-draft',

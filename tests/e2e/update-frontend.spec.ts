@@ -5,7 +5,7 @@ const screens = [
   ['/admin/access-demo', 'Access Demo'],
   ['/flights/maintenance', 'Maintenance Handoff'],
   ['/invoices', 'Invoices'],
-  ['/invoices/inv-closed-djj-wmx', 'AMA-INV-2026-0707-001']
+  ['/invoices/inv-closed-djj-wmx', 'AMA-INV-20260707-001']
 ] as const;
 
 for (const [path, heading] of screens) {
@@ -20,7 +20,7 @@ for (const [path, heading] of screens) {
     }
     if (path === '/invoices') {
       await expect(page.getByText('Visible Margin', { exact: true }).first()).toBeVisible();
-      await expect(page.getByText('PT Papua Logistics Demo').first()).toBeVisible();
+      await expect(page.getByText('PT Papua Logistics').first()).toBeVisible();
     }
     if (path === '/invoices/inv-closed-djj-wmx') {
       await expect(page.getByText('Revenue Lines')).toBeVisible();
@@ -30,7 +30,7 @@ for (const [path, heading] of screens) {
     if (path === '/flights/maintenance') {
       await expect(page.getByText('Closure Ready', { exact: true })).toBeVisible();
       await expect(page.getByText('Needs Attention', { exact: true })).toBeVisible();
-      const pendingRow = page.getByRole('row').filter({ hasText: 'AMA-20260707-005' });
+      const pendingRow = page.getByRole('row').filter({ hasText: 'AMA-20260717-005' });
       await expect(pendingRow).toBeVisible();
       await pendingRow.click();
       await expect(page.getByText('Evidence checklist')).toBeVisible();
@@ -54,7 +54,7 @@ test('maintenance workbench filters and hides approval for non-maintenance roles
   await page.goto('/flights/maintenance', { waitUntil: 'networkidle' });
   const search = page.getByRole('textbox', { name: 'Search flight or aircraft' });
   await search.fill('PK-AMB');
-  const pendingRow = page.getByRole('row').filter({ hasText: 'AMA-20260707-005' });
+  const pendingRow = page.getByRole('row').filter({ hasText: 'AMA-20260717-005' });
   await expect(pendingRow).toBeVisible();
   await pendingRow.click();
   await expect(page.getByText('Evidence checklist')).toBeVisible();

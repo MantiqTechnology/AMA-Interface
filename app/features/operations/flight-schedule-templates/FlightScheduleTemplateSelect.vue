@@ -3,6 +3,8 @@ import type {
   FlightScheduleTemplateDto,
   FlightScheduleTemplateOption
 } from '#shared/features/operations/flight-schedule-templates';
+import type { FlightPlanningOptionDto } from '#shared/contracts/flight-operations';
+
 const FlightScheduleTemplateFormDialog = defineAsyncComponent(
   () => import('./FlightScheduleTemplateFormDialog.vue')
 );
@@ -14,13 +16,17 @@ const props = withDefaults(
     clearable?: boolean;
     disabled?: boolean;
     allowCreate?: boolean;
+    candidates?: FlightPlanningOptionDto[] | null;
+    loading?: boolean;
   }>(),
   {
     label: 'Schedule Templates',
     required: false,
     clearable: true,
     disabled: false,
-    allowCreate: true
+    allowCreate: true,
+    candidates: null,
+    loading: false
   }
 );
 const emit = defineEmits<{
@@ -38,6 +44,27 @@ const {
     fetchApi<FlightScheduleTemplateOption[]>('/api/master-data/flight-schedule-templates/options'),
   { default: () => [] }
 );
+
+type DisplayItem = { id: string; title: string; subtitle: string | null };
+
+const usingCandidates = computed(() => Array.isArray(props.candidates));
+const isLoading = computed(() => props.loading || (!usingCandidates.value && pending.value));
+
+const items = computed<DisplayItem[]>(() => {
+  if (props.candidates) {
+    return props.candidates.map((candidate: FlightPlanningOptionDto) => ({
+      id: candidate.id,
+      title: candidate.label,
+      subtitle: candidate.recommended ? 'Recommended for this date' : null
+    }));
+  }
+  return options.value.map((option) => ({
+    id: option.id,
+    title: option.templateCode,
+    subtitle: null
+  }));
+});
+
 const rules = computed(() =>
   props.required ? [(value: unknown) => Boolean(value) || `${props.label} is required`] : []
 );
@@ -54,22 +81,28 @@ async function created(record: FlightScheduleTemplateDto) {
         :clearable="clearable"
         density="compact"
         :disabled="disabled"
-        item-title="templateCode"
+        item-title="title"
         item-value="id"
-        :items="options"
+        :item-props="(item: DisplayItem) => ({ subtitle: item.subtitle })"
+        :items="items"
         :label="label"
-        :loading="pending"
+        :loading="isLoading"
         :model-value="modelValue"
         :rules="rules"
         variant="outlined"
         @update:model-value="emit('update:modelValue', $event)"
-      /><VBtn
-        v-if="allowCreate && !disabled"
-        aria-label="Add Schedule Templates"
-        icon="mdi-plus"
-        variant="tonal"
-        @click="createOpen = true"
       />
+      <VTooltip v-if="allowCreate && !disabled" text="Add schedule template">
+        <template #activator="{ props: tooltipProps }">
+          <VBtn
+            v-bind="tooltipProps"
+            aria-label="Add schedule template"
+            icon="mdi-plus"
+            variant="tonal"
+            @click="createOpen = true"
+          />
+        </template>
+      </VTooltip>
     </div>
     <FlightScheduleTemplateFormDialog v-model="createOpen" @saved="created" />
   </div>

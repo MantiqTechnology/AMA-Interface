@@ -40,7 +40,7 @@ beforeAll(async () => {
           uploadId: 'upload-api-filter-lot',
           documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
           title: 'API filter lot certificate',
-          documentNumber: 'ARC-DEMO-PC6-260701',
+          documentNumber: 'ARC-PC6-260701',
           issuer: 'Inventory API test',
           issuedAt: '2026-01-01',
           validFrom: '2026-01-01',
@@ -74,7 +74,7 @@ await setup({
 describe('inventory APIs', () => {
   it('enforces role permissions and station scope', async () => {
     const controllerApproval = await $fetch<ApiResponse<PurchaseOrderDto>>(
-      '/api/inventory/purchase-orders/inv-po-demo-001/approve',
+      '/api/inventory/purchase-orders/inv-po-replenishment-001/approve',
       { method: 'POST', headers: controllerCookie, ignoreResponseError: true }
     );
     expect(!controllerApproval.ok && controllerApproval.error.code).toBe('FORBIDDEN');

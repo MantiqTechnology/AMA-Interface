@@ -4,8 +4,8 @@ import { resetDemoDatabase } from '../server/db/reset-demo';
 
 const dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite';
 
-await resetDemoDatabase(dbPath);
+await resetDemoDatabase(dbPath, { resetDocuments: true });
 
 await rm(join(process.cwd(), 'public', 'uploads', 'mock-receipts', '.DS_Store'), { force: true });
 
-console.log(`Reset and reseeded AMA demo database at ${dbPath}`);
+console.log(`Reset and reseeded AMA operational scenarios at ${dbPath}`);

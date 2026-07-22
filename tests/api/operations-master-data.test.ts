@@ -19,6 +19,7 @@ import type { StationDto, StationOption } from '../../shared/features/operations
 import { createDbClient, resolveDbPath } from '../../server/db/client';
 import { dropDemoDatabase, runMigrations } from '../../server/db/migrate';
 import { seedDemoData } from '../../server/db/seed';
+import { seedFlightOperationsData } from '../../server/db/seed-flight-operations';
 
 process.env.DEMO_MODE = 'true';
 process.env.AMA_DB_PATH = './data/test-operations-master-data.sqlite';
@@ -33,6 +34,7 @@ beforeAll(async () => {
   dropDemoDatabase(sqlite);
   runMigrations(sqlite);
   await seedDemoData(db);
+  seedFlightOperationsData(sqlite);
   sqlite.close();
 });
 
@@ -65,9 +67,9 @@ describe('operations master data APIs', () => {
     const created = await $fetch<ApiResponse<RouteDto>>('/api/master-data/routes', {
       method: 'POST',
       body: {
-        routeCode: 'API-DJJ-MKQ',
-        originStationId: 'st-djj',
-        destinationStationId: 'st-mkq',
+        routeCode: 'API-OKS-NBX',
+        originStationId: 'st-oks',
+        destinationStationId: 'st-nbx',
         estimatedDurationMinutes: 75,
         distanceKm: 380
       }
@@ -78,16 +80,16 @@ describe('operations master data APIs', () => {
     const detail = await $fetch<ApiResponse<RouteDto>>(
       `/api/master-data/routes/${created.data.id}`
     );
-    expect(detail.ok && detail.data.routeCode).toBe('API-DJJ-MKQ');
+    expect(detail.ok && detail.data.routeCode).toBe('API-OKS-NBX');
 
     const updated = await $fetch<ApiResponse<RouteDto>>(
       `/api/master-data/routes/${created.data.id}`,
       {
         method: 'PUT',
         body: {
-          routeCode: 'API-DJJ-MKQ-2',
-          originStationId: 'st-djj',
-          destinationStationId: 'st-mkq',
+          routeCode: 'API-OKS-NBX-2',
+          originStationId: 'st-oks',
+          destinationStationId: 'st-nbx',
           estimatedDurationMinutes: 80,
           distanceKm: 390
         }
@@ -96,7 +98,7 @@ describe('operations master data APIs', () => {
     expect(updated.ok && updated.data.estimatedDurationMinutes).toBe(80);
 
     const list = await $fetch<ApiResponse<RouteDto[]>>('/api/master-data/routes', {
-      query: { active: 'all', search: 'API-DJJ-MKQ-2' }
+      query: { active: 'all', search: 'API-OKS-NBX-2' }
     });
     expect(list.ok && list.data).toHaveLength(1);
 
@@ -106,11 +108,11 @@ describe('operations master data APIs', () => {
     expect(options.data).toContainEqual(
       expect.objectContaining({
         id: created.data.id,
-        routeCode: 'API-DJJ-MKQ-2',
-        originStationId: 'st-djj',
-        destinationStationId: 'st-mkq',
-        originStationCode: 'DJJ',
-        destinationStationCode: 'MKQ'
+        routeCode: 'API-OKS-NBX-2',
+        originStationId: 'st-oks',
+        destinationStationId: 'st-nbx',
+        originStationCode: 'OKS',
+        destinationStationCode: 'NBX'
       })
     );
 

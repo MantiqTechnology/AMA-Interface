@@ -7,6 +7,7 @@ import type {
   ReschedulePassengerTicketInput
 } from '../../../../shared/features/ticketing/passenger';
 import { DomainError, notFound } from '../../../utils/errors';
+import type { AccountingService } from '../../finance/accounting/service';
 import type { AgentRepository } from '../../commercial/agents/repository';
 import type { TicketingSalesRepository } from '../sales/repository';
 import { PassengerTicketRepository } from './repository';
@@ -15,7 +16,8 @@ export class PassengerTicketService {
   constructor(
     private readonly repository: PassengerTicketRepository,
     private readonly salesRepository: TicketingSalesRepository,
-    private readonly agentRepository: AgentRepository
+    private readonly agentRepository: AgentRepository,
+    private readonly accountingService?: AccountingService
   ) {}
 
   list(query: PassengerTicketListQuery) {
@@ -208,6 +210,7 @@ export class PassengerTicketService {
     const ticket = this.get(id);
     if (ticket.paymentStatus === 'PAID') return ticket;
     this.repository.markPaid(id, input.paymentMethod, new Date().toISOString());
+    this.accountingService?.recordPassengerTicketPayment(id, 'USR-FINANCE-REVIEWER');
     return this.get(id);
   }
 

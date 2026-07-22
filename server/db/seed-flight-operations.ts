@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3';
-
-const seedNow = '2026-07-07T09:00:00.000+07:00';
+import { createDemoSeedContext, type DemoSeedContext } from './seeds/context';
 
 type Row = Record<string, string | number | boolean | null>;
 
@@ -21,6 +20,7 @@ function lookupId(prefix: string, code: string) {
 
 function insertHistory(
   sqlite: Database.Database,
+  context: DemoSeedContext,
   input: {
     id: string;
     flightId: string;
@@ -41,39 +41,40 @@ function insertHistory(
     actionTypeId: lookupId('flight-action-type', input.actionType),
     reasonId: input.reasonId ?? null,
     reasonNote: input.reasonNote ?? null,
-    changedByUserId: 'USR-DEMO-ADMIN',
-    changedAt: input.changedAt ?? seedNow,
+    changedByUserId: 'USR-ADMIN',
+    changedAt: input.changedAt ?? context.now,
     metadataJson: input.metadata ? JSON.stringify(input.metadata) : null
   });
 }
 
-function seedManifests(sqlite: Database.Database, flightId: string) {
+function seedManifests(sqlite: Database.Database, context: DemoSeedContext, flightId: string) {
   insertIgnore(sqlite, 'flight_manifests', {
     id: `${flightId}-manifest-pax`,
     flightOperationId: flightId,
     manifestTypeId: 'manifest-type-passenger',
     statusId: 'manifest-status-approved',
-    approvedByUserId: 'USR-DEMO-ADMIN',
-    approvedAt: seedNow,
-    lockedAt: flightId.includes('closed') ? '2026-07-07T10:30:00.000+07:00' : null,
-    createdAt: seedNow,
-    updatedAt: seedNow
+    approvedByUserId: 'USR-ADMIN',
+    approvedAt: context.now,
+    lockedAt: flightId.includes('closed') ? context.at(-10, '10:30') : null,
+    createdAt: context.now,
+    updatedAt: context.now
   });
   insertIgnore(sqlite, 'flight_manifests', {
     id: `${flightId}-manifest-cargo`,
     flightOperationId: flightId,
     manifestTypeId: 'manifest-type-cargo',
     statusId: 'manifest-status-approved',
-    approvedByUserId: 'USR-DEMO-ADMIN',
-    approvedAt: seedNow,
-    lockedAt: flightId.includes('closed') ? '2026-07-07T10:30:00.000+07:00' : null,
-    createdAt: seedNow,
-    updatedAt: seedNow
+    approvedByUserId: 'USR-ADMIN',
+    approvedAt: context.now,
+    lockedAt: flightId.includes('closed') ? context.at(-10, '10:30') : null,
+    createdAt: context.now,
+    updatedAt: context.now
   });
 }
 
 function seedReadiness(
   sqlite: Database.Database,
+  context: DemoSeedContext,
   flightId: string,
   overrides: Partial<Record<string, { status: string; note: string }>> = {}
 ) {
@@ -81,7 +82,7 @@ function seedReadiness(
     ['AIRCRAFT_SERVICEABILITY', 'Aircraft serviceability', 'PASS', 'Aircraft is serviceable'],
     ['AIRCRAFT_LOCATION', 'Aircraft location', 'PASS', 'Aircraft is at departure station'],
     ['AIRCRAFT_CAPACITY', 'Aircraft capacity', 'PASS', 'Manifest load is within capacity'],
-    ['CREW_AVAILABILITY', 'Crew availability', 'PASS', 'No demo overlap detected'],
+    ['CREW_AVAILABILITY', 'Crew availability', 'PASS', 'No conflicting crew assignment detected'],
     ['CREW_LICENSE_MEDICAL', 'Crew license and medical', 'PASS', 'Crew licences are valid'],
     ['MANIFEST_APPROVED', 'Manifest approved', 'PASS', 'Passenger and cargo manifests approved'],
     ['DG_ACCEPTANCE', 'Dangerous goods acceptance', 'NOT_APPLICABLE', 'No DG cargo'],
@@ -101,25 +102,31 @@ function seedReadiness(
       checkName: name,
       statusId: lookupId('readiness-status', override?.status ?? status),
       isRequired: 1,
-      evaluatedAt: seedNow,
-      evaluatedByUserId: 'USR-DEMO-ADMIN',
+      evaluatedAt: context.now,
+      evaluatedByUserId: 'USR-ADMIN',
       resultNote: override?.note ?? note,
-      sourceReference: 'seed-demo',
-      createdAt: seedNow,
-      updatedAt: seedNow
+      sourceReference: 'seed-scenario',
+      createdAt: context.now,
+      updatedAt: context.now
     });
   }
 }
 
-function seedCrew(sqlite: Database.Database, flightId: string, picId: string, coPilotId: string) {
+function seedCrew(
+  sqlite: Database.Database,
+  context: DemoSeedContext,
+  flightId: string,
+  picId: string,
+  coPilotId: string
+) {
   insertIgnore(sqlite, 'flight_crew_assignments', {
     id: `${flightId}-crew-pic`,
     flightId,
     crewId: picId,
     assignmentRoleId: 'crew-assignment-role-pilot-in-command',
     isPrimary: 1,
-    createdAt: seedNow,
-    updatedAt: seedNow
+    createdAt: context.now,
+    updatedAt: context.now
   });
   insertIgnore(sqlite, 'flight_crew_assignments', {
     id: `${flightId}-crew-cop`,
@@ -127,12 +134,17 @@ function seedCrew(sqlite: Database.Database, flightId: string, picId: string, co
     crewId: coPilotId,
     assignmentRoleId: 'crew-assignment-role-co-pilot',
     isPrimary: 1,
-    createdAt: seedNow,
-    updatedAt: seedNow
+    createdAt: context.now,
+    updatedAt: context.now
   });
 }
 
-function seedFinance(sqlite: Database.Database, flightId: string, status: string) {
+function seedFinance(
+  sqlite: Database.Database,
+  context: DemoSeedContext,
+  flightId: string,
+  status: string
+) {
   insertIgnore(sqlite, 'flight_finance_handoffs', {
     id: `${flightId}-handoff-fuel`,
     flightId,
@@ -143,8 +155,8 @@ function seedFinance(sqlite: Database.Database, flightId: string, status: string
     summary: 'Fuel uplift cost preview for finance handoff.',
     amount: 9250000,
     currencyId: 'cur-idr',
-    createdAt: seedNow,
-    updatedAt: seedNow
+    createdAt: context.now,
+    updatedAt: context.now
   });
   insertIgnore(sqlite, 'flight_finance_handoffs', {
     id: `${flightId}-handoff-station`,
@@ -156,12 +168,17 @@ function seedFinance(sqlite: Database.Database, flightId: string, status: string
     summary: 'Station handling and parking cost preview.',
     amount: 2750000,
     currencyId: 'cur-idr',
-    createdAt: seedNow,
-    updatedAt: seedNow
+    createdAt: context.now,
+    updatedAt: context.now
   });
 }
 
-function seedGovernance(sqlite: Database.Database, flightId: string, currentStatus: string) {
+function seedGovernance(
+  sqlite: Database.Database,
+  context: DemoSeedContext,
+  flightId: string,
+  currentStatus: string
+) {
   const approvalRows = [
     {
       type: 'READINESS_APPROVAL',
@@ -189,14 +206,14 @@ function seedGovernance(sqlite: Database.Database, flightId: string, currentStat
       statusId: lookupId('flight-approval-status', approval.status),
       requestedByUserId: 'USR-001',
       assignedRole: approval.role,
-      decidedByUserId: approval.status === 'APPROVED' ? 'USR-DEMO-ADMIN' : null,
-      requestedAt: seedNow,
-      decidedAt: approval.status === 'APPROVED' ? seedNow : null,
+      decidedByUserId: approval.status === 'APPROVED' ? 'USR-ADMIN' : null,
+      requestedAt: context.now,
+      decidedAt: approval.status === 'APPROVED' ? context.now : null,
       reason: null,
       affectedSection: null,
       requiredCorrection: null,
-      createdAt: seedNow,
-      updatedAt: seedNow
+      createdAt: context.now,
+      updatedAt: context.now
     });
   }
 
@@ -221,20 +238,24 @@ function seedGovernance(sqlite: Database.Database, flightId: string, currentStat
       documentType,
       fileName,
       statusId: lookupId('flight-attachment-status', status),
-      uploadedAt: status === 'AVAILABLE' ? seedNow : null,
-      createdAt: seedNow,
-      updatedAt: seedNow
+      uploadedAt: status === 'AVAILABLE' ? context.now : null,
+      createdAt: context.now,
+      updatedAt: context.now
     });
   }
 }
 
-export function seedFlightOperationsData(sqlite: Database.Database) {
+export function seedFlightOperationsData(
+  sqlite: Database.Database,
+  context: DemoSeedContext = createDemoSeedContext()
+) {
+  const seedNow = context.now;
   const transaction = sqlite.transaction(() => {
     insertIgnore(sqlite, 'flight_requests', {
       id: 'fr-2026-00124',
-      requestNumber: 'FR-2026-00124',
+      requestNumber: `FR-${context.compactDate(0)}-001`,
       statusId: 'flight-request-status-converted',
-      flightDate: '2026-07-10',
+      flightDate: context.date(2),
       flightTypeId: 'flight-type-cargo',
       serviceTypeId: 'flight-service-type-charter-cargo',
       routeId: 'route-djj-wmx',
@@ -242,8 +263,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       aircraftId: 'ac-pk-ama',
       pilotInCommandId: 'crew-pic-valid',
       coPilotId: 'crew-cop-valid',
-      scheduledDepartureAt: '2026-07-10T08:30:00.000+09:00',
-      scheduledArrivalAt: '2026-07-10T09:45:00.000+09:00',
+      scheduledDepartureAt: context.at(2, '08:30'),
+      scheduledArrivalAt: context.at(2, '09:45'),
       requestSource: 'Corporate Charter Request',
       priorityId: 'flight-priority-normal',
       passengerEstimate: 2,
@@ -262,17 +283,94 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       remarks: 'Corporate charter cargo request for PT Papua Logistik.',
       convertedFlightId: 'fop-dg-pending',
       createdByUserId: 'USR-001',
-      approvedByUserId: 'USR-DEMO-ADMIN',
+      approvedByUserId: 'USR-ADMIN',
       approvedAt: seedNow,
       createdAt: seedNow,
       updatedAt: seedNow
     });
 
+    for (const request of [
+      {
+        id: 'fr-charter-draft',
+        sequence: '002',
+        status: 'draft',
+        dateOffset: 5,
+        source: 'Corporate Account Desk',
+        remarks: 'Draft charter request awaiting payload confirmation.'
+      },
+      {
+        id: 'fr-government-submitted',
+        sequence: '003',
+        status: 'submitted',
+        dateOffset: 3,
+        source: 'Government Liaison Desk',
+        remarks: 'Medical transport request submitted for director approval.'
+      },
+      {
+        id: 'fr-cargo-approved',
+        sequence: '004',
+        status: 'approved',
+        dateOffset: 4,
+        source: 'Cargo Account Desk',
+        remarks: 'Approved logistics charter ready for flight conversion.'
+      },
+      {
+        id: 'fr-passenger-rejected',
+        sequence: '005',
+        status: 'rejected',
+        dateOffset: 2,
+        source: 'Station Counter',
+        remarks: 'Request rejected because the customer withdrew the movement.'
+      }
+    ] as const) {
+      insertIgnore(sqlite, 'flight_requests', {
+        id: request.id,
+        requestNumber: `FR-${context.compactDate(0)}-${request.sequence}`,
+        statusId: `flight-request-status-${request.status}`,
+        flightDate: context.date(request.dateOffset),
+        flightTypeId: 'flight-type-charter',
+        serviceTypeId: 'flight-service-type-charter-passenger',
+        routeId: 'route-djj-wmx',
+        customerId:
+          request.id === 'fr-government-submitted' ? 'cust-government' : 'cust-mission-air',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: context.at(request.dateOffset, '10:00'),
+        scheduledArrivalAt: context.at(request.dateOffset, '10:55'),
+        requestSource: request.source,
+        priorityId:
+          request.id === 'fr-government-submitted'
+            ? 'flight-priority-high'
+            : 'flight-priority-normal',
+        passengerEstimate: 6,
+        cargoWeightEstimateKg: 120,
+        cargoCategory: 'Personal baggage',
+        dangerousGoods: 0,
+        fuelType: 'AVTUR',
+        requestedFuelLitre: 600,
+        fuelSupplierId: 'fuel-pertamina-djj',
+        handlingSupplierId: 'hp-angkasa-djj',
+        parkingRequired: 0,
+        destinationHandlingRequired: 1,
+        billingType: 'CHARTER',
+        estimatedRevenue: 78500000,
+        currencyCode: 'IDR',
+        remarks: request.remarks,
+        convertedFlightId: null,
+        createdByUserId: 'USR-001',
+        approvedByUserId: request.status === 'approved' ? 'USR-DIRECTOR' : null,
+        approvedAt: request.status === 'approved' ? seedNow : null,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+
     const flights = [
       {
         id: 'fop-closed-djj-wmx',
-        flightNumber: 'AMA-20260707-001',
-        flightDate: '2026-07-07',
+        flightNumber: `AMA-${context.compactDate(-10)}-001`,
+        flightDate: context.date(-10),
         flightType: 'CHARTER',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -281,21 +379,21 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-ama',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: '2026-07-07T08:00:00.000+07:00',
-        scheduledArrivalAt: '2026-07-07T08:55:00.000+07:00',
-        actualDepartureAt: '2026-07-07T08:08:00.000+07:00',
-        actualArrivalAt: '2026-07-07T09:02:00.000+07:00',
+        scheduledDepartureAt: context.at(-10, '08:00'),
+        scheduledArrivalAt: context.at(-10, '08:55'),
+        actualDepartureAt: context.at(-10, '08:08'),
+        actualArrivalAt: context.at(-10, '09:02'),
         currentStatus: 'CLOSED',
         createdByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
-        remarks: 'Closed end-to-end demo flight with finance handoff preview.',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Closed charter flight with complete finance handoff.',
         isLocked: 1,
         blockingReason: null
       },
       {
         id: 'fop-blocked-crew-expired',
-        flightNumber: 'AMA-20260707-002',
-        flightDate: '2026-07-07',
+        flightNumber: `AMA-${context.compactDate(0)}-002`,
+        flightDate: context.date(0),
         flightType: 'PASSENGER',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -304,8 +402,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-amd',
         pilotInCommandId: 'crew-pic-expired',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: '2026-07-07T11:00:00.000+07:00',
-        scheduledArrivalAt: '2026-07-07T11:55:00.000+07:00',
+        scheduledDepartureAt: context.at(0, '11:00'),
+        scheduledArrivalAt: context.at(0, '11:55'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'BLOCKED',
@@ -317,8 +415,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       },
       {
         id: 'fop-cancelled-fuel',
-        flightNumber: 'AMA-20260707-003',
-        flightDate: '2026-07-07',
+        flightNumber: `AMA-${context.compactDate(-5)}-003`,
+        flightDate: context.date(-5),
         flightType: 'CHARTER',
         routeId: 'route-djj-tim',
         originStationId: 'st-djj',
@@ -327,21 +425,21 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-amc',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid-2',
-        scheduledDepartureAt: '2026-07-07T13:00:00.000+07:00',
-        scheduledArrivalAt: '2026-07-07T14:35:00.000+07:00',
+        scheduledDepartureAt: context.at(-5, '13:00'),
+        scheduledArrivalAt: context.at(-5, '14:35'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'CANCELLED',
         createdByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
+        approvedByUserId: 'USR-ADMIN',
         remarks: 'Cancelled after fuel request was drafted.',
         isLocked: 1,
         blockingReason: null
       },
       {
         id: 'fop-dg-pending',
-        flightNumber: 'FL-2026-00124',
-        flightDate: '2026-07-10',
+        flightNumber: `AMA-${context.compactDate(2)}-004`,
+        flightDate: context.date(2),
         flightType: 'CARGO',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -350,8 +448,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-ama',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: '2026-07-10T08:30:00.000+09:00',
-        scheduledArrivalAt: '2026-07-10T09:45:00.000+09:00',
+        scheduledDepartureAt: context.at(2, '08:30'),
+        scheduledArrivalAt: context.at(2, '09:45'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'PENDING_READINESS',
@@ -363,8 +461,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       },
       {
         id: 'fop-in-progress',
-        flightNumber: 'AMA-20260707-005',
-        flightDate: '2026-07-07',
+        flightNumber: `AMA-${context.compactDate(0)}-005`,
+        flightDate: context.date(0),
         flightType: 'PASSENGER',
         routeId: 'route-wmx-oks',
         originStationId: 'st-wmx',
@@ -373,21 +471,21 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-amb',
         pilotInCommandId: 'crew-pic-expiring',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: '2026-07-07T09:30:00.000+07:00',
-        scheduledArrivalAt: '2026-07-07T10:05:00.000+07:00',
-        actualDepartureAt: '2026-07-07T09:36:00.000+07:00',
+        scheduledDepartureAt: context.at(0, '09:30'),
+        scheduledArrivalAt: context.at(0, '10:05'),
+        actualDepartureAt: context.at(0, '09:36'),
         actualArrivalAt: null,
         currentStatus: 'IN_PROGRESS',
         createdByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
-        remarks: 'Manual following demo flight.',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Remote flight under active operational following.',
         isLocked: 0,
         blockingReason: null
       },
       {
         id: 'fop-ticketing-passenger',
-        flightNumber: 'AMA-20260718-006',
-        flightDate: '2026-07-18',
+        flightNumber: `AMA-${context.compactDate(1)}-006`,
+        flightDate: context.date(1),
         flightType: 'PASSENGER',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -396,21 +494,21 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-ama',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid-2',
-        scheduledDepartureAt: '2026-07-18T08:00:00.000+09:00',
-        scheduledArrivalAt: '2026-07-18T08:55:00.000+09:00',
+        scheduledDepartureAt: context.at(1, '08:00'),
+        scheduledArrivalAt: context.at(1, '08:55'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
         createdByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
-        remarks: 'Scheduled passenger flight available for ticketing demo.',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Scheduled passenger service open for ticket sales.',
         isLocked: 0,
         blockingReason: null
       },
       {
         id: 'fop-ticketing-cargo',
-        flightNumber: 'AMA-20260719-007',
-        flightDate: '2026-07-19',
+        flightNumber: `AMA-${context.compactDate(2)}-007`,
+        flightDate: context.date(2),
         flightType: 'CARGO',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -419,21 +517,21 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-amb',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: '2026-07-19T09:30:00.000+09:00',
-        scheduledArrivalAt: '2026-07-19T10:25:00.000+09:00',
+        scheduledDepartureAt: context.at(2, '09:30'),
+        scheduledArrivalAt: context.at(2, '10:25'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
         createdByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
-        remarks: 'Scheduled cargo flight available for ticketing demo.',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Scheduled cargo service open for bookings.',
         isLocked: 0,
         blockingReason: null
       },
       {
         id: 'fop-ticketing-passenger-later',
-        flightNumber: 'AMA-20260721-008',
-        flightDate: '2026-07-21',
+        flightNumber: `AMA-${context.compactDate(4)}-008`,
+        flightDate: context.date(4),
         flightType: 'PASSENGER',
         routeId: 'route-djj-wmx',
         originStationId: 'st-djj',
@@ -442,21 +540,21 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-ama',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid-2',
-        scheduledDepartureAt: '2026-07-21T08:00:00.000+09:00',
-        scheduledArrivalAt: '2026-07-21T08:55:00.000+09:00',
+        scheduledDepartureAt: context.at(4, '08:00'),
+        scheduledArrivalAt: context.at(4, '08:55'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
         createdByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
+        approvedByUserId: 'USR-ADMIN',
         remarks: 'Later passenger service available for ticket rescheduling.',
         isLocked: 0,
         blockingReason: null
       },
       {
         id: 'fop-route-profile-djj-nbx',
-        flightNumber: 'AMA-20260720-009',
-        flightDate: '2026-07-20',
+        flightNumber: `AMA-${context.compactDate(3)}-009`,
+        flightDate: context.date(3),
         flightType: 'PASSENGER',
         routeId: 'route-djj-nbx',
         originStationId: 'st-djj',
@@ -465,16 +563,154 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         aircraftId: 'ac-pk-amb',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: '2026-07-20T10:00:00.000+09:00',
-        scheduledArrivalAt: '2026-07-20T11:20:00.000+09:00',
+        scheduledDepartureAt: context.at(3, '10:00'),
+        scheduledArrivalAt: context.at(3, '11:20'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
         createdByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
+        approvedByUserId: 'USR-ADMIN',
         remarks: 'Scheduled DJJ-NBX passenger flight for route operational profile preview.',
         isLocked: 0,
         blockingReason: null
+      },
+      {
+        id: 'fop-ready-approval',
+        flightNumber: `AMA-${context.compactDate(0)}-010`,
+        flightDate: context.date(0),
+        flightType: 'CHARTER',
+        routeId: 'route-djj-tim',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-tim',
+        customerId: 'cust-government',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid-2',
+        scheduledDepartureAt: context.at(0, '14:00'),
+        scheduledArrivalAt: context.at(0, '15:35'),
+        actualDepartureAt: null,
+        actualArrivalAt: null,
+        currentStatus: 'READY_FOR_APPROVAL',
+        createdByUserId: 'USR-001',
+        approvedByUserId: null,
+        remarks: 'Priority government charter with complete readiness evidence.',
+        isLocked: 0,
+        blockingReason: null
+      },
+      {
+        id: 'fop-checkin-open',
+        flightNumber: `AMA-${context.compactDate(0)}-011`,
+        flightDate: context.date(0),
+        flightType: 'PASSENGER',
+        routeId: 'route-djj-wmx',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-wmx',
+        customerId: 'cust-individual-1',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid-2',
+        scheduledDepartureAt: context.at(0, '16:00'),
+        scheduledArrivalAt: context.at(0, '16:55'),
+        actualDepartureAt: null,
+        actualArrivalAt: null,
+        currentStatus: 'CHECK_IN_OPEN',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Passenger service with check-in currently open.',
+        isLocked: 0,
+        blockingReason: null
+      },
+      {
+        id: 'fop-diverted-weather',
+        flightNumber: `AMA-${context.compactDate(-1)}-012`,
+        flightDate: context.date(-1),
+        flightType: 'CHARTER',
+        routeId: 'route-tim-wmx',
+        originStationId: 'st-tim',
+        destinationStationId: 'st-wmx',
+        customerId: 'cust-mission-air',
+        aircraftId: 'ac-pk-amb',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: context.at(-1, '12:00'),
+        scheduledArrivalAt: context.at(-1, '13:10'),
+        actualDepartureAt: context.at(-1, '12:08'),
+        actualArrivalAt: context.at(-1, '13:35'),
+        currentStatus: 'DIVERTED',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Diverted to Jayapura after weather deteriorated at Wamena.',
+        isLocked: 0,
+        blockingReason: null
+      },
+      {
+        id: 'fop-landed-maintenance',
+        flightNumber: `AMA-${context.compactDate(-1)}-013`,
+        flightDate: context.date(-1),
+        flightType: 'CARGO',
+        routeId: 'route-wmx-oks',
+        originStationId: 'st-wmx',
+        destinationStationId: 'st-oks',
+        customerId: 'cust-cargo-partner',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-expiring',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: context.at(-1, '08:00'),
+        scheduledArrivalAt: context.at(-1, '08:35'),
+        actualDepartureAt: context.at(-1, '08:06'),
+        actualArrivalAt: context.at(-1, '08:42'),
+        currentStatus: 'LANDED',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Landed with an oil-filter replacement recorded for maintenance review.',
+        isLocked: 0,
+        blockingReason: null
+      },
+      {
+        id: 'fop-pending-closure',
+        flightNumber: `AMA-${context.compactDate(-1)}-014`,
+        flightDate: context.date(-1),
+        flightType: 'PASSENGER',
+        routeId: 'route-djj-tim',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-tim',
+        customerId: 'cust-individual-2',
+        aircraftId: 'ac-pk-amb',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid-2',
+        scheduledDepartureAt: context.at(-1, '09:00'),
+        scheduledArrivalAt: context.at(-1, '10:35'),
+        actualDepartureAt: context.at(-1, '09:04'),
+        actualArrivalAt: context.at(-1, '10:31'),
+        currentStatus: 'PENDING_CLOSURE',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Operational records complete; maintenance approval remains outstanding.',
+        isLocked: 0,
+        blockingReason: 'Approved maintenance handoff is missing.'
+      },
+      {
+        id: 'fop-reopened-correction',
+        flightNumber: `AMA-${context.compactDate(-9)}-015`,
+        flightDate: context.date(-9),
+        flightType: 'CHARTER',
+        routeId: 'route-djj-wmx',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-wmx',
+        customerId: 'cust-papua-logistics',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: context.at(-9, '07:00'),
+        scheduledArrivalAt: context.at(-9, '07:55'),
+        actualDepartureAt: context.at(-9, '07:05'),
+        actualArrivalAt: context.at(-9, '08:01'),
+        currentStatus: 'REOPENED_FOR_CORRECTION',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Reopened to correct a station-cost document reference.',
+        isLocked: 0,
+        blockingReason: 'Station-cost evidence requires correction.'
       }
     ];
 
@@ -482,10 +718,13 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       const { flightType, currentStatus, ...flightRow } = flight;
       insertIgnore(sqlite, 'flight_operations', {
         ...flightRow,
-        orderNumber:
-          flight.id === 'fop-dg-pending'
-            ? 'FO-2026-00124'
-            : `FO-${flight.flightNumber.replace('AMA-', '')}`,
+        actualDepartureStationId: flight.actualDepartureAt ? flight.originStationId : null,
+        actualArrivalStationId: flight.actualArrivalAt
+          ? flight.id === 'fop-diverted-weather'
+            ? 'st-djj'
+            : flight.destinationStationId
+          : null,
+        orderNumber: `FO-${flight.flightNumber.replace('AMA-', '')}`,
         flightRequestId: flight.id === 'fop-dg-pending' ? 'fr-2026-00124' : null,
         flightTypeId: lookupId('flight-type', flightType),
         serviceTypeId:
@@ -506,17 +745,17 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         createdAt: seedNow,
         updatedAt: seedNow
       });
-      seedCrew(sqlite, flight.id, flight.pilotInCommandId, flight.coPilotId);
-      seedManifests(sqlite, flight.id);
-      seedGovernance(sqlite, flight.id, currentStatus);
-      insertHistory(sqlite, {
+      seedCrew(sqlite, context, flight.id, flight.pilotInCommandId, flight.coPilotId);
+      seedManifests(sqlite, context, flight.id);
+      seedGovernance(sqlite, context, flight.id, currentStatus);
+      insertHistory(sqlite, context, {
         id: `${flight.id}-history-create`,
         flightId: flight.id,
         toStatus: 'DRAFT',
         actionType: 'CREATE',
-        changedAt: '2026-07-07T07:00:00.000+07:00'
+        changedAt: flight.scheduledDepartureAt
       });
-      insertHistory(sqlite, {
+      insertHistory(sqlite, context, {
         id: `${flight.id}-history-current`,
         flightId: flight.id,
         fromStatus: currentStatus === 'CLOSED' ? 'PENDING_CLOSURE' : 'DRAFT',
@@ -530,17 +769,17 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
     sqlite
       .prepare(
         `UPDATE flight_operations SET
-          order_number = 'FO-2026-00124',
+          order_number = ?,
           flight_request_id = 'fr-2026-00124',
-          flight_number = 'FL-2026-00124',
-          flight_date = '2026-07-10',
+          flight_number = ?,
+          flight_date = ?,
           flight_type_id = 'flight-type-cargo',
           service_type_id = 'flight-service-type-charter-cargo',
           request_source = 'Corporate Charter Request',
           priority_id = 'flight-priority-normal',
           customer_id = 'cust-papua-logistics',
-          scheduled_departure_at = '2026-07-10T08:30:00.000+09:00',
-          scheduled_arrival_at = '2026-07-10T09:45:00.000+09:00',
+          scheduled_departure_at = ?,
+          scheduled_arrival_at = ?,
           billing_type = 'CHARTER',
           estimated_revenue = 28000000,
           currency_code = 'IDR',
@@ -548,19 +787,26 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
           updated_at = ?
          WHERE id = 'fop-dg-pending'`
       )
-      .run(seedNow);
+      .run(
+        `FO-${context.compactDate(2)}-004`,
+        `AMA-${context.compactDate(2)}-004`,
+        context.date(2),
+        context.at(2, '08:30'),
+        context.at(2, '09:45'),
+        seedNow
+      );
 
-    seedReadiness(sqlite, 'fop-closed-djj-wmx');
-    seedReadiness(sqlite, 'fop-blocked-crew-expired', {
+    seedReadiness(sqlite, context, 'fop-closed-djj-wmx');
+    seedReadiness(sqlite, context, 'fop-blocked-crew-expired', {
       AIRCRAFT_SERVICEABILITY: {
         status: 'FAIL',
-        note: 'Aircraft PK-AMD maintenance was due on 2026-07-06.'
+        note: `Aircraft PK-AMD maintenance was due on ${context.date(-11)}.`
       },
       CREW_LICENSE_MEDICAL: { status: 'FAIL', note: 'PIC licence or medical is expired.' },
       FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel request not confirmed.' },
       HANDLING_CONFIRMED: { status: 'PENDING', note: 'Handling not confirmed.' }
     });
-    seedReadiness(sqlite, 'fop-cancelled-fuel', {
+    seedReadiness(sqlite, context, 'fop-cancelled-fuel', {
       AIRCRAFT_SERVICEABILITY: {
         status: 'FAIL',
         note: 'Aircraft PK-AMC is currently unserviceable.'
@@ -571,7 +817,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       },
       FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel request voided by cancellation.' }
     });
-    seedReadiness(sqlite, 'fop-dg-pending', {
+    seedReadiness(sqlite, context, 'fop-dg-pending', {
       CREW_AVAILABILITY: {
         status: 'FAIL',
         note: 'Co-pilot has another flight inside the minimum turnaround buffer.'
@@ -603,21 +849,31 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         )
         .run(lookupId('readiness-status', status), note, seedNow, checkCode);
     }
-    seedReadiness(sqlite, 'fop-in-progress');
-    seedReadiness(sqlite, 'fop-ticketing-passenger-later', {
+    seedReadiness(sqlite, context, 'fop-in-progress');
+    seedReadiness(sqlite, context, 'fop-ticketing-passenger-later', {
       FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel confirmation has not been recorded.' },
       HANDLING_CONFIRMED: {
         status: 'PENDING',
         note: 'Departure and destination handling confirmations are pending.'
       }
     });
+    for (const flightId of [
+      'fop-ready-approval',
+      'fop-checkin-open',
+      'fop-diverted-weather',
+      'fop-landed-maintenance',
+      'fop-pending-closure',
+      'fop-reopened-correction'
+    ]) {
+      seedReadiness(sqlite, context, flightId);
+    }
 
     insertIgnore(sqlite, 'flight_manifest_passengers', {
       id: 'fop-closed-pax-1',
       manifestId: 'fop-closed-djj-wmx-manifest-pax',
-      fullName: 'Maria Demo Passenger',
+      fullName: 'Maria Rumbiak',
       identityType: 'KTP',
-      identityNumber: 'DEMO-001',
+      identityNumber: 'KTP-917101440001',
       weightKg: 68,
       seatNumber: '1A',
       baggageWeightKg: 12,
@@ -628,8 +884,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
     insertIgnore(sqlite, 'flight_manifest_cargo_items', {
       id: 'fop-dg-cargo-1',
       manifestId: 'fop-dg-pending-manifest-cargo',
-      description: 'Battery equipment demo cargo',
-      senderName: 'Cargo Partner Demo',
+      description: 'Lithium battery communication equipment',
+      senderName: 'PT Papua Kargo Mandiri',
       receiverName: 'Wamena Field Team',
       actualWeightKg: 84,
       volumeWeightKg: 92,
@@ -656,15 +912,15 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       updatedAt: seedNow
     });
     for (const [id, name, seat, baggage] of [
-      ['fop-dg-pax-1', 'Rian Demo', '1A', 18],
-      ['fop-dg-pax-2', 'Yohanes Demo', '1B', 14]
-    ]) {
+      ['fop-dg-pax-1', 'Rian Wenda', '1A', 18],
+      ['fop-dg-pax-2', 'Yohanes Kogoya', '1B', 14]
+    ] satisfies Array<[string, string, string, number]>) {
       insertIgnore(sqlite, 'flight_manifest_passengers', {
         id,
         manifestId: 'fop-dg-pending-manifest-pax',
         fullName: name,
         identityType: 'KTP',
-        identityNumber: `DEMO-${id}`,
+        identityNumber: `KTP-${id.replaceAll('fop-', '').toUpperCase()}`,
         weightKg: 72,
         seatNumber: seat,
         baggageWeightKg: baggage,
@@ -760,8 +1016,8 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         rejectionReason: flightId === 'fop-cancelled-fuel' ? 'Flight cancelled.' : null,
         varianceNote: null,
         requestedByUserId: 'USR-001',
-        approvedByUserId: 'USR-DEMO-ADMIN',
-        upliftRecordedByUserId: 'USR-DEMO-ADMIN',
+        approvedByUserId: 'USR-ADMIN',
+        upliftRecordedByUserId: 'USR-ADMIN',
         createdAt: seedNow,
         updatedAt: seedNow
       });
@@ -777,7 +1033,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         statusId: 'station-service-status-confirmed',
         referenceRate: 2750000,
         confirmedAt: seedNow,
-        confirmedByUserId: 'USR-DEMO-ADMIN',
+        confirmedByUserId: 'USR-ADMIN',
         rejectionNote: null,
         createdAt: seedNow,
         updatedAt: seedNow
@@ -792,8 +1048,84 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
         currencyId: 'cur-idr',
         description: 'Mock handling cost generated from confirmed station service.',
         statusId: 'station-cost-status-approved',
-        submittedByUserId: 'USR-DEMO-ADMIN',
-        approvedByUserId: 'USR-DEMO-ADMIN',
+        submittedByUserId: 'USR-ADMIN',
+        approvedByUserId: 'USR-ADMIN',
+        approvedAt: seedNow,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+
+    for (const operation of [
+      {
+        flightId: 'fop-diverted-weather',
+        stationId: 'st-djj',
+        supplierId: 'hp-angkasa-djj',
+        amount: 4200000
+      },
+      {
+        flightId: 'fop-landed-maintenance',
+        stationId: 'st-wmx',
+        supplierId: null,
+        amount: 1800000
+      },
+      {
+        flightId: 'fop-pending-closure',
+        stationId: 'st-djj',
+        supplierId: 'hp-angkasa-djj',
+        amount: 2750000
+      }
+    ] as const) {
+      insertIgnore(sqlite, 'flight_fuel_requests', {
+        id: `${operation.flightId}-fuel`,
+        flightId: operation.flightId,
+        fuelSupplierId:
+          operation.stationId === 'st-djj' ? 'fuel-pertamina-djj' : 'fuel-pertamina-wmx',
+        fuelType: 'AVTUR',
+        requestedQuantityLitre: 500,
+        approvedQuantityLitre: 500,
+        actualUpliftLitre: 500,
+        referencePricePerLitre: 18500,
+        actualPricePerLitre: 18500,
+        taxCodeId: 'tax-non-tax',
+        taxAmount: 0,
+        totalCost: 9250000,
+        currencyId: 'cur-idr',
+        statusId: 'fuel-workflow-status-posted',
+        rejectionReason: null,
+        varianceNote: null,
+        requestedByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        upliftRecordedByUserId: 'USR-ADMIN',
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+      insertIgnore(sqlite, 'flight_station_service_requests', {
+        id: `${operation.flightId}-handling`,
+        flightId: operation.flightId,
+        stationId: operation.stationId,
+        serviceSupplierId: operation.supplierId,
+        serviceTypeId: 'station-service-type-handling',
+        statusId: 'station-service-status-confirmed',
+        referenceRate: operation.amount,
+        confirmedAt: seedNow,
+        confirmedByUserId: 'USR-STATION-ADMIN',
+        rejectionNote: null,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+      insertIgnore(sqlite, 'flight_station_costs', {
+        id: `${operation.flightId}-station-cost`,
+        flightId: operation.flightId,
+        stationId: operation.stationId,
+        vendorId: 'vendor-transport-wmx',
+        costCategoryId: 'cost-handling',
+        amount: operation.amount,
+        currencyId: 'cur-idr',
+        description: 'Confirmed handling and station support cost.',
+        statusId: 'station-cost-status-approved',
+        submittedByUserId: 'USR-STATION-ADMIN',
+        approvedByUserId: 'USR-ADMIN',
         approvedAt: seedNow,
         createdAt: seedNow,
         updatedAt: seedNow
@@ -805,14 +1137,14 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       flightId: 'fop-closed-djj-wmx',
       aircraftId: 'ac-pk-ama',
       serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
-      workOrderReference: 'WO-DEMO-0707-001',
+      workOrderReference: 'WO-AMA-0707-001',
       maintenanceNote: 'Post-flight inspection clear.',
       sparePartReference: null,
       maintenanceCost: 0,
       currencyId: 'cur-idr',
       statusId: 'maintenance-handoff-status-approved',
-      recordedByUserId: 'USR-DEMO-ADMIN',
-      approvedByUserId: 'USR-DEMO-ADMIN',
+      recordedByUserId: 'USR-ADMIN',
+      approvedByUserId: 'USR-ADMIN',
       approvedAt: seedNow,
       createdAt: seedNow,
       updatedAt: seedNow
@@ -839,9 +1171,9 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       flightId: 'fop-blocked-crew-expired',
       aircraftId: 'ac-pk-amd',
       serviceabilityStatusId: 'aircraft-serviceability-status-maintenance-due',
-      workOrderReference: 'WO-DEMO-0707-002',
+      workOrderReference: 'WO-AMA-0707-002',
       maintenanceNote: 'Maintenance due before departure; readiness must remain blocked.',
-      sparePartReference: 'SP-DEMO-FILTER-01',
+      sparePartReference: 'SP-PC6-FLT-1001',
       maintenanceCost: 950000,
       currencyId: 'cur-idr',
       statusId: 'maintenance-handoff-status-submitted',
@@ -856,9 +1188,9 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       flightId: 'fop-cancelled-fuel',
       aircraftId: 'ac-pk-amc',
       serviceabilityStatusId: 'aircraft-serviceability-status-unserviceable',
-      workOrderReference: 'WO-DEMO-0707-003',
+      workOrderReference: 'WO-AMA-0707-003',
       maintenanceNote: 'Aircraft marked unserviceable after cancellation review.',
-      sparePartReference: 'SP-DEMO-BRAKE-01',
+      sparePartReference: 'SP-PC6-BRK-2001',
       maintenanceCost: 3200000,
       currencyId: 'cur-idr',
       statusId: 'maintenance-handoff-status-rejected',
@@ -873,7 +1205,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       flightId: 'fop-ticketing-cargo',
       aircraftId: 'ac-pk-amb',
       serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
-      workOrderReference: 'WO-DEMO-0716-001',
+      workOrderReference: 'WO-AMA-0716-001',
       maintenanceNote: 'Pre-flight inspection clear for cargo service.',
       sparePartReference: null,
       maintenanceCost: 1750000,
@@ -885,8 +1217,60 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       createdAt: seedNow,
       updatedAt: seedNow
     });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'maintenance-landed-filter-draft',
+      flightId: 'fop-landed-maintenance',
+      aircraftId: 'ac-pk-ama',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable-with-restrictions',
+      workOrderReference: `WO-AMA-${context.compactDate(-1)}-004`,
+      maintenanceNote: 'Oil-filter replacement recorded; release evidence awaits review.',
+      sparePartReference: 'SP-PC6-FLT-1001',
+      maintenanceCost: 950000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-draft',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'maintenance-pending-closure-submitted',
+      flightId: 'fop-pending-closure',
+      aircraftId: 'ac-pk-amb',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+      workOrderReference: `WO-AMA-${context.compactDate(-1)}-005`,
+      maintenanceNote: 'Transit inspection submitted and awaiting maintenance manager approval.',
+      sparePartReference: null,
+      maintenanceCost: 750000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-submitted',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'maintenance-reopened-approved',
+      flightId: 'fop-reopened-correction',
+      aircraftId: 'ac-pk-ama',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+      workOrderReference: `WO-AMA-${context.compactDate(-9)}-006`,
+      maintenanceNote:
+        'Post-flight inspection remains approved; finance evidence requires correction.',
+      sparePartReference: null,
+      maintenanceCost: 0,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-approved',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedAt: seedNow,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
 
-    seedFinance(sqlite, 'fop-closed-djj-wmx', 'READY');
+    seedFinance(sqlite, context, 'fop-closed-djj-wmx', 'READY');
     insertIgnore(sqlite, 'flight_finance_handoffs', {
       id: 'fop-closed-djj-wmx-handoff-invoice',
       flightId: 'fop-closed-djj-wmx',
@@ -904,7 +1288,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       id: 'inv-closed-djj-wmx',
       customerId: 'cust-papua-logistics',
       flightOperationId: 'fop-closed-djj-wmx',
-      invoiceNumber: 'AMA-INV-2026-0707-001',
+      invoiceNumber: `AMA-INV-${context.compactDate(-10)}-001`,
       status: 'partially_paid',
       subtotal: 28000000,
       tax: 3080000,
@@ -912,24 +1296,24 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       currency: 'IDR',
       createdByUserId: 'USR-001',
       approvedByUserId: 'USR-FINANCE-REVIEWER',
-      approvedAt: '2026-07-07T11:00:00.000+07:00',
-      issuedAt: '2026-07-07T11:00:00.000+07:00',
-      dueAt: '2026-07-21T23:59:59.000+07:00',
+      approvedAt: context.at(-10, '11:00'),
+      issuedAt: context.at(-10, '11:00'),
+      dueAt: context.at(4, '23:59'),
       createdAt: seedNow,
-      updatedAt: '2026-07-08T09:00:00.000+07:00'
+      updatedAt: context.at(-9, '09:00')
     });
     insertIgnore(sqlite, 'invoice_line_items', {
       id: 'invoice-line-closed-djj-wmx-charter',
       invoiceId: 'inv-closed-djj-wmx',
       sourceType: 'CHARTER',
       sourceId: 'fop-closed-djj-wmx',
-      description: 'Charter AMA-20260707-001 DJJ -> WMX',
+      description: `Charter AMA-${context.compactDate(-10)}-001 DJJ -> WMX`,
       quantity: 1,
       unitPrice: 28000000,
       subtotal: 28000000,
       rateCardId: 'rate-charter-djj-wmx',
-      taxCodeId: 'tax-ppn-demo',
-      taxCode: 'PPN_DEMO',
+      taxCodeId: 'tax-ppn',
+      taxCode: 'PPN_11',
       taxRateBasisPoints: 1100,
       taxAmount: 3080000,
       total: 31080000
@@ -950,16 +1334,16 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
       invoiceTotal: 31080000,
       grossMargin: 16000000,
       currencyCode: 'IDR',
-      capturedAt: '2026-07-07T11:00:00.000+07:00'
+      capturedAt: context.at(-10, '11:00')
     });
     insertIgnore(sqlite, 'payments', {
       id: 'pay-closed-djj-wmx',
       invoiceId: 'inv-closed-djj-wmx',
       amount: 10000000,
       currency: 'IDR',
-      paidAt: '2026-07-08T09:00:00.000+07:00',
+      paidAt: context.at(-9, '09:00'),
       method: 'bank_transfer',
-      reference: 'BPD-TRF-0708-001'
+      reference: `BPD-TRF-${context.compactDate(-9)}-001`
     });
     sqlite
       .prepare(
@@ -968,7 +1352,7 @@ export function seedFlightOperationsData(sqlite: Database.Database) {
          WHERE id = 'fop-closed-djj-wmx-handoff-invoice'`
       )
       .run(seedNow);
-    seedFinance(sqlite, 'fop-cancelled-fuel', 'VOID');
+    seedFinance(sqlite, context, 'fop-cancelled-fuel', 'VOID');
     insertIgnore(sqlite, 'flight_finance_handoffs', {
       id: 'fop-cancelled-fuel-void',
       flightId: 'fop-cancelled-fuel',

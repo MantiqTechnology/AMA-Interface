@@ -1,22 +1,27 @@
 import { createDbClient } from './client';
 import { dropDemoDatabase, runMigrations } from './migrate';
-import { seedDemoData } from './seed';
-import { seedFlightOperationsData } from './seed-flight-operations';
-import { seedTicketingData } from './seeds/ticketing';
-import { seedInventoryData } from './seeds/inventory';
-import { seedCorporateAssets } from './seeds/corporate-assets';
+import { createDemoSeedContext } from './seeds/context';
+import { seedScenarioDatabase } from './seeds/scenario-database';
 
-export async function resetDemoDatabase(dbPath: string) {
+export type ResetDemoDatabaseOptions = {
+  anchorDate?: string;
+  resetDocuments?: boolean;
+};
+
+export async function resetDemoDatabase(dbPath: string, options: ResetDemoDatabaseOptions = {}) {
   const { db, sqlite } = createDbClient(dbPath);
+  const context = createDemoSeedContext(options.anchorDate);
 
   try {
     dropDemoDatabase(sqlite);
     runMigrations(sqlite);
-    await seedDemoData(db);
-    seedFlightOperationsData(sqlite);
-    seedTicketingData(sqlite);
-    seedInventoryData(sqlite);
-    seedCorporateAssets(sqlite);
+    await seedScenarioDatabase(
+      { db, sqlite },
+      {
+        context,
+        resetDocuments: options.resetDocuments ?? process.env.NODE_ENV !== 'test'
+      }
+    );
   } finally {
     sqlite.close();
   }

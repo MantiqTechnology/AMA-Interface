@@ -3,6 +3,8 @@ import type {
   FlightCapacityProfileDto,
   FlightCapacityProfileOption
 } from '#shared/features/operations/flight-capacity-profiles';
+import type { FlightPlanningOptionDto } from '#shared/contracts/flight-operations';
+
 const FlightCapacityProfileFormDialog = defineAsyncComponent(
   () => import('./FlightCapacityProfileFormDialog.vue')
 );
@@ -14,13 +16,17 @@ const props = withDefaults(
     clearable?: boolean;
     disabled?: boolean;
     allowCreate?: boolean;
+    candidates?: FlightPlanningOptionDto[] | null;
+    loading?: boolean;
   }>(),
   {
     label: 'Capacity Profiles',
     required: false,
     clearable: true,
     disabled: false,
-    allowCreate: true
+    allowCreate: true,
+    candidates: null,
+    loading: false
   }
 );
 const emit = defineEmits<{
@@ -38,6 +44,27 @@ const {
     fetchApi<FlightCapacityProfileOption[]>('/api/master-data/flight-capacity-profiles/options'),
   { default: () => [] }
 );
+
+type DisplayItem = { id: string; title: string; subtitle: string | null };
+
+const usingCandidates = computed(() => Array.isArray(props.candidates));
+const isLoading = computed(() => props.loading || (!usingCandidates.value && pending.value));
+
+const items = computed<DisplayItem[]>(() => {
+  if (props.candidates) {
+    return props.candidates.map((candidate: FlightPlanningOptionDto) => ({
+      id: candidate.id,
+      title: candidate.label,
+      subtitle: candidate.recommended ? 'Fits current manifest estimate' : null
+    }));
+  }
+  return options.value.map((option) => ({
+    id: option.id,
+    title: optionTitle(option),
+    subtitle: null
+  }));
+});
+
 const rules = computed(() =>
   props.required ? [(value: unknown) => Boolean(value) || `${props.label} is required`] : []
 );
@@ -59,22 +86,28 @@ function optionTitle(option: FlightCapacityProfileOption | string | null | undef
         :clearable="clearable"
         density="compact"
         :disabled="disabled"
-        :item-title="optionTitle"
+        item-title="title"
         item-value="id"
-        :items="options"
+        :item-props="(item: DisplayItem) => ({ subtitle: item.subtitle })"
+        :items="items"
         :label="label"
-        :loading="pending"
+        :loading="isLoading"
         :model-value="modelValue"
         :rules="rules"
         variant="outlined"
         @update:model-value="emit('update:modelValue', $event)"
-      /><VBtn
-        v-if="allowCreate && !disabled"
-        aria-label="Add Capacity Profiles"
-        icon="mdi-plus"
-        variant="tonal"
-        @click="createOpen = true"
       />
+      <VTooltip v-if="allowCreate && !disabled" text="Add capacity profile">
+        <template #activator="{ props: tooltipProps }">
+          <VBtn
+            v-bind="tooltipProps"
+            aria-label="Add capacity profile"
+            icon="mdi-plus"
+            variant="tonal"
+            @click="createOpen = true"
+          />
+        </template>
+      </VTooltip>
     </div>
     <FlightCapacityProfileFormDialog v-model="createOpen" @saved="created" />
   </div>

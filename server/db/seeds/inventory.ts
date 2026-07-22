@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3';
-
-const seedNow = '2026-07-07T09:00:00.000+07:00';
+import { createDemoSeedContext, type DemoSeedContext } from './context';
 
 type Row = Record<string, string | number | boolean | null>;
 
@@ -14,15 +13,23 @@ function insertIgnore(sqlite: Database.Database, table: string, row: Row) {
     .run(row);
 }
 
-export function seedInventoryData(sqlite: Database.Database) {
+export function seedInventoryData(
+  sqlite: Database.Database,
+  context: DemoSeedContext = createDemoSeedContext()
+) {
+  const seedNow = context.now;
+  const purchaseRequestNumber = `PR-${context.compactDate(0)}-001`;
+  const purchaseOrderNumber = `PO-${context.compactDate(0)}-001`;
+  const movementNumber = `MOV-${context.compactDate(0)}-001`;
+  const receiptNumber = `GR-${context.compactDate(0)}-001`;
   const seed = sqlite.transaction(() => {
     const parts = [
       {
         id: 'inv-part-filter-pc6',
-        partNumber: 'SP-DEMO-FILTER-01',
+        partNumber: 'SP-PC6-FLT-1001',
         partName: 'PC-6 Engine Oil Filter',
-        description: 'Critical scheduled-replacement filter for the PC-6 demo fleet.',
-        manufacturer: 'Demo Aviation Components',
+        description: 'Critical scheduled-replacement filter for the PC-6 fleet.',
+        manufacturer: 'Papua Aero Components',
         manufacturerPartNumber: 'DAC-PC6-OF-01',
         unitOfMeasure: 'EA',
         lifecycleType: 'CONSUMABLE',
@@ -33,10 +40,10 @@ export function seedInventoryData(sqlite: Database.Database) {
       },
       {
         id: 'inv-part-brake-pc6',
-        partNumber: 'SP-DEMO-BRAKE-01',
+        partNumber: 'SP-PC6-BRK-2001',
         partName: 'PC-6 Brake Assembly',
         description: 'Serialized repairable brake assembly.',
-        manufacturer: 'Demo Aviation Components',
+        manufacturer: 'Papua Aero Components',
         manufacturerPartNumber: 'DAC-PC6-BA-01',
         unitOfMeasure: 'EA',
         lifecycleType: 'REPAIRABLE',
@@ -47,10 +54,10 @@ export function seedInventoryData(sqlite: Database.Database) {
       },
       {
         id: 'inv-part-oil',
-        partNumber: 'SP-DEMO-OIL-01',
+        partNumber: 'MAT-LUB-15W50',
         partName: 'Aviation Engine Oil',
         description: 'General aviation engine oil in one-litre units.',
-        manufacturer: 'Demo Lubricants',
+        manufacturer: 'Nusantara Aviation Lubricants',
         manufacturerPartNumber: 'DL-AVI-100',
         unitOfMeasure: 'L',
         lifecycleType: 'CONSUMABLE',
@@ -61,10 +68,10 @@ export function seedInventoryData(sqlite: Database.Database) {
       },
       {
         id: 'inv-part-starter',
-        partNumber: 'SP-DEMO-STARTER-01',
+        partNumber: 'SP-PC6-STG-3001',
         partName: 'Starter Generator',
         description: 'Serialized rotable starter generator installed on PK-AMA.',
-        manufacturer: 'Demo Aero Electric',
+        manufacturer: 'Nusantara Aero Electric',
         manufacturerPartNumber: 'DAE-SG-100',
         unitOfMeasure: 'EA',
         lifecycleType: 'ROTABLE',
@@ -84,8 +91,8 @@ export function seedInventoryData(sqlite: Database.Database) {
     }
 
     for (const [id, partId, type, model] of [
-      ['inv-app-filter-pc6', 'inv-part-filter-pc6', 'Pilatus PC-6', 'PC-6 Porter Demo'],
-      ['inv-app-brake-pc6', 'inv-part-brake-pc6', 'Pilatus PC-6', 'PC-6 Porter Demo'],
+      ['inv-app-filter-pc6', 'inv-part-filter-pc6', 'Pilatus PC-6', 'PC-6 Porter'],
+      ['inv-app-brake-pc6', 'inv-part-brake-pc6', 'Pilatus PC-6', 'PC-6 Porter'],
       ['inv-app-oil-pc6', 'inv-part-oil', 'Pilatus PC-6', null],
       ['inv-app-starter-pc6', 'inv-part-starter', 'Pilatus PC-6', null]
     ] as const) {
@@ -94,7 +101,7 @@ export function seedInventoryData(sqlite: Database.Database) {
         partId,
         aircraftType: type,
         model,
-        note: 'Demo aircraft applicability.'
+        note: 'Approved aircraft applicability.'
       });
     }
 
@@ -153,8 +160,8 @@ export function seedInventoryData(sqlite: Database.Database) {
     }
 
     insertIgnore(sqlite, 'inventory_purchase_requests', {
-      id: 'inv-pr-demo-001',
-      requestNumber: 'PR-2026-0001',
+      id: 'inv-pr-replenishment-001',
+      requestNumber: purchaseRequestNumber,
       stationId: 'st-djj',
       requestReason: 'Replenish scheduled maintenance stock for the PC-6 fleet.',
       status: 'ORDERED',
@@ -164,34 +171,34 @@ export function seedInventoryData(sqlite: Database.Database) {
     });
 
     for (const line of [
-      ['inv-prl-filter', 'inv-part-filter-pc6', 20, '2026-07-20'],
-      ['inv-prl-brake', 'inv-part-brake-pc6', 1, '2026-07-25'],
-      ['inv-prl-oil', 'inv-part-oil', 30, '2026-07-15']
+      ['inv-prl-filter', 'inv-part-filter-pc6', 20, context.date(3)],
+      ['inv-prl-brake', 'inv-part-brake-pc6', 1, context.date(8)],
+      ['inv-prl-oil', 'inv-part-oil', 30, context.date(1)]
     ] as const) {
       insertIgnore(sqlite, 'inventory_purchase_request_lines', {
         id: line[0],
-        purchaseRequestId: 'inv-pr-demo-001',
+        purchaseRequestId: 'inv-pr-replenishment-001',
         partId: line[1],
         quantity: line[2],
         orderedQuantity: line[2],
         requiredAt: line[3],
-        note: 'Demo replenishment line.'
+        note: 'Scheduled replenishment requirement.'
       });
     }
 
     insertIgnore(sqlite, 'inventory_purchase_orders', {
-      id: 'inv-po-demo-001',
-      orderNumber: 'PO-2026-0001',
-      purchaseRequestId: 'inv-pr-demo-001',
+      id: 'inv-po-replenishment-001',
+      orderNumber: purchaseOrderNumber,
+      purchaseRequestId: 'inv-pr-replenishment-001',
       vendorId: 'vendor-maintenance',
       currencyId: 'cur-idr',
       exchangeRateToIdrMicros: 1_000_000,
-      expectedAt: '2026-07-18',
+      expectedAt: context.date(1),
       status: 'PARTIALLY_RECEIVED',
       rejectionReason: null,
       createdByUserId: 'USR-INVENTORY-CONTROLLER',
       approvedByUserId: 'USR-DIRECTOR',
-      approvedAt: '2026-07-07T11:00:00.000+07:00',
+      approvedAt: context.at(-1, '11:00'),
       createdAt: seedNow,
       updatedAt: seedNow
     });
@@ -203,7 +210,7 @@ export function seedInventoryData(sqlite: Database.Database) {
     ] as const) {
       insertIgnore(sqlite, 'inventory_purchase_order_lines', {
         id: line[0],
-        purchaseOrderId: 'inv-po-demo-001',
+        purchaseOrderId: 'inv-po-replenishment-001',
         purchaseRequestLineId: line[1],
         partId: line[2],
         quantity: line[3],
@@ -219,7 +226,7 @@ export function seedInventoryData(sqlite: Database.Database) {
       lotNumber: 'LOT-PC6-260701',
       manufacturedAt: '2026-06-20',
       expiresAt: '2028-06-19',
-      certificateReference: 'ARC-DEMO-PC6-260701',
+      certificateReference: 'ARC-PC6-260701',
       certificateVerified: 1,
       receiptLineId: 'inv-grl-filter',
       createdAt: seedNow
@@ -230,7 +237,7 @@ export function seedInventoryData(sqlite: Database.Database) {
       lotNumber: 'LOT-BRAKE-260701',
       manufacturedAt: '2026-05-15',
       expiresAt: null,
-      certificateReference: 'ARC-DEMO-BRAKE-260701',
+      certificateReference: 'ARC-BRK-260701',
       certificateVerified: 1,
       receiptLineId: 'inv-grl-brake',
       createdAt: seedNow
@@ -257,7 +264,7 @@ export function seedInventoryData(sqlite: Database.Database) {
       position: null,
       hoursSinceNew: 0,
       cyclesSinceNew: 0,
-      certificateReference: 'ARC-DEMO-BRAKE-260701',
+      certificateReference: 'ARC-BRK-260701',
       certificateVerified: 1,
       createdAt: seedNow,
       updatedAt: seedNow
@@ -273,7 +280,7 @@ export function seedInventoryData(sqlite: Database.Database) {
       position: 'ENGINE STARTER GENERATOR',
       hoursSinceNew: 1480.5,
       cyclesSinceNew: 2134,
-      certificateReference: 'ARC-DEMO-SG-001',
+      certificateReference: 'ARC-SG-260115',
       certificateVerified: 1,
       createdAt: seedNow,
       updatedAt: seedNow
@@ -283,7 +290,7 @@ export function seedInventoryData(sqlite: Database.Database) {
       serialId: 'inv-serial-starter-installed',
       aircraftId: 'ac-pk-ama',
       position: 'ENGINE STARTER GENERATOR',
-      installedAt: '2026-01-15T08:00:00.000+09:00',
+      installedAt: context.at(-180, '08:00'),
       removedAt: null,
       hoursAtInstall: 1200,
       cyclesAtInstall: 1775,
@@ -295,21 +302,21 @@ export function seedInventoryData(sqlite: Database.Database) {
     });
 
     const receiptTotal = 12 * 950_000 + 3_200_000 + 30 * 175_000;
-    const demoMovementExists = sqlite
-      .prepare(`SELECT 1 FROM inventory_movements WHERE id = 'inv-move-receipt-demo-001'`)
+    const scenarioMovementExists = sqlite
+      .prepare(`SELECT 1 FROM inventory_movements WHERE id = 'inv-move-receipt-001'`)
       .get();
-    if (!demoMovementExists) {
+    if (!scenarioMovementExists) {
       insertIgnore(sqlite, 'inventory_movements', {
-        id: 'inv-move-receipt-demo-001',
-        movementNumber: 'MOV-2026-0001',
+        id: 'inv-move-receipt-001',
+        movementNumber,
         movementType: 'RECEIPT',
         sourceType: 'GOODS_RECEIPT',
-        sourceId: 'inv-gr-demo-001',
+        sourceId: 'inv-gr-replenishment-001',
         stationId: 'st-djj',
         destinationStationId: null,
         aircraftId: null,
         flightId: null,
-        reason: 'Posted receipt for PO-2026-0001.',
+        reason: `Posted receipt for ${purchaseOrderNumber}.`,
         status: 'POSTED',
         reversalOfMovementId: null,
         totalBaseValueIdr: receiptTotal,
@@ -332,7 +339,7 @@ export function seedInventoryData(sqlite: Database.Database) {
       ] as const) {
         insertIgnore(sqlite, 'inventory_movement_lines', {
           id: line[0],
-          movementId: 'inv-move-receipt-demo-001',
+          movementId: 'inv-move-receipt-001',
           partId: line[1],
           fromBinId: null,
           toBinId: 'inv-bin-djj-usable',
@@ -351,7 +358,7 @@ export function seedInventoryData(sqlite: Database.Database) {
       sqlite
         .prepare(
           `UPDATE inventory_movements SET is_finalized = 1
-           WHERE id = 'inv-move-receipt-demo-001' AND is_finalized = 0`
+           WHERE id = 'inv-move-receipt-001' AND is_finalized = 0`
         )
         .run();
     }
@@ -424,14 +431,14 @@ export function seedInventoryData(sqlite: Database.Database) {
     }
 
     insertIgnore(sqlite, 'inventory_goods_receipts', {
-      id: 'inv-gr-demo-001',
-      receiptNumber: 'GR-2026-0001',
-      purchaseOrderId: 'inv-po-demo-001',
+      id: 'inv-gr-replenishment-001',
+      receiptNumber,
+      purchaseOrderId: 'inv-po-replenishment-001',
       warehouseId: 'inv-wh-djj-main',
-      documentReference: 'DO-DEMO-0707-001',
+      documentReference: 'DO-AMA-0707-001',
       receivedAt: seedNow,
       status: 'POSTED',
-      movementId: 'inv-move-receipt-demo-001',
+      movementId: 'inv-move-receipt-001',
       totalBaseValueIdr: receiptTotal,
       receivedByUserId: 'USR-INVENTORY-CONTROLLER',
       createdAt: seedNow
@@ -443,7 +450,7 @@ export function seedInventoryData(sqlite: Database.Database) {
     ] as const) {
       insertIgnore(sqlite, 'inventory_goods_receipt_lines', {
         id: line[0],
-        goodsReceiptId: 'inv-gr-demo-001',
+        goodsReceiptId: 'inv-gr-replenishment-001',
         purchaseOrderLineId: line[1],
         binId: 'inv-bin-djj-usable',
         lotId: line[2],
@@ -453,11 +460,11 @@ export function seedInventoryData(sqlite: Database.Database) {
     }
 
     insertIgnore(sqlite, 'inventory_accounting_events', {
-      id: 'inv-ae-receipt-demo-001',
+      id: 'inv-ae-receipt-001',
       eventType: 'INVENTORY_RECEIPT',
       sourceType: 'GOODS_RECEIPT',
-      sourceId: 'inv-gr-demo-001',
-      movementId: 'inv-move-receipt-demo-001',
+      sourceId: 'inv-gr-replenishment-001',
+      movementId: 'inv-move-receipt-001',
       stationId: 'st-djj',
       aircraftId: null,
       flightId: null,
@@ -466,8 +473,176 @@ export function seedInventoryData(sqlite: Database.Database) {
       exchangeRateToIdrMicros: 1_000_000,
       baseAmountIdr: receiptTotal,
       integrationStatus: 'PENDING_INTEGRATION',
-      payloadJson: JSON.stringify({ orderNumber: 'PO-2026-0001', receiptNumber: 'GR-2026-0001' }),
+      payloadJson: JSON.stringify({
+        orderNumber: purchaseOrderNumber,
+        receiptNumber
+      }),
       createdAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'inventory_purchase_requests', {
+      id: 'inv-pr-maintenance-002',
+      requestNumber: `PR-${context.compactDate(0)}-002`,
+      stationId: 'st-djj',
+      requestReason: 'Replenish oil filters after the scheduled maintenance issue.',
+      status: 'SUBMITTED',
+      requestedByUserId: 'USR-MAINTENANCE-MANAGER',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'inventory_purchase_request_lines', {
+      id: 'inv-prl-maintenance-filter',
+      purchaseRequestId: 'inv-pr-maintenance-002',
+      partId: 'inv-part-filter-pc6',
+      quantity: 8,
+      orderedQuantity: 0,
+      requiredAt: context.date(7),
+      note: 'Required for the next two scheduled PC-6 inspections.'
+    });
+
+    insertIgnore(sqlite, 'inventory_purchase_requests', {
+      id: 'inv-pr-avionics-003',
+      requestNumber: `PR-${context.compactDate(0)}-003`,
+      stationId: 'st-djj',
+      requestReason: 'Procure a serviceable starter generator for fleet contingency stock.',
+      status: 'PARTIALLY_ORDERED',
+      requestedByUserId: 'USR-MAINTENANCE-MANAGER',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'inventory_purchase_request_lines', {
+      id: 'inv-prl-avionics-starter',
+      purchaseRequestId: 'inv-pr-avionics-003',
+      partId: 'inv-part-starter',
+      quantity: 1,
+      orderedQuantity: 1,
+      requiredAt: context.date(14),
+      note: 'Contingency stock for the PC-6 fleet.'
+    });
+    insertIgnore(sqlite, 'inventory_purchase_orders', {
+      id: 'inv-po-avionics-002',
+      orderNumber: `PO-${context.compactDate(0)}-002`,
+      purchaseRequestId: 'inv-pr-avionics-003',
+      vendorId: 'vendor-maintenance',
+      currencyId: 'cur-idr',
+      exchangeRateToIdrMicros: 1_000_000,
+      expectedAt: context.date(14),
+      status: 'PENDING_APPROVAL',
+      rejectionReason: null,
+      createdByUserId: 'USR-INVENTORY-CONTROLLER',
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'inventory_purchase_order_lines', {
+      id: 'inv-pol-avionics-starter',
+      purchaseOrderId: 'inv-po-avionics-002',
+      purchaseRequestLineId: 'inv-prl-avionics-starter',
+      partId: 'inv-part-starter',
+      quantity: 1,
+      receivedQuantity: 0,
+      sourceUnitCostMinor: 28500000,
+      baseUnitCostIdr: 28500000
+    });
+
+    insertIgnore(sqlite, 'inventory_movements', {
+      id: 'inv-move-maintenance-filter-001',
+      movementNumber: `MOV-${context.compactDate(-1)}-002`,
+      movementType: 'ISSUE',
+      sourceType: 'MAINTENANCE_PART_ISSUE',
+      sourceId: 'inv-issue-maintenance-filter-001',
+      stationId: 'st-djj',
+      destinationStationId: null,
+      aircraftId: 'ac-pk-ama',
+      flightId: 'fop-landed-maintenance',
+      reason: 'Oil filter issued against the landed-flight maintenance handoff.',
+      status: 'POSTED',
+      reversalOfMovementId: null,
+      totalBaseValueIdr: 950000,
+      isFinalized: 0,
+      createdByUserId: 'USR-INVENTORY-CONTROLLER',
+      createdAt: context.at(-1, '10:00')
+    });
+    const maintenanceMovementLineExists = sqlite
+      .prepare(`SELECT 1 FROM inventory_movement_lines WHERE id = 'inv-ml-maintenance-filter-001'`)
+      .get();
+    if (!maintenanceMovementLineExists) {
+      insertIgnore(sqlite, 'inventory_movement_lines', {
+        id: 'inv-ml-maintenance-filter-001',
+        movementId: 'inv-move-maintenance-filter-001',
+        partId: 'inv-part-filter-pc6',
+        fromBinId: 'inv-bin-djj-usable',
+        toBinId: null,
+        lotId: 'inv-lot-filter-260701',
+        serialId: null,
+        conditionFrom: 'SERVICEABLE',
+        conditionTo: null,
+        quantity: 1,
+        sourceUnitCostMinor: 950000,
+        currencyId: 'cur-idr',
+        exchangeRateToIdrMicros: 1_000_000,
+        baseUnitCostIdr: 950000,
+        baseValueIdr: 950000
+      });
+    }
+    sqlite
+      .prepare(
+        `UPDATE inventory_movements SET is_finalized = 1
+         WHERE id = 'inv-move-maintenance-filter-001' AND is_finalized = 0`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE inventory_stock_balances SET on_hand_quantity = 11, updated_at = ? WHERE id = 'inv-bal-filter-djj'`
+      )
+      .run(seedNow);
+    sqlite
+      .prepare(
+        `UPDATE inventory_cost_layers SET remaining_quantity = 11 WHERE id = 'inv-layer-filter'`
+      )
+      .run();
+    insertIgnore(sqlite, 'maintenance_part_issues', {
+      id: 'inv-issue-maintenance-filter-001',
+      issueNumber: `ISS-${context.compactDate(-1)}-001`,
+      maintenanceHandoffId: 'maintenance-landed-filter-draft',
+      aircraftId: 'ac-pk-ama',
+      flightId: 'fop-landed-maintenance',
+      warehouseId: 'inv-wh-djj-main',
+      reason: 'Oil-filter replacement after post-flight inspection.',
+      movementId: 'inv-move-maintenance-filter-001',
+      status: 'ISSUED',
+      totalPartsValueIdr: 950000,
+      issuedByUserId: 'USR-INVENTORY-CONTROLLER',
+      issuedAt: context.at(-1, '10:00')
+    });
+    insertIgnore(sqlite, 'maintenance_part_issue_lines', {
+      id: 'inv-issue-line-maintenance-filter-001',
+      issueId: 'inv-issue-maintenance-filter-001',
+      partId: 'inv-part-filter-pc6',
+      quantity: 1,
+      baseValueIdr: 950000,
+      note: 'Issued against work order for PK-AMA.'
+    });
+    insertIgnore(sqlite, 'inventory_accounting_events', {
+      id: 'inv-ae-maintenance-filter-001',
+      eventType: 'INVENTORY_MAINTENANCE_ISSUE',
+      sourceType: 'MAINTENANCE_PART_ISSUE',
+      sourceId: 'inv-issue-maintenance-filter-001',
+      movementId: 'inv-move-maintenance-filter-001',
+      stationId: 'st-djj',
+      aircraftId: 'ac-pk-ama',
+      flightId: 'fop-landed-maintenance',
+      currencyId: 'cur-idr',
+      sourceAmountMinor: 950000,
+      exchangeRateToIdrMicros: 1_000_000,
+      baseAmountIdr: 950000,
+      integrationStatus: 'PENDING_INTEGRATION',
+      payloadJson: JSON.stringify({
+        maintenanceHandoffId: 'maintenance-landed-filter-draft',
+        maintenanceCategory: 'ROUTINE'
+      }),
+      createdAt: context.at(-1, '10:00')
     });
   });
 

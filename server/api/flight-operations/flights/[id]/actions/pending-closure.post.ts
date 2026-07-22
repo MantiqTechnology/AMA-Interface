@@ -2,14 +2,20 @@ import { flightOperationIdParamsSchema } from '../../../../../../shared/contract
 import { defineApiEventHandler } from '../../../../../utils/api-response';
 import { getServices } from '../../../../../utils/services';
 import { parseParams } from '../../../../../utils/validation';
-import { getDemoActorId, requireDemoPermission } from '../../../../../utils/auth';
+import {
+  getDemoActorId,
+  requireDemoFlightStationAccess,
+  requireDemoPermission
+} from '../../../../../utils/auth';
 
 export default defineApiEventHandler((event) => {
-  requireDemoPermission(event, 'flight.following.update');
+  requireDemoPermission(event, 'flight.movement.update');
   const params = parseParams(event, flightOperationIdParamsSchema);
-  return getServices().flightOperations.transition(
-    params.id,
-    'PENDING_CLOSURE',
-    getDemoActorId(event)
-  );
+  const service = getServices().flightOperations;
+  const flight = service.detail(params.id);
+  requireDemoFlightStationAccess(event, [
+    flight.actualArrivalStationCode,
+    flight.destinationStationCode
+  ]);
+  return service.transition(params.id, 'PENDING_CLOSURE', getDemoActorId(event));
 });

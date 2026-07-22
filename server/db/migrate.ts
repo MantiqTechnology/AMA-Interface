@@ -355,6 +355,225 @@ const createStatements = [
     method TEXT NOT NULL,
     reference TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS accounting_periods (
+    id TEXT PRIMARY KEY,
+    period_code TEXT NOT NULL UNIQUE,
+    period_name TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'LOCKED')),
+    locked_at TEXT,
+    locked_by_user_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (end_date >= start_date)
+  )`,
+  `CREATE TABLE IF NOT EXISTS product_accounting_profiles (
+    id TEXT PRIMARY KEY,
+    profile_code TEXT NOT NULL UNIQUE,
+    profile_name TEXT NOT NULL,
+    product_type TEXT NOT NULL,
+    accounting_class TEXT NOT NULL,
+    inventory_account_id TEXT REFERENCES chart_of_accounts(id),
+    expense_account_id TEXT REFERENCES chart_of_accounts(id),
+    asset_account_id TEXT REFERENCES chart_of_accounts(id),
+    revenue_account_id TEXT REFERENCES chart_of_accounts(id),
+    deferred_revenue_account_id TEXT REFERENCES chart_of_accounts(id),
+    tax_profile_id TEXT REFERENCES tax_codes(id),
+    capitalization_candidate INTEGER NOT NULL DEFAULT 0,
+    allowed_treatments_json TEXT NOT NULL DEFAULT '[]',
+    required_dimensions_json TEXT NOT NULL DEFAULT '[]',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS accounting_policies (
+    id TEXT PRIMARY KEY,
+    policy_code TEXT NOT NULL UNIQUE,
+    policy_name TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    product_accounting_profile_id TEXT REFERENCES product_accounting_profiles(id),
+    debit_account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
+    credit_account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
+    treatment TEXT NOT NULL,
+    capitalization_candidate INTEGER NOT NULL DEFAULT 0,
+    required_dimensions_json TEXT NOT NULL DEFAULT '[]',
+    priority INTEGER NOT NULL DEFAULT 100,
+    effective_from TEXT NOT NULL,
+    effective_to TEXT,
+    approval_status TEXT NOT NULL DEFAULT 'APPROVED' CHECK (approval_status IN ('DRAFT', 'APPROVED', 'RETIRED')),
+    version INTEGER NOT NULL DEFAULT 1,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (effective_to IS NULL OR effective_to >= effective_from)
+  )`,
+  `CREATE TABLE IF NOT EXISTS accounting_events (
+    id TEXT PRIMARY KEY,
+    event_number TEXT NOT NULL UNIQUE,
+    event_type TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    product_accounting_profile_id TEXT REFERENCES product_accounting_profiles(id),
+    policy_id TEXT REFERENCES accounting_policies(id),
+    policy_code TEXT,
+    policy_version INTEGER,
+    accounting_date TEXT NOT NULL,
+    transaction_date TEXT NOT NULL,
+    document_date TEXT,
+    service_date TEXT,
+    amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
+    currency_id TEXT REFERENCES currencies(id),
+    currency_code TEXT NOT NULL,
+    exchange_rate_to_idr_micros INTEGER NOT NULL DEFAULT 1000000 CHECK (exchange_rate_to_idr_micros > 0),
+    base_amount_idr INTEGER NOT NULL CHECK (base_amount_idr >= 0),
+    posting_status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (posting_status IN ('DRAFT', 'POSTED', 'REVERSED', 'ERROR', 'EXCEPTION')),
+    journal_entry_id TEXT,
+    station_id TEXT,
+    aircraft_id TEXT,
+    flight_id TEXT,
+    work_order_reference TEXT,
+    cost_center_id TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (event_type, source_type, source_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS accounting_exceptions (
+    id TEXT PRIMARY KEY,
+    accounting_event_id TEXT REFERENCES accounting_events(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    reason_code TEXT NOT NULL CHECK (reason_code IN (
+      'NO_MATCHING_POLICY',
+      'AMBIGUOUS_POLICY',
+      'MISSING_CONTEXT',
+      'INVALID_ACCOUNT',
+      'CLOSED_PERIOD',
+      'UNBALANCED_JOURNAL',
+      'MANUAL_REVIEW_REQUIRED'
+    )),
+    message TEXT NOT NULL,
+    context_snapshot_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'RESOLVED')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (event_type, source_type, source_id, reason_code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS journal_entries (
+    id TEXT PRIMARY KEY,
+    journal_number TEXT NOT NULL UNIQUE,
+    accounting_event_id TEXT NOT NULL UNIQUE REFERENCES accounting_events(id),
+    period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'POSTED', 'REVERSED')),
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    transaction_date TEXT NOT NULL,
+    document_date TEXT,
+    posting_date TEXT,
+    service_date TEXT,
+    currency_code TEXT NOT NULL,
+    exchange_rate_to_idr_micros INTEGER NOT NULL DEFAULT 1000000 CHECK (exchange_rate_to_idr_micros > 0),
+    policy_code TEXT NOT NULL,
+    policy_version INTEGER NOT NULL,
+    reversal_of_journal_entry_id TEXT REFERENCES journal_entries(id),
+    created_by_user_id TEXT NOT NULL,
+    approved_by_user_id TEXT,
+    posted_by_user_id TEXT,
+    posted_at TEXT,
+    memo TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS journal_lines (
+    id TEXT PRIMARY KEY,
+    journal_entry_id TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    line_number INTEGER NOT NULL,
+    account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
+    debit_minor INTEGER NOT NULL DEFAULT 0 CHECK (debit_minor >= 0),
+    credit_minor INTEGER NOT NULL DEFAULT 0 CHECK (credit_minor >= 0),
+    base_debit_idr INTEGER NOT NULL DEFAULT 0 CHECK (base_debit_idr >= 0),
+    base_credit_idr INTEGER NOT NULL DEFAULT 0 CHECK (base_credit_idr >= 0),
+    station_id TEXT,
+    aircraft_id TEXT,
+    flight_id TEXT,
+    work_order_reference TEXT,
+    cost_center_id TEXT,
+    description TEXT NOT NULL,
+    UNIQUE (journal_entry_id, line_number),
+    CHECK ((debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0))
+  )`,
+  `CREATE TABLE IF NOT EXISTS asset_register (
+    id TEXT PRIMARY KEY,
+    asset_number TEXT NOT NULL UNIQUE,
+    source_journal_entry_id TEXT NOT NULL UNIQUE REFERENCES journal_entries(id),
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    asset_account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
+    asset_name TEXT NOT NULL,
+    aircraft_id TEXT,
+    inventory_part_id TEXT,
+    component_serial_id TEXT,
+    serial_number TEXT,
+    acquisition_date TEXT NOT NULL,
+    ready_for_use_date TEXT,
+    cost_minor INTEGER NOT NULL CHECK (cost_minor >= 0),
+    currency_code TEXT NOT NULL,
+    useful_life_months INTEGER NOT NULL DEFAULT 60 CHECK (useful_life_months > 0),
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'RETIRED', 'REVERSED')),
+    reversal_journal_entry_id TEXT REFERENCES journal_entries(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS depreciation_schedules (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL REFERENCES asset_register(id) ON DELETE CASCADE,
+    period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+    depreciation_amount_minor INTEGER NOT NULL CHECK (depreciation_amount_minor >= 0),
+    status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED', 'POSTED', 'CANCELLED')),
+    journal_entry_id TEXT REFERENCES journal_entries(id),
+    created_at TEXT NOT NULL,
+    UNIQUE (asset_id, period_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_accounting_events_status ON accounting_events(posting_status)`,
+  `CREATE INDEX IF NOT EXISTS idx_accounting_events_source ON accounting_events(source_type, source_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_accounting_exceptions_status ON accounting_exceptions(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_journal_entries_status ON journal_entries(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_journal_entries_period ON journal_entries(period_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id)`,
+  `CREATE VIEW IF NOT EXISTS general_ledger AS
+    SELECT
+      line.id AS journal_line_id,
+      entry.id AS journal_entry_id,
+      entry.journal_number,
+      entry.posting_date,
+      entry.transaction_date,
+      entry.service_date,
+      entry.source_type,
+      entry.source_id,
+      entry.policy_code,
+      entry.policy_version,
+      period.period_code,
+      account.account_code,
+      account.account_name,
+      account.account_type,
+      line.debit_minor,
+      line.credit_minor,
+      line.base_debit_idr,
+      line.base_credit_idr,
+      line.station_id,
+      line.aircraft_id,
+      line.flight_id,
+      line.work_order_reference,
+      line.cost_center_id,
+      line.description
+    FROM journal_lines line
+    JOIN journal_entries entry ON entry.id = line.journal_entry_id
+    JOIN accounting_periods period ON period.id = entry.period_id
+    JOIN chart_of_accounts account ON account.id = line.account_id
+    WHERE entry.status = 'POSTED'`,
   ...flightOperationLookupCreateStatements,
 
   `CREATE TABLE IF NOT EXISTS flight_requests (
@@ -414,7 +633,9 @@ const createStatements = [
     scheduled_departure_at TEXT,
     scheduled_arrival_at TEXT,
     actual_departure_at TEXT,
+    actual_departure_station_id TEXT REFERENCES stations(id),
     actual_arrival_at TEXT,
+    actual_arrival_station_id TEXT REFERENCES stations(id),
     current_status_id TEXT NOT NULL REFERENCES flight_operation_statuses(id),
     created_by_user_id TEXT,
     approved_by_user_id TEXT,
@@ -647,6 +868,16 @@ const dropStatements = [
   ...corporateAssetDropStatements,
   ...inventoryDropStatements,
   ...ticketingDropStatements,
+  'DROP VIEW IF EXISTS general_ledger',
+  'DROP TABLE IF EXISTS depreciation_schedules',
+  'DROP TABLE IF EXISTS asset_register',
+  'DROP TABLE IF EXISTS journal_lines',
+  'DROP TABLE IF EXISTS journal_entries',
+  'DROP TABLE IF EXISTS accounting_exceptions',
+  'DROP TABLE IF EXISTS accounting_events',
+  'DROP TABLE IF EXISTS accounting_policies',
+  'DROP TABLE IF EXISTS product_accounting_profiles',
+  'DROP TABLE IF EXISTS accounting_periods',
   'DROP TABLE IF EXISTS flight_finance_handoffs',
   'DROP TABLE IF EXISTS flight_maintenance_handoffs',
   'DROP TABLE IF EXISTS flight_station_costs',
@@ -729,6 +960,66 @@ const canonicalShapeRequirements = [
   { table: 'invoices', column: 'created_by_user_id' },
   { table: 'flight_fuel_requests', column: 'currency_id' }
 ];
+
+const accountingIntegrityStatements = [
+  `CREATE TRIGGER IF NOT EXISTS journal_entries_post_balance
+   BEFORE UPDATE OF status ON journal_entries
+   WHEN NEW.status = 'POSTED'
+   BEGIN
+     SELECT RAISE(ABORT, 'journal entry is not balanced')
+     WHERE (
+       SELECT COALESCE(SUM(debit_minor), 0) - COALESCE(SUM(credit_minor), 0)
+       FROM journal_lines WHERE journal_entry_id = NEW.id
+     ) <> 0;
+     SELECT RAISE(ABORT, 'journal entry has no lines')
+     WHERE NOT EXISTS (SELECT 1 FROM journal_lines WHERE journal_entry_id = NEW.id);
+     SELECT RAISE(ABORT, 'accounting period is locked')
+     WHERE EXISTS (
+       SELECT 1 FROM accounting_periods period
+       WHERE period.id = NEW.period_id AND period.status = 'LOCKED'
+     );
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS journal_entries_posted_immutable
+   BEFORE UPDATE ON journal_entries
+   WHEN OLD.status = 'POSTED'
+   BEGIN
+     SELECT RAISE(ABORT, 'posted journal entry is immutable');
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS journal_entries_posted_delete_block
+   BEFORE DELETE ON journal_entries
+   WHEN OLD.status = 'POSTED'
+   BEGIN
+     SELECT RAISE(ABORT, 'posted journal entry cannot be deleted');
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS journal_lines_posted_insert_block
+   BEFORE INSERT ON journal_lines
+   WHEN EXISTS (
+     SELECT 1 FROM journal_entries entry
+     WHERE entry.id = NEW.journal_entry_id AND entry.status = 'POSTED'
+   )
+   BEGIN
+     SELECT RAISE(ABORT, 'posted journal lines are immutable');
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS journal_lines_posted_update_block
+   BEFORE UPDATE ON journal_lines
+   WHEN EXISTS (
+     SELECT 1 FROM journal_entries entry
+     WHERE entry.id = OLD.journal_entry_id AND entry.status = 'POSTED'
+   )
+   BEGIN
+     SELECT RAISE(ABORT, 'posted journal lines are immutable');
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS journal_lines_posted_delete_block
+   BEFORE DELETE ON journal_lines
+   WHEN EXISTS (
+     SELECT 1 FROM journal_entries entry
+     WHERE entry.id = OLD.journal_entry_id AND entry.status = 'POSTED'
+   )
+   BEGIN
+     SELECT RAISE(ABORT, 'posted journal lines are immutable');
+   END`
+];
+
 const obsoleteOperationalColumns = [
   { table: 'ticketing_sales', column: 'flight_order_id' },
   { table: 'passenger_tickets', column: 'flight_order_id' },
@@ -746,6 +1037,7 @@ export function runMigrations(sqlite: Database.Database) {
     for (const statement of createStatements) {
       sqlite.exec(statement);
     }
+    ensureDepreciationScheduleCancellationStatus(sqlite);
 
     migrateMaintenanceIssueTargets(sqlite);
     ensureColumn(
@@ -779,6 +1071,18 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'flight_operations', 'billing_type', "TEXT NOT NULL DEFAULT 'CHARTER'");
     ensureColumn(sqlite, 'flight_operations', 'estimated_revenue', 'INTEGER');
     ensureColumn(sqlite, 'flight_operations', 'currency_code', "TEXT NOT NULL DEFAULT 'IDR'");
+    ensureColumn(
+      sqlite,
+      'flight_operations',
+      'actual_departure_station_id',
+      'TEXT REFERENCES stations(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'flight_operations',
+      'actual_arrival_station_id',
+      'TEXT REFERENCES stations(id)'
+    );
     ensureColumn(sqlite, 'stations', 'station_pic_name', 'TEXT');
     ensureColumn(sqlite, 'stations', 'station_pic_phone', 'TEXT');
     ensureColumn(sqlite, 'stations', 'operational_notes', 'TEXT');
@@ -834,6 +1138,9 @@ export function runMigrations(sqlite: Database.Database) {
        WHERE station_id IS NULL`
     );
     for (const statement of inventoryImmutabilityStatements) {
+      sqlite.exec(statement);
+    }
+    for (const statement of accountingIntegrityStatements) {
       sqlite.exec(statement);
     }
     ensureColumn(
@@ -1044,6 +1351,35 @@ function migrateMaintenanceIssueTargets(sqlite: Database.Database) {
     FROM maintenance_part_issue_lines_legacy`);
   sqlite.exec('DROP TABLE maintenance_part_issue_lines_legacy');
   sqlite.exec('DROP TABLE maintenance_part_issues_legacy');
+}
+
+function ensureDepreciationScheduleCancellationStatus(sqlite: Database.Database) {
+  const table = sqlite
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'depreciation_schedules'"
+    )
+    .get() as { sql: string } | undefined;
+  if (!table || table.sql.includes("'CANCELLED'")) return;
+
+  sqlite.exec(`
+    ALTER TABLE depreciation_schedules RENAME TO depreciation_schedules_legacy;
+    CREATE TABLE depreciation_schedules (
+      id TEXT PRIMARY KEY,
+      asset_id TEXT NOT NULL REFERENCES asset_register(id) ON DELETE CASCADE,
+      period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+      depreciation_amount_minor INTEGER NOT NULL CHECK (depreciation_amount_minor >= 0),
+      status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED', 'POSTED', 'CANCELLED')),
+      journal_entry_id TEXT REFERENCES journal_entries(id),
+      created_at TEXT NOT NULL,
+      UNIQUE (asset_id, period_id)
+    );
+    INSERT INTO depreciation_schedules (
+      id, asset_id, period_id, depreciation_amount_minor, status, journal_entry_id, created_at
+    )
+    SELECT id, asset_id, period_id, depreciation_amount_minor, status, journal_entry_id, created_at
+    FROM depreciation_schedules_legacy;
+    DROP TABLE depreciation_schedules_legacy;
+  `);
 }
 
 function lookupId(idPrefix: string, code: string) {

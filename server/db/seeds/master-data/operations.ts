@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { AppDatabase } from '../../client';
+import { createDemoSeedContext, type DemoSeedContext } from '../context';
 import {
   stations,
   aircraft,
@@ -10,16 +11,18 @@ import {
   flightReasons
 } from '../../schema/operations';
 
-const referenceNow = '2026-07-07T09:00:00.000+07:00';
-
-export async function seedOperationsMasterData(db: AppDatabase) {
+export async function seedOperationsMasterData(
+  db: AppDatabase,
+  context: DemoSeedContext = createDemoSeedContext()
+) {
+  const referenceNow = context.now;
   await db
     .insert(stations)
     .values([
       {
         id: 'st-djj',
         stationCode: 'DJJ',
-        stationName: 'Sentani / Jayapura Demo Station',
+        stationName: 'Sentani / Jayapura Station',
         cityOrRegion: 'Jayapura',
         province: 'Papua',
         airportType: 'AIRPORT',
@@ -33,7 +36,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'st-wmx',
         stationCode: 'WMX',
-        stationName: 'Wamena Demo Station',
+        stationName: 'Wamena Station',
         cityOrRegion: 'Wamena',
         province: 'Papua Pegunungan',
         airportType: 'AIRPORT',
@@ -47,7 +50,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'st-tim',
         stationCode: 'TIM',
-        stationName: 'Timika Demo Station',
+        stationName: 'Timika Station',
         cityOrRegion: 'Timika',
         province: 'Papua Tengah',
         airportType: 'AIRPORT',
@@ -61,7 +64,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'st-nbx',
         stationCode: 'NBX',
-        stationName: 'Nabire Demo Station',
+        stationName: 'Nabire Station',
         cityOrRegion: 'Nabire',
         province: 'Papua Tengah',
         airportType: 'AIRPORT',
@@ -75,7 +78,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'st-oks',
         stationCode: 'OKS',
-        stationName: 'Oksibil Demo Airstrip',
+        stationName: 'Oksibil Airstrip',
         cityOrRegion: 'Oksibil',
         province: 'Papua Pegunungan',
         airportType: 'AIRSTRIP',
@@ -89,7 +92,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'st-dex',
         stationCode: 'DEX',
-        stationName: 'Dekai Demo Airstrip',
+        stationName: 'Dekai Airstrip',
         cityOrRegion: 'Dekai',
         province: 'Papua Pegunungan',
         airportType: 'STOL_AIRFIELD',
@@ -103,14 +106,14 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'st-mkq',
         stationCode: 'MKQ',
-        stationName: 'Merauke Demo Station',
+        stationName: 'Merauke Station',
         cityOrRegion: 'Merauke',
         province: 'Papua Selatan',
         airportType: 'AIRPORT',
         hasFuelService: true,
         hasHandlingService: true,
         hasParkingService: true,
-        isActive: true,
+        isActive: false,
         createdAt: referenceNow,
         updatedAt: referenceNow
       }
@@ -123,10 +126,10 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'ac-pk-ama',
         registrationNumber: 'PK-AMA',
-        serialNumber: 'PC6-AMA-DEMO',
+        serialNumber: 'PC6-AMA',
         aircraftType: 'Pilatus PC-6',
         manufacturer: 'Pilatus',
-        model: 'PC-6 Porter Demo',
+        model: 'PC-6 Porter',
         fleetCode: 'PC6-01',
         passengerCapacity: 10,
         cargoCapacityKg: 1200,
@@ -141,10 +144,10 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'ac-pk-amb',
         registrationNumber: 'PK-AMB',
-        serialNumber: '208B-AMB-DEMO',
+        serialNumber: '208B-AMB',
         aircraftType: 'Cessna Caravan 208B',
         manufacturer: 'Cessna',
-        model: 'Caravan 208B Demo',
+        model: 'Caravan 208B',
         fleetCode: 'CVN-01',
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
@@ -159,10 +162,10 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'ac-pk-amc',
         registrationNumber: 'PK-AMC',
-        serialNumber: 'PAC-AMC-DEMO',
+        serialNumber: 'PAC-AMC',
         aircraftType: 'PAC 750XL',
         manufacturer: 'Pacific Aerospace',
-        model: 'PAC 750XL Demo',
+        model: 'PAC 750XL',
         fleetCode: 'PAC-01',
         passengerCapacity: 9,
         cargoCapacityKg: 1000,
@@ -177,10 +180,10 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'ac-pk-amd',
         registrationNumber: 'PK-AMD',
-        serialNumber: '208B-AMD-DEMO',
+        serialNumber: '208B-AMD',
         aircraftType: 'Cessna Caravan 208B',
         manufacturer: 'Cessna',
-        model: 'Caravan 208B Maintenance Demo',
+        model: 'Caravan 208B Maintenance',
         fleetCode: 'CVN-02',
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
@@ -188,6 +191,24 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         operationalStatus: 'ACTIVE',
         serviceabilityStatus: 'MAINTENANCE_DUE',
         baseStationId: 'st-djj',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ac-pk-ame',
+        registrationNumber: 'PK-AME',
+        serialNumber: '208B-AME-2405',
+        aircraftType: 'Cessna Caravan 208B',
+        manufacturer: 'Cessna',
+        model: 'Caravan 208B',
+        fleetCode: 'CVN-03',
+        passengerCapacity: 12,
+        cargoCapacityKg: 1400,
+        fuelType: 'AVTUR',
+        operationalStatus: 'ACTIVE',
+        serviceabilityStatus: 'SERVICEABLE_WITH_RESTRICTIONS',
+        baseStationId: 'st-wmx',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -201,12 +222,12 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'crew-pic-valid',
         employeeCode: 'AMA-PIC-001',
-        fullName: 'Daniel Waromi Demo',
+        fullName: 'Daniel Waromi',
         crewRole: 'PILOT_IN_COMMAND',
         licenseType: 'CPL',
-        licenseNumber: 'LIC-DEMO-PIC-001',
-        licenseExpiryDate: '2027-01-07',
-        medicalExpiryDate: '2026-12-07',
+        licenseNumber: 'LIC-PIC-001',
+        licenseExpiryDate: context.date(174),
+        medicalExpiryDate: context.date(143),
         baseStationId: 'st-djj',
         unit: 'Flight Operations',
         employmentStatus: 'PERMANENT',
@@ -217,12 +238,12 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'crew-pic-expiring',
         employeeCode: 'AMA-PIC-002',
-        fullName: 'Mikael Kogoya Demo',
+        fullName: 'Mikael Kogoya',
         crewRole: 'PILOT_IN_COMMAND',
         licenseType: 'CPL',
-        licenseNumber: 'LIC-DEMO-PIC-002',
-        licenseExpiryDate: '2026-07-27',
-        medicalExpiryDate: '2026-08-02',
+        licenseNumber: 'LIC-PIC-002',
+        licenseExpiryDate: context.date(10),
+        medicalExpiryDate: context.date(16),
         baseStationId: 'st-wmx',
         unit: 'Flight Operations',
         employmentStatus: 'PERMANENT',
@@ -233,12 +254,12 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'crew-pic-expired',
         employeeCode: 'AMA-PIC-003',
-        fullName: 'Yohanis Tabuni Demo',
+        fullName: 'Yohanis Tabuni',
         crewRole: 'PILOT_IN_COMMAND',
         licenseType: 'CPL',
-        licenseNumber: 'LIC-DEMO-PIC-003',
-        licenseExpiryDate: '2026-06-25',
-        medicalExpiryDate: '2026-06-30',
+        licenseNumber: 'LIC-PIC-003',
+        licenseExpiryDate: context.date(-22),
+        medicalExpiryDate: context.date(-17),
         baseStationId: 'st-tim',
         unit: 'Flight Operations',
         employmentStatus: 'PERMANENT',
@@ -249,12 +270,12 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'crew-cop-valid',
         employeeCode: 'AMA-COP-001',
-        fullName: 'Maria Numberi Demo',
+        fullName: 'Maria Numberi',
         crewRole: 'CO_PILOT',
         licenseType: 'CPL',
-        licenseNumber: 'LIC-DEMO-COP-001',
-        licenseExpiryDate: '2026-12-18',
-        medicalExpiryDate: '2026-11-22',
+        licenseNumber: 'LIC-COP-001',
+        licenseExpiryDate: context.date(154),
+        medicalExpiryDate: context.date(128),
         baseStationId: 'st-djj',
         unit: 'Flight Operations',
         employmentStatus: 'PERMANENT',
@@ -265,12 +286,12 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'crew-cop-valid-2',
         employeeCode: 'AMA-COP-002',
-        fullName: 'Agus Yikwa Demo',
+        fullName: 'Agus Yikwa',
         crewRole: 'CO_PILOT',
         licenseType: 'CPL',
-        licenseNumber: 'LIC-DEMO-COP-002',
-        licenseExpiryDate: '2027-03-14',
-        medicalExpiryDate: '2027-02-14',
+        licenseNumber: 'LIC-COP-002',
+        licenseExpiryDate: context.date(240),
+        medicalExpiryDate: context.date(212),
         baseStationId: 'st-wmx',
         unit: 'Flight Operations',
         employmentStatus: 'CONTRACT',
@@ -281,7 +302,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'crew-ground-001',
         employeeCode: 'AMA-GRD-001',
-        fullName: 'Rina Kambu Demo',
+        fullName: 'Rina Kambu',
         crewRole: 'GROUND_CREW',
         licenseType: null,
         licenseNumber: null,
@@ -297,7 +318,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       {
         id: 'crew-ops-001',
         employeeCode: 'AMA-OPS-001',
-        fullName: 'Samuel Itlay Demo',
+        fullName: 'Samuel Itlay',
         crewRole: 'FLIGHT_OPERATIONS',
         licenseType: null,
         licenseNumber: null,
@@ -383,6 +404,10 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         destinationStationId: 'st-dex',
         estimatedDurationMinutes: 85,
         distanceKm: 360,
+        operationalNotes: 'Dekai movements require daylight operations and field confirmation.',
+        restrictionLevel: 'BLOCKING',
+        restrictionNote:
+          'Route suspended pending runway-condition confirmation from the field PIC.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -405,6 +430,20 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         destinationStationId: 'st-djj',
         estimatedDurationMinutes: 125,
         distanceKm: 650,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'route-wmx-djj',
+        routeCode: 'WMX-DJJ',
+        originStationId: 'st-wmx',
+        destinationStationId: 'st-djj',
+        estimatedDurationMinutes: 55,
+        distanceKm: 250,
+        operationalNotes: 'Published reverse sector for the highland passenger rotation.',
+        restrictionLevel: 'NONE',
+        restrictionNote: null,
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -442,7 +481,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         arrivalTimeLocal: '11:20',
         bookingOpenHoursBefore: 168,
         bookingCloseMinutesBefore: 90,
-        scheduleNote: 'Scheduled passenger rotation prepared for the route profile demo.',
+        scheduleNote: 'Scheduled passenger rotation prepared for the published route profile.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -458,7 +497,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         arrivalTimeLocal: '10:40',
         bookingOpenHoursBefore: 96,
         bookingCloseMinutesBefore: 120,
-        scheduleNote: 'Cargo-heavy STOL support template for future cargo demo.',
+        scheduleNote: 'Cargo-heavy STOL support template for future cargo rotation.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -513,6 +552,70 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         reservedSeatCount: 1,
         reservedCargoKg: 50,
         capacityNote: 'Passenger-heavy profile with one operational seat reserved.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'cap-pilatus-djj-wmx-charter-pax',
+        profileCode: 'CAP_PC6_DJJ_WMX_CHARTER_PAX',
+        profileName: 'Pilatus DJJ-WMX Charter Passenger',
+        aircraftId: 'ac-pk-ama',
+        routeId: 'route-djj-wmx',
+        serviceTypeId: 'flight-service-type-charter-passenger',
+        seatCapacity: 8,
+        cargoCapacityKg: 300,
+        reservedSeatCount: 1,
+        reservedCargoKg: 50,
+        capacityNote: 'Balanced charter passenger configuration.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'cap-pilatus-djj-wmx-cargo',
+        profileCode: 'CAP_PC6_DJJ_WMX_CARGO',
+        profileName: 'Pilatus DJJ-WMX Cargo',
+        aircraftId: 'ac-pk-ama',
+        routeId: 'route-djj-wmx',
+        serviceTypeId: 'flight-service-type-charter-cargo',
+        seatCapacity: 3,
+        cargoCapacityKg: 1000,
+        reservedSeatCount: 1,
+        reservedCargoKg: 100,
+        capacityNote: 'Cargo configuration with operational reserves.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'cap-pilatus-djj-wmx-medevac',
+        profileCode: 'CAP_PC6_DJJ_WMX_MEDEVAC',
+        profileName: 'Pilatus DJJ-WMX Medevac',
+        aircraftId: 'ac-pk-ama',
+        routeId: 'route-djj-wmx',
+        serviceTypeId: 'flight-service-type-medevac',
+        seatCapacity: 4,
+        cargoCapacityKg: 350,
+        reservedSeatCount: 2,
+        reservedCargoKg: 100,
+        capacityNote: 'Medevac configuration reserving space for medical equipment.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'cap-pilatus-djj-wmx-positioning',
+        profileCode: 'CAP_PC6_DJJ_WMX_POSITIONING',
+        profileName: 'Pilatus DJJ-WMX Positioning',
+        aircraftId: 'ac-pk-ama',
+        routeId: 'route-djj-wmx',
+        serviceTypeId: 'flight-service-type-positioning',
+        seatCapacity: 2,
+        cargoCapacityKg: 200,
+        reservedSeatCount: 0,
+        reservedCargoKg: 0,
+        capacityNote: 'Non-revenue positioning configuration.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -577,7 +680,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
         reasonName: 'Weather below minimum',
         reasonType: 'DELAY',
         category: 'Operational',
-        description: 'Weather below demo operating minimum.',
+        description: 'Weather below published operating minimum.',
         requiresNote: true,
         isActive: true,
         createdAt: referenceNow,
@@ -661,15 +764,15 @@ export async function seedOperationsMasterData(db: AppDatabase) {
   for (const station of [
     {
       id: 'st-djj',
-      stationPicName: 'OCC Jayapura Demo',
+      stationPicName: 'OCC Jayapura',
       stationPicPhone: '+62-812-0000-2001',
-      operationalNotes: 'Primary hub for demo dispatch, fuel, counter, and handling coordination.',
+      operationalNotes: 'Primary hub for dispatch, fuel, counter, and handling coordination.',
       isRemoteStation: false,
       lowConnectivityMode: false
     },
     {
       id: 'st-wmx',
-      stationPicName: 'Wamena Station Lead Demo',
+      stationPicName: 'Wamena Station Lead',
       stationPicPhone: '+62-812-0000-2002',
       operationalNotes: 'Highland station with weather and payload review before dispatch.',
       isRemoteStation: true,
@@ -677,15 +780,15 @@ export async function seedOperationsMasterData(db: AppDatabase) {
     },
     {
       id: 'st-tim',
-      stationPicName: 'Timika Ops Desk Demo',
+      stationPicName: 'Timika Ops Desk',
       stationPicPhone: '+62-812-0000-2003',
-      operationalNotes: 'Secondary hub for passenger, cargo, and mission support demo flow.',
+      operationalNotes: 'Secondary hub for passenger, cargo, and mission support operational flow.',
       isRemoteStation: false,
       lowConnectivityMode: false
     },
     {
       id: 'st-nbx',
-      stationPicName: 'Nabire Counter Demo',
+      stationPicName: 'Nabire Counter',
       stationPicPhone: '+62-812-0000-2004',
       operationalNotes: 'Counter and handling available; fuel service requires planning.',
       isRemoteStation: true,
@@ -693,16 +796,16 @@ export async function seedOperationsMasterData(db: AppDatabase) {
     },
     {
       id: 'st-oks',
-      stationPicName: 'Oksibil Field PIC Demo',
+      stationPicName: 'Oksibil Field PIC',
       stationPicPhone: '+62-812-0000-2005',
       operationalNotes:
-        'Remote airstrip for readiness blocker and low-connectivity demo scenarios.',
+        'Remote airstrip for readiness blocker and low-connectivity operational scenarios.',
       isRemoteStation: true,
       lowConnectivityMode: true
     },
     {
       id: 'st-dex',
-      stationPicName: 'Dekai Field PIC Demo',
+      stationPicName: 'Dekai Field PIC',
       stationPicPhone: '+62-812-0000-2006',
       operationalNotes: 'STOL airfield with manual confirmation and limited station services.',
       isRemoteStation: true,
@@ -710,7 +813,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
     },
     {
       id: 'st-mkq',
-      stationPicName: 'Merauke Station Lead Demo',
+      stationPicName: 'Merauke Station Lead',
       stationPicPhone: '+62-812-0000-2007',
       operationalNotes: 'Southern Papua station available for future P0 route expansion.',
       isRemoteStation: false,
@@ -734,31 +837,39 @@ export async function seedOperationsMasterData(db: AppDatabase) {
     {
       id: 'ac-pk-ama',
       currentStationId: 'st-djj',
-      lastMaintenanceCheckAt: '2026-07-01',
-      nextMaintenanceDueAt: '2026-08-15',
+      lastMaintenanceCheckAt: context.date(-16),
+      nextMaintenanceDueAt: context.date(29),
       serviceabilityNote: 'Serviceable and positioned at DJJ for the main Flight Order happy path.'
     },
     {
       id: 'ac-pk-amb',
       currentStationId: 'st-tim',
-      lastMaintenanceCheckAt: '2026-06-28',
-      nextMaintenanceDueAt: '2026-07-20',
+      lastMaintenanceCheckAt: context.date(-19),
+      nextMaintenanceDueAt: context.date(3),
       serviceabilityNote:
-        'Serviceable; current station differs from DJJ to demonstrate positioning review.'
+        'Serviceable; current station differs from DJJ and requires positioning review.'
     },
     {
       id: 'ac-pk-amc',
       currentStationId: 'st-wmx',
-      lastMaintenanceCheckAt: '2026-06-14',
-      nextMaintenanceDueAt: '2026-08-06',
-      serviceabilityNote: 'Unserviceable demo aircraft for maintenance blocker scenarios.'
+      lastMaintenanceCheckAt: context.date(-33),
+      nextMaintenanceDueAt: context.date(20),
+      serviceabilityNote: 'Unserviceable aircraft for maintenance blocker scenarios.'
     },
     {
       id: 'ac-pk-amd',
       currentStationId: 'st-djj',
-      lastMaintenanceCheckAt: '2026-06-14',
-      nextMaintenanceDueAt: '2026-07-06',
-      serviceabilityNote: 'Maintenance-due demo aircraft positioned at DJJ for readiness review.'
+      lastMaintenanceCheckAt: context.date(-33),
+      nextMaintenanceDueAt: context.date(-11),
+      serviceabilityNote: 'Maintenance-due aircraft positioned at DJJ for readiness review.'
+    },
+    {
+      id: 'ac-pk-ame',
+      currentStationId: 'st-wmx',
+      lastMaintenanceCheckAt: context.date(-7),
+      nextMaintenanceDueAt: context.date(21),
+      serviceabilityNote:
+        'Serviceable with a published payload restriction pending component review.'
     }
   ]) {
     await db
@@ -802,7 +913,7 @@ export async function seedOperationsMasterData(db: AppDatabase) {
       id: 'crew-cop-valid-2',
       availabilityStatus: 'ON_DUTY',
       dutyStationId: 'st-wmx',
-      readinessNote: 'On duty at WMX to demonstrate crew availability blocker when selected.'
+      readinessNote: 'On duty at WMX and unavailable for overlapping assignments.'
     },
     {
       id: 'crew-ground-001',

@@ -12,6 +12,16 @@ async function chooseFirst(page: Page, input: Locator) {
   await firstOption.click();
 }
 
+async function chooseOption(page: Page, input: Locator, optionText: string) {
+  await input.focus();
+  await input.press('ArrowDown');
+  const menuId = await input.getAttribute('aria-controls');
+  expect(menuId).toBeTruthy();
+  const option = page.locator(`#${menuId}`).getByRole('option').filter({ hasText: optionText });
+  await expect(option).toBeVisible();
+  await option.click();
+}
+
 test.describe('ticketing feature', () => {
   test('books a passenger from the public portal with a live seat map', async ({ page }) => {
     const runtimeErrors: string[] = [];
@@ -73,7 +83,7 @@ test.describe('ticketing feature', () => {
     await page.goto('/ticketing/booking', { waitUntil: 'networkidle' });
     await page.getByRole('tab', { name: 'Check booking' }).click();
     const lookup = page.locator('.v-window-item--active');
-    await lookup.getByLabel('Ticket number').fill('TKT-DEMO12');
+    await lookup.getByLabel('Ticket number').fill('AMA-TKT-20260718-001');
     await lookup.getByRole('button', { name: 'Find booking' }).click();
     await expect(lookup.getByText('Sarah Wenda')).toBeVisible();
     await lookup.getByRole('button', { name: 'Request refund' }).click();
@@ -85,7 +95,7 @@ test.describe('ticketing feature', () => {
     await expect(lookup.getByText('REFUND REQUESTED', { exact: true })).toBeVisible();
 
     await page.goto('/ticketing/passenger', { waitUntil: 'networkidle' });
-    const row = page.getByRole('row').filter({ hasText: 'TKT-DEMO12' });
+    const row = page.getByRole('row').filter({ hasText: 'AMA-TKT-20260718-001' });
     await row.getByRole('button', { name: 'Approve refund' }).click();
     const decisionDialog = page.getByRole('dialog');
     await decisionDialog.getByLabel('Decision note').fill('Verified by station administrator.');
@@ -97,12 +107,16 @@ test.describe('ticketing feature', () => {
     await page.goto('/ticketing/booking', { waitUntil: 'networkidle' });
     await page.getByRole('tab', { name: 'Check booking' }).click();
     const lookup = page.locator('.v-window-item--active');
-    await lookup.getByLabel('Ticket number').fill('TKT-RESCHEDULE');
+    await lookup.getByLabel('Ticket number').fill('AMA-TKT-20260718-003');
     await lookup.getByRole('button', { name: 'Find booking' }).click();
     await lookup.getByRole('button', { name: 'Reschedule' }).click();
 
     const dialog = page.getByRole('dialog');
-    await chooseFirst(page, dialog.getByRole('combobox', { name: 'Replacement flight' }));
+    await chooseOption(
+      page,
+      dialog.getByRole('combobox', { name: 'Replacement flight' }),
+      'AMA-20260721-008'
+    );
     await chooseFirst(page, dialog.getByRole('combobox', { name: 'New seat' }));
     await dialog.getByRole('button', { name: 'Confirm reschedule' }).click();
     await expect(lookup.getByText('AMA-20260721-008')).toBeVisible();
@@ -110,10 +124,10 @@ test.describe('ticketing feature', () => {
   });
 
   for (const [path, heading, seededRecord] of [
-    ['/ticketing/passenger', 'Passenger Manifest', 'TKT-DEMO12'],
-    ['/ticketing/cargo', 'Cargo Tracking', 'AWB-100200'],
+    ['/ticketing/passenger', 'Passenger Manifest', 'AMA-TKT-20260718-001'],
+    ['/ticketing/cargo', 'Cargo Tracking', 'AMA-AWB-20260719-001'],
     ['/ticketing/management', 'Ticketing Management', 'DJJ-WMX'],
-    ['/ticketing/finance', 'Station Ledger', 'TKT-DEMO12']
+    ['/ticketing/finance', 'Ticketing Operational Ledger', 'AMA-TKT-20260718-001']
   ] as const) {
     test(`${heading} screen loads its feature data`, async ({ page }) => {
       await page.goto(path, { waitUntil: 'networkidle' });
@@ -139,7 +153,7 @@ test.describe('ticketing feature', () => {
       .locator('.v-field__clearable')
       .click();
     await passengerRequest;
-    await expect(page.getByText('TKT-DEMO12', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('AMA-TKT-20260718-001', { exact: false }).first()).toBeVisible();
 
     await page.goto('/ticketing/cargo', { waitUntil: 'networkidle' });
     const cargoPayment = page.getByRole('combobox', { name: 'Payment' });
@@ -155,7 +169,7 @@ test.describe('ticketing feature', () => {
       .locator('.v-field__clearable')
       .click();
     await cargoRequest;
-    await expect(page.getByText('AWB-100200', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('AMA-AWB-20260719-001', { exact: false }).first()).toBeVisible();
   });
 
   test('keeps Close Flight disabled until closure evidence is complete', async ({ page }) => {

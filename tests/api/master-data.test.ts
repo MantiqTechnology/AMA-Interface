@@ -101,7 +101,7 @@ function payloadFor(key: string): Record<string, PayloadValue> {
       return {
         route_code: nextCode('RTE'),
         origin_station_id: 'st-oks',
-        destination_station_id: 'st-mkq',
+        destination_station_id: 'st-nbx',
         estimated_duration_minutes: 95,
         distance_km: 420
       };
@@ -123,7 +123,7 @@ function payloadFor(key: string): Record<string, PayloadValue> {
         profile_code: nextCode('CAP'),
         profile_name: 'API Test Capacity Profile',
         aircraft_id: 'ac-pk-ama',
-        route_id: 'route-djj-wmx',
+        route_id: 'route-djj-tim',
         service_type_id: 'flight-service-type-charter-cargo',
         seat_capacity: 8,
         cargo_capacity_kg: 250,
@@ -186,11 +186,11 @@ function payloadFor(key: string): Record<string, PayloadValue> {
         rate_code: nextCode('RATE'),
         service_type: 'CHARTER',
         origin_station_id: 'st-oks',
-        destination_station_id: 'st-mkq',
+        destination_station_id: 'st-nbx',
         customer_id: null,
         aircraft_type: null,
         currency_id: 'cur-idr',
-        tax_code_id: 'tax-ppn-demo',
+        tax_code_id: 'tax-ppn',
         base_rate: 100_000,
         rate_unit: 'PER_FLIGHT',
         pricing_scope: 'PUBLIC_COUNTER',
