@@ -4,6 +4,7 @@ import { seedDemoData } from './seed';
 import { seedFlightOperationsData } from './seed-flight-operations';
 import { seedTicketingData } from './seeds/ticketing';
 import { seedInventoryData } from './seeds/inventory';
+import { seedCorporateAssets } from './seeds/corporate-assets';
 
 export async function resetDemoDatabase(dbPath: string) {
   const { db, sqlite } = createDbClient(dbPath);
@@ -15,6 +16,7 @@ export async function resetDemoDatabase(dbPath: string) {
     seedFlightOperationsData(sqlite);
     seedTicketingData(sqlite);
     seedInventoryData(sqlite);
+    seedCorporateAssets(sqlite);
   } finally {
     sqlite.close();
   }

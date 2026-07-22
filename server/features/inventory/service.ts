@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import type { DocumentOwnerType } from '../../../shared/contracts/documents';
+import { maintenancePartIssueInputSchema } from '../../../shared/features/inventory';
 import type {
   GoodsReceiptInput,
   InstallSerializedPartInput,
@@ -1259,21 +1260,66 @@ export class InventoryService {
   }
 
   async issueMaintenanceParts(
-    input: MaintenancePartIssueInput,
+    rawInput: MaintenancePartIssueInput,
     actorUserId: string,
     scope: readonly string[]
   ) {
+    const input = maintenancePartIssueInputSchema.parse(rawInput);
     const sqlite = this.repository.sqlite;
     const warehouse = this.requireWarehouse(input.warehouseId, scope);
-    const aircraft = sqlite.prepare('SELECT * FROM aircraft WHERE id = ?').get(input.aircraftId) as
-      SqlRow | undefined;
-    if (!aircraft) throw notFound('Aircraft', input.aircraftId);
-    if (String(warehouse.station_id) !== String(aircraft.current_station_id)) {
+    const aircraft =
+      input.targetType === 'AIRCRAFT'
+        ? (sqlite.prepare('SELECT * FROM aircraft WHERE id = ?').get(input.aircraftId) as
+            SqlRow | undefined)
+        : undefined;
+    const corporateAsset =
+      input.targetType === 'CORPORATE_ASSET'
+        ? (sqlite.prepare('SELECT * FROM managed_assets WHERE id = ?').get(input.targetId) as
+            SqlRow | undefined)
+        : undefined;
+    if (input.targetType === 'AIRCRAFT' && !aircraft)
+      throw notFound('Aircraft', String(input.aircraftId));
+    if (input.targetType === 'CORPORATE_ASSET' && !corporateAsset)
+      throw notFound('Corporate asset', String(input.targetId));
+    if (corporateAsset && Number(corporateAsset.version) !== input.expectedAssetVersion) {
+      throw new DomainError(
+        'ASSET_VERSION_CONFLICT',
+        'Corporate asset changed on the server. Refresh before requesting parts.',
+        409,
+        {
+          currentVersion: Number(corporateAsset.version),
+          currentUpdatedAt: String(corporateAsset.updated_at)
+        }
+      );
+    }
+    const targetStationId = aircraft?.current_station_id ?? corporateAsset?.station_id;
+    if (String(warehouse.station_id) !== String(targetStationId)) {
       throw new DomainError(
         'INVENTORY_ISSUE_STATION_MISMATCH',
-        'Parts must be issued from the aircraft current station.',
+        'Parts must be issued from the maintenance target current station.',
         422
       );
+    }
+    if (input.targetType === 'CORPORATE_ASSET') {
+      const workOrder = sqlite
+        .prepare(`SELECT asset_id, status FROM asset_maintenance_work_orders WHERE id = ?`)
+        .get(input.assetMaintenanceWorkOrderId) as SqlRow | undefined;
+      if (!workOrder)
+        throw notFound('Corporate asset work order', String(input.assetMaintenanceWorkOrderId));
+      if (String(workOrder.asset_id) !== input.targetId) {
+        throw new DomainError(
+          'ASSET_MAINTENANCE_TARGET_MISMATCH',
+          'Work order and corporate asset must match.',
+          422
+        );
+      }
+      if (['COMPLETED', 'CANCELLED'].includes(String(workOrder.status))) {
+        throw new DomainError(
+          'ASSET_MAINTENANCE_TERMINAL',
+          'Parts cannot be issued to a terminal work order.',
+          422
+        );
+      }
     }
     if (input.flightId) {
       const flight = sqlite
@@ -1340,7 +1386,7 @@ export class InventoryService {
       for (const requested of input.lines) {
         const part = this.requirePart(requested.partId);
         this.validateQuantity(part, requested.quantity);
-        this.assertAircraftApplicability(part, aircraft);
+        if (aircraft) this.assertAircraftApplicability(part, aircraft);
         const physical = this.pickPhysicalStock(
           requested.partId,
           input.warehouseId,
@@ -1397,13 +1443,17 @@ export class InventoryService {
       sqlite
         .prepare(
           `INSERT INTO maintenance_part_issues
-           (id, issue_number, maintenance_handoff_id, aircraft_id, flight_id, warehouse_id,
+           (id, issue_number, target_type, target_id, asset_maintenance_work_order_id,
+            maintenance_handoff_id, aircraft_id, flight_id, warehouse_id,
             reason, movement_id, status, total_parts_value_idr, issued_by_user_id, issued_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', ?, ?, ?)`
         )
         .run(
           issueId,
           this.nextNumber('ISS', 'maintenance_part_issues'),
+          input.targetType,
+          input.targetId ?? input.aircraftId,
+          input.assetMaintenanceWorkOrderId,
           input.maintenanceHandoffId,
           input.aircraftId,
           input.flightId,
@@ -1414,6 +1464,40 @@ export class InventoryService {
           actorUserId,
           issuedAt
         );
+      if (input.assetMaintenanceWorkOrderId) {
+        sqlite
+          .prepare(
+            `UPDATE asset_maintenance_work_orders SET status = 'WAITING_PARTS', updated_at = ? WHERE id = ?`
+          )
+          .run(issuedAt, input.assetMaintenanceWorkOrderId);
+        const updated = sqlite
+          .prepare(
+            `UPDATE managed_assets SET version = version + 1, updated_at = ?
+          WHERE id = ? AND version = ?`
+          )
+          .run(issuedAt, input.targetId, input.expectedAssetVersion);
+        if (!updated.changes) {
+          throw new DomainError(
+            'ASSET_VERSION_CONFLICT',
+            'Corporate asset changed while parts were requested.',
+            409
+          );
+        }
+        sqlite
+          .prepare(
+            `INSERT INTO asset_action_history
+          (id, asset_id, action_type, actor_user_id, reason, before_json, after_json,
+           request_context_json, created_at) VALUES (?, ?, 'ASSET_PARTS_REQUESTED', ?, ?, '{}', ?, '{}', ?)`
+          )
+          .run(
+            `asset-history-${nanoid(10)}`,
+            input.targetId,
+            actorUserId,
+            input.reason,
+            JSON.stringify({ workOrderId: input.assetMaintenanceWorkOrderId, issueId }),
+            issuedAt
+          );
+      }
       const insertIssueLine = sqlite.prepare(
         `INSERT INTO maintenance_part_issue_lines
          (id, issue_id, part_id, quantity, base_value_idr, note) VALUES (?, ?, ?, ?, ?, ?)`
@@ -1440,7 +1524,13 @@ export class InventoryService {
         sourceAmountMinor: totalPartsValueIdr,
         exchangeRateToIdrMicros: 1_000_000,
         baseAmountIdr: totalPartsValueIdr,
-        payload: { maintenanceHandoffId: input.maintenanceHandoffId, lineCount: input.lines.length }
+        payload: {
+          maintenanceHandoffId: input.maintenanceHandoffId,
+          assetMaintenanceWorkOrderId: input.assetMaintenanceWorkOrderId,
+          targetType: input.targetType,
+          targetId: input.targetId ?? input.aircraftId,
+          lineCount: input.lines.length
+        }
       });
     });
     transaction.immediate();

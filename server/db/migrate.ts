@@ -21,6 +21,10 @@ import {
   inventoryImmutabilityStatements,
   inventoryStatements
 } from './migrations/inventory';
+import {
+  corporateAssetDropStatements,
+  corporateAssetStatements
+} from './migrations/corporate-assets';
 
 type FlightOperationLookupSeed = {
   table: string;
@@ -624,6 +628,7 @@ const createStatements = [
   )`,
   ...ticketingStatements,
   ...inventoryStatements,
+  ...corporateAssetStatements,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_due_at ON invoices(due_at)`,
@@ -639,6 +644,7 @@ const createStatements = [
 ];
 
 const dropStatements = [
+  ...corporateAssetDropStatements,
   ...inventoryDropStatements,
   ...ticketingDropStatements,
   'DROP TABLE IF EXISTS flight_finance_handoffs',
@@ -741,6 +747,16 @@ export function runMigrations(sqlite: Database.Database) {
       sqlite.exec(statement);
     }
 
+    migrateMaintenanceIssueTargets(sqlite);
+    ensureColumn(
+      sqlite,
+      'asset_register',
+      'managed_asset_id',
+      'TEXT REFERENCES managed_assets(id)'
+    );
+    sqlite.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_register_managed_asset ON asset_register(managed_asset_id) WHERE managed_asset_id IS NOT NULL'
+    );
     seedFlightOperationLookups(sqlite);
     ensureColumn(sqlite, 'flight_operations', 'order_number', "TEXT NOT NULL DEFAULT ''");
     ensureColumn(
@@ -980,6 +996,50 @@ function ensureColumn(
   if (!columns.some((item) => item.name === column)) {
     sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+function migrateMaintenanceIssueTargets(sqlite: Database.Database) {
+  if (!tableExists(sqlite, 'maintenance_part_issues')) return;
+  const columns = sqlite.pragma('table_info(maintenance_part_issues)') as Array<{
+    name: string;
+    notnull: number;
+  }>;
+  const aircraftColumn = columns.find((column) => column.name === 'aircraft_id');
+  if (columns.some((column) => column.name === 'target_type') && aircraftColumn?.notnull === 0)
+    return;
+
+  sqlite.exec(
+    'ALTER TABLE maintenance_part_issue_lines RENAME TO maintenance_part_issue_lines_legacy'
+  );
+  sqlite.exec('ALTER TABLE maintenance_part_issues RENAME TO maintenance_part_issues_legacy');
+  sqlite.exec(`CREATE TABLE maintenance_part_issues (
+    id TEXT PRIMARY KEY, issue_number TEXT NOT NULL UNIQUE, maintenance_handoff_id TEXT,
+    target_type TEXT NOT NULL DEFAULT 'AIRCRAFT' CHECK (target_type IN ('AIRCRAFT', 'CORPORATE_ASSET')),
+    target_id TEXT NOT NULL, asset_maintenance_work_order_id TEXT,
+    aircraft_id TEXT REFERENCES aircraft(id), flight_id TEXT,
+    warehouse_id TEXT NOT NULL REFERENCES inventory_warehouses(id), reason TEXT NOT NULL,
+    movement_id TEXT NOT NULL UNIQUE REFERENCES inventory_movements(id),
+    status TEXT NOT NULL CHECK (status IN ('ISSUED', 'REVERSED')),
+    total_parts_value_idr INTEGER NOT NULL CHECK (total_parts_value_idr >= 0),
+    issued_by_user_id TEXT NOT NULL, issued_at TEXT NOT NULL
+  )`);
+  sqlite.exec(`CREATE TABLE maintenance_part_issue_lines (
+    id TEXT PRIMARY KEY, issue_id TEXT NOT NULL REFERENCES maintenance_part_issues(id) ON DELETE CASCADE,
+    part_id TEXT NOT NULL REFERENCES inventory_parts(id), quantity REAL NOT NULL CHECK (quantity > 0),
+    base_value_idr INTEGER NOT NULL CHECK (base_value_idr >= 0), note TEXT
+  )`);
+  sqlite.exec(`INSERT INTO maintenance_part_issues
+    (id, issue_number, maintenance_handoff_id, target_type, target_id,
+     asset_maintenance_work_order_id, aircraft_id, flight_id, warehouse_id, reason,
+     movement_id, status, total_parts_value_idr, issued_by_user_id, issued_at)
+    SELECT id, issue_number, maintenance_handoff_id, 'AIRCRAFT', aircraft_id,
+      NULL, aircraft_id, flight_id, warehouse_id, reason, movement_id, status,
+      total_parts_value_idr, issued_by_user_id, issued_at FROM maintenance_part_issues_legacy`);
+  sqlite.exec(`INSERT INTO maintenance_part_issue_lines
+    SELECT id, issue_id, part_id, quantity, base_value_idr, note
+    FROM maintenance_part_issue_lines_legacy`);
+  sqlite.exec('DROP TABLE maintenance_part_issue_lines_legacy');
+  sqlite.exec('DROP TABLE maintenance_part_issues_legacy');
 }
 
 function lookupId(idPrefix: string, code: string) {

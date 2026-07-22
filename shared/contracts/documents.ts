@@ -17,7 +17,8 @@ export const documentOwnerTypes = [
   'inventory_lot',
   'inventory_serial',
   'purchase_order',
-  'goods_receipt'
+  'goods_receipt',
+  'corporate_asset'
 ] as const;
 
 export const documentVisibilityValues = ['INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'] as const;

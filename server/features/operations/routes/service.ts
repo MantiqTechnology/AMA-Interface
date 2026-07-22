@@ -8,6 +8,7 @@ import type {
   RouteReadinessCheckDto
 } from '../../../../shared/features/operations/routes';
 import { DomainError, notFound } from '../../../utils/errors';
+import { getApplicationNow } from '../../../utils/time';
 import { StationsRepository } from '../stations/repository';
 import { RoutesRepository } from './repository';
 
@@ -15,7 +16,7 @@ export class RoutesService {
   constructor(
     private readonly repository: RoutesRepository,
     private readonly stationsRepository: StationsRepository,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(getApplicationNow())
   ) {}
 
   list(query: RouteListQuery) {

@@ -50,6 +50,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.read',
     'inventory.po.approve',
     'inventory.valuation.read',
+    'asset.read',
+    'asset.finance.read',
     'master_data.read'
   ],
   OCC: [
@@ -77,6 +79,9 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'document.read',
     'document.upload',
     'inventory.read',
+    'asset.read',
+    'asset.assign',
+    'asset.move',
     'master_data.read'
   ],
   'Finance Reviewer': [
@@ -89,6 +94,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'document.read',
     'document.verify',
     'inventory.read',
+    'asset.read',
+    'asset.finance.read',
     'inventory.valuation.read'
   ],
   'Maintenance Manager': [
@@ -100,7 +107,9 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.read',
     'inventory.procurement.request',
     'inventory.issue',
-    'inventory.repair.manage'
+    'inventory.repair.manage',
+    'asset.read',
+    'asset.maintenance.manage'
   ],
   'Inventory Controller': [
     'platform.dashboard.view',
@@ -115,6 +124,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.issue',
     'inventory.repair.manage',
     'inventory.valuation.read',
+    'asset.read',
     'document.read',
     'document.upload'
   ]

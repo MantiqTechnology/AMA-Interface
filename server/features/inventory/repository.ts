@@ -528,12 +528,17 @@ export class InventoryRepository {
   }
 
   listIssues(query: InventoryListQuery, scope: readonly string[]): MaintenancePartIssueDto[] {
-    const search = searchCondition(query, ['issue.issue_number', 'a.registration_number']);
+    const search = searchCondition(query, [
+      'issue.issue_number',
+      'a.registration_number',
+      'asset.asset_code'
+    ]);
     const stationScope = stationScopeCondition(scope);
     const rows = this.sqlite
       .prepare(
-        `SELECT issue.*, a.registration_number FROM maintenance_part_issues issue
-         JOIN aircraft a ON a.id = issue.aircraft_id
+        `SELECT issue.*, a.registration_number, asset.asset_code FROM maintenance_part_issues issue
+         LEFT JOIN aircraft a ON a.id = issue.aircraft_id
+         LEFT JOIN managed_assets asset ON asset.id = issue.target_id AND issue.target_type = 'CORPORATE_ASSET'
          JOIN inventory_warehouses w ON w.id = issue.warehouse_id
          JOIN stations s ON s.id = w.station_id
          WHERE 1 = 1 ${stationScope.sql}${search.sql}
@@ -553,8 +558,11 @@ export class InventoryRepository {
       id: String(row.id),
       issueNumber: String(row.issue_number),
       maintenanceHandoffId: str(row.maintenance_handoff_id),
-      aircraftId: String(row.aircraft_id),
-      aircraftRegistration: String(row.registration_number),
+      targetType: String(row.target_type) as MaintenancePartIssueDto['targetType'],
+      targetId: String(row.target_id),
+      assetMaintenanceWorkOrderId: str(row.asset_maintenance_work_order_id),
+      aircraftId: str(row.aircraft_id),
+      aircraftRegistration: str(row.registration_number),
       flightId: str(row.flight_id),
       warehouseId: String(row.warehouse_id),
       movementId: String(row.movement_id),

@@ -9,6 +9,28 @@ export type DocumentTypeConfig = {
 };
 
 export const documentTypes: readonly DocumentTypeConfig[] = [
+  { value: 'CORPORATE_ASSET_PHOTO', label: 'Asset Photo', ownerTypes: ['corporate_asset'] },
+  {
+    value: 'CORPORATE_ASSET_PURCHASE_DOCUMENT',
+    label: 'Purchase Document',
+    ownerTypes: ['corporate_asset']
+  },
+  { value: 'CORPORATE_ASSET_WARRANTY', label: 'Warranty', ownerTypes: ['corporate_asset'] },
+  {
+    value: 'CORPORATE_ASSET_INSURANCE',
+    label: 'Insurance Policy',
+    ownerTypes: ['corporate_asset']
+  },
+  {
+    value: 'CORPORATE_ASSET_MAINTENANCE_EVIDENCE',
+    label: 'Maintenance Evidence',
+    ownerTypes: ['corporate_asset']
+  },
+  {
+    value: 'CORPORATE_ASSET_AUDIT_EVIDENCE',
+    label: 'Audit Evidence',
+    ownerTypes: ['corporate_asset']
+  },
   {
     value: 'PART_CERTIFICATE',
     label: 'Part Certificate',

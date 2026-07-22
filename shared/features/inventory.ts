@@ -220,23 +220,47 @@ export const inventoryAdjustmentInputSchema = z.object({
   reason: z.string().trim().min(3).max(500)
 });
 
-export const maintenancePartIssueInputSchema = z.object({
-  maintenanceHandoffId: z.string().trim().min(1).nullable().default(null),
-  aircraftId: z.string().trim().min(1),
-  flightId: z.string().trim().min(1).nullable().default(null),
-  warehouseId: z.string().trim().min(1),
-  reason: z.string().trim().min(3).max(500),
-  lines: z
-    .array(
-      z.object({
-        partId: z.string().trim().min(1),
-        quantity: z.coerce.number().positive(),
-        serialIds: z.array(z.string().trim().min(1)).default([]),
-        note: nullableText.default(null)
-      })
-    )
-    .min(1)
-});
+export const maintenancePartIssueInputSchema = z
+  .object({
+    targetType: z.enum(['AIRCRAFT', 'CORPORATE_ASSET']).default('AIRCRAFT'),
+    targetId: z.string().trim().min(1).optional(),
+    assetMaintenanceWorkOrderId: z.string().trim().min(1).nullable().default(null),
+    expectedAssetVersion: z.coerce.number().int().positive().optional(),
+    maintenanceHandoffId: z.string().trim().min(1).nullable().default(null),
+    aircraftId: z.string().trim().min(1).nullable().default(null),
+    flightId: z.string().trim().min(1).nullable().default(null),
+    warehouseId: z.string().trim().min(1),
+    reason: z.string().trim().min(3).max(500),
+    lines: z
+      .array(
+        z.object({
+          partId: z.string().trim().min(1),
+          quantity: z.coerce.number().positive(),
+          serialIds: z.array(z.string().trim().min(1)).default([]),
+          note: nullableText.default(null)
+        })
+      )
+      .min(1)
+  })
+  .superRefine((input, context) => {
+    if (input.targetType === 'AIRCRAFT' && !input.aircraftId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['aircraftId'],
+        message: 'Aircraft is required.'
+      });
+    }
+    if (
+      input.targetType === 'CORPORATE_ASSET' &&
+      (!input.targetId || !input.assetMaintenanceWorkOrderId || !input.expectedAssetVersion)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['targetId'],
+        message: 'Corporate asset and work order are required.'
+      });
+    }
+  });
 
 export const inventoryCountInputSchema = z.object({
   warehouseId: z.string().trim().min(1),
@@ -301,7 +325,9 @@ export type PurchaseOrderInput = z.infer<typeof purchaseOrderInputSchema>;
 export type GoodsReceiptInput = z.infer<typeof goodsReceiptInputSchema>;
 export type InventoryTransferInput = z.infer<typeof inventoryTransferInputSchema>;
 export type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentInputSchema>;
-export type MaintenancePartIssueInput = z.infer<typeof maintenancePartIssueInputSchema>;
+// Input intentionally keeps defaulted fields optional so existing aircraft issue
+// callers remain source-compatible. The service parses this before using it.
+export type MaintenancePartIssueInput = z.input<typeof maintenancePartIssueInputSchema>;
 export type InventoryCountInput = z.infer<typeof inventoryCountInputSchema>;
 export type InventoryCountLineInput = z.infer<typeof inventoryCountLineInputSchema>;
 export type RepairOrderInput = z.infer<typeof repairOrderInputSchema>;
@@ -462,8 +488,11 @@ export type MaintenancePartIssueDto = {
   id: string;
   issueNumber: string;
   maintenanceHandoffId: string | null;
-  aircraftId: string;
-  aircraftRegistration: string;
+  targetType: 'AIRCRAFT' | 'CORPORATE_ASSET';
+  targetId: string;
+  assetMaintenanceWorkOrderId: string | null;
+  aircraftId: string | null;
+  aircraftRegistration: string | null;
   flightId: string | null;
   warehouseId: string;
   movementId: string;

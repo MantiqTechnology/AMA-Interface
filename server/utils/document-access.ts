@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3';
 import type { DocumentOwnerType } from '../../shared/contracts/documents';
 import { getDbClient } from '../db/client';
-import { getDemoStationScope } from './auth';
+import { getDemoStationScope, hasDemoPermission } from './auth';
 import { DomainError, notFound } from './errors';
 
 const inventoryOwnerTypes = new Set<DocumentOwnerType>([
@@ -33,6 +33,20 @@ export function resolveDocumentOwnerAccess(
   ownerType: DocumentOwnerType,
   ownerId: string
 ): OwnerAccess {
+  if (ownerType === 'corporate_asset') {
+    const sqlite = getDbClient().sqlite;
+    const row = sqlite
+      .prepare(
+        `SELECT station.station_code FROM managed_assets asset
+      LEFT JOIN stations station ON station.id = asset.station_id WHERE asset.id = ?`
+      )
+      .get(ownerId) as { station_code: string | null } | undefined;
+    return {
+      inventoryOwner: true,
+      exists: Boolean(row),
+      stationCodes: row?.station_code ? [row.station_code] : []
+    };
+  }
   if (!inventoryOwnerTypes.has(ownerType)) {
     return { inventoryOwner: false, exists: true, stationCodes: [] };
   }
@@ -148,6 +162,7 @@ export function canAccessDocumentOwner(
   ownerId: string
 ) {
   const owner = resolveDocumentOwnerAccess(ownerType, ownerId);
+  if (ownerType === 'corporate_asset' && !hasDemoPermission(event, 'asset.read')) return false;
   if (!owner.inventoryOwner) return true;
   if (!owner.exists) return false;
   const scope = getDemoStationScope(event);
@@ -164,10 +179,16 @@ export function requireDocumentOwnerAccess(
 ) {
   const owner = resolveDocumentOwnerAccess(ownerType, ownerId);
   if (!owner.inventoryOwner) return;
-  if (!owner.exists) throw notFound('Inventory document owner', ownerId);
+  if (!owner.exists)
+    throw notFound(
+      ownerType === 'corporate_asset' ? 'Corporate asset' : 'Inventory document owner',
+      ownerId
+    );
   if (!canAccessDocumentOwner(event, ownerType, ownerId)) {
     throw new DomainError(
-      'INVENTORY_DOCUMENT_STATION_FORBIDDEN',
+      ownerType === 'corporate_asset'
+        ? 'ASSET_DOCUMENT_STATION_FORBIDDEN'
+        : 'INVENTORY_DOCUMENT_STATION_FORBIDDEN',
       'The document owner is outside the active role station scope.',
       403,
       { ownerType, ownerId, stationCodes: owner.stationCodes, scope: getDemoStationScope(event) }

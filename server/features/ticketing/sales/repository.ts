@@ -8,6 +8,7 @@ import type {
   TicketingCargoPriceBasis,
   TicketingServiceType
 } from '../../../../shared/features/ticketing/sales';
+import { getApplicationNow } from '../../../utils/time';
 
 type AvailableFlightRow = AvailableTicketingFlightDto;
 
@@ -108,12 +109,13 @@ export class TicketingSalesRepository {
   constructor(private readonly sqlite: Database.Database) {}
 
   listAvailable(query: AvailableTicketingFlightsQuery): AvailableTicketingFlightDto[] {
+    const referenceNow = getApplicationNow();
     const conditions = [
       "operation_status.code IN ('SCHEDULED', 'CHECK_IN_OPEN')",
-      "julianday(operation.scheduled_departure_at) > julianday('now')",
+      'julianday(operation.scheduled_departure_at) > julianday(?)',
       'ts.service_type = ?'
     ];
-    const parameters: string[] = [query.serviceType];
+    const parameters: string[] = [referenceNow, query.serviceType];
     if (query.originStationId) {
       conditions.push('r.origin_station_id = ?');
       parameters.push(query.originStationId);
@@ -135,6 +137,7 @@ export class TicketingSalesRepository {
     flightOperationId: string,
     serviceType: TicketingServiceType
   ): AvailableFlightRow | null {
+    const referenceNow = getApplicationNow();
     return (
       (this.sqlite
         .prepare(
@@ -142,9 +145,10 @@ export class TicketingSalesRepository {
            WHERE operation.id = ?
              AND ts.service_type = ?
              AND operation_status.code IN ('SCHEDULED', 'CHECK_IN_OPEN')
-             AND julianday(operation.scheduled_departure_at) > julianday('now')`
+             AND julianday(operation.scheduled_departure_at) > julianday(?)`
         )
-        .get(flightOperationId, serviceType) as AvailableFlightRow | undefined) ?? null
+        .get(flightOperationId, serviceType, referenceNow) as AvailableFlightRow | undefined) ??
+      null
     );
   }
 

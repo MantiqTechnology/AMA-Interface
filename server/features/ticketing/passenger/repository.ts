@@ -3,6 +3,7 @@ import type {
   PassengerTicketDto,
   PassengerTicketListQuery
 } from '../../../../shared/features/ticketing/passenger';
+import { getApplicationNow } from '../../../utils/time';
 
 type PassengerTicketRow = Omit<PassengerTicketDto, 'refundRequest'> & {
   refundRequestId: string | null;
@@ -240,6 +241,7 @@ export class PassengerTicketRepository {
 
   rescheduleAndSync(input: PassengerRescheduleInput) {
     const reschedule = this.sqlite.transaction(() => {
+      const referenceNow = getApplicationNow();
       const context = this.rescheduleContext(input.ticketId);
       if (
         !context ||
@@ -264,9 +266,9 @@ export class PassengerTicketRepository {
              AND sale.service_type = 'PASSENGER'
              AND operation.route_id = ?
              AND status.code IN ('SCHEDULED', 'CHECK_IN_OPEN')
-             AND julianday(operation.scheduled_departure_at) > julianday('now')`
+             AND julianday(operation.scheduled_departure_at) > julianday(?)`
         )
-        .get(input.targetFlightOperationId, input.routeId) as
+        .get(input.targetFlightOperationId, input.routeId, referenceNow) as
         { flightOperationId: string } | undefined;
       if (!target) throw new Error('TICKETING_RESCHEDULE_TARGET_CHANGED');
 
