@@ -39,7 +39,8 @@ export const corporateAssetStatements = [
     condition_status TEXT NOT NULL DEFAULT 'SERVICEABLE' CHECK (condition_status IN ('SERVICEABLE', 'LIMITED', 'UNDER_MAINTENANCE', 'UNSERVICEABLE')),
     version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    CHECK (station_id IS NOT NULL OR location_type IN ('TRANSIT', 'VENDOR', 'UNASSIGNED', 'RETIRED', 'LOST'))
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_assets_serial ON managed_assets(serial_number) WHERE serial_number IS NOT NULL AND serial_number <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_managed_assets_station ON managed_assets(station_id)`,
@@ -90,6 +91,7 @@ export const corporateAssetStatements = [
     condition_after TEXT,
     summary TEXT NOT NULL,
     completion_result TEXT,
+    completion_evidence_reference TEXT,
     scheduled_at TEXT,
     completed_at TEXT,
     completed_by_user_id TEXT,
@@ -98,6 +100,9 @@ export const corporateAssetStatements = [
     updated_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_asset_maintenance_asset ON asset_maintenance_work_orders(asset_id, status)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_single_live_maintenance
+    ON asset_maintenance_work_orders(asset_id)
+    WHERE status IN ('OPEN', 'IN_PROGRESS', 'WAITING_PARTS')`,
   `CREATE TABLE IF NOT EXISTS asset_insurance_policies (
     id TEXT PRIMARY KEY,
     asset_id TEXT NOT NULL REFERENCES managed_assets(id) ON DELETE CASCADE,
@@ -106,7 +111,7 @@ export const corporateAssetStatements = [
     coverage_minor INTEGER NOT NULL DEFAULT 0 CHECK (coverage_minor >= 0),
     premium_minor INTEGER NOT NULL DEFAULT 0 CHECK (premium_minor >= 0),
     effective_date TEXT NOT NULL,
-    expiry_date TEXT NOT NULL,
+    expiry_date TEXT NOT NULL CHECK (expiry_date >= effective_date),
     status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'EXPIRED', 'CANCELLED')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

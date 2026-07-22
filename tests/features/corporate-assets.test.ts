@@ -61,7 +61,7 @@ describe('Corporate Assets domain', () => {
     expect(assets.listEmployees(true)).toHaveLength(3);
     const gpu = assets.getAsset('asset-gse-gpu-01', ['ALL'], true);
     expect(gpu.conditionStatus).toBe('UNDER_MAINTENANCE');
-    expect(gpu.financial.assetNumber).toBe('FA-GSE-00001');
+    expect(gpu.financial?.assetNumber).toBe('FA-GSE-00001');
     expect(assets.getAsset('asset-it-laptop-01', ['ALL'], true).financial).toEqual({
       financialStatus: 'NOT_CAPITALIZED'
     });
@@ -132,6 +132,52 @@ describe('Corporate Assets domain', () => {
     }
   });
 
+  it('derives custody from exactly one active assignment after create and move', () => {
+    const created = assets.createAsset(
+      {
+        name: 'Custody test laptop',
+        category: 'IT_EQUIPMENT',
+        brand: null,
+        model: null,
+        serialNumber: 'CUSTODY-001',
+        stationId: 'st-djj',
+        locationType: 'DEPARTMENT',
+        locationDetail: 'IT Department',
+        departmentId: 'dept-it',
+        currentCustodianEmployeeId: 'emp-anisa',
+        custodianNameSnapshot: null,
+        acquisitionDate: null,
+        acquisitionReference: null,
+        lifecycleStatus: 'ACTIVE',
+        conditionStatus: 'SERVICEABLE'
+      },
+      'USR-DEMO-ADMIN',
+      ['ALL']
+    );
+    expect(created.custodyStatus).toBe('ASSIGNED');
+    expect(created.assignments.filter((assignment) => !assignment.endedAt)).toHaveLength(1);
+
+    const moved = assets.moveAsset(
+      created.id,
+      {
+        expectedVersion: created.version,
+        toStationId: 'st-djj',
+        toLocationType: 'DEPARTMENT',
+        toLocation: 'Finance Department',
+        newEmployeeId: 'emp-hendra',
+        newCustodianNameSnapshot: null,
+        reason: 'Transfer custody with movement.',
+        movedAt: '2026-07-22T12:00:00.000Z'
+      },
+      'USR-DEMO-ADMIN',
+      ['ALL'],
+      true
+    );
+    expect(moved.custodyStatus).toBe('ASSIGNED');
+    expect(moved.custodianName).toBe('Hendra Gunawan');
+    expect(moved.assignments.filter((assignment) => !assignment.endedAt)).toHaveLength(1);
+  });
+
   it('enforces station scope and cross-station movement rules', () => {
     expect(() => assets.getAsset('asset-gse-gpu-01', ['WMX'])).toThrow(
       /outside the active station scope/u
@@ -158,6 +204,106 @@ describe('Corporate Assets domain', () => {
     } catch (error) {
       expect(error).toMatchObject({ code: 'ASSET_CROSS_STATION_FORBIDDEN', statusCode: 403 });
     }
+    expect(() =>
+      assets.moveAsset(
+        vehicle.id,
+        {
+          expectedVersion: vehicle.version,
+          toStationId: null,
+          toLocationType: 'TRANSIT',
+          toLocation: 'External transit',
+          newEmployeeId: null,
+          newCustodianNameSnapshot: null,
+          reason: 'Attempt to remove station ownership.',
+          movedAt: '2026-07-22T10:00:00.000Z'
+        },
+        'USR-STATION-ADMIN',
+        ['WMX'],
+        false
+      )
+    ).toThrow(/keep the asset assigned to their station/u);
+    expect(assets.getAsset(vehicle.id, ['WMX']).stationCode).toBe('WMX');
+  });
+
+  it('prevents duplicate live maintenance and persists completion evidence', () => {
+    const asset = assets.getAsset('asset-gse-gpu-01', ['ALL']);
+    expect(() =>
+      assets.openMaintenance(
+        asset.id,
+        {
+          expectedVersion: asset.version,
+          maintenanceType: 'CORRECTIVE',
+          priority: 'HIGH',
+          summary: 'Duplicate live work order.',
+          scheduledAt: null
+        },
+        'USR-MAINTENANCE-MANAGER',
+        ['ALL']
+      )
+    ).toThrow(/already has an active maintenance work order/u);
+
+    const completed = assets.completeMaintenance(
+      'amw-demo-gpu',
+      {
+        expectedVersion: asset.version,
+        completionResult: 'Electrical output restored and verified.',
+        evidenceReference: 'DOC-MAINT-001',
+        conditionAfter: 'SERVICEABLE',
+        reason: 'Maintenance evidence reviewed.'
+      },
+      'USR-MAINTENANCE-MANAGER',
+      ['ALL']
+    );
+    expect(completed.financial).toBeNull();
+    expect(completed.maintenance[0]).toMatchObject({
+      status: 'COMPLETED',
+      completionEvidenceReference: 'DOC-MAINT-001'
+    });
+  });
+
+  it('reconciles only an unreconciled discrepancy with a valid destination', () => {
+    const asset = assets.getAsset('asset-it-laptop-01', ['ALL']);
+    const audited = assets.recordAudit(
+      asset.id,
+      {
+        expectedVersion: asset.version,
+        auditorEmployeeId: 'emp-hendra',
+        auditorNameSnapshot: 'Hendra Gunawan',
+        auditedAt: '2026-07-22T09:00:00.000Z',
+        notes: 'Laptop found in another room.',
+        lines: [
+          {
+            fieldName: 'locationDetail',
+            expectedValue: asset.locationDetail,
+            actualValue: 'DJJ Finance Room',
+            discrepancyType: 'LOCATION_MISMATCH',
+            notes: null
+          }
+        ]
+      },
+      'USR-DEMO-ADMIN',
+      ['ALL']
+    );
+    const audit = audited.audits.find((item) => item.hasDiscrepancy);
+    const input = {
+      expectedVersion: audited.version,
+      auditId: String(audit?.id),
+      stationId: 'st-djj',
+      locationType: 'DEPARTMENT' as const,
+      locationDetail: 'DJJ Finance Room',
+      conditionStatus: 'SERVICEABLE' as const,
+      reason: 'Physical location verified.'
+    };
+    const reconciled = assets.reconcileAsset(asset.id, input, 'USR-DEMO-ADMIN', ['ALL']);
+    expect(reconciled.locationDetail).toBe('DJJ Finance Room');
+    expect(() =>
+      assets.reconcileAsset(
+        asset.id,
+        { ...input, expectedVersion: reconciled.version },
+        'USR-DEMO-ADMIN',
+        ['ALL']
+      )
+    ).toThrow(/already been reconciled/u);
   });
 
   it('issues Inventory stock to a corporate work order and keeps reversal pipeline usable', async () => {

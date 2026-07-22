@@ -280,7 +280,11 @@ export class CorporateAssetService {
         before: JSON.parse(String(item.before_json)),
         after: JSON.parse(String(item.after_json))
       })),
-      financial: financial ? this.camel(financial) : { financialStatus: 'NOT_CAPITALIZED' }
+      financial: includeFinancial
+        ? financial
+          ? this.camel(financial)
+          : { financialStatus: 'NOT_CAPITALIZED' }
+        : null
     };
   }
 
@@ -327,10 +331,36 @@ export class CorporateAssetService {
       } catch (error) {
         this.uniqueError(error, 'ASSET_DUPLICATE', 'Asset code or serial number already exists.');
       }
+      if (input.currentCustodianEmployeeId || input.custodianNameSnapshot) {
+        this.sqlite
+          .prepare(
+            `INSERT INTO asset_assignments
+          (id, assignment_number, asset_id, employee_id, custodian_name_snapshot, department_id,
+           station_id, location_snapshot, reason, started_at, created_by_user_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            `asg-${nanoid(10)}`,
+            this.nextNumber('ASSIGNMENT', 'ASG'),
+            id,
+            input.currentCustodianEmployeeId,
+            this.resolveCustodianName(
+              input.currentCustodianEmployeeId,
+              input.custodianNameSnapshot
+            ),
+            input.departmentId,
+            input.stationId,
+            input.locationDetail,
+            'Initial custody recorded with asset creation.',
+            timestamp,
+            actorUserId,
+            timestamp
+          );
+      }
       this.recordHistory(id, 'ASSET_CREATED', actorUserId, 'Corporate asset created.', {}, input);
       return id;
     });
-    return this.getAsset(transaction.immediate(), scope, true);
+    return this.getAsset(transaction.immediate(), scope);
   }
 
   updateAsset(id: string, input: AssetUpdate, actorUserId: string, scope: readonly string[]) {
@@ -338,6 +368,21 @@ export class CorporateAssetService {
     this.assertVersion(before, input.expectedVersion);
     this.assertInputReferences(input);
     this.assertStationScope(input.stationId, scope);
+    if (
+      input.lifecycleStatus !== before.lifecycle_status ||
+      input.stationId !== before.station_id ||
+      input.locationType !== before.location_type ||
+      input.locationDetail !== before.location_detail ||
+      input.currentCustodianEmployeeId !== before.current_custodian_employee_id ||
+      input.custodianNameSnapshot !== before.custodian_name_snapshot ||
+      input.conditionStatus !== before.condition_status
+    ) {
+      throw new DomainError(
+        'ASSET_COMMAND_REQUIRED',
+        'Lifecycle, condition, custody, and location changes require their dedicated command.',
+        422
+      );
+    }
     const transaction = this.sqlite.transaction(() => {
       const timestamp = now();
       try {
@@ -384,7 +429,7 @@ export class CorporateAssetService {
       );
     });
     transaction.immediate();
-    return this.getAsset(id, scope, true);
+    return this.getAsset(id, scope);
   }
 
   assignAsset(id: string, input: AssetAssignInput, actorUserId: string, scope: readonly string[]) {
@@ -436,7 +481,7 @@ export class CorporateAssetService {
       );
     });
     transaction.immediate();
-    return this.getAsset(id, scope, true);
+    return this.getAsset(id, scope);
   }
 
   moveAsset(
@@ -450,6 +495,14 @@ export class CorporateAssetService {
     this.assertVersion(before, input.expectedVersion);
     this.assertReference('stations', input.toStationId, 'Station');
     this.assertReference('employees', input.newEmployeeId, 'Employee');
+    this.assertLocation(input.toStationId, input.toLocationType);
+    if (!scope.includes('ALL') && !input.toStationId) {
+      throw new DomainError(
+        'ASSET_DESTINATION_SCOPE_REQUIRED',
+        'Station-scoped users must keep the asset assigned to their station.',
+        403
+      );
+    }
     if (!allowCrossStation && input.toStationId && input.toStationId !== before.station_id) {
       throw new DomainError(
         'ASSET_CROSS_STATION_FORBIDDEN',
@@ -485,6 +538,34 @@ export class CorporateAssetService {
           'UPDATE asset_assignments SET ended_at = ? WHERE asset_id = ? AND ended_at IS NULL'
         )
         .run(input.movedAt, id);
+      if (input.newEmployeeId || input.newCustodianNameSnapshot) {
+        const employee = input.newEmployeeId
+          ? (this.sqlite
+              .prepare('SELECT department_id FROM employees WHERE id = ?')
+              .get(input.newEmployeeId) as Row | undefined)
+          : undefined;
+        this.sqlite
+          .prepare(
+            `INSERT INTO asset_assignments
+          (id, assignment_number, asset_id, employee_id, custodian_name_snapshot, department_id,
+           station_id, location_snapshot, reason, started_at, created_by_user_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            `asg-${nanoid(10)}`,
+            this.nextNumber('ASSIGNMENT', 'ASG'),
+            id,
+            input.newEmployeeId,
+            this.resolveCustodianName(input.newEmployeeId, input.newCustodianNameSnapshot),
+            str(employee?.department_id) ?? str(before.department_id),
+            input.toStationId,
+            input.toLocation,
+            input.reason,
+            input.movedAt,
+            actorUserId,
+            now()
+          );
+      }
       this.bumpAsset(
         id,
         input.expectedVersion,
@@ -500,7 +581,7 @@ export class CorporateAssetService {
       this.recordHistory(id, 'ASSET_MOVED', actorUserId, input.reason, this.camel(before), input);
     });
     transaction.immediate();
-    return this.getAsset(id, scope, true);
+    return this.getAsset(id, scope);
   }
 
   openMaintenance(
@@ -511,6 +592,18 @@ export class CorporateAssetService {
   ) {
     const before = this.requireAssetRow(id, scope);
     this.assertVersion(before, input.expectedVersion);
+    const active = this.sqlite
+      .prepare(
+        "SELECT id FROM asset_maintenance_work_orders WHERE asset_id = ? AND status IN ('OPEN', 'IN_PROGRESS', 'WAITING_PARTS')"
+      )
+      .get(id) as Row | undefined;
+    if (active) {
+      throw new DomainError(
+        'ASSET_MAINTENANCE_ACTIVE',
+        'The asset already has an active maintenance work order.',
+        422
+      );
+    }
     const workOrderId = `amw-${nanoid(10)}`;
     const transaction = this.sqlite.transaction(() => {
       const timestamp = now();
@@ -565,11 +658,12 @@ export class CorporateAssetService {
       this.sqlite
         .prepare(
           `UPDATE asset_maintenance_work_orders SET status = 'COMPLETED',
-        condition_after = ?, completion_result = ?, completed_at = ?, completed_by_user_id = ?, updated_at = ? WHERE id = ?`
+        condition_after = ?, completion_result = ?, completion_evidence_reference = ?, completed_at = ?, completed_by_user_id = ?, updated_at = ? WHERE id = ?`
         )
         .run(
           input.conditionAfter,
           input.completionResult,
+          input.evidenceReference,
           timestamp,
           actorUserId,
           timestamp,
@@ -588,7 +682,7 @@ export class CorporateAssetService {
       );
     });
     transaction.immediate();
-    return this.getAsset(String(workOrder.asset_id), scope, true);
+    return this.getAsset(String(workOrder.asset_id), scope);
   }
 
   recordAudit(id: string, input: AssetAuditInput, actorUserId: string, scope: readonly string[]) {
@@ -641,7 +735,7 @@ export class CorporateAssetService {
       );
     });
     transaction.immediate();
-    return this.getAsset(id, scope, true);
+    return this.getAsset(id, scope);
   }
 
   reconcileAsset(
@@ -656,6 +750,19 @@ export class CorporateAssetService {
       .prepare('SELECT * FROM asset_audits WHERE id = ? AND asset_id = ?')
       .get(input.auditId, id) as Row | undefined;
     if (!audit) throw notFound('Asset audit', input.auditId);
+    if (!Boolean(audit.has_discrepancy)) {
+      throw new DomainError(
+        'ASSET_AUDIT_NO_DISCREPANCY',
+        'Audit has no discrepancy to reconcile.',
+        422
+      );
+    }
+    if (audit.reconciled_at) {
+      throw new DomainError('ASSET_AUDIT_RECONCILED', 'Audit has already been reconciled.', 422);
+    }
+    this.assertReference('stations', input.stationId, 'Station');
+    this.assertStationScope(input.stationId, scope);
+    this.assertLocation(input.stationId, input.locationType);
     const transaction = this.sqlite.transaction(() => {
       const timestamp = now();
       this.bumpAsset(
@@ -664,11 +771,15 @@ export class CorporateAssetService {
         'station_id = ?, location_type = ?, location_detail = ?, condition_status = ?',
         [input.stationId, input.locationType, input.locationDetail, input.conditionStatus]
       );
-      this.sqlite
+      const result = this.sqlite
         .prepare(
-          `UPDATE asset_audits SET reconciled_at = ?, reconciled_by_user_id = ?, reconciliation_reason = ? WHERE id = ?`
+          `UPDATE asset_audits SET reconciled_at = ?, reconciled_by_user_id = ?, reconciliation_reason = ?
+           WHERE id = ? AND reconciled_at IS NULL AND has_discrepancy = 1`
         )
         .run(timestamp, actorUserId, input.reason, input.auditId);
+      if (!result.changes) {
+        throw new DomainError('ASSET_AUDIT_RECONCILED', 'Audit has already been reconciled.', 409);
+      }
       this.recordHistory(
         id,
         'ASSET_RECONCILED',
@@ -679,7 +790,7 @@ export class CorporateAssetService {
       );
     });
     transaction.immediate();
-    return this.getAsset(id, scope, true);
+    return this.getAsset(id, scope);
   }
 
   upsertInsurance(
@@ -743,7 +854,7 @@ export class CorporateAssetService {
       );
     });
     transaction.immediate();
-    return this.getAsset(id, scope, true);
+    return this.getAsset(id, scope);
   }
 
   overview(scope: readonly string[], includeFinancial: boolean) {
@@ -939,9 +1050,13 @@ export class CorporateAssetService {
     this.assertReference('stations', input.stationId, 'Station');
     this.assertReference('departments', input.departmentId, 'Department');
     this.assertReference('employees', input.currentCustodianEmployeeId, 'Employee');
+    this.assertLocation(input.stationId, input.locationType);
+  }
+
+  private assertLocation(stationId: string | null, locationType: string) {
     if (
-      !input.stationId &&
-      !['TRANSIT', 'VENDOR', 'UNASSIGNED', 'RETIRED', 'LOST'].includes(input.locationType)
+      !stationId &&
+      !['TRANSIT', 'VENDOR', 'UNASSIGNED', 'RETIRED', 'LOST'].includes(locationType)
     ) {
       throw new DomainError(
         'ASSET_LOCATION_INVALID',
@@ -955,6 +1070,20 @@ export class CorporateAssetService {
     if (!id) return;
     if (!this.sqlite.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id))
       throw notFound(label, id);
+  }
+
+  private resolveCustodianName(employeeId: string | null, snapshot: string | null) {
+    if (snapshot) return snapshot;
+    const employee = employeeId
+      ? (this.sqlite.prepare('SELECT full_name FROM employees WHERE id = ?').get(employeeId) as
+          Row | undefined)
+      : undefined;
+    if (employee?.full_name) return String(employee.full_name);
+    throw new DomainError(
+      'ASSET_CUSTODIAN_NAME_REQUIRED',
+      'A custodian name is required when custody is assigned.',
+      422
+    );
   }
 
   private assertVersion(row: Row, expected: number) {

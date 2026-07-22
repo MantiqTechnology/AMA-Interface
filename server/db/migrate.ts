@@ -754,6 +754,10 @@ export function runMigrations(sqlite: Database.Database) {
       'managed_asset_id',
       'TEXT REFERENCES managed_assets(id)'
     );
+    ensureColumn(sqlite, 'asset_maintenance_work_orders', 'completion_evidence_reference', 'TEXT');
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_single_live_maintenance
+      ON asset_maintenance_work_orders(asset_id)
+      WHERE status IN ('OPEN', 'IN_PROGRESS', 'WAITING_PARTS')`);
     sqlite.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_register_managed_asset ON asset_register(managed_asset_id) WHERE managed_asset_id IS NOT NULL'
     );

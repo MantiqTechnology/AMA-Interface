@@ -117,6 +117,7 @@ export const maintenanceCompleteSchema = z.object({
   expectedVersion: z.coerce.number().int().positive(),
   expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
   completionResult: z.string().trim().min(3).max(1000),
+  evidenceReference: z.string().trim().min(2).max(240),
   conditionAfter: z.enum(assetConditionStatuses).refine((value) => value !== 'UNDER_MAINTENANCE'),
   reason: z.string().trim().min(3).max(500)
 });
@@ -161,15 +162,20 @@ export const reconcileAssetSchema = mutationTokenSchema.extend({
   conditionStatus: z.enum(assetConditionStatuses),
   reason: z.string().trim().min(3).max(500)
 });
-export const insuranceInputSchema = mutationTokenSchema.extend({
-  insurer: z.string().trim().min(2).max(160),
-  policyNumber: z.string().trim().min(2).max(120),
-  coverageMinor: z.coerce.number().int().nonnegative(),
-  premiumMinor: z.coerce.number().int().nonnegative(),
-  effectiveDate: z.string().date(),
-  expiryDate: z.string().date(),
-  status: z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']).default('ACTIVE')
-});
+export const insuranceInputSchema = mutationTokenSchema
+  .extend({
+    insurer: z.string().trim().min(2).max(160),
+    policyNumber: z.string().trim().min(2).max(120),
+    coverageMinor: z.coerce.number().int().nonnegative(),
+    premiumMinor: z.coerce.number().int().nonnegative(),
+    effectiveDate: z.string().date(),
+    expiryDate: z.string().date(),
+    status: z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']).default('ACTIVE')
+  })
+  .refine((value) => value.expiryDate >= value.effectiveDate, {
+    message: 'Expiry date must be on or after effective date.',
+    path: ['expiryDate']
+  });
 
 export type AssetListQuery = z.infer<typeof assetListQuerySchema>;
 export type AssetInput = z.infer<typeof assetInputSchema>;

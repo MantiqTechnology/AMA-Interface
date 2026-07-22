@@ -45,6 +45,7 @@ const form = reactive<any>({
   expiryDate: '',
   insuranceStatus: 'ACTIVE',
   completionResult: '',
+  evidenceReference: '',
   conditionAfter: 'SERVICEABLE',
   warehouseId: null,
   partId: null,
@@ -162,6 +163,7 @@ async function submitAction() {
           body: {
             ...token(),
             completionResult: form.completionResult,
+            evidenceReference: form.evidenceReference,
             conditionAfter: form.conditionAfter,
             reason: form.reason
           }
@@ -259,7 +261,9 @@ async function showQr() {
       </div>
       <VCard border elevation="0">
         <VTabs v-model="tab" color="primary" show-arrows>
-          <VTab value="overview">Overview</VTab><VTab value="custody">Custody & Location</VTab><VTab value="maintenance">Maintenance</VTab><VTab value="audit">Audit & Documents</VTab><VTab value="financial">Financial View</VTab>
+          <VTab value="overview">Overview</VTab><VTab value="custody">Custody & Location</VTab><VTab value="maintenance">Maintenance</VTab><VTab value="audit">Audit & Documents</VTab><VTab v-if="can('asset.finance.read').allowed" value="financial">
+            Financial View
+          </VTab>
         </VTabs><VDivider />
         <VWindow v-model="tab">
           <VWindowItem value="overview">
@@ -307,10 +311,7 @@ async function showQr() {
                   {{ move.toLocation }}
                   <div class="text-caption">{{ move.reason }}</div>
                 </VTimelineItem>
-              </VTimeline><VEmptyState
-                v-if="!asset.movements.length"
-                title="No movements recorded"
-              />
+              </VTimeline><VEmptyState v-if="!asset.movements.length" title="No movements recorded" />
             </VCardText>
           </VWindowItem>
           <VWindowItem value="maintenance">
@@ -355,10 +356,7 @@ async function showQr() {
                     </td>
                   </tr>
                 </tbody>
-              </VTable><VEmptyState
-                v-if="!asset.maintenance.length"
-                title="No maintenance history"
-              />
+              </VTable><VEmptyState v-if="!asset.maintenance.length" title="No maintenance history" />
             </VCardText>
           </VWindowItem>
           <VWindowItem value="audit">
@@ -486,9 +484,7 @@ async function showQr() {
       >
         <VCardText>
           <VAlert v-if="actionError" type="error" variant="tonal" class="mb-4">
-            {{
-              actionError
-            }}
+            {{ actionError }}
           </VAlert>
           <template v-if="dialog === 'assign'">
             <VSelect
@@ -498,10 +494,7 @@ async function showQr() {
               item-value="id"
               label="Employee"
               clearable
-            /><VTextField
-              v-model="form.custodianNameSnapshot"
-              label="Custodian name"
-            /><VSelect
+            /><VTextField v-model="form.custodianNameSnapshot" label="Custodian name" /><VSelect
               v-model="form.departmentId"
               :items="departmentOptions"
               item-title="departmentName"
@@ -530,10 +523,7 @@ async function showQr() {
                 'LOST'
               ]"
               label="Location type"
-            /><VTextField
-              v-model="form.toLocation"
-              label="Destination detail"
-            />
+            /><VTextField v-model="form.toLocation" label="Destination detail" />
           </template>
           <template v-else-if="dialog === 'maintenance'">
             <VSelect
@@ -558,10 +548,7 @@ async function showQr() {
               item-value="id"
               label="Auditor"
               clearable
-            /><VTextField
-              v-model="form.auditorNameSnapshot"
-              label="Auditor name"
-            /><VTextField
+            /><VTextField v-model="form.auditorNameSnapshot" label="Auditor name" /><VTextField
               v-model="form.toLocation"
               label="Observed location"
             /><VTextarea v-model="form.notes" label="Notes" />
@@ -582,16 +569,12 @@ async function showQr() {
               v-model="form.effectiveDate"
               type="date"
               label="Effective date"
-            /><VTextField
-              v-model="form.expiryDate"
-              type="date"
-              label="Expiry date"
-            />
+            /><VTextField v-model="form.expiryDate" type="date" label="Expiry date" />
           </template>
           <template v-else-if="dialog === 'complete'">
-            <VTextarea
-              v-model="form.completionResult"
-              label="Completion result / evidence reference"
+            <VTextarea v-model="form.completionResult" label="Completion result" /><VTextField
+              v-model="form.evidenceReference"
+              label="Evidence or document reference"
             /><VSelect
               v-model="form.conditionAfter"
               :items="['SERVICEABLE', 'LIMITED', 'UNSERVICEABLE']"
@@ -611,12 +594,7 @@ async function showQr() {
               item-title="partName"
               item-value="id"
               label="Part"
-            /><VTextField
-              v-model.number="form.quantity"
-              type="number"
-              min="1"
-              label="Quantity"
-            />
+            /><VTextField v-model.number="form.quantity" type="number" min="1" label="Quantity" />
           </template>
           <template v-else-if="dialog === 'reconcile'">
             <VSelect
@@ -638,10 +616,7 @@ async function showQr() {
                 'LOST'
               ]"
               label="Confirmed location type"
-            /><VTextField
-              v-model="form.toLocation"
-              label="Confirmed location"
-            /><VSelect
+            /><VTextField v-model="form.toLocation" label="Confirmed location" /><VSelect
               v-model="form.conditionAfter"
               :items="['SERVICEABLE', 'LIMITED', 'UNDER_MAINTENANCE', 'UNSERVICEABLE']"
               label="Confirmed condition"

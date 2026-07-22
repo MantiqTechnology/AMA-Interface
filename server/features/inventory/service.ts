@@ -20,6 +20,7 @@ import type {
   ReturnServiceableInput
 } from '../../../shared/features/inventory';
 import { DomainError, notFound } from '../../utils/errors';
+import { getApplicationNow } from '../../utils/time';
 import { listDocuments } from '../../utils/local-document-storage';
 import { InventoryRepository } from './repository';
 
@@ -43,7 +44,7 @@ type CostAllocation = {
   baseUnitCostIdr: number;
 };
 
-const now = () => new Date().toISOString();
+const now = getApplicationNow;
 const num = (value: unknown) => Number(value ?? 0);
 const nullable = (value: unknown) => (value === null || value === undefined ? null : String(value));
 

@@ -44,9 +44,7 @@ describe('Corporate Assets APIs', () => {
       '/api/asset-management/assets/asset-gse-gpu-01',
       { headers: role('Maintenance Manager') }
     );
-    expect(maintenance.ok && maintenance.data.financial).toEqual({
-      financialStatus: 'NOT_CAPITALIZED'
-    });
+    expect(maintenance.ok && maintenance.data.financial).toBeNull();
     const denied = await $fetch<ApiResponse<unknown>>(
       '/api/asset-management/assets/asset-gse-gpu-01/actions/move',
       {
@@ -57,6 +55,29 @@ describe('Corporate Assets APIs', () => {
       }
     );
     expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+
+    const vehicle = await $fetch<ApiResponse<any>>(
+      '/api/asset-management/assets/asset-vehicle-wmx-01',
+      { headers: role('Station Admin') }
+    );
+    const moved = await $fetch<ApiResponse<any>>(
+      '/api/asset-management/assets/asset-vehicle-wmx-01/actions/move',
+      {
+        method: 'POST',
+        headers: role('Station Admin'),
+        body: {
+          expectedVersion: vehicle.ok && vehicle.data.version,
+          toStationId: 'st-wmx',
+          toLocationType: 'STATION',
+          toLocation: 'WMX secured parking',
+          newEmployeeId: null,
+          newCustodianNameSnapshot: null,
+          reason: 'Move within station scope.',
+          movedAt: '2026-07-22T10:00:00.000Z'
+        }
+      }
+    );
+    expect(moved.ok && moved.data.financial).toBeNull();
   });
 
   it('returns current concurrency tokens on stale mutations', async () => {
