@@ -111,6 +111,28 @@ describe('inventory APIs', () => {
     });
     expect(!financeMutation.ok && financeMutation.error.code).toBe('FORBIDDEN');
 
+    const corporateIssueBypass = await $fetch<ApiResponse<unknown>>(
+      '/api/inventory/maintenance-issues',
+      {
+        method: 'POST',
+        headers: controllerCookie,
+        body: {
+          targetType: 'CORPORATE_ASSET',
+          targetId: 'asset-gse-gpu-01',
+          assetMaintenanceWorkOrderId: 'amw-gpu-maintenance',
+          expectedAssetVersion: 1,
+          maintenanceHandoffId: null,
+          aircraftId: null,
+          flightId: null,
+          warehouseId: 'inv-wh-djj-main',
+          reason: 'Permission bypass regression test.',
+          lines: [{ partId: 'inv-part-oil', quantity: 1, serialIds: [], note: null }]
+        },
+        ignoreResponseError: true
+      }
+    );
+    expect(!corporateIssueBypass.ok && corporateIssueBypass.error.code).toBe('FORBIDDEN');
+
     const maintenanceWarehouses = await $fetch<ApiResponse<InventoryWarehouseDto[]>>(
       '/api/inventory/warehouses',
       { headers: { cookie: 'ama_demo_role=Maintenance%20Manager' } }

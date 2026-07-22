@@ -339,5 +339,17 @@ describe('Corporate Assets domain', () => {
           .get(issue?.id) as { status: string }
       ).status
     ).toBe('REVERSED');
+    expect(assets.requireWorkOrder('amw-gpu-maintenance').status).toBe('OPEN');
+    expect(assets.getAsset(before.id, ['ALL']).version).toBe(before.version + 2);
+    expect(
+      (
+        sqlite
+          .prepare(
+            `SELECT COUNT(*) count FROM asset_action_history
+             WHERE asset_id = ? AND action_type = 'ASSET_PARTS_REQUEST_REVERSED'`
+          )
+          .get(before.id) as { count: number }
+      ).count
+    ).toBe(1);
   });
 });

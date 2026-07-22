@@ -1301,20 +1301,21 @@ export class InventoryService {
         422
       );
     }
+    let corporateWorkOrder: SqlRow | undefined;
     if (input.targetType === 'CORPORATE_ASSET') {
-      const workOrder = sqlite
+      corporateWorkOrder = sqlite
         .prepare(`SELECT asset_id, status FROM asset_maintenance_work_orders WHERE id = ?`)
         .get(input.assetMaintenanceWorkOrderId) as SqlRow | undefined;
-      if (!workOrder)
+      if (!corporateWorkOrder)
         throw notFound('Corporate asset work order', String(input.assetMaintenanceWorkOrderId));
-      if (String(workOrder.asset_id) !== input.targetId) {
+      if (String(corporateWorkOrder.asset_id) !== input.targetId) {
         throw new DomainError(
           'ASSET_MAINTENANCE_TARGET_MISMATCH',
           'Work order and corporate asset must match.',
           422
         );
       }
-      if (['COMPLETED', 'CANCELLED'].includes(String(workOrder.status))) {
+      if (['COMPLETED', 'CANCELLED'].includes(String(corporateWorkOrder.status))) {
         throw new DomainError(
           'ASSET_MAINTENANCE_TERMINAL',
           'Parts cannot be issued to a terminal work order.',
@@ -1488,13 +1489,14 @@ export class InventoryService {
           .prepare(
             `INSERT INTO asset_action_history
           (id, asset_id, action_type, actor_user_id, reason, before_json, after_json,
-           request_context_json, created_at) VALUES (?, ?, 'ASSET_PARTS_REQUESTED', ?, ?, '{}', ?, '{}', ?)`
+           request_context_json, created_at) VALUES (?, ?, 'ASSET_PARTS_REQUESTED', ?, ?, ?, ?, '{}', ?)`
           )
           .run(
             `asset-history-${nanoid(10)}`,
             input.targetId,
             actorUserId,
             input.reason,
+            JSON.stringify({ workOrderStatus: corporateWorkOrder?.status ?? 'OPEN' }),
             JSON.stringify({ workOrderId: input.assetMaintenanceWorkOrderId, issueId }),
             issuedAt
           );
@@ -2895,9 +2897,89 @@ export class InventoryService {
         }
       }
       if (movement.source_type === 'MAINTENANCE_PART_ISSUE') {
+        const issue = sqlite
+          .prepare(
+            `SELECT id, issue_number, target_type, target_id, asset_maintenance_work_order_id
+             FROM maintenance_part_issues WHERE movement_id = ?`
+          )
+          .get(id) as SqlRow | undefined;
         sqlite
           .prepare(`UPDATE maintenance_part_issues SET status = 'REVERSED' WHERE movement_id = ?`)
           .run(id);
+        if (
+          issue?.target_type === 'CORPORATE_ASSET' &&
+          issue.target_id &&
+          issue.asset_maintenance_work_order_id
+        ) {
+          const workOrder = sqlite
+            .prepare(`SELECT status FROM asset_maintenance_work_orders WHERE id = ?`)
+            .get(issue.asset_maintenance_work_order_id) as SqlRow | undefined;
+          const otherActiveIssue = sqlite
+            .prepare(
+              `SELECT 1 FROM maintenance_part_issues
+               WHERE asset_maintenance_work_order_id = ? AND id != ? AND status = 'ISSUED'
+               LIMIT 1`
+            )
+            .get(issue.asset_maintenance_work_order_id, issue.id);
+          const requestHistory = sqlite
+            .prepare(
+              `SELECT before_json FROM asset_action_history
+               WHERE asset_id = ? AND action_type = 'ASSET_PARTS_REQUESTED'
+                 AND json_extract(after_json, '$.issueId') = ?
+               ORDER BY created_at DESC LIMIT 1`
+            )
+            .get(issue.target_id, issue.id) as SqlRow | undefined;
+          let previousStatus = 'OPEN';
+          try {
+            const parsed = JSON.parse(String(requestHistory?.before_json ?? '{}')) as {
+              workOrderStatus?: unknown;
+            };
+            if (['OPEN', 'IN_PROGRESS'].includes(String(parsed.workOrderStatus))) {
+              previousStatus = String(parsed.workOrderStatus);
+            }
+          } catch {
+            previousStatus = 'OPEN';
+          }
+          const currentStatus = String(workOrder?.status ?? 'OPEN');
+          const nextStatus = ['COMPLETED', 'CANCELLED'].includes(currentStatus)
+            ? currentStatus
+            : otherActiveIssue
+              ? 'WAITING_PARTS'
+              : previousStatus;
+          const reversedAt = now();
+          sqlite
+            .prepare(
+              `UPDATE asset_maintenance_work_orders SET status = ?, updated_at = ? WHERE id = ?`
+            )
+            .run(nextStatus, reversedAt, issue.asset_maintenance_work_order_id);
+          sqlite
+            .prepare(`UPDATE managed_assets SET version = version + 1, updated_at = ? WHERE id = ?`)
+            .run(reversedAt, issue.target_id);
+          sqlite
+            .prepare(
+              `INSERT INTO asset_action_history
+               (id, asset_id, action_type, actor_user_id, reason, before_json, after_json,
+                request_context_json, created_at)
+               VALUES (?, ?, 'ASSET_PARTS_REQUEST_REVERSED', ?, ?, ?, ?, '{}', ?)`
+            )
+            .run(
+              `asset-history-${nanoid(10)}`,
+              issue.target_id,
+              actorUserId,
+              `Inventory issue ${String(issue.issue_number)} reversed.`,
+              JSON.stringify({
+                workOrderId: issue.asset_maintenance_work_order_id,
+                workOrderStatus: currentStatus,
+                issueId: issue.id
+              }),
+              JSON.stringify({
+                workOrderId: issue.asset_maintenance_work_order_id,
+                workOrderStatus: nextStatus,
+                issueId: issue.id
+              }),
+              reversedAt
+            );
+        }
       }
       this.createAccountingEvent({
         eventType: 'INVENTORY_REVERSAL',

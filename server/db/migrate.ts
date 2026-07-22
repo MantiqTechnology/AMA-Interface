@@ -958,7 +958,9 @@ const canonicalShapeRequirements = [
   { table: 'passenger_ticket_reschedules', column: 'new_flight_operation_id' },
   { table: 'invoices', column: 'flight_operation_id' },
   { table: 'invoices', column: 'created_by_user_id' },
-  { table: 'flight_fuel_requests', column: 'currency_id' }
+  { table: 'flight_fuel_requests', column: 'currency_id' },
+  { table: 'asset_register', column: 'source_journal_entry_id' },
+  { table: 'asset_register', column: 'cost_minor' }
 ];
 
 const accountingIntegrityStatements = [

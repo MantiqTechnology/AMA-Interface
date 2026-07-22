@@ -150,21 +150,7 @@ export const corporateAssetStatements = [
     request_context_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_asset_history_asset ON asset_action_history(asset_id, created_at)`,
-  `CREATE TABLE IF NOT EXISTS asset_register (
-    id TEXT PRIMARY KEY,
-    asset_number TEXT NOT NULL UNIQUE,
-    managed_asset_id TEXT UNIQUE REFERENCES managed_assets(id),
-    asset_name TEXT NOT NULL,
-    acquisition_value_minor INTEGER NOT NULL DEFAULT 0,
-    accumulated_depreciation_minor INTEGER NOT NULL DEFAULT 0,
-    current_book_value_minor INTEGER NOT NULL DEFAULT 0,
-    currency_code TEXT NOT NULL DEFAULT 'IDR',
-    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DISPOSED', 'REVERSED')),
-    as_of_date TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`
+  `CREATE INDEX IF NOT EXISTS idx_asset_history_asset ON asset_action_history(asset_id, created_at)`
 ];
 
 export const corporateAssetDropStatements = [

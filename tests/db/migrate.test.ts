@@ -97,6 +97,21 @@ describe('database migrations', () => {
     sqlite.close();
   });
 
+  it('rejects the pre-accounting Corporate Assets financial projection shape', () => {
+    const sqlite = new Database(':memory:');
+
+    sqlite.exec(`CREATE TABLE asset_register (
+      id TEXT PRIMARY KEY,
+      asset_number TEXT NOT NULL UNIQUE,
+      managed_asset_id TEXT,
+      acquisition_value_minor INTEGER NOT NULL DEFAULT 0,
+      current_book_value_minor INTEGER NOT NULL DEFAULT 0
+    )`);
+
+    expect(() => runMigrations(sqlite)).toThrow(/asset_register missing source_journal_entry_id/u);
+    sqlite.close();
+  });
+
   it('drops obsolete pre-cleanup tables during demo reset', () => {
     const sqlite = new Database(':memory:');
 
