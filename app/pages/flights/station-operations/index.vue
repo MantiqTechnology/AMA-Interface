@@ -107,15 +107,23 @@ interface StationDataset {
 // ---------------------------------------------------------------------------
 
 const STATION_OPTIONS: StationOption[] = [
-  { code: 'DJJ', name: 'Jakarta (HLP)' },
-  { code: 'BIK', name: 'Biak (BIK)' },
-  { code: 'TIM', name: 'Timika (TIM)' },
-  { code: 'MKW', name: 'Manokwari (MKW)' }
+  { code: 'DJJ', name: 'Sentani / Jayapura' },
+  { code: 'WMX', name: 'Wamena' },
+  { code: 'TIM', name: 'Timika' },
+  { code: 'NBX', name: 'Nabire' },
+  { code: 'OKS', name: 'Oksibil' },
+  { code: 'DEX', name: 'Dekai' },
+  { code: 'MKQ', name: 'Merauke' }
 ];
 
 // Simulasi station scope milik Station Admin yang sedang login.
 // Kalau panjangnya > 1, selector otomatis enabled + multiple (skenario OCC).
-const stationScope = ref<string[]>(['DJJ']);
+const { currentPersona } = useDemoSession();
+const stationScope = computed(() =>
+  currentPersona.value.stationScope.includes('ALL')
+    ? STATION_OPTIONS.map((station) => station.code)
+    : currentPersona.value.stationScope
+);
 
 const canChangeStation = computed(() => stationScope.value.length > 1);
 const stationOptions = computed(() =>
@@ -134,6 +142,35 @@ function todayIso() {
 }
 
 const selectedStationCode = ref<string>(stationScope.value[0] ?? 'DJJ');
+watch(stationScope, (scope) => {
+  if (!scope.includes(selectedStationCode.value)) selectedStationCode.value = scope[0] ?? 'DJJ';
+});
+const { can } = useAuthorization();
+const corporateAssetSummary = ref<{
+  total: number;
+  serviceable: number;
+  maintenance: number;
+} | null>(null);
+watch(
+  selectedStationCode,
+  async (code) => {
+    if (!can('asset.read').allowed) {
+      corporateAssetSummary.value = null;
+      return;
+    }
+    const result = await fetchApi<any>('/api/asset-management/assets', {
+      query: { stationId: `st-${code.toLowerCase()}`, limit: 250 }
+    });
+    corporateAssetSummary.value = {
+      total: result.total,
+      serviceable: result.items.filter((item: any) => item.conditionStatus === 'SERVICEABLE')
+        .length,
+      maintenance: result.items.filter((item: any) => item.conditionStatus === 'UNDER_MAINTENANCE')
+        .length
+    };
+  },
+  { immediate: true }
+);
 const operationalDate = ref<string>(todayIso());
 
 const GOLDEN_STATION = 'DJJ';
@@ -1179,6 +1216,17 @@ function exportDailyReportCsv() {
             @click="refreshAll"
           />
         </div>
+        <VBtn
+          v-if="corporateAssetSummary"
+          :to="`/asset-management/register?stationId=st-${selectedStationCode.toLowerCase()}`"
+          variant="tonal"
+          prepend-icon="mdi-package-variant-closed"
+        >
+          Corporate Assets: {{ corporateAssetSummary.serviceable }}/{{
+            corporateAssetSummary.total
+          }}
+          serviceable · {{ corporateAssetSummary.maintenance }} maintenance
+        </VBtn>
       </div>
     </div>
 

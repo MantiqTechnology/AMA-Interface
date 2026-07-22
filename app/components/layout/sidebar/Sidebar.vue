@@ -237,51 +237,27 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Asset Management',
+      label: 'Corporate Assets',
       icon: 'mdi-toolbox-outline',
-      visible: true,
+      visible: can('asset.read').allowed,
       children: [
         {
           label: 'Overview',
           to: '/asset-management/overview',
           icon: 'mdi-view-dashboard-outline',
-          visible: true
+          visible: can('asset.read').allowed
         },
         {
           label: 'Asset Register',
           to: '/asset-management/register',
           icon: 'mdi-clipboard-list-outline',
-          visible: true
+          visible: can('asset.read').allowed
         },
         {
-          label: 'Asset Assignment',
-          to: '/asset-management/assignment',
-          icon: 'mdi-account-arrow-right-outline',
-          visible: true
-        },
-        {
-          label: 'Asset Maintenance',
+          label: 'Maintenance Queue',
           to: '/asset-management/maintenance',
           icon: 'mdi-wrench-outline',
-          visible: true
-        },
-        {
-          label: 'Asset Movement',
-          to: '/asset-management/movement',
-          icon: 'mdi-swap-horizontal',
-          visible: true
-        },
-        {
-          label: 'Asset Finance',
-          to: '/asset-management/finance',
-          icon: 'mdi-cash-multiple',
-          visible: true
-        },
-        {
-          label: 'Asset Audit',
-          to: '/asset-management/audit',
-          icon: 'mdi-clipboard-check-outline',
-          visible: true
+          visible: can('asset.read').allowed
         }
       ].filter((child) => child.visible)
     },

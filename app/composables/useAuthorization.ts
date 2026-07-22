@@ -5,6 +5,7 @@ const moduleCatalog = [
   { key: 'ticketing', name: 'Passenger & Cargo Ticketing', category: 'Commercial' },
   { key: 'finance', name: 'Finance & Billing', category: 'Finance' },
   { key: 'inventory', name: 'Inventory & Spare Parts', category: 'Operations' },
+  { key: 'corporate-assets', name: 'Corporate Assets', category: 'Operations' },
   { key: 'master-data', name: 'Master Data', category: 'Administration' }
 ];
 
@@ -32,6 +33,7 @@ export function useAuthorization() {
     return moduleCatalog.filter((module) => {
       if (module.key === 'operations') return can('flight.read').allowed;
       if (module.key === 'inventory') return can('inventory.read').allowed;
+      if (module.key === 'corporate-assets') return can('asset.read').allowed;
       if (module.key === 'master-data') return can('platform.module.manage').allowed;
       return true;
     });
