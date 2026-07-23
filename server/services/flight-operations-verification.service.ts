@@ -1105,9 +1105,9 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       const evidenceCount = this.sqlite
         .prepare(
           `SELECT COUNT(*) as count FROM flight_verification_evidence
-           WHERE station_task_id = ? AND uploaded_at >= ?`
+           WHERE station_task_id = ?`
         )
-        .get(input.taskId, currentTask.updated_at) as { count: number };
+        .get(input.taskId) as { count: number };
 
       if (evidenceCount.count === 0) {
         throw new DomainError(
