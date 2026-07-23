@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { fetchApi } from '../../../composables/useApiEnvelope';
+import type { LocalUploadDto } from '#shared/contracts/uploads';
 import type { StationOption as MasterStationOption } from '#shared/features/operations/stations';
 
 type FlightDirection = 'INBOUND' | 'OUTBOUND';
@@ -746,7 +747,7 @@ async function runTaskAction(
 const evidenceDialog = ref(false);
 const evidenceTaskId = ref('');
 const evidenceTaskVersion = ref(0);
-const evidenceFileName = ref('');
+const evidenceFile = ref<File | File[] | null>(null);
 const evidenceNotes = ref('');
 const rejectionDialog = ref(false);
 const rejectionTaskId = ref('');
@@ -756,22 +757,34 @@ const rejectionReason = ref('');
 function openEvidence(task: StationTaskRow) {
   evidenceTaskId.value = task.id;
   evidenceTaskVersion.value = task.version;
-  evidenceFileName.value = '';
+  evidenceFile.value = null;
   evidenceNotes.value = '';
   evidenceDialog.value = true;
 }
 
+function selectedEvidenceFile() {
+  return Array.isArray(evidenceFile.value) ? evidenceFile.value[0] : evidenceFile.value;
+}
+
 async function addTaskEvidence() {
-  if (!evidenceFileName.value.trim()) return;
+  const file = selectedEvidenceFile();
+  if (!file) return;
   loadingId.value = evidenceTaskId.value;
   actionError.value = '';
   actionSuccess.value = '';
   try {
+    const form = new FormData();
+    form.append('file', file);
+    const upload = await fetchApi<LocalUploadDto>('/api/uploads', {
+      method: 'POST',
+      body: form
+    });
     await fetchApi(`/api/flight-operations/station-tasks/${evidenceTaskId.value}/evidence`, {
       method: 'POST',
       body: {
         expectedVersion: evidenceTaskVersion.value,
-        fileName: evidenceFileName.value,
+        uploadId: upload.id,
+        fileName: upload.originalName,
         documentType: 'STATION_OPERATION_EVIDENCE',
         notes: evidenceNotes.value || undefined
       }
@@ -2167,11 +2180,14 @@ function exportDailyReportCsv() {
       <VCard>
         <VCardTitle>Add verification evidence</VCardTitle>
         <VCardText class="flex flex-col gap-4">
-          <VTextField
-            v-model="evidenceFileName"
-            label="Evidence file/reference"
-            hint="Use the uploaded file name or controlled document reference."
+          <VFileInput
+            v-model="evidenceFile"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+            hint="Maximum 25 MB. Stored in the application upload folder."
+            label="Choose evidence file"
             persistent-hint
+            prepend-icon="mdi-paperclip"
+            show-size
             variant="outlined"
           />
           <VTextarea v-model="evidenceNotes" label="Notes" rows="3" variant="outlined" />
@@ -2181,12 +2197,12 @@ function exportDailyReportCsv() {
           <VBtn variant="text" @click="evidenceDialog = false">Cancel</VBtn>
           <VBtn
             color="primary"
-            :disabled="!evidenceFileName.trim()"
+            :disabled="!selectedEvidenceFile()"
             :loading="loadingId === evidenceTaskId"
-            prepend-icon="mdi-attachment"
+            prepend-icon="mdi-upload"
             @click="addTaskEvidence"
           >
-            Attach evidence
+            Upload evidence
           </VBtn>
         </VCardActions>
       </VCard>

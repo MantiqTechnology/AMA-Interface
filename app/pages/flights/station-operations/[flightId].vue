@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { LocalUploadDto } from '#shared/contracts/uploads';
+
 type Task = {
   id: string;
   stationId: string;
@@ -59,6 +61,7 @@ type WorkbenchFlight = {
   evidence: Array<{
     id: string;
     stationTaskId: string | null;
+    uploadId: string | null;
     taskCode: string | null;
     documentType: string;
     fileName: string;
@@ -232,25 +235,36 @@ async function taskAction(task: Task, action: 'start' | 'verify' | 'approve-occ'
 
 const evidenceDialog = ref(false);
 const selectedTask = ref<Task | null>(null);
-const evidenceFileName = ref('');
+const evidenceFile = ref<File | File[] | null>(null);
 const evidenceNotes = ref('');
 function openEvidence(task: Task) {
   selectedTask.value = task;
-  evidenceFileName.value = '';
+  evidenceFile.value = null;
   evidenceNotes.value = '';
   evidenceDialog.value = true;
 }
+function selectedEvidenceFile() {
+  return Array.isArray(evidenceFile.value) ? evidenceFile.value[0] : evidenceFile.value;
+}
 async function saveEvidence() {
-  if (!selectedTask.value || !evidenceFileName.value.trim()) return;
+  const file = selectedEvidenceFile();
+  if (!selectedTask.value || !file) return;
   loadingId.value = `${selectedTask.value.id}-evidence`;
   actionError.value = '';
   actionSuccess.value = '';
   try {
+    const form = new FormData();
+    form.append('file', file);
+    const upload = await fetchApi<LocalUploadDto>('/api/uploads', {
+      method: 'POST',
+      body: form
+    });
     await fetchApi(`/api/flight-operations/station-tasks/${selectedTask.value.id}/evidence`, {
       method: 'POST',
       body: {
         expectedVersion: selectedTask.value.version,
-        fileName: evidenceFileName.value,
+        uploadId: upload.id,
+        fileName: upload.originalName,
         documentType: 'STATION_OPERATION_EVIDENCE',
         notes: evidenceNotes.value || undefined
       }
@@ -568,7 +582,19 @@ async function saveReconciliation() {
                     :key="item.id"
                     :subtitle="`${item.taskCode ?? 'Flight'} · ${formatDateTime(item.uploadedAt)} · ${item.uploadedByUserId}`"
                     :title="item.fileName"
-                  />
+                  >
+                    <template v-if="item.uploadId" #append>
+                      <VBtn
+                        append-icon="mdi-open-in-new"
+                        :href="`/api/uploads/${encodeURIComponent(item.uploadId)}/file`"
+                        size="small"
+                        target="_blank"
+                        variant="text"
+                      >
+                        View
+                      </VBtn>
+                    </template>
+                  </VListItem>
                   <VListItem v-if="flight.evidence.length === 0" title="No evidence uploaded" />
                 </VList>
               </VCard>
@@ -764,14 +790,30 @@ async function saveReconciliation() {
       <VCard>
         <VCardTitle>Add station evidence</VCardTitle>
         <VCardText>
-          <VTextField v-model="evidenceFileName" label="File / upload reference" />
+          <VFileInput
+            v-model="evidenceFile"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+            label="Choose evidence file"
+            prepend-icon="mdi-paperclip"
+            show-size
+            variant="outlined"
+          />
+          <div class="mb-3 text-caption text-text-muted">
+            Maximum 25 MB. The file is stored in the application upload folder.
+          </div>
           <VTextarea v-model="evidenceNotes" label="Notes" />
         </VCardText>
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="evidenceDialog = false">Cancel</VBtn>
-          <VBtn color="primary" :disabled="!evidenceFileName.trim()" @click="saveEvidence">
-            Save evidence
+          <VBtn
+            color="primary"
+            :disabled="!selectedEvidenceFile()"
+            :loading="loadingId === `${selectedTask?.id}-evidence`"
+            prepend-icon="mdi-upload"
+            @click="saveEvidence"
+          >
+            Upload evidence
           </VBtn>
         </VCardActions>
       </VCard>

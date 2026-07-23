@@ -12,8 +12,14 @@ import type {
 
 const route = useRoute();
 const id = computed(() => String(route.params.id));
-const activeTab = ref('overview');
+const detailTabs = ['overview', 'readiness', 'assignment', 'approval', 'records', 'history'];
+const activeTab = ref(
+  typeof route.query.tab === 'string' && detailTabs.includes(route.query.tab)
+    ? route.query.tab
+    : 'overview'
+);
 const actionError = ref('');
+const actionSuccess = ref('');
 const actionLoading = ref(false);
 const reasonDialog = ref(false);
 const reasonAction = ref<'cancel' | 'divert' | 'reopen'>('cancel');
@@ -26,6 +32,11 @@ const historyFilter = ref('ALL');
 const actualTimeDialog = ref(false);
 const actualTimeAction = ref<'depart' | 'land'>('depart');
 const { can } = useAuthorization();
+
+watch(activeTab, (tab) => {
+  if (route.query.tab === tab) return;
+  void navigateTo({ query: { ...route.query, tab } }, { replace: true });
+});
 
 const { data: aircraftOptions } = await useAsyncData(
   'aircraft-options',
@@ -343,6 +354,7 @@ function actionUrl(action: string) {
 
 async function runAction(action: string) {
   actionError.value = '';
+  actionSuccess.value = '';
   if (action === 'depart' || action === 'land') {
     actualTimeAction.value = action;
     actualTimeDialog.value = true;
@@ -363,6 +375,7 @@ async function runAction(action: string) {
         : {}
     });
     await refresh();
+    actionSuccess.value = `${action.replaceAll('-', ' ')} completed successfully.`;
   } catch (errorValue) {
     actionError.value = errorValue instanceof Error ? errorValue.message : 'Action failed';
   } finally {
@@ -373,6 +386,7 @@ async function runAction(action: string) {
 async function submitActualTime(body: { actualAt: string; stationId: string; note?: string }) {
   actionLoading.value = true;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi<FlightOperationDetailDto>(actionUrl(actualTimeAction.value), {
       method: 'POST',
@@ -380,6 +394,8 @@ async function submitActualTime(body: { actualAt: string; stationId: string; not
     });
     actualTimeDialog.value = false;
     await refresh();
+    actionSuccess.value =
+      actualTimeAction.value === 'depart' ? 'Departure recorded.' : 'Landing recorded.';
   } catch (errorValue) {
     actionError.value = errorValue instanceof Error ? errorValue.message : 'Actual time failed';
   } finally {
@@ -390,6 +406,7 @@ async function submitActualTime(body: { actualAt: string; stationId: string; not
 async function submitReasonAction() {
   actionLoading.value = true;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi<FlightOperationDetailDto>(actionUrl(reasonAction.value), {
       method: 'POST',
@@ -404,6 +421,7 @@ async function submitReasonAction() {
     reasonNote.value = '';
     diversionStationId.value = '';
     await refresh();
+    actionSuccess.value = `${reasonAction.value.replaceAll('-', ' ')} completed successfully.`;
   } catch (errorValue) {
     actionError.value = errorValue instanceof Error ? errorValue.message : 'Action failed';
   } finally {
@@ -567,31 +585,56 @@ function historyActor(item: FlightStatusHistoryDto) {
           <div class="status-strip">
             <VIcon icon="mdi-account-box-multiple-outline" />
             <span>Manifest</span>
-            <strong>{{ cargoManifest?.status ?? 'NOT STARTED' }}</strong>
+            <DsStatusBadge :value="cargoManifest?.status ?? 'NOT_STARTED'" />
           </div>
           <div class="status-strip">
             <VIcon icon="mdi-fuel" />
             <span>Fuel</span>
-            <strong>{{ fuel?.status ?? 'NOT STARTED' }}</strong>
+            <DsStatusBadge :value="fuel?.status ?? 'NOT_STARTED'" />
           </div>
           <div class="status-strip">
             <VIcon icon="mdi-airport" />
             <span>Handling</span>
-            <strong>
-              {{ handlingConfirmedCount ? 'PARTIAL' : 'PENDING' }}
-            </strong>
+            <DsStatusBadge :value="handlingConfirmedCount ? 'PARTIAL' : 'PENDING'" />
           </div>
           <div class="status-strip">
             <VIcon icon="mdi-cash-check" />
             <span>Finance</span>
-            <strong>{{
-              flight.currentStatus === 'CLOSED' ? 'BILLABLE' : 'NOT YET BILLABLE'
-            }}</strong>
+            <DsStatusBadge
+              :value="flight.currentStatus === 'CLOSED' ? 'BILLABLE' : 'NOT_YET_BILLABLE'"
+            />
           </div>
         </div>
       </section>
 
-      <VTabs v-model="activeTab" class="workspace-tabs mb-4 border-b bg-background" show-arrows>
+      <div class="mb-3 flex flex-wrap gap-2">
+        <VBtn
+          prepend-icon="mdi-account-box-multiple-outline"
+          size="small"
+          :to="`/flights/${flight.id}/manifest`"
+          variant="tonal"
+        >
+          Manifest
+        </VBtn>
+        <VBtn
+          prepend-icon="mdi-airport"
+          size="small"
+          :to="`/flights/station-operations/${flight.id}`"
+          variant="tonal"
+        >
+          Station Operations
+        </VBtn>
+        <VBtn prepend-icon="mdi-fuel" size="small" to="/flights/fuel" variant="tonal">
+          Fuel Control
+        </VBtn>
+      </div>
+
+      <VTabs
+        v-model="activeTab"
+        class="workspace-tabs mb-4 border-b bg-background"
+        color="primary"
+        show-arrows
+      >
         <VTab value="overview">Overview</VTab>
         <VTab value="readiness">Readiness</VTab>
         <VTab value="assignment">Assignment</VTab>
@@ -834,25 +877,9 @@ function historyActor(item: FlightStatusHistoryDto) {
             <VBtn prepend-icon="mdi-playlist-check" variant="tonal" @click="runAction('evaluate')">
               Run Readiness Check
             </VBtn>
-            <VTooltip
-              :text="
-                blockingIssues.length
-                  ? 'Clear blocking issues before requesting approval.'
-                  : 'Request approval'
-              "
-            >
-              <template #activator="{ props }">
-                <span v-bind="props">
-                  <VBtn
-                    color="secondary"
-                    :disabled="blockingIssues.length > 0"
-                    prepend-icon="mdi-send-check-outline"
-                  >
-                    Request Approval
-                  </VBtn>
-                </span>
-              </template>
-            </VTooltip>
+            <VAlert v-if="blockingIssues.length" density="compact" type="warning" variant="tonal">
+              Resolve blockers before approval.
+            </VAlert>
           </section>
 
           <div class="grid gap-4 lg:grid-cols-2">
@@ -1319,7 +1346,13 @@ function historyActor(item: FlightStatusHistoryDto) {
                   </span>
                   <FlightsFlightStatusChip :status="item.status" />
                 </div>
+                <div v-if="flight.attachments.length === 0" class="empty-compact">
+                  No legacy attachment recorded.
+                </div>
               </div>
+            </section>
+            <section class="xl:col-span-2">
+              <DocumentPanel owner-type="flight" :owner-id="flight.id" />
             </section>
           </div>
         </VWindowItem>
@@ -1480,6 +1513,9 @@ function historyActor(item: FlightStatusHistoryDto) {
           </VCardActions>
         </VCard>
       </VDialog>
+      <VSnackbar v-model="actionSuccess" color="success" location="top end" timeout="3000">
+        {{ actionSuccess }}
+      </VSnackbar>
     </template>
   </VContainer>
 </template>

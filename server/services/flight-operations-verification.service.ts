@@ -895,6 +895,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           .map((item) => ({
             id: String(item.id),
             stationTaskId: item.station_task_id ? String(item.station_task_id) : null,
+            uploadId: item.upload_id ? String(item.upload_id) : null,
             taskCode: item.task_code ? String(item.task_code) : null,
             documentType: String(item.document_type),
             fileName: String(item.file_name),
