@@ -57,6 +57,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'master_data.read',
     'station.task.view',
     'readiness.view',
+    'flight.manifest.view',
     'flight.closure.execute'
   ],
   OCC: [
@@ -81,6 +82,14 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'station.signoff.approve',
     'readiness.view',
     'readiness.attest',
+    'flight.manifest.view',
+    'flight.manifest.sensitive.read',
+    'flight.manifest.review',
+    'flight.manifest.lock',
+    'flight.manifest.unlock',
+    'flight.manifest.dg.decide',
+    'flight.departure.assurance.evaluate',
+    'flight.departure.ready',
     'flight.departure.execute'
   ],
   'Station Admin': [
@@ -108,7 +117,12 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'station.origin.signoff',
     'station.destination.signoff',
     'readiness.view',
-    'readiness.attest'
+    'readiness.attest',
+    'flight.manifest.view',
+    'flight.manifest.sensitive.read',
+    'flight.manifest.prepare',
+    'flight.manifest.submit',
+    'flight.checkin.close'
   ],
   'Finance Reviewer': [
     'platform.dashboard.view',

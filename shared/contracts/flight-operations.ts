@@ -9,6 +9,8 @@ export const flightOperationStatuses = [
   'APPROVED',
   'SCHEDULED',
   'CHECK_IN_OPEN',
+  'CHECK_IN_CLOSED',
+  'READY_FOR_DEPARTURE',
   'IN_PROGRESS',
   'LANDED',
   'PENDING_CLOSURE',
@@ -69,6 +71,16 @@ export const flightActionTypeSchema = z.enum([
   'APPROVE',
   'SCHEDULE',
   'OPEN_CHECK_IN',
+  'CLOSE_CHECK_IN',
+  'DEPARTURE_ASSURANCE_EVALUATED',
+  'MARK_READY_FOR_DEPARTURE',
+  'MANIFEST_SUBMIT',
+  'MANIFEST_APPROVE',
+  'MANIFEST_REJECT',
+  'MANIFEST_LOCK',
+  'MANIFEST_UNLOCK',
+  'DG_ACCEPT',
+  'DG_REJECT',
   'DEPART',
   'LAND',
   'MARK_PENDING_CLOSURE',
@@ -121,6 +133,8 @@ export const aircraftServiceabilityStatusSchema = z.enum([
   'UNSERVICEABLE'
 ]);
 export const financeHandoffStatusSchema = z.enum(['DRAFT', 'READY', 'POSTED', 'VOID']);
+export const assurancePhaseSchema = z.enum(['PLANNING', 'DEPARTURE']);
+export const dgDecisionSchema = z.enum(['ACCEPTED', 'REJECTED']);
 export const financeHandoffEventTypeSchema = z.enum([
   'FUEL_COST_DRAFT',
   'STATION_COST_DRAFT',
@@ -161,6 +175,48 @@ const nullableNonnegativeNumberSchema = z.preprocess(
   z.coerce.number().nonnegative().nullable().optional()
 );
 
+// Concurrency + manifest command bodies (Manifest Control & Departure Assurance)
+export const flightConcurrencyBodySchema = z.object({
+  expectedUpdatedAt: isoDateTimeSchema,
+  note: z.string().trim().max(500).optional()
+});
+export type FlightConcurrencyBody = z.infer<typeof flightConcurrencyBodySchema>;
+
+export const manifestExpectedVersionSchema = z.object({
+  expectedVersion: z.coerce.number().int().min(1)
+});
+
+export const emptyLoadSubmitBodySchema = manifestExpectedVersionSchema.extend({
+  emptyLoadReason: z.string().trim().min(1).max(500).optional()
+});
+export type EmptyLoadSubmitBody = z.infer<typeof emptyLoadSubmitBodySchema>;
+
+export const manifestRejectBodySchema = manifestExpectedVersionSchema.extend({
+  reason: z.string().trim().min(1).max(500)
+});
+export type ManifestRejectBody = z.infer<typeof manifestRejectBodySchema>;
+
+export const manifestUnlockBodySchema = manifestExpectedVersionSchema.extend({
+  reason: z.string().trim().min(1).max(500)
+});
+export type ManifestUnlockBody = z.infer<typeof manifestUnlockBodySchema>;
+
+export const dgDecisionBodySchema = manifestExpectedVersionSchema.extend({
+  decision: dgDecisionSchema,
+  reason: z.string().trim().min(1).max(500),
+  evidenceIds: z.array(z.string().trim().min(1)).min(1)
+});
+export type DgDecisionBody = z.infer<typeof dgDecisionBodySchema>;
+
+// Contextual display label for CHECK_IN_CLOSED per service type
+export const checkInClosedLabels: Record<FlightServiceType, string> = {
+  SCHEDULED_PASSENGER: 'Check-in Closed',
+  CHARTER_PASSENGER: 'Check-in Closed',
+  CHARTER_CARGO: 'Load Intake Closed',
+  MEDEVAC: 'Patient/Medical Load Finalized',
+  POSITIONING: 'Departure Preparation Finalized'
+};
+
 export type FlightOperationStatus = z.infer<typeof flightOperationStatusSchema>;
 export type FlightRequestStatus = z.infer<typeof flightRequestStatusSchema>;
 export type FlightApprovalType = z.infer<typeof flightApprovalTypeSchema>;
@@ -182,6 +238,9 @@ export type MaintenanceHandoffStatus = z.infer<typeof maintenanceHandoffStatusSc
 export type AircraftServiceabilityStatus = z.infer<typeof aircraftServiceabilityStatusSchema>;
 export type FinanceHandoffEventType = z.infer<typeof financeHandoffEventTypeSchema>;
 export type FinanceHandoffStatus = z.infer<typeof financeHandoffStatusSchema>;
+export type AssurancePhase = z.infer<typeof assurancePhaseSchema>;
+export type DgDecision = z.infer<typeof dgDecisionSchema>;
+export type AssurancePhaseCode = z.infer<typeof assurancePhaseSchema>;
 
 export type FlightOperationLookupOption = {
   value: string;
@@ -294,6 +353,7 @@ export type FlightReadinessCheckDto = {
   actionHref: string | null;
   classification:
     'SYSTEM_CHECK' | 'MANUAL_ATTESTATION' | 'ENFORCED' | 'INFORMATIONAL' | 'NOT_IMPLEMENTED';
+  assurancePhase: AssurancePhaseCode | null;
   calculationStatus: 'PASS' | 'FAIL' | 'NOT_APPLICABLE' | 'UNKNOWN';
   verificationStatus:
     'NOT_REQUIRED' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'EXPIRED' | 'MODULE_UNAVAILABLE';
@@ -329,6 +389,15 @@ export type FlightManifestDto = {
   cargoActualWeightKg: number;
   dgPendingCount: number;
   dgRejectedCount: number;
+  version: number;
+  submittedByUserId: string | null;
+  submittedAt: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
+  lockedByUserId: string | null;
+  lockedAt: string | null;
+  rejectionReason: string | null;
+  emptyLoadReason: string | null;
 };
 
 export type FlightManifestPassengerDto = {
@@ -355,6 +424,10 @@ export type FlightManifestCargoDto = {
   dgCategoryId: string | null;
   dgCategoryLabel: string | null;
   dgAcceptanceStatus: DgAcceptanceStatus;
+  dgDecisionByUserId: string | null;
+  dgDecisionAt: string | null;
+  dgDecisionReason: string | null;
+  dgEvidenceIds: string[];
   remarks: string | null;
 };
 
@@ -782,6 +855,14 @@ export const stationTaskIdParamsSchema = z.object({
   id: z.string().min(1)
 });
 
+export const manifestIdParamsSchema = z.object({
+  manifestId: z.string().min(1)
+});
+
+export const cargoItemIdParamsSchema = z.object({
+  cargoItemId: z.string().min(1)
+});
+
 export const startStationTaskBodySchema = z.object({
   expectedVersion: z.coerce.number().int().positive()
 });
@@ -873,6 +954,7 @@ export const actualTimeBodySchema = z.object({
 
 export const createPassengerBodySchema = z.object({
   manifestId: z.string().min(1),
+  expectedVersion: z.coerce.number().int().positive(),
   fullName: z.string().trim().min(1),
   identityType: nullableTextSchema,
   identityNumber: nullableTextSchema,
@@ -884,6 +966,7 @@ export const createPassengerBodySchema = z.object({
 
 export const createCargoBodySchema = z.object({
   manifestId: z.string().min(1),
+  expectedVersion: z.coerce.number().int().positive(),
   description: z.string().trim().min(1),
   senderName: nullableTextSchema,
   receiverName: nullableTextSchema,

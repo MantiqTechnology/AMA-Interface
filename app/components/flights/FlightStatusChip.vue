@@ -7,12 +7,13 @@ const props = defineProps<{
 
 const color = computed(() => {
   const value = props.status;
-  if (['CLOSED', 'READY_FOR_APPROVAL', 'APPROVED'].includes(value)) return 'success';
+  if (['CLOSED', 'READY_FOR_APPROVAL', 'APPROVED', 'READY_FOR_DEPARTURE'].includes(value))
+    return 'success';
   if (['BLOCKED', 'CANCELLED', 'DIVERTED'].includes(value)) return 'error';
   if (['PENDING_READINESS', 'PENDING_CLOSURE', 'REOPENED_FOR_CORRECTION'].includes(value)) {
     return 'warning';
   }
-  if (['IN_PROGRESS', 'LANDED', 'CHECK_IN_OPEN'].includes(value)) return 'info';
+  if (['IN_PROGRESS', 'LANDED', 'CHECK_IN_OPEN', 'CHECK_IN_CLOSED'].includes(value)) return 'info';
   return 'secondary';
 });
 

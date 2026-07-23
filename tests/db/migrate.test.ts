@@ -480,3 +480,177 @@ describe('database migrations', () => {
     sqlite.close();
   });
 });
+
+describe('manifest assurance migration', () => {
+  function columnNames(sqlite: Database.Database, table: string) {
+    return (sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+      (column) => column.name
+    );
+  }
+
+  function insertStationAndRoute(sqlite: Database.Database) {
+    const station = sqlite.prepare(`INSERT INTO stations (
+      id, station_code, station_name, city_or_region, province, airport_type, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'now', 'now')`);
+    station.run('sta-org', 'ORG', 'Origin', 'Origin', 'Papua', 'AIRPORT');
+    station.run('sta-dst', 'DST', 'Destination', 'Destination', 'Papua', 'AIRPORT');
+    sqlite
+      .prepare(
+        `INSERT INTO routes (
+           id, route_code, origin_station_id, destination_station_id,
+           estimated_duration_minutes, distance_km, created_at, updated_at
+         ) VALUES ('route-org-dst', 'ORG-DST', 'sta-org', 'sta-dst', 60, 120, 'now', 'now')`
+      )
+      .run();
+  }
+
+  function insertFlight(sqlite: Database.Database, id: string, statusLookupId: string) {
+    sqlite
+      .prepare(
+        `INSERT INTO flight_operations (
+           id, order_number, flight_number, flight_date, flight_type_id, service_type_id,
+           priority_id, route_id, origin_station_id, destination_station_id,
+           current_status_id, created_at, updated_at
+         ) VALUES (?, ?, ?, '2026-08-01', 'flight-type-passenger', 'flight-service-type-scheduled-passenger',
+                   'flight-priority-normal', 'route-org-dst', 'sta-org', 'sta-dst', ?, 'now', 'now')`
+      )
+      .run(id, `ORD-${id}`, `FLT-${id}`, statusLookupId);
+  }
+
+  it('adds manifest assurance columns and seeds new statuses and action types', () => {
+    const sqlite = new Database(':memory:');
+    runMigrations(sqlite);
+
+    expect(columnNames(sqlite, 'flight_readiness_checks')).toContain('assurance_phase');
+    expect(columnNames(sqlite, 'flight_operational_audit')).toEqual(
+      expect.arrayContaining(['before_version', 'after_version'])
+    );
+    expect(columnNames(sqlite, 'flight_manifests')).toEqual(
+      expect.arrayContaining([
+        'version',
+        'submitted_by_user_id',
+        'submitted_at',
+        'locked_by_user_id',
+        'rejection_reason',
+        'empty_load_reason',
+        'empty_load_confirmed_by_user_id',
+        'empty_load_confirmed_at'
+      ])
+    );
+    expect(columnNames(sqlite, 'flight_manifest_cargo_items')).toEqual(
+      expect.arrayContaining([
+        'dg_decided_by_user_id',
+        'dg_decided_at',
+        'dg_decision_reason',
+        'dg_evidence_ids'
+      ])
+    );
+
+    const statusCodes = (
+      sqlite.prepare('SELECT code FROM flight_operation_statuses').all() as Array<{ code: string }>
+    ).map((row) => row.code);
+    expect(statusCodes).toEqual(expect.arrayContaining(['CHECK_IN_CLOSED', 'READY_FOR_DEPARTURE']));
+    const actionCodes = (
+      sqlite.prepare('SELECT code FROM flight_action_types').all() as Array<{ code: string }>
+    ).map((row) => row.code);
+    expect(actionCodes).toEqual(
+      expect.arrayContaining([
+        'CLOSE_CHECK_IN',
+        'DEPARTURE_ASSURANCE_EVALUATED',
+        'MARK_READY_FOR_DEPARTURE',
+        'MANIFEST_SUBMIT',
+        'MANIFEST_APPROVE',
+        'MANIFEST_REJECT',
+        'MANIFEST_LOCK',
+        'MANIFEST_UNLOCK',
+        'DG_ACCEPT',
+        'DG_REJECT'
+      ])
+    );
+    expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    sqlite.close();
+  });
+
+  it('backfills assurance phase and creates departure checks only for planning-approved flights', () => {
+    const sqlite = new Database(':memory:');
+    runMigrations(sqlite);
+    insertStationAndRoute(sqlite);
+    insertFlight(sqlite, 'flt-scheduled', 'flight-operation-status-scheduled');
+    insertFlight(sqlite, 'flt-closed', 'flight-operation-status-closed');
+
+    const insertCheck = sqlite.prepare(`INSERT INTO flight_readiness_checks (
+      id, flight_id, check_code, check_name, status_id, is_required, created_at, updated_at
+    ) VALUES (?, 'flt-scheduled', ?, ?, 'readiness-status-pass', 1, 'now', 'now')`);
+    insertCheck.run('rc-route', 'ROUTE_AVAILABILITY', 'Route availability');
+    insertCheck.run('rc-docs', 'REQUIRED_DOCUMENTS', 'Required documents');
+
+    // Re-run: backfill applies and is idempotent.
+    runMigrations(sqlite);
+    runMigrations(sqlite);
+
+    const phases = sqlite
+      .prepare(
+        `SELECT check_code AS code, assurance_phase AS phase
+         FROM flight_readiness_checks WHERE flight_id = 'flt-scheduled'`
+      )
+      .all() as Array<{ code: string; phase: string | null }>;
+    const phaseByCode = new Map(phases.map((row) => [row.code, row.phase]));
+    expect(phaseByCode.get('ROUTE_AVAILABILITY')).toBe('PLANNING');
+    expect(phaseByCode.get('REQUIRED_DOCUMENTS')).toBe('DEPARTURE');
+
+    for (const code of [
+      'MANIFEST_LOCKED',
+      'DG_ACCEPTANCE',
+      'FUEL_CONFIRMED',
+      'HANDLING_CONFIRMED',
+      'DEPARTURE_DOCUMENTS',
+      'ORIGIN_OPERATIONAL_TASKS',
+      'ORIGIN_STATION_SIGNOFF'
+    ]) {
+      expect(phaseByCode.get(code)).toBe('DEPARTURE');
+    }
+
+    const closedDepartureChecks = sqlite
+      .prepare(
+        `SELECT COUNT(*) AS count FROM flight_readiness_checks
+         WHERE flight_id = 'flt-closed' AND assurance_phase = 'DEPARTURE'`
+      )
+      .get() as { count: number };
+    expect(closedDepartureChecks.count).toBe(0);
+
+    const scheduledCheckCount = sqlite
+      .prepare(
+        `SELECT COUNT(*) AS count FROM flight_readiness_checks WHERE flight_id = 'flt-scheduled'`
+      )
+      .get() as { count: number };
+    expect(scheduledCheckCount.count).toBe(9);
+    sqlite.close();
+  });
+
+  it('preserves locked manifest actor during backfill', () => {
+    const sqlite = new Database(':memory:');
+    runMigrations(sqlite);
+    insertStationAndRoute(sqlite);
+    insertFlight(sqlite, 'flt-locked', 'flight-operation-status-scheduled');
+    sqlite
+      .prepare(
+        `INSERT INTO flight_manifests (
+           id, flight_operation_id, manifest_type_id, status_id,
+           approved_by_user_id, approved_at, locked_at, created_at, updated_at
+         ) VALUES ('manifest-locked', 'flt-locked', 'manifest-type-passenger', 'manifest-status-locked',
+                   'USR-001', 'now', 'now', 'now', 'now')`
+      )
+      .run();
+
+    runMigrations(sqlite);
+
+    const manifest = sqlite
+      .prepare(
+        `SELECT version, locked_by_user_id AS lockedBy FROM flight_manifests WHERE id = 'manifest-locked'`
+      )
+      .get() as { version: number; lockedBy: string | null };
+    expect(manifest.version).toBe(1);
+    expect(manifest.lockedBy).toBe('USR-001');
+    sqlite.close();
+  });
+});

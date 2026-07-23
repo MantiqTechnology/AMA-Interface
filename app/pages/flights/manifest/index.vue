@@ -20,7 +20,9 @@ const rows = computed(() =>
       'READY_FOR_APPROVAL',
       'APPROVED',
       'SCHEDULED',
-      'CHECK_IN_OPEN'
+      'CHECK_IN_OPEN',
+      'CHECK_IN_CLOSED',
+      'READY_FOR_DEPARTURE'
     ].includes(flight.currentStatus)
   )
 );
@@ -30,8 +32,10 @@ const rows = computed(() =>
   <VContainer class="px-3 py-5 md:px-4" fluid>
     <div class="mb-5 flex flex-wrap items-end gap-4">
       <div>
-        <h1 class="text-h4 font-weight-bold text-text-primary">Manifest</h1>
-        <p class="text-text-muted">Passenger and cargo manifest worklist per flight.</p>
+        <h1 class="text-h4 font-weight-bold text-text-primary">Manifest Control</h1>
+        <p class="text-text-muted">
+          Operational load review, DG decision, approval and final lock.
+        </p>
       </div>
       <VSpacer />
       <VBtn icon="mdi-refresh" variant="text" @click="refresh" />
@@ -80,8 +84,8 @@ const rows = computed(() =>
             <div class="mt-2 text-sm text-text-secondary">{{ flight.readinessSummary }}</div>
           </VCardText>
           <VCardActions>
-            <VBtn color="secondary" :to="`/flights/${flight.id}`" variant="tonal">
-              Open Manifest Tab
+            <VBtn color="secondary" :to="`/flights/${flight.id}/manifest`" variant="tonal">
+              Open Manifest Workspace
             </VBtn>
             <VBtn
               v-if="['DRAFT', 'BLOCKED', 'REOPENED_FOR_CORRECTION'].includes(flight.currentStatus)"
