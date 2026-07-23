@@ -602,8 +602,12 @@ export class FlightOperationsService {
         ) as FlightOperationDetailDto['readinessChecks'][number]['status'];
         const presentation = readinessPresentation(String(item.check_code), status);
         const sourceIds = stringArray(item.source_record_ids);
+        const isStationAction = presentation.actionHref === '/flights/station-operations';
+        const stationPhase = String(item.check_code).startsWith('DESTINATION_')
+          ? 'DESTINATION_CLOSURE'
+          : 'ORIGIN_DEPARTURE';
         const actionHref = presentation.actionHref
-          ? `${presentation.actionHref}?flightId=${encodeURIComponent(id)}&checkCode=${encodeURIComponent(String(item.check_code))}${
+          ? `${isStationAction ? `/flights/station-operations/${encodeURIComponent(id)}` : presentation.actionHref}?${isStationAction ? `phase=${stationPhase}&` : `flightId=${encodeURIComponent(id)}&`}checkCode=${encodeURIComponent(String(item.check_code))}${
               sourceIds[0] ? `&sourceRecordId=${encodeURIComponent(sourceIds[0])}` : ''
             }&returnUrl=${encodeURIComponent(`/flights/${id}`)}`
           : null;

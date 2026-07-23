@@ -817,7 +817,30 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           (!query.stationCode || cost.stationCode === query.stationCode) &&
           (ctx.stationCodes.includes('ALL') || ctx.stationCodes.includes(cost.stationCode))
       );
-      const audit = (await this.getOperationalAuditTrail(flightId)).slice(0, 10);
+      const audit = (await this.getOperationalAuditTrail(flightId))
+        .filter(
+          (entry) =>
+            !entry.stationId ||
+            ctx.stationCodes.includes('ALL') ||
+            ctx.stationCodes.includes(this.getStationCodeById(entry.stationId) ?? '')
+        )
+        .slice(0, 10);
+      const evidence = this.sqlite
+        .prepare(
+          `SELECT evidence.*, task.task_code, station.station_code
+           FROM flight_verification_evidence evidence
+           LEFT JOIN flight_station_tasks task ON task.id = evidence.station_task_id
+           LEFT JOIN stations station ON station.id = task.station_id
+           WHERE evidence.flight_id = ?
+           ORDER BY evidence.uploaded_at DESC`
+        )
+        .all(flightId) as SqlRow[];
+      const reconciliation = this.sqlite
+        .prepare(
+          `SELECT * FROM flight_actual_reconciliations
+           WHERE flight_id = ? ORDER BY updated_at DESC LIMIT 1`
+        )
+        .get(flightId) as SqlRow | undefined;
 
       results.push({
         id: String(row.flight_id),
@@ -863,6 +886,39 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         })),
         services: services,
         costs: costs,
+        evidence: evidence
+          .filter(
+            (item) =>
+              ctx.stationCodes.includes('ALL') ||
+              ctx.stationCodes.includes(String(item.station_code ?? ''))
+          )
+          .map((item) => ({
+            id: String(item.id),
+            stationTaskId: item.station_task_id ? String(item.station_task_id) : null,
+            taskCode: item.task_code ? String(item.task_code) : null,
+            documentType: String(item.document_type),
+            fileName: String(item.file_name),
+            notes: item.notes ? String(item.notes) : null,
+            uploadedByUserId: String(item.uploaded_by_user_id),
+            uploadedAt: String(item.uploaded_at)
+          })),
+        reconciliation: reconciliation
+          ? {
+              id: String(reconciliation.id),
+              plannedPassengers: Number(reconciliation.planned_passengers),
+              actualPassengers: Number(reconciliation.actual_passengers),
+              plannedCargoKg: Number(reconciliation.planned_cargo_kg),
+              actualCargoKg: Number(reconciliation.actual_cargo_kg),
+              noShowPassengers: Number(reconciliation.no_show_passengers),
+              offloadedCargoKg: Number(reconciliation.offloaded_cargo_kg),
+              totalDiscrepancyNote: reconciliation.total_discrepancy_note
+                ? String(reconciliation.total_discrepancy_note)
+                : null,
+              reconciledByUserId: String(reconciliation.reconciled_by_user_id),
+              reconciledAt: String(reconciliation.reconciled_at),
+              version: Number(reconciliation.version)
+            }
+          : null,
         audit,
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at)
@@ -1605,6 +1661,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
 
   async reconcileFlightActuals(input: any, ctx: ActorContext) {
     const flight = this.requireFlight(input.flightId);
+    this.validateStationScope(flight.destinationStationId, ctx);
     if (
       !['LANDED', 'DIVERTED', 'PENDING_CLOSURE', 'REOPENED_FOR_CORRECTION'].includes(
         flight.currentStatus
