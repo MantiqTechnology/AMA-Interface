@@ -88,3 +88,12 @@ export function hasDemoPermission(event: H3Event, permissionId: string) {
   const permissions = demoRolePermissions[role];
   return permissions.includes('*') || permissions.includes(permissionId);
 }
+
+export function getDemoActorContext(event: H3Event) {
+  return {
+    userId: getDemoActorId(event),
+    role: getDemoRole(event),
+    stationCodes: getDemoStationScope(event) as string[],
+    requestId: String(event.context.requestId ?? '')
+  };
+}

@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { fetchApi } from '../../../composables/useApiEnvelope';
+import type { StationOption as MasterStationOption } from '#shared/features/operations/stations';
+
 type FlightDirection = 'INBOUND' | 'OUTBOUND';
 type FlightStatus = 'SCHEDULED' | 'ARRIVING' | 'LANDED' | 'DELAYED' | 'DEPARTED' | 'BOARDING';
 type ReadinessStatus = 'READY' | 'CHECK' | 'NOT_READY';
 type ServiceType = 'HANDLING' | 'PARKING';
-type ServiceStatus = 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
-type CostStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+type ServiceStatus = 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+type CostStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'VOID';
 
 interface StationOption {
   code: string;
@@ -38,6 +41,7 @@ interface StationServiceRow {
   supplierName: string;
   status: ServiceStatus;
   referenceRate?: number;
+  version: number;
 }
 
 interface StationCostRow {
@@ -51,6 +55,7 @@ interface StationCostRow {
   amount: number;
   currencyCode: string;
   status: CostStatus;
+  version: number;
 }
 
 interface StationDataset {
@@ -102,32 +107,121 @@ interface StationDataset {
   };
 }
 
+interface ApiStationFlight {
+  id: string;
+  flightId: string;
+  flightNumber: string;
+  flightDate: string;
+  aircraftId: string;
+  aircraftType: string;
+  originStationId: string;
+  originStationCode: string;
+  destinationStationId: string;
+  destinationStationCode: string;
+  scheduledDepartureAt: string;
+  actualDepartureAt: string | null;
+  actualArrivalAt: string | null;
+  currentStatus: string;
+  currentStatusCode: string;
+  flightTypeCode: string;
+  serviceTypeCode: string;
+  estimatedRevenue: number | null;
+  passengerTotal: number;
+  passengerActual: number;
+  cargoWeightKg: number;
+  dangerousGoods: boolean;
+  tasks: Array<{
+    id: string;
+    stationId: string;
+    taskCode: string;
+    taskTitle: string;
+    status: string;
+    phase: string;
+    requiresEvidence: boolean;
+    notes: string | null;
+    verifiedBy: string | null;
+    verifiedAt: string | null;
+    assignedTo: string | null;
+    rejectionReason: string | null;
+    version: number;
+    evidenceCount: number;
+    stationDecision: string | null;
+    occDecision: string | null;
+  }>;
+  services: Array<{
+    id: string;
+    flightId: string;
+    flightNumber: string;
+    stationId: string;
+    stationCode: string;
+    serviceSupplierId: string;
+    supplierName: string;
+    serviceType: 'HANDLING' | 'PARKING';
+    status: 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+    referenceRate: number | null;
+    rejectionNote: string | null;
+    version: number;
+  }>;
+  costs: Array<{
+    id: string;
+    flightId: string | null;
+    flightNumber: string | null;
+    stationId: string;
+    stationCode: string;
+    vendorId: string | null;
+    vendorName: string | null;
+    costCategoryId: string;
+    costCategoryName: string;
+    amount: number;
+    currencyId: string;
+    currencyCode: string;
+    description: string;
+    status: CostStatus;
+    version: number;
+  }>;
+  audit: Array<{
+    id: string;
+    actorUserId: string;
+    actorRole: string;
+    module: string;
+    action: string;
+    beforeStatus: string | null;
+    afterStatus: string | null;
+    reason: string | null;
+    timestamp: string;
+  }>;
+}
+
+type StationTaskRow = ApiStationFlight['tasks'][number] & {
+  flightId: string;
+  flightNumber: string;
+};
+
 // ---------------------------------------------------------------------------
-// Master data & user scope (dummy)
+// Master data & user scope
 // ---------------------------------------------------------------------------
 
-const STATION_OPTIONS: StationOption[] = [
-  { code: 'DJJ', name: 'Sentani / Jayapura' },
-  { code: 'WMX', name: 'Wamena' },
-  { code: 'TIM', name: 'Timika' },
-  { code: 'NBX', name: 'Nabire' },
-  { code: 'OKS', name: 'Oksibil' },
-  { code: 'DEX', name: 'Dekai' },
-  { code: 'MKQ', name: 'Merauke' }
-];
-
-// Simulasi station scope milik Station Admin yang sedang login.
-// Kalau panjangnya > 1, selector otomatis enabled + multiple (skenario OCC).
 const { currentPersona } = useDemoSession();
+const { data: masterStationOptions } = await useAsyncData(
+  'station-operations-station-options',
+  () => fetchApi<MasterStationOption[]>('/api/master-data/stations/options'),
+  { default: () => [] }
+);
+const stationMaster = computed<StationOption[]>(() =>
+  masterStationOptions.value.map((station) => ({
+    code: station.stationCode,
+    name: station.stationName
+  }))
+);
 const stationScope = computed(() =>
   currentPersona.value.stationScope.includes('ALL')
-    ? STATION_OPTIONS.map((station) => station.code)
+    ? stationMaster.value.map((station) => station.code)
     : currentPersona.value.stationScope
 );
 
 const canChangeStation = computed(() => stationScope.value.length > 1);
 const stationOptions = computed(() =>
-  STATION_OPTIONS.filter((option) => stationScope.value.includes(option.code))
+  stationMaster.value.filter((option) => stationScope.value.includes(option.code))
 );
 
 // ---------------------------------------------------------------------------
@@ -141,7 +235,10 @@ function todayIso() {
   return local.toISOString().slice(0, 10);
 }
 
-const selectedStationCode = ref<string>(stationScope.value[0] ?? 'DJJ');
+const selectedStationCode = ref<string>(
+  stationScope.value.includes('DJJ') ? 'DJJ' : (stationScope.value[0] ?? 'DJJ')
+);
+const route = useRoute();
 watch(stationScope, (scope) => {
   if (!scope.includes(selectedStationCode.value)) selectedStationCode.value = scope[0] ?? 'DJJ';
 });
@@ -173,18 +270,48 @@ watch(
 );
 const operationalDate = ref<string>(todayIso());
 
-const GOLDEN_STATION = 'DJJ';
-const GOLDEN_DATE = '2026-07-07';
-const ERROR_DEMO_DATE = '2026-07-08';
-const EMPTY_DEMO_DATE = '2026-07-09';
-
 const pending = ref(false);
 const error = ref('');
 const actionError = ref('');
 const loadingId = ref('');
 const lastUpdated = ref<Date | null>(null);
 
+interface SelectOption {
+  id: string;
+  title: string;
+  subtitle?: string;
+}
+
+const stationServiceTypes = ref<SelectOption[]>([]);
+const handlingParkingSuppliers = ref<SelectOption[]>([]);
+const costCategories = ref<SelectOption[]>([]);
+const vendors = ref<SelectOption[]>([]);
+const currencies = ref<SelectOption[]>([]);
+
 const dataset = ref<StationDataset>(createEmptyDataset());
+const workbenchFlights = ref<ApiStationFlight[]>([]);
+const stationTasks = computed<StationTaskRow[]>(() =>
+  workbenchFlights.value.flatMap((flight) =>
+    flight.tasks
+      .filter((task) => task.stationId === `st-${selectedStationCode.value.toLowerCase()}`)
+      .map((task) => ({ ...task, flightId: flight.flightId, flightNumber: flight.flightNumber }))
+  )
+);
+const pendingStationTaskCount = computed(
+  () => stationTasks.value.filter((task) => task.status !== 'VERIFIED').length
+);
+const workbenchAudit = computed(() =>
+  workbenchFlights.value
+    .flatMap((flight) =>
+      flight.audit.map((entry) => ({
+        ...entry,
+        flightId: flight.flightId,
+        flightNumber: flight.flightNumber
+      }))
+    )
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+    .slice(0, 20)
+);
 
 // ---------------------------------------------------------------------------
 // Dummy dataset builders
@@ -236,489 +363,298 @@ function createEmptyDataset(): StationDataset {
   };
 }
 
-function createGoldenDataset(): StationDataset {
-  const flights: StationFlightRow[] = [
-    {
-      id: 'fl-2401',
-      flightId: 'flight-2401',
-      flightNumber: 'AMA-2401',
-      origin: 'PKU',
-      destination: 'DJJ',
-      aircraftType: 'Pilatus PC-12',
-      type: 'PSG',
-      direction: 'INBOUND',
-      scheduledTime: '07:30',
-      actualTime: '07:45',
-      status: 'LANDED',
-      readiness: 'READY',
-      paxOnboard: 28,
-      paxTotal: 28,
-      cargoWeightKg: 120,
-      needsAction: false
-    },
-    {
-      id: 'fl-2402',
-      flightId: 'flight-2402',
-      flightNumber: 'AMA-2402',
-      origin: 'SUB',
-      destination: 'DJJ',
-      aircraftType: 'Caravan C208',
-      type: 'PSG',
-      direction: 'INBOUND',
-      scheduledTime: '08:15',
-      actualTime: '08:20',
-      status: 'ARRIVING',
-      readiness: 'CHECK',
-      paxOnboard: 16,
-      paxTotal: 16,
-      cargoWeightKg: 85,
-      needsAction: true
-    },
-    {
-      id: 'fl-2403',
-      flightId: 'flight-2403',
-      flightNumber: 'AMA-2403',
-      origin: 'DJB',
-      destination: 'DJJ',
-      aircraftType: 'PAC 750XL',
-      type: 'CRG',
-      direction: 'INBOUND',
-      scheduledTime: '09:00',
-      actualTime: '09:00',
-      status: 'SCHEDULED',
-      readiness: 'READY',
-      paxOnboard: 0,
-      paxTotal: 0,
-      cargoWeightKg: 650,
-      needsAction: false
-    },
-    {
-      id: 'fl-2404',
-      flightId: 'flight-2404',
-      flightNumber: 'AMA-2404',
-      origin: 'DJJ',
-      destination: 'BPN',
-      aircraftType: 'Pilatus PC-12',
-      type: 'PSG',
-      direction: 'OUTBOUND',
-      scheduledTime: '10:30',
-      actualTime: '10:30',
-      status: 'SCHEDULED',
-      readiness: 'CHECK',
-      paxOnboard: 12,
-      paxTotal: 12,
-      cargoWeightKg: 90,
-      needsAction: true
-    },
-    {
-      id: 'fl-2405',
-      flightId: 'flight-2405',
-      flightNumber: 'AMA-2405',
-      origin: 'DPS',
-      destination: 'DJJ',
-      aircraftType: 'Caravan C208',
-      type: 'PSG',
-      direction: 'INBOUND',
-      scheduledTime: '13:10',
-      actualTime: '13:10',
-      status: 'SCHEDULED',
-      readiness: 'READY',
-      paxOnboard: 20,
-      paxTotal: 20,
-      cargoWeightKg: 100,
-      needsAction: false
-    },
-    {
-      id: 'fl-2406',
-      flightId: 'flight-2406',
-      flightNumber: 'AMA-2406',
-      origin: 'DJJ',
-      destination: 'TIM',
-      aircraftType: 'Pilatus PC-12',
-      type: 'PSG',
-      direction: 'OUTBOUND',
-      scheduledTime: '14:00',
-      actualTime: '14:00',
-      status: 'SCHEDULED',
-      readiness: 'READY',
-      paxOnboard: 18,
-      paxTotal: 18,
-      cargoWeightKg: 60,
-      needsAction: false
-    },
-    {
-      id: 'fl-2407',
-      flightId: 'flight-2407',
-      flightNumber: 'AMA-2407',
-      origin: 'DJJ',
-      destination: 'BIK',
-      aircraftType: 'Caravan C208',
-      type: 'CRG',
-      direction: 'OUTBOUND',
-      scheduledTime: '14:30',
-      actualTime: '14:30',
-      status: 'SCHEDULED',
-      readiness: 'READY',
-      paxOnboard: 0,
-      paxTotal: 0,
-      cargoWeightKg: 400,
-      needsAction: false
-    },
-    {
-      id: 'fl-2408',
-      flightId: 'flight-2408',
-      flightNumber: 'AMA-2408',
-      origin: 'DJJ',
-      destination: 'MKW',
-      aircraftType: 'Pilatus PC-12',
-      type: 'PSG',
-      direction: 'OUTBOUND',
-      scheduledTime: '15:00',
-      actualTime: '15:20',
-      status: 'DELAYED',
-      readiness: 'CHECK',
-      paxOnboard: 10,
-      paxTotal: 14,
-      cargoWeightKg: 70,
-      needsAction: true
-    },
-    {
-      id: 'fl-2409',
-      flightId: 'flight-2409',
-      flightNumber: 'AMA-2409',
-      origin: 'BIK',
-      destination: 'DJJ',
-      aircraftType: 'Caravan C208',
-      type: 'PSG',
-      direction: 'INBOUND',
-      scheduledTime: '15:30',
-      actualTime: '15:50',
-      status: 'DELAYED',
-      readiness: 'READY',
-      paxOnboard: 15,
-      paxTotal: 16,
-      cargoWeightKg: 95,
-      needsAction: false
-    },
-    {
-      id: 'fl-2410',
-      flightId: 'flight-2410',
-      flightNumber: 'AMA-2410',
-      origin: 'DJJ',
-      destination: 'PKU',
-      aircraftType: 'Pilatus PC-12',
-      type: 'PSG',
-      direction: 'OUTBOUND',
-      scheduledTime: '16:00',
-      actualTime: '16:00',
-      status: 'SCHEDULED',
-      readiness: 'READY',
-      paxOnboard: 22,
-      paxTotal: 22,
-      cargoWeightKg: 110,
-      needsAction: false
-    },
-    {
-      id: 'fl-2411',
-      flightId: 'flight-2411',
-      flightNumber: 'AMA-2411',
-      origin: 'TIM',
-      destination: 'DJJ',
-      aircraftType: 'PAC 750XL',
-      type: 'CRG',
-      direction: 'INBOUND',
-      scheduledTime: '16:30',
-      actualTime: '16:55',
-      status: 'DELAYED',
-      readiness: 'READY',
-      paxOnboard: 0,
-      paxTotal: 0,
-      cargoWeightKg: 500,
-      needsAction: false
-    },
-    {
-      id: 'fl-2412',
-      flightId: 'flight-2412',
-      flightNumber: 'AMA-2412',
-      origin: 'DJJ',
-      destination: 'SUB',
-      aircraftType: 'Caravan C208',
-      type: 'PSG',
-      direction: 'OUTBOUND',
-      scheduledTime: '17:00',
-      actualTime: '17:00',
-      status: 'SCHEDULED',
-      readiness: 'READY',
-      paxOnboard: 19,
-      paxTotal: 20,
-      cargoWeightKg: 80,
-      needsAction: false
-    },
-    {
-      id: 'fl-2413',
-      flightId: 'flight-2413',
-      flightNumber: 'AMA-2413',
-      origin: 'DJJ',
-      destination: 'DPS',
-      aircraftType: 'Pilatus PC-12',
-      type: 'PSG',
-      direction: 'OUTBOUND',
-      scheduledTime: '17:30',
-      actualTime: '17:30',
-      status: 'DEPARTED',
-      readiness: 'READY',
-      paxOnboard: 24,
-      paxTotal: 24,
-      cargoWeightKg: 130,
-      needsAction: false
-    }
-  ];
+// ---------------------------------------------------------------------------
+// API data transformation
+// ---------------------------------------------------------------------------
 
-  const services: StationServiceRow[] = [
-    {
-      id: 'svc-1',
-      flightId: 'flight-2402',
-      flightNumber: 'AMA-2402',
-      serviceType: 'HANDLING',
-      supplierName: 'Angkasa Pura',
-      status: 'REQUESTED',
-      referenceRate: 2500000
-    },
-    {
-      id: 'svc-2',
-      flightId: 'flight-2404',
-      flightNumber: 'AMA-2404',
-      serviceType: 'PARKING',
-      supplierName: 'Angkasa Pura',
-      status: 'REQUESTED',
-      referenceRate: 1250000
-    },
-    {
-      id: 'svc-3',
-      flightId: 'flight-2403',
-      flightNumber: 'AMA-2403',
-      serviceType: 'HANDLING',
-      supplierName: 'Angkasa Pura',
-      status: 'CONFIRMED',
-      referenceRate: 2500000
-    },
-    {
-      id: 'svc-4',
-      flightId: 'flight-2405',
-      flightNumber: 'AMA-2405',
-      serviceType: 'HANDLING',
-      supplierName: 'Angkasa Pura',
-      status: 'CONFIRMED',
-      referenceRate: 2750000
-    },
-    {
-      id: 'svc-5',
-      flightId: 'flight-2401',
-      flightNumber: 'AMA-2401',
-      serviceType: 'PARKING',
-      supplierName: 'Angkasa Pura',
-      status: 'CONFIRMED',
-      referenceRate: 1250000
-    }
-  ];
+function toFlightStatus(statusCode: string): FlightStatus {
+  switch (statusCode) {
+    case 'IN_PROGRESS':
+      return 'DEPARTED';
+    case 'LANDED':
+      return 'LANDED';
+    case 'DIVERTED':
+    case 'BLOCKED':
+      return 'DELAYED';
+    case 'BOARDING':
+      return 'BOARDING';
+    case 'CLOSED':
+      return 'LANDED';
+    case 'CANCELLED':
+      return 'DELAYED';
+    case 'PENDING_CLOSURE':
+      return 'ARRIVING';
+    default:
+      return 'SCHEDULED';
+  }
+}
 
-  const costs: StationCostRow[] = [
-    {
-      id: 'cost-1',
-      flightId: 'flight-2402',
-      flightNumber: 'AMA-2402',
-      stationCode: 'DJJ',
-      vendorName: 'Angkasa Pura',
-      costCategoryName: 'Landing Fee',
-      description: 'Landing fee AMA-2402',
-      amount: 2750000,
-      currencyCode: 'IDR',
-      status: 'PENDING'
-    },
-    {
-      id: 'cost-2',
-      flightId: 'flight-2404',
-      flightNumber: 'AMA-2404',
-      stationCode: 'DJJ',
-      vendorName: 'Angkasa Pura',
-      costCategoryName: 'Parking Fee',
-      description: 'Parking fee AMA-2404',
-      amount: 1250000,
-      currencyCode: 'IDR',
-      status: 'PENDING'
-    },
-    {
-      id: 'cost-3',
-      flightId: 'flight-2403',
-      flightNumber: 'AMA-2403',
-      stationCode: 'DJJ',
-      vendorName: 'Angkasa Pura',
-      costCategoryName: 'Handling Fee',
-      description: 'Handling fee AMA-2403',
-      amount: 2500000,
-      currencyCode: 'IDR',
-      status: 'APPROVED'
-    },
-    {
-      id: 'cost-4',
-      flightId: 'flight-2405',
-      flightNumber: 'AMA-2405',
-      stationCode: 'DJJ',
-      vendorName: 'Angkasa Pura',
-      costCategoryName: 'Landing Fee',
-      description: 'Landing fee AMA-2405',
-      amount: 2750000,
-      currencyCode: 'IDR',
-      status: 'APPROVED'
-    },
-    {
-      id: 'cost-5',
-      flightId: 'flight-2401',
-      flightNumber: 'AMA-2401',
-      stationCode: 'DJJ',
-      vendorName: 'Angkasa Pura',
-      costCategoryName: 'Handling Fee',
-      description: 'Handling fee AMA-2401',
-      amount: 2500000,
-      currencyCode: 'IDR',
-      status: 'APPROVED'
-    }
-  ];
+function toFlightType(serviceTypeCode: string): StationFlightRow['type'] {
+  if (serviceTypeCode.includes('CARGO')) return 'CRG';
+  if (serviceTypeCode === 'POSITIONING') return 'PSG';
+  return 'PSG';
+}
+
+function toLocalTime(iso: string | null): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function deriveReadiness(flight: ApiStationFlight): ReadinessStatus {
+  const incompleteTasks = flight.tasks.filter((t) => t.status !== 'VERIFIED');
+  if (incompleteTasks.length === 0) return 'READY';
+  const hasBlocking = incompleteTasks.some((t) => t.status === 'REJECTED');
+  return hasBlocking ? 'NOT_READY' : 'CHECK';
+}
+
+function buildDatasetFromApi(
+  stationCode: string,
+  flights: ApiStationFlight[],
+  allServices: ApiStationFlight['services'],
+  allCosts: ApiStationFlight['costs']
+): StationDataset {
+  const rows: StationFlightRow[] = flights.map((flight) => {
+    const direction: FlightDirection =
+      flight.originStationCode === stationCode ? 'OUTBOUND' : 'INBOUND';
+    const status = toFlightStatus(flight.currentStatusCode);
+    const readiness = deriveReadiness(flight);
+    const isCargo = toFlightType(flight.serviceTypeCode) === 'CRG';
+
+    return {
+      id: flight.id,
+      flightId: flight.flightId,
+      flightNumber: flight.flightNumber,
+      origin: flight.originStationCode,
+      destination: flight.destinationStationCode,
+      aircraftType: flight.aircraftType || 'Aircraft',
+      type: toFlightType(flight.serviceTypeCode),
+      direction,
+      scheduledTime: toLocalTime(flight.scheduledDepartureAt),
+      actualTime:
+        direction === 'OUTBOUND'
+          ? toLocalTime(flight.actualDepartureAt)
+          : toLocalTime(flight.actualArrivalAt),
+      status,
+      readiness,
+      paxOnboard: isCargo ? 0 : flight.passengerActual,
+      paxTotal: isCargo ? 0 : flight.passengerTotal,
+      cargoWeightKg: flight.cargoWeightKg,
+      needsAction: readiness !== 'READY'
+    };
+  });
+
+  const services: StationServiceRow[] = allServices
+    .filter((s) => s.stationCode === stationCode)
+    .map((s) => ({
+      id: s.id,
+      flightId: s.flightId,
+      flightNumber: s.flightNumber,
+      serviceType: s.serviceType,
+      supplierName: s.supplierName,
+      status: s.status,
+      referenceRate: s.referenceRate ?? undefined,
+      version: s.version
+    }));
+
+  const costs: StationCostRow[] = allCosts
+    .filter((c) => c.stationCode === stationCode)
+    .map((c) => ({
+      id: c.id,
+      flightId: c.flightId,
+      flightNumber: c.flightNumber,
+      stationCode: c.stationCode,
+      vendorName: c.vendorName,
+      costCategoryName: c.costCategoryName,
+      description: c.description,
+      amount: c.amount,
+      currencyCode: c.currencyCode,
+      status: c.status,
+      version: c.version
+    }));
+
+  const inboundFlights = rows.filter((r) => r.direction === 'INBOUND').length;
+  const outboundFlights = rows.filter((r) => r.direction === 'OUTBOUND').length;
+  const flightsNeedingAction = rows.filter((r) => r.needsAction).length;
+  const passengerFlights = rows.filter((r) => r.type === 'PSG');
+  const cargoFlights = rows.filter((r) => r.type === 'CRG');
+  const totalFlights = rows.length || 1;
 
   return {
-    flights,
+    flights: rows,
     services,
     costs,
     kpi: {
-      inboundFlights: 6,
-      outboundFlights: 7,
-      flightsNeedingAction: 3,
-      paxCheckedIn: 248,
-      paxBoarded: 204,
-      cargoWeightKg: 2845,
-      pendingServices: 5,
-      pendingCosts: 7,
+      inboundFlights,
+      outboundFlights,
+      flightsNeedingAction,
+      paxCheckedIn: passengerFlights.reduce((sum, flight) => sum + flight.paxTotal, 0),
+      paxBoarded: passengerFlights.reduce((sum, flight) => sum + flight.paxOnboard, 0),
+      cargoWeightKg: cargoFlights.reduce((sum, flight) => sum + flight.cargoWeightKg, 0),
+      pendingServices: services.filter((s) => s.status === 'REQUESTED').length,
+      pendingCosts: costs.filter((c) => ['DRAFT', 'SUBMITTED'].includes(c.status)).length,
       delta: {
-        inboundFlights: 20,
-        outboundFlights: 16,
-        flightsNeedingAction: 50,
-        pax: 12,
-        cargoWeightKg: 8,
-        pendingServices: -16,
-        pendingCosts: -22
+        inboundFlights: 0,
+        outboundFlights: 0,
+        flightsNeedingAction: 0,
+        pax: 0,
+        cargoWeightKg: 0,
+        pendingServices: 0,
+        pendingCosts: 0
       }
     },
     dailyReport: {
-      flights: { total: 13, onTime: 10, delayed: 3 },
-      passengers: { checkedIn: 248, boarded: 204, loadFactor: 82 },
-      cargo: { totalWeightKg: 2845, totalVolumeM3: 12.6, shipments: 18 },
-      services: { requested: 5, confirmed: 7, completed: 5 },
-      costs: { total: 9, approvedPct: 69, approvedAmount: 15_500_000, positioningAmount: 6_750_000 }
+      flights: {
+        total: rows.length,
+        onTime: rows.filter((r) => r.status !== 'DELAYED').length,
+        delayed: rows.filter((r) => r.status === 'DELAYED').length
+      },
+      passengers: {
+        checkedIn: passengerFlights.reduce((sum, flight) => sum + flight.paxTotal, 0),
+        boarded: passengerFlights.reduce((sum, flight) => sum + flight.paxOnboard, 0),
+        loadFactor:
+          passengerFlights.reduce((sum, flight) => sum + flight.paxTotal, 0) > 0
+            ? Math.round(
+                (passengerFlights.reduce((sum, flight) => sum + flight.paxOnboard, 0) /
+                  passengerFlights.reduce((sum, flight) => sum + flight.paxTotal, 0)) *
+                  100
+              )
+            : 0
+      },
+      cargo: {
+        totalWeightKg: cargoFlights.reduce((sum, flight) => sum + flight.cargoWeightKg, 0),
+        totalVolumeM3: 0,
+        shipments: 0
+      },
+      services: {
+        requested: services.filter((s) => s.status === 'REQUESTED').length,
+        confirmed: services.filter((s) => s.status === 'CONFIRMED').length,
+        completed: services.filter((s) => s.status === 'COMPLETED').length
+      },
+      costs: {
+        total: costs.length,
+        approvedPct: costs.length
+          ? Math.round((costs.filter((c) => c.status === 'APPROVED').length / costs.length) * 100)
+          : 0,
+        approvedAmount: costs
+          .filter((c) => c.status === 'APPROVED')
+          .reduce((sum, c) => sum + c.amount, 0),
+        positioningAmount: costs
+          .filter((c) => c.costCategoryName.toLowerCase().includes('positioning'))
+          .reduce((sum, c) => sum + c.amount, 0)
+      }
     },
     flightsByType: {
-      passenger: { count: 9, pct: 69 },
-      cargo: { count: 3, pct: 23 },
-      positioning: { count: 1, pct: 8 }
+      passenger: {
+        count: passengerFlights.length,
+        pct: Math.round((passengerFlights.length / totalFlights) * 100)
+      },
+      cargo: {
+        count: cargoFlights.length,
+        pct: Math.round((cargoFlights.length / totalFlights) * 100)
+      },
+      positioning: {
+        count: flights.filter((flight) => flight.serviceTypeCode === 'POSITIONING').length,
+        pct: Math.round(
+          (flights.filter((flight) => flight.serviceTypeCode === 'POSITIONING').length /
+            totalFlights) *
+            100
+        )
+      }
     },
     exceptions: {
-      delayOver15: 2,
-      servicesOverdue: 1,
-      costOverdue: 2,
+      delayOver15: rows.filter((r) => r.status === 'DELAYED').length,
+      servicesOverdue: services.filter((s) => s.status === 'REQUESTED').length,
+      costOverdue: costs.filter((c) => ['DRAFT', 'SUBMITTED'].includes(c.status)).length,
       manifestIssue: 0,
-      techLogOpen: 1
+      techLogOpen: 0
     }
   };
-}
-
-// Seeded PRNG supaya kombinasi station + tanggal yang sama selalu
-// menghasilkan angka yang sama (bukan acak setiap render).
-function hashSeed(input: string) {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = (Math.imul(31, hash) + input.charCodeAt(i)) | 0;
-  }
-  return hash;
-}
-function mulberry32(seed: number) {
-  let state = seed;
-  return () => {
-    state |= 0;
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function jitterDataset(golden: StationDataset, seed: string): StationDataset {
-  const rand = mulberry32(hashSeed(seed));
-  const factor = 0.85 + rand() * 0.3; // 0.85 - 1.15
-  const scale = (value: number) => Math.max(0, Math.round(value * factor));
-
-  const clone: StationDataset = JSON.parse(JSON.stringify(golden));
-  clone.kpi.inboundFlights = scale(golden.kpi.inboundFlights);
-  clone.kpi.outboundFlights = scale(golden.kpi.outboundFlights);
-  clone.kpi.flightsNeedingAction = scale(golden.kpi.flightsNeedingAction);
-  clone.kpi.paxCheckedIn = scale(golden.kpi.paxCheckedIn);
-  clone.kpi.paxBoarded = scale(golden.kpi.paxBoarded);
-  clone.kpi.cargoWeightKg = scale(golden.kpi.cargoWeightKg);
-  clone.kpi.pendingServices = scale(golden.kpi.pendingServices);
-  clone.kpi.pendingCosts = scale(golden.kpi.pendingCosts);
-
-  clone.dailyReport.flights.total = scale(golden.dailyReport.flights.total);
-  clone.dailyReport.flights.onTime = Math.min(
-    clone.dailyReport.flights.total,
-    scale(golden.dailyReport.flights.onTime)
-  );
-  clone.dailyReport.flights.delayed = Math.max(
-    0,
-    clone.dailyReport.flights.total - clone.dailyReport.flights.onTime
-  );
-  clone.dailyReport.passengers.checkedIn = clone.kpi.paxCheckedIn;
-  clone.dailyReport.passengers.boarded = clone.kpi.paxBoarded;
-  clone.dailyReport.cargo.totalWeightKg = clone.kpi.cargoWeightKg;
-  clone.dailyReport.cargo.totalVolumeM3 =
-    Math.round(golden.dailyReport.cargo.totalVolumeM3 * factor * 10) / 10;
-  clone.dailyReport.cargo.shipments = scale(golden.dailyReport.cargo.shipments);
-  clone.dailyReport.services.requested = clone.kpi.pendingServices;
-  clone.dailyReport.services.confirmed = scale(golden.dailyReport.services.confirmed);
-  clone.dailyReport.services.completed = scale(golden.dailyReport.services.completed);
-  clone.dailyReport.costs.total = scale(golden.dailyReport.costs.total);
-  clone.dailyReport.costs.approvedAmount = scale(golden.dailyReport.costs.approvedAmount);
-  clone.dailyReport.costs.positioningAmount = scale(golden.dailyReport.costs.positioningAmount);
-
-  return clone;
-}
-
-function buildStationDataset(stationCode: string, dateStr: string): StationDataset {
-  if (dateStr === EMPTY_DEMO_DATE) {
-    return createEmptyDataset();
-  }
-  if (dateStr === ERROR_DEMO_DATE) {
-    throw new Error('Gagal memuat data Station Operations. Periksa koneksi lalu coba lagi.');
-  }
-
-  const golden = createGoldenDataset();
-  if (stationCode === GOLDEN_STATION && dateStr === GOLDEN_DATE) {
-    return golden;
-  }
-  return jitterDataset(golden, `${stationCode}-${dateStr}`);
 }
 
 // ---------------------------------------------------------------------------
 // Load / refresh
 // ---------------------------------------------------------------------------
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function loadOptions() {
+  try {
+    const [serviceTypes, suppliers, categories, vendorOptions, currencyOptions] = await Promise.all(
+      [
+        fetchApi<
+          Array<{
+            stationServiceTypes: Array<{ id: string; value: string; code: string; label: string }>;
+          }>
+        >('/api/flight-operations/lookups').then(
+          (lookups) =>
+            (lookups as any).stationServiceTypes?.map((item: any) => ({
+              id: item.value,
+              title: item.label
+            })) ?? []
+        ),
+        fetchApi<Array<{ id: string; supplierCode: string; supplierName: string }>>(
+          '/api/master-data/handling-parking-suppliers/options'
+        ).then((items) =>
+          items.map((item) => ({
+            id: item.id,
+            title: item.supplierName,
+            subtitle: item.supplierCode
+          }))
+        ),
+        fetchApi<Array<{ id: string; categoryCode: string; categoryName: string }>>(
+          '/api/master-data/cost-categories/options'
+        ).then((items) =>
+          items.map((item) => ({
+            id: item.id,
+            title: item.categoryName,
+            subtitle: item.categoryCode
+          }))
+        ),
+        fetchApi<Array<{ id: string; vendorCode: string; vendorName: string }>>(
+          '/api/master-data/vendors/options'
+        ).then((items) =>
+          items.map((item) => ({ id: item.id, title: item.vendorName, subtitle: item.vendorCode }))
+        ),
+        fetchApi<Array<{ id: string; currencyCode: string; currencyName: string }>>(
+          '/api/master-data/currencies/options'
+        ).then((items) =>
+          items.map((item) => ({
+            id: item.id,
+            title: item.currencyName,
+            subtitle: item.currencyCode
+          }))
+        )
+      ]
+    );
+    stationServiceTypes.value = serviceTypes;
+    handlingParkingSuppliers.value = suppliers;
+    costCategories.value = categories;
+    vendors.value = vendorOptions;
+    currencies.value = currencyOptions;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Gagal memuat opsi master data.';
+  }
 }
 
 async function loadStationOperations() {
   pending.value = true;
   error.value = '';
   try {
-    await wait(500);
-    dataset.value = buildStationDataset(selectedStationCode.value, operationalDate.value);
+    const flights = await fetchApi<ApiStationFlight[]>(
+      '/api/flight-operations/station-operations',
+      {
+        query: {
+          stationCode: selectedStationCode.value,
+          operationalDate: operationalDate.value,
+          flightId: typeof route.query.flightId === 'string' ? route.query.flightId : undefined,
+          phase: typeof route.query.phase === 'string' ? route.query.phase : undefined
+        }
+      }
+    );
+    workbenchFlights.value = flights;
+    const services = flights.flatMap((flight) => flight.services);
+    const costs = flights.flatMap((flight) => flight.costs);
+    dataset.value = buildDatasetFromApi(selectedStationCode.value, flights, services, costs);
     lastUpdated.value = new Date();
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Gagal memuat data Station Operations.';
@@ -731,11 +667,110 @@ async function refreshAll() {
   await loadStationOperations();
 }
 
+async function runTaskAction(
+  taskId: string,
+  action: 'start' | 'verify' | 'approve-occ',
+  version: number
+) {
+  loadingId.value = taskId;
+  actionError.value = '';
+  try {
+    await fetchApi(`/api/flight-operations/station-tasks/${taskId}/actions/${action}`, {
+      method: 'POST',
+      body:
+        action === 'approve-occ'
+          ? {
+              decision: 'APPROVED',
+              expectedVersion: version,
+              reason: 'Reviewed in Station Operations.'
+            }
+          : action === 'verify'
+            ? { expectedVersion: version, reason: 'Verified with station evidence.' }
+            : { expectedVersion: version }
+    });
+    await refreshAll();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Gagal memperbarui station task.';
+  } finally {
+    loadingId.value = '';
+  }
+}
+
+const evidenceDialog = ref(false);
+const evidenceTaskId = ref('');
+const evidenceTaskVersion = ref(0);
+const evidenceFileName = ref('');
+const evidenceNotes = ref('');
+const rejectionDialog = ref(false);
+const rejectionTaskId = ref('');
+const rejectionTaskVersion = ref(0);
+const rejectionReason = ref('');
+
+function openEvidence(task: StationTaskRow) {
+  evidenceTaskId.value = task.id;
+  evidenceTaskVersion.value = task.version;
+  evidenceFileName.value = '';
+  evidenceNotes.value = '';
+  evidenceDialog.value = true;
+}
+
+async function addTaskEvidence() {
+  if (!evidenceFileName.value.trim()) return;
+  loadingId.value = evidenceTaskId.value;
+  actionError.value = '';
+  try {
+    await fetchApi(`/api/flight-operations/station-tasks/${evidenceTaskId.value}/evidence`, {
+      method: 'POST',
+      body: {
+        expectedVersion: evidenceTaskVersion.value,
+        fileName: evidenceFileName.value,
+        documentType: 'STATION_OPERATION_EVIDENCE',
+        notes: evidenceNotes.value || undefined
+      }
+    });
+    evidenceDialog.value = false;
+    await refreshAll();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Gagal menambahkan evidence.';
+  } finally {
+    loadingId.value = '';
+  }
+}
+
+function openTaskRejection(task: StationTaskRow) {
+  rejectionTaskId.value = task.id;
+  rejectionTaskVersion.value = task.version;
+  rejectionReason.value = '';
+  rejectionDialog.value = true;
+}
+
+async function rejectTask() {
+  if (!rejectionReason.value.trim()) return;
+  loadingId.value = rejectionTaskId.value;
+  actionError.value = '';
+  try {
+    await fetchApi(`/api/flight-operations/station-tasks/${rejectionTaskId.value}/actions/reject`, {
+      method: 'POST',
+      body: {
+        expectedVersion: rejectionTaskVersion.value,
+        rejectionReason: rejectionReason.value
+      }
+    });
+    rejectionDialog.value = false;
+    await refreshAll();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Gagal menolak station task.';
+  } finally {
+    loadingId.value = '';
+  }
+}
+
 watch([selectedStationCode, operationalDate], () => {
   loadStationOperations();
 });
 
 onMounted(() => {
+  loadOptions();
   loadStationOperations();
 });
 
@@ -762,6 +797,14 @@ function formatDateDisplay(dateStr: string) {
     month: 'short',
     year: 'numeric'
   }).format(parsed);
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Jayapura'
+  }).format(new Date(value));
 }
 
 function formatLastUpdated(date: Date | null) {
@@ -796,13 +839,16 @@ const serviceStatusColor: Record<ServiceStatus, string> = {
   REQUESTED: 'info',
   CONFIRMED: 'success',
   COMPLETED: 'secondary',
+  REJECTED: 'error',
   CANCELLED: 'error'
 };
 
 const costStatusColor: Record<CostStatus, string> = {
-  PENDING: 'warning',
+  DRAFT: 'secondary',
+  SUBMITTED: 'warning',
   APPROVED: 'success',
-  REJECTED: 'error'
+  REJECTED: 'error',
+  VOID: 'secondary'
 };
 
 // ---------------------------------------------------------------------------
@@ -810,7 +856,7 @@ const costStatusColor: Record<CostStatus, string> = {
 // ---------------------------------------------------------------------------
 
 const selectedStationLabel = computed(() => {
-  const found = STATION_OPTIONS.find((option) => option.code === selectedStationCode.value);
+  const found = stationMaster.value.find((option) => option.code === selectedStationCode.value);
   return found ? `${found.code} - ${found.name}` : selectedStationCode.value;
 });
 
@@ -988,16 +1034,18 @@ const exceptionItems = computed(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Row actions (dummy mutation of local dataset)
+// Persistent row actions
 // ---------------------------------------------------------------------------
 
 async function confirmService(row: StationServiceRow) {
   loadingId.value = row.id;
   actionError.value = '';
   try {
-    await wait(400);
-    const target = dataset.value.services.find((service) => service.id === row.id);
-    if (target) target.status = 'CONFIRMED';
+    await fetchApi(`/api/flight-operations/station-services/${row.id}/actions/confirm`, {
+      method: 'POST',
+      body: { expectedVersion: row.version }
+    });
+    await refreshAll();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal memproses station service.';
   } finally {
@@ -1005,13 +1053,16 @@ async function confirmService(row: StationServiceRow) {
   }
 }
 
-async function approveCost(row: StationCostRow) {
+async function processCost(row: StationCostRow) {
   loadingId.value = row.id;
   actionError.value = '';
   try {
-    await wait(400);
-    const target = dataset.value.costs.find((cost) => cost.id === row.id);
-    if (target) target.status = 'APPROVED';
+    const action = row.status === 'DRAFT' ? 'submit' : 'approve';
+    await fetchApi(`/api/flight-operations/station-costs/${row.id}/actions/${action}`, {
+      method: 'POST',
+      body: { expectedVersion: row.version }
+    });
+    await refreshAll();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal memproses station cost.';
   } finally {
@@ -1019,98 +1070,140 @@ async function approveCost(row: StationCostRow) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Create Service dialog
-// ---------------------------------------------------------------------------
+function toStationId(stationCode: string): string {
+  return `st-${stationCode.toLowerCase()}`;
+}
 
 const showCreateService = ref(false);
 const creatingService = ref(false);
 const serviceForm = reactive({
   flightId: '',
-  serviceType: 'HANDLING' as ServiceType,
-  supplierName: '',
+  serviceTypeId: '',
+  serviceSupplierId: '',
   referenceRate: null as number | null
 });
 
 function openCreateService() {
   serviceForm.flightId = dataset.value.flights[0]?.flightId ?? '';
-  serviceForm.serviceType = 'HANDLING';
-  serviceForm.supplierName = '';
+  serviceForm.serviceTypeId = stationServiceTypes.value[0]?.id ?? '';
+  serviceForm.serviceSupplierId = handlingParkingSuppliers.value[0]?.id ?? '';
   serviceForm.referenceRate = null;
   showCreateService.value = true;
 }
 
 async function submitCreateService() {
   const flight = dataset.value.flights.find((row) => row.flightId === serviceForm.flightId);
-  if (!flight || !serviceForm.supplierName) return;
+  if (!flight || !serviceForm.serviceTypeId || !serviceForm.serviceSupplierId) return;
   creatingService.value = true;
   try {
-    await wait(500);
+    const created = await fetchApi<{
+      id: string;
+      flightId: string;
+      flightNumber: string;
+      serviceType: ServiceType;
+      supplierName: string;
+      status: ServiceStatus;
+      referenceRate: number | null;
+      version: number;
+    }>('/api/flight-operations/station-services', {
+      method: 'POST',
+      body: {
+        flightId: flight.flightId,
+        stationId: toStationId(selectedStationCode.value),
+        serviceSupplierId: serviceForm.serviceSupplierId,
+        serviceTypeId: serviceForm.serviceTypeId,
+        referenceRate: serviceForm.referenceRate
+      }
+    });
     dataset.value.services.unshift({
-      id: `svc-${Date.now()}`,
-      flightId: flight.flightId,
-      flightNumber: flight.flightNumber,
-      serviceType: serviceForm.serviceType,
-      supplierName: serviceForm.supplierName,
-      status: 'REQUESTED',
-      referenceRate: serviceForm.referenceRate ?? undefined
+      id: created.id,
+      flightId: created.flightId,
+      flightNumber: created.flightNumber,
+      serviceType: created.serviceType,
+      supplierName: created.supplierName,
+      status: created.status,
+      referenceRate: created.referenceRate ?? undefined,
+      version: created.version
     });
     showCreateService.value = false;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Gagal membuat station service.';
   } finally {
     creatingService.value = false;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Create Cost dialog
-// ---------------------------------------------------------------------------
-
-const COST_CATEGORIES = ['Landing Fee', 'Handling Fee', 'Parking Fee', 'Positioning Fee', 'Other'];
-
 const showCreateCost = ref(false);
 const creatingCost = ref(false);
 const costForm = reactive({
   flightId: '',
-  costCategoryName: 'Landing Fee',
+  costCategoryId: '',
+  vendorId: '',
+  currencyId: '',
   description: '',
   amount: null as number | null
 });
 
 function openCreateCost() {
   costForm.flightId = dataset.value.flights[0]?.flightId ?? '';
-  costForm.costCategoryName = 'Landing Fee';
+  costForm.costCategoryId = costCategories.value[0]?.id ?? '';
+  costForm.vendorId = vendors.value[0]?.id ?? '';
+  costForm.currencyId =
+    currencies.value.find((c) => c.subtitle === 'IDR')?.id ?? currencies.value[0]?.id ?? '';
   costForm.description = '';
   costForm.amount = null;
   showCreateCost.value = true;
 }
 
 async function submitCreateCost() {
-  if (!costForm.amount || !costForm.description) return;
+  if (!costForm.amount || !costForm.description || !costForm.costCategoryId) return;
   const flight = dataset.value.flights.find((row) => row.flightId === costForm.flightId) ?? null;
   creatingCost.value = true;
   try {
-    await wait(500);
+    const created = await fetchApi<{
+      id: string;
+      flightId: string | null;
+      flightNumber: string | null;
+      stationCode: string;
+      vendorName: string | null;
+      costCategoryName: string;
+      description: string;
+      amount: number;
+      currencyCode: string;
+      status: CostStatus;
+      version: number;
+    }>('/api/flight-operations/station-costs', {
+      method: 'POST',
+      body: {
+        flightId: flight?.flightId ?? null,
+        stationId: toStationId(selectedStationCode.value),
+        vendorId: costForm.vendorId || null,
+        costCategoryId: costForm.costCategoryId,
+        amount: costForm.amount,
+        currencyId: costForm.currencyId,
+        description: costForm.description
+      }
+    });
     dataset.value.costs.unshift({
-      id: `cost-${Date.now()}`,
-      flightId: flight?.flightId ?? null,
-      flightNumber: flight?.flightNumber ?? null,
-      stationCode: selectedStationCode.value,
-      vendorName: null,
-      costCategoryName: costForm.costCategoryName,
-      description: costForm.description,
-      amount: costForm.amount,
-      currencyCode: 'IDR',
-      status: 'PENDING'
+      id: created.id,
+      flightId: created.flightId,
+      flightNumber: created.flightNumber,
+      stationCode: created.stationCode,
+      vendorName: created.vendorName,
+      costCategoryName: created.costCategoryName,
+      description: created.description,
+      amount: created.amount,
+      currencyCode: created.currencyCode,
+      status: created.status,
+      version: created.version
     });
     showCreateCost.value = false;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Gagal membuat station cost.';
   } finally {
     creatingCost.value = false;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Export CSV — sesuai spec, export memakai data Daily Report
-// ---------------------------------------------------------------------------
 
 function exportDailyReportCsv() {
   const report = dataset.value.dailyReport;
@@ -1195,6 +1288,7 @@ function exportDailyReportCsv() {
           />
 
           <VBtn
+            size="small"
             variant="outlined"
             prepend-icon="mdi-refresh"
             :loading="pending"
@@ -1202,7 +1296,12 @@ function exportDailyReportCsv() {
           >
             Refresh
           </VBtn>
-          <VBtn color="primary" prepend-icon="mdi-tray-arrow-down" @click="exportDailyReportCsv">
+          <VBtn
+            size="small"
+            color="primary"
+            prepend-icon="mdi-tray-arrow-down"
+            @click="exportDailyReportCsv"
+          >
             Export CSV
           </VBtn>
         </div>
@@ -1218,6 +1317,7 @@ function exportDailyReportCsv() {
         </div>
         <VBtn
           v-if="corporateAssetSummary"
+          size="small"
           :to="`/asset-management/register?stationId=st-${selectedStationCode.toLowerCase()}`"
           variant="tonal"
           prepend-icon="mdi-package-variant-closed"
@@ -1233,7 +1333,9 @@ function exportDailyReportCsv() {
     <VAlert v-if="error" class="mb-4" type="error" variant="tonal" prominent>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <span>{{ error }}</span>
-        <VBtn size="small" variant="tonal" color="error" @click="refreshAll">Coba lagi</VBtn>
+        <VBtn size="small" color="error" prepend-icon="mdi-refresh" @click="refreshAll">
+          Coba lagi
+        </VBtn>
       </div>
     </VAlert>
     <VAlert
@@ -1311,8 +1413,9 @@ function exportDailyReportCsv() {
               </div>
               <VBtn
                 size="small"
-                variant="tonal"
+                variant="outlined"
                 color="primary"
+                prepend-icon="mdi-airplane"
                 :to="`/flights?station=${selectedStationCode}&date=${operationalDate}`"
               >
                 View All Flights
@@ -1437,12 +1540,7 @@ function exportDailyReportCsv() {
                 <h2 class="text-subtitle-1 font-weight-bold text-text-primary">Services</h2>
                 <p class="text-caption text-text-secondary">Recent &amp; pending services</p>
               </div>
-              <VBtn
-                size="small"
-                variant="outlined"
-                prepend-icon="mdi-plus"
-                @click="openCreateService"
-              >
+              <VBtn color="primary" size="small" prepend-icon="mdi-plus" @click="openCreateService">
                 Create Service
               </VBtn>
             </div>
@@ -1469,7 +1567,12 @@ function exportDailyReportCsv() {
                       No station service found.
                     </td>
                   </tr>
-                  <tr v-for="row in dataset.services" v-else :key="row.id">
+                  <tr
+                    v-for="row in dataset.services"
+                    v-else
+                    :key="row.id"
+                    :class="{ 'bg-primary-lighten-5': route.query.sourceRecordId === row.id }"
+                  >
                     <td class="font-weight-medium">{{ row.flightNumber }}</td>
                     <td class="text-text-secondary">{{ row.serviceType }}</td>
                     <td>{{ row.supplierName }}</td>
@@ -1492,7 +1595,8 @@ function exportDailyReportCsv() {
                         title="Confirm station service?"
                         tone="success"
                         tooltip="Confirm service"
-                        variant="tonal"
+                        variant="flat"
+                        size="small"
                       />
                       <DsTooltipIconButton
                         v-else
@@ -1500,6 +1604,7 @@ function exportDailyReportCsv() {
                         icon="mdi-eye-outline"
                         tooltip="View service"
                         variant="text"
+                        size="small"
                         :to="`/flights/${row.flightId}`"
                       />
                     </td>
@@ -1509,12 +1614,15 @@ function exportDailyReportCsv() {
             </div>
             <VDivider />
             <div class="py-3 text-center">
-              <NuxtLink
+              <VBtn
+                size="small"
+                variant="text"
+                color="primary"
+                append-icon="mdi-arrow-right"
                 :to="`/flights/station-services?station=${selectedStationCode}&date=${operationalDate}`"
-                class="text-caption font-weight-medium text-primary"
               >
-                View all services →
-              </NuxtLink>
+                View all services
+              </VBtn>
             </div>
           </VCard>
 
@@ -1524,7 +1632,7 @@ function exportDailyReportCsv() {
                 <h2 class="text-subtitle-1 font-weight-bold text-text-primary">Costs</h2>
                 <p class="text-caption text-text-secondary">Recent &amp; pending costs</p>
               </div>
-              <VBtn size="small" variant="outlined" prepend-icon="mdi-plus" @click="openCreateCost">
+              <VBtn color="primary" size="small" prepend-icon="mdi-plus" @click="openCreateCost">
                 Create Cost
               </VBtn>
             </div>
@@ -1551,7 +1659,12 @@ function exportDailyReportCsv() {
                       No station cost found.
                     </td>
                   </tr>
-                  <tr v-for="row in dataset.costs" v-else :key="row.id">
+                  <tr
+                    v-for="row in dataset.costs"
+                    v-else
+                    :key="row.id"
+                    :class="{ 'bg-primary-lighten-5': route.query.sourceRecordId === row.id }"
+                  >
                     <td class="font-weight-medium">{{ row.flightNumber ?? '-' }}</td>
                     <td>{{ row.costCategoryName }}</td>
                     <td>{{ money(row.amount, row.currencyCode) }}</td>
@@ -1562,19 +1675,23 @@ function exportDailyReportCsv() {
                     </td>
                     <td class="text-right">
                       <DsConfirmIconButton
-                        v-if="row.status !== 'APPROVED'"
-                        :action="() => approveCost(row)"
+                        v-if="
+                          (row.status === 'DRAFT' && can('station.operation.update').allowed) ||
+                            (row.status === 'SUBMITTED' && can('station.cost.approve').allowed)
+                        "
+                        :action="() => processCost(row)"
                         color="success"
                         confirm-icon="mdi-check-decagram-outline"
-                        confirm-text="Approve"
+                        :confirm-text="row.status === 'DRAFT' ? 'Submit' : 'Approve'"
                         density="comfortable"
                         icon="mdi-check-decagram-outline"
                         :loading="loadingId === row.id"
-                        :message="`Approve ${money(row.amount, row.currencyCode)} station cost for ${row.flightNumber ?? row.stationCode}.`"
-                        title="Approve station cost?"
+                        :message="`${row.status === 'DRAFT' ? 'Submit' : 'Approve'} ${money(row.amount, row.currencyCode)} station cost for ${row.flightNumber ?? row.stationCode}.`"
+                        :title="`${row.status === 'DRAFT' ? 'Submit' : 'Approve'} station cost?`"
                         tone="success"
-                        tooltip="Approve station cost"
-                        variant="tonal"
+                        :tooltip="`${row.status === 'DRAFT' ? 'Submit' : 'Approve'} station cost`"
+                        variant="flat"
+                        size="small"
                       />
                       <DsTooltipIconButton
                         v-else
@@ -1582,6 +1699,7 @@ function exportDailyReportCsv() {
                         icon="mdi-eye-outline"
                         tooltip="View cost"
                         variant="text"
+                        size="small"
                         :to="row.flightId ? `/flights/${row.flightId}` : undefined"
                       />
                     </td>
@@ -1591,15 +1709,218 @@ function exportDailyReportCsv() {
             </div>
             <VDivider />
             <div class="py-3 text-center">
-              <NuxtLink
+              <VBtn
+                size="small"
+                variant="text"
+                color="primary"
+                append-icon="mdi-arrow-right"
                 :to="`/flights/station-costs?station=${selectedStationCode}&date=${operationalDate}`"
-                class="text-caption font-weight-medium text-primary"
               >
-                View all costs →
-              </NuxtLink>
+                View all costs
+              </VBtn>
             </div>
           </VCard>
         </div>
+
+        <VCard border class="mb-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 pa-4">
+            <div>
+              <h2 class="text-subtitle-1 font-weight-bold text-text-primary">
+                Operational Verification Tasks
+              </h2>
+              <p class="text-caption text-text-secondary">
+                Persistent station evidence, verification, and dual sign-off.
+              </p>
+            </div>
+            <VChip color="warning" variant="tonal"> {{ pendingStationTaskCount }} pending </VChip>
+          </div>
+          <VDivider />
+          <div class="overflow-x-auto">
+            <VTable density="comfortable" hover>
+              <thead>
+                <tr>
+                  <th>Flight</th>
+                  <th>Phase</th>
+                  <th>Task</th>
+                  <th>Evidence</th>
+                  <th>Station / OCC</th>
+                  <th>Status</th>
+                  <th class="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="stationTasks.length === 0">
+                  <td colspan="7" class="py-6 text-center text-text-secondary">
+                    No verification task for this station and date.
+                  </td>
+                </tr>
+                <tr
+                  v-for="task in stationTasks"
+                  v-else
+                  :key="task.id"
+                  :class="{ 'bg-primary-lighten-5': route.query.sourceRecordId === task.id }"
+                >
+                  <td>
+                    <NuxtLink
+                      :to="`/flights/${task.flightId}`"
+                      class="font-weight-medium text-primary"
+                    >
+                      {{ task.flightNumber }}
+                    </NuxtLink>
+                  </td>
+                  <td class="text-caption">{{ task.phase.replaceAll('_', ' ') }}</td>
+                  <td>
+                    <strong>{{ task.taskTitle }}</strong>
+                    <div v-if="task.rejectionReason" class="text-caption text-error">
+                      {{ task.rejectionReason }}
+                    </div>
+                  </td>
+                  <td>
+                    <VChip
+                      :color="task.evidenceCount ? 'success' : 'warning'"
+                      size="small"
+                      variant="tonal"
+                    >
+                      {{ task.evidenceCount }}
+                    </VChip>
+                  </td>
+                  <td class="text-caption">
+                    {{ task.stationDecision ?? 'Pending' }} /
+                    {{ task.occDecision ?? 'Pending' }}
+                  </td>
+                  <td>
+                    <VChip
+                      :color="
+                        task.status === 'VERIFIED'
+                          ? 'success'
+                          : task.status === 'REJECTED'
+                            ? 'error'
+                            : 'warning'
+                      "
+                      size="small"
+                      variant="tonal"
+                    >
+                      {{ task.status }}
+                    </VChip>
+                  </td>
+                  <td class="text-right">
+                    <div class="flex justify-end gap-1">
+                      <VBtn
+                        v-if="task.status === 'PENDING' && can('station.task.start').allowed"
+                        size="small"
+                        color="primary"
+                        variant="flat"
+                        density="comfortable"
+                        prepend-icon="mdi-play"
+                        :loading="loadingId === task.id"
+                        @click="runTaskAction(task.id, 'start', task.version)"
+                      >
+                        Start
+                      </VBtn>
+                      <VBtn
+                        v-if="can('station.evidence.add').allowed"
+                        size="small"
+                        color="info"
+                        variant="tonal"
+                        density="comfortable"
+                        prepend-icon="mdi-paperclip"
+                        @click="openEvidence(task)"
+                      >
+                        Evidence
+                      </VBtn>
+                      <VBtn
+                        v-if="
+                          ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
+                            task.evidenceCount > 0 &&
+                            can('station.task.verify').allowed
+                        "
+                        color="success"
+                        size="small"
+                        variant="flat"
+                        density="comfortable"
+                        prepend-icon="mdi-check"
+                        :loading="loadingId === task.id"
+                        @click="runTaskAction(task.id, 'verify', task.version)"
+                      >
+                        Verify
+                      </VBtn>
+                      <VBtn
+                        v-if="
+                          ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
+                            can('station.task.reject').allowed
+                        "
+                        color="error"
+                        size="small"
+                        variant="text"
+                        density="comfortable"
+                        prepend-icon="mdi-close"
+                        @click="openTaskRejection(task)"
+                      >
+                        Reject
+                      </VBtn>
+                      <VBtn
+                        v-if="
+                          task.status === 'VERIFIED' &&
+                            task.taskCode.endsWith('STATION_SIGNOFF') &&
+                            task.stationDecision === 'APPROVED' &&
+                            !task.occDecision &&
+                            can('station.signoff.approve').allowed
+                        "
+                        color="primary"
+                        size="small"
+                        variant="flat"
+                        density="comfortable"
+                        prepend-icon="mdi-account-check"
+                        :loading="loadingId === task.id"
+                        @click="runTaskAction(task.id, 'approve-occ', task.version)"
+                      >
+                        OCC approve
+                      </VBtn>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
+          </div>
+        </VCard>
+
+        <VCard border class="mb-4">
+          <div class="pa-4">
+            <h2 class="text-subtitle-1 font-weight-bold text-text-primary">
+              Operational Audit Timeline
+            </h2>
+            <p class="text-caption text-text-secondary">
+              Persistent actor, decision, and verification history for the selected workbench.
+            </p>
+          </div>
+          <VDivider />
+          <div v-if="workbenchAudit.length === 0" class="pa-6 text-center text-text-secondary">
+            No operational assurance activity recorded.
+          </div>
+          <VTimeline v-else align="start" class="pa-4" density="compact" side="end">
+            <VTimelineItem
+              v-for="entry in workbenchAudit"
+              :key="entry.id"
+              :dot-color="entry.afterStatus === 'REJECTED' ? 'error' : 'primary'"
+              size="x-small"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <NuxtLink
+                  :to="`/flights/${entry.flightId}`"
+                  class="font-weight-medium text-primary"
+                >
+                  {{ entry.flightNumber }}
+                </NuxtLink>
+                <VChip size="x-small" variant="tonal">{{ entry.module }}</VChip>
+                <span class="text-caption">{{ entry.action }}</span>
+              </div>
+              <div class="text-caption text-text-secondary">
+                {{ entry.actorRole }} · {{ formatDateTime(entry.timestamp) }}
+              </div>
+              <div v-if="entry.reason" class="text-caption">{{ entry.reason }}</div>
+            </VTimelineItem>
+          </VTimeline>
+        </VCard>
 
         <!-- Daily report + donut -->
         <div class="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
@@ -1798,15 +2119,20 @@ function exportDailyReportCsv() {
             density="comfortable"
           />
           <VSelect
-            v-model="serviceForm.serviceType"
+            v-model="serviceForm.serviceTypeId"
             label="Service Type"
-            :items="['HANDLING', 'PARKING']"
+            :items="stationServiceTypes"
+            item-title="title"
+            item-value="id"
             variant="outlined"
             density="comfortable"
           />
-          <VTextField
-            v-model="serviceForm.supplierName"
+          <VSelect
+            v-model="serviceForm.serviceSupplierId"
             label="Supplier"
+            :items="handlingParkingSuppliers"
+            item-title="title"
+            item-value="id"
             variant="outlined"
             density="comfortable"
           />
@@ -1821,8 +2147,69 @@ function exportDailyReportCsv() {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="showCreateService = false">Cancel</VBtn>
-          <VBtn color="primary" :loading="creatingService" @click="submitCreateService">
+          <VBtn
+            color="primary"
+            :loading="creatingService"
+            prepend-icon="mdi-plus"
+            @click="submitCreateService"
+          >
             Create Service
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="evidenceDialog" max-width="480">
+      <VCard>
+        <VCardTitle>Add verification evidence</VCardTitle>
+        <VCardText class="flex flex-col gap-4">
+          <VTextField
+            v-model="evidenceFileName"
+            label="Evidence file/reference"
+            hint="Use the uploaded file name or controlled document reference."
+            persistent-hint
+            variant="outlined"
+          />
+          <VTextarea v-model="evidenceNotes" label="Notes" rows="3" variant="outlined" />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="evidenceDialog = false">Cancel</VBtn>
+          <VBtn
+            color="primary"
+            :disabled="!evidenceFileName.trim()"
+            :loading="loadingId === evidenceTaskId"
+            prepend-icon="mdi-attachment"
+            @click="addTaskEvidence"
+          >
+            Attach evidence
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="rejectionDialog" max-width="480">
+      <VCard>
+        <VCardTitle>Reject verification task</VCardTitle>
+        <VCardText>
+          <VTextarea
+            v-model="rejectionReason"
+            label="Rejection reason"
+            rows="3"
+            variant="outlined"
+          />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="rejectionDialog = false">Cancel</VBtn>
+          <VBtn
+            color="error"
+            :disabled="!rejectionReason.trim()"
+            :loading="loadingId === rejectionTaskId"
+            prepend-icon="mdi-close"
+            @click="rejectTask"
+          >
+            Reject task
           </VBtn>
         </VCardActions>
       </VCard>
@@ -1844,9 +2231,30 @@ function exportDailyReportCsv() {
             clearable
           />
           <VSelect
-            v-model="costForm.costCategoryName"
+            v-model="costForm.costCategoryId"
             label="Category"
-            :items="COST_CATEGORIES"
+            :items="costCategories"
+            item-title="title"
+            item-value="id"
+            variant="outlined"
+            density="comfortable"
+          />
+          <VSelect
+            v-model="costForm.vendorId"
+            label="Vendor"
+            :items="vendors"
+            item-title="title"
+            item-value="id"
+            variant="outlined"
+            density="comfortable"
+            clearable
+          />
+          <VSelect
+            v-model="costForm.currencyId"
+            label="Currency"
+            :items="currencies"
+            item-title="subtitle"
+            item-value="id"
             variant="outlined"
             density="comfortable"
           />
@@ -1858,7 +2266,7 @@ function exportDailyReportCsv() {
           />
           <VTextField
             v-model.number="costForm.amount"
-            label="Amount (IDR)"
+            label="Amount"
             type="number"
             variant="outlined"
             density="comfortable"
@@ -1867,7 +2275,14 @@ function exportDailyReportCsv() {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="showCreateCost = false">Cancel</VBtn>
-          <VBtn color="primary" :loading="creatingCost" @click="submitCreateCost">Create Cost</VBtn>
+          <VBtn
+            color="primary"
+            :loading="creatingCost"
+            prepend-icon="mdi-plus"
+            @click="submitCreateCost"
+          >
+            Create Cost
+          </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>

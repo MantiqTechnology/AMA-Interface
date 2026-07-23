@@ -57,6 +57,94 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
+  it('treats accepted dangerous goods as passed and locked manifests as approved', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const cargoManifest = sqlite
+      .prepare(
+        `SELECT manifest.id
+         FROM flight_manifests manifest
+         JOIN manifest_types type ON type.id = manifest.manifest_type_id
+         WHERE manifest.flight_operation_id = 'fop-ticketing-passenger'
+           AND type.code = 'CARGO'`
+      )
+      .get() as { id: string };
+    const dgCategory = sqlite.prepare('SELECT id FROM dg_categories ORDER BY id LIMIT 1').get() as {
+      id: string;
+    };
+    const acceptedStatus = sqlite
+      .prepare("SELECT id FROM dg_acceptance_statuses WHERE code = 'ACCEPTED'")
+      .get() as { id: string };
+    sqlite
+      .prepare(
+        `INSERT INTO flight_manifest_cargo_items (
+           id, manifest_id, description, actual_weight_kg, dg_category_id,
+           dg_acceptance_status_id, created_at, updated_at
+         ) VALUES ('cargo-dg-readiness-test', ?, 'Accepted DG test cargo', 10, ?, ?, ?, ?)`
+      )
+      .run(
+        cargoManifest.id,
+        dgCategory.id,
+        acceptedStatus.id,
+        new Date().toISOString(),
+        new Date().toISOString()
+      );
+    sqlite
+      .prepare(
+        `UPDATE flight_manifests
+         SET status_id = 'manifest-status-locked'
+         WHERE flight_operation_id = 'fop-ticketing-passenger'`
+      )
+      .run();
+
+    const evaluated = services.flightOperations.evaluate('fop-ticketing-passenger', occActor);
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'DG_ACCEPTANCE')
+    ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'MANIFEST_APPROVED')
+    ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
+
+    sqlite.close();
+  });
+
+  it('compares the actual readiness approver with the flight creator', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flight = sqlite
+      .prepare(
+        `SELECT created_by_user_id
+         FROM flight_operations WHERE id = 'fop-ticketing-passenger'`
+      )
+      .get() as { created_by_user_id: string };
+    sqlite
+      .prepare(
+        `UPDATE flight_operation_approvals
+         SET decided_by_user_id = ?
+         WHERE flight_id = 'fop-ticketing-passenger'
+           AND approval_type_id = 'flight-approval-type-readiness-approval'`
+      )
+      .run(flight.created_by_user_id);
+
+    let evaluated = services.flightOperations.evaluate('fop-ticketing-passenger', occActor);
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'SEPARATION_OF_DUTIES')
+    ).toMatchObject({ status: 'FAIL', effectiveStatus: 'BLOCKED' });
+
+    sqlite
+      .prepare(
+        `UPDATE flight_operation_approvals
+         SET decided_by_user_id = ?
+         WHERE flight_id = 'fop-ticketing-passenger'
+           AND approval_type_id = 'flight-approval-type-readiness-approval'`
+      )
+      .run(adminActor);
+    evaluated = services.flightOperations.evaluate('fop-ticketing-passenger', occActor);
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'SEPARATION_OF_DUTIES')
+    ).toMatchObject({ status: 'PASS', effectiveStatus: 'PASSED' });
+
+    sqlite.close();
+  });
+
   it('seeds a complete charter draft that is ready to submit', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
@@ -297,7 +385,7 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
-  it('moves a valid draft through readiness approval', async () => {
+  it('keeps a system-ready draft blocked until operational verification is complete', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
     const created = services.flightOperations.create(
@@ -378,14 +466,22 @@ describe('FlightOperationsService', () => {
     expect(['PENDING_READINESS', 'READY_FOR_APPROVAL']).toContain(submitted.currentStatus);
 
     const evaluated = services.flightOperations.evaluate(created.id, occActor);
-    expect(evaluated.currentStatus).toBe('READY_FOR_APPROVAL');
-    expect(
-      evaluated.readinessChecks.every((check) => ['PASS', 'NOT_APPLICABLE'].includes(check.status))
-    ).toBe(true);
-
-    const approved = services.flightOperations.approve(created.id, {}, adminActor);
-    expect(approved.currentStatus).toBe('APPROVED');
-    expect(approved.approvedByUserId).toBe('USR-ADMIN');
+    expect(evaluated.currentStatus).toBe('PENDING_READINESS');
+    expect(evaluated.readinessChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          checkCode: 'ORIGIN_STATION_SIGNOFF',
+          effectiveStatus: 'BLOCKED'
+        }),
+        expect.objectContaining({
+          checkCode: 'REQUIRED_DOCUMENTS',
+          effectiveStatus: 'BLOCKED'
+        })
+      ])
+    );
+    expect(() => services.flightOperations.approve(created.id, {}, adminActor)).toThrow(
+      'Flight must be ready for approval'
+    );
 
     sqlite.close();
   });
@@ -694,6 +790,40 @@ describe('FlightOperationsService', () => {
     expect(() => services.flightOperations.closeFlight('fop-dg-pending', adminActor)).toThrow(
       'Flight cannot be closed'
     );
+
+    sqlite.close();
+  });
+
+  it('returns structured verification-aware closure blockers', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    let thrown: unknown;
+    try {
+      services.flightOperations.validateClosureRequirements(
+        'fop-pending-closure',
+        services.flightOperations.detail('fop-pending-closure').serviceTypeCode
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      code: 'CLOSURE_VALIDATION_FAILED',
+      details: {
+        requirements: expect.arrayContaining([
+          expect.objectContaining({
+            code: 'DESTINATION_STATION_SIGNOFF',
+            status: 'BLOCKED',
+            required: true
+          }),
+          expect.objectContaining({
+            code: 'RECONCILIATION',
+            status: 'BLOCKED',
+            required: true
+          })
+        ])
+      }
+    });
 
     sqlite.close();
   });

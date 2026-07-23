@@ -25,6 +25,7 @@ const selectedIssue = ref<FlightReadinessCheckDto | null>(null);
 const historyFilter = ref('ALL');
 const actualTimeDialog = ref(false);
 const actualTimeAction = ref<'depart' | 'land'>('depart');
+const { can } = useAuthorization();
 
 const { data: aircraftOptions } = await useAsyncData(
   'aircraft-options',
@@ -56,6 +57,16 @@ const lifecycle = [
   'PENDING_CLOSURE',
   'CLOSED'
 ] as const;
+const closureAllowed = computed(() => {
+  const current = flight.value;
+  if (!current) return false;
+  if (current.operationalClosureRequirements?.length) {
+    return current.operationalClosureRequirements.every(
+      (requirement) => requirement.status !== 'BLOCKED'
+    );
+  }
+  return current.closureReadiness.allowed;
+});
 
 const validActions = computed(() => {
   const status = flight.value?.currentStatus;
@@ -96,7 +107,7 @@ const validActions = computed(() => {
       action: 'open-check-in'
     });
   }
-  if (status === 'CHECK_IN_OPEN') {
+  if (status === 'CHECK_IN_OPEN' && can('flight.departure.execute').allowed) {
     actions.push({ label: 'Record Departure', icon: 'mdi-airplane-takeoff', action: 'depart' });
   }
   if (status === 'IN_PROGRESS') {
@@ -114,13 +125,13 @@ const validActions = computed(() => {
       action: 'pending-closure'
     });
   }
-  if (status === 'PENDING_CLOSURE') {
+  if (status === 'PENDING_CLOSURE' && can('flight.closure.execute').allowed) {
     actions.push({
       label: 'Close Flight',
       icon: 'mdi-lock-check-outline',
       action: 'close',
       color: 'success',
-      disabled: !flight.value?.closureReadiness.allowed
+      disabled: !closureAllowed.value
     });
   }
   return actions;
@@ -204,6 +215,15 @@ const estimatedMargin = computed(
 const closureItems = computed(() => {
   const item = flight.value;
   if (!item) return [];
+  if (item.operationalClosureRequirements?.length) {
+    return item.operationalClosureRequirements.map((requirement) => ({
+      label: requirement.label,
+      done: requirement.status !== 'BLOCKED',
+      reason: requirement.reason,
+      actionHref: requirement.actionHref,
+      status: requirement.status
+    }));
+  }
   const missing = new Set(item.closureReadiness.missing);
   return [
     ['Actual departure and arrival', 'actual departure/arrival'],
@@ -211,8 +231,20 @@ const closureItems = computed(() => {
     ['Actual fuel uplift', 'actual fuel uplift'],
     ['Approved station cost', 'approved station cost'],
     ['Approved maintenance handoff', 'approved maintenance handoff']
-  ].map(([label, requirement]) => ({ label, done: !missing.has(requirement) }));
+  ].map(([label, requirement]) => ({
+    label,
+    done: !missing.has(requirement),
+    reason: undefined,
+    actionHref: undefined,
+    status: missing.has(requirement) ? 'BLOCKED' : 'PASSED'
+  }));
 });
+const blockedClosureRequirements = computed(
+  () =>
+    flight.value?.operationalClosureRequirements?.filter(
+      (requirement) => requirement.status === 'BLOCKED'
+    ) ?? []
+);
 const filteredHistory = computed(() => {
   if (historyFilter.value === 'ALL') return flight.value?.histories ?? [];
   return (flight.value?.histories ?? []).filter((item) => {
@@ -375,13 +407,22 @@ function historyActor(item: FlightStatusHistoryDto) {
       {{ actionError }}
     </VAlert>
     <VAlert
-      v-if="flight?.currentStatus === 'PENDING_CLOSURE' && !flight.closureReadiness.allowed"
+      v-if="flight?.currentStatus === 'PENDING_CLOSURE' && !closureAllowed"
       class="mb-4"
       type="warning"
       variant="tonal"
     >
-      Close Flight is unavailable. Complete:
-      {{ flight.closureReadiness.missing.join(', ') }}.
+      <div class="font-weight-medium">Close Flight is unavailable.</div>
+      <ul v-if="flight.operationalClosureRequirements?.length" class="mt-2 pl-5">
+        <li v-for="requirement in blockedClosureRequirements" :key="requirement.code">
+          <NuxtLink v-if="requirement.actionHref" :to="requirement.actionHref">
+            {{ requirement.label }}
+          </NuxtLink>
+          <span v-else>{{ requirement.label }}</span>
+          — {{ requirement.reason }}
+        </li>
+      </ul>
+      <span v-else>Complete: {{ flight.closureReadiness.missing.join(', ') }}.</span>
     </VAlert>
 
     <div v-if="pending" class="py-12">
@@ -1328,8 +1369,24 @@ function historyActor(item: FlightStatusHistoryDto) {
             {{ selectedIssue.resultNote }}
           </VAlert>
           <div class="detail-stack mt-5">
+            <span>Classification</span>
+            <strong>{{ selectedIssue.classification.replaceAll('_', ' ') }}</strong>
+            <span>System calculation</span>
+            <strong>{{ selectedIssue.calculationStatus.replaceAll('_', ' ') }}</strong>
+            <span>Human verification</span>
+            <strong>{{ selectedIssue.verificationStatus.replaceAll('_', ' ') }}</strong>
+            <span>Effective status</span>
+            <strong>{{ selectedIssue.effectiveStatus.replaceAll('_', ' ') }}</strong>
             <span>Affected data</span>
             <strong>{{ selectedIssue.sourceReference ?? '-' }}</strong>
+            <span>Source records</span>
+            <strong>{{ selectedIssue.sourceRecordIds.join(', ') || '-' }}</strong>
+            <span>Last calculated</span>
+            <strong>{{ formatDate(selectedIssue.calculatedAt) }}</strong>
+            <template v-if="selectedIssue.invalidationReason">
+              <span>Invalidation</span>
+              <strong class="text-error">{{ selectedIssue.invalidationReason }}</strong>
+            </template>
             <span>Owner role</span>
             <strong>{{ selectedIssue.ownerRole }}</strong>
             <span>Recommended action</span>

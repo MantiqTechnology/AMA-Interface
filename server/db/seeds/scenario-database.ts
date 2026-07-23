@@ -1,6 +1,7 @@
 import type { DbClient } from '../client';
 import { seedDemoData } from '../seed';
 import { seedFlightOperationsData } from '../seed-flight-operations';
+import { migrateVerificationData } from '../migrations/operations/verification-migration';
 import { resetAndSeedLocalDocuments } from '../../utils/local-document-storage';
 import { createDemoSeedContext, type DemoSeedContext } from './context';
 import { assertScenarioSeedIntegrity } from './integrity';
@@ -8,6 +9,7 @@ import { seedInventoryData } from './inventory';
 import { seedTicketingData } from './ticketing';
 import { seedAccountingScenarioData } from './accounting-scenarios';
 import { seedCorporateAssets } from './corporate-assets';
+import { seedVerificationScenarios } from './verification-scenarios';
 
 export type SeedScenarioDatabaseOptions = {
   context?: DemoSeedContext;
@@ -30,6 +32,10 @@ export async function seedScenarioDatabase(
     assertScenarioSeedIntegrity(client.sqlite, context);
   });
   seedScenarios.immediate();
+
+  // Initialize verification workbench for seeded flights and enrich with demo scenarios
+  await migrateVerificationData(client.sqlite);
+  seedVerificationScenarios(client.sqlite);
 
   if (options.resetDocuments) {
     await resetAndSeedLocalDocuments(context);
