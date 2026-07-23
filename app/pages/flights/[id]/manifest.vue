@@ -180,7 +180,7 @@ function decideDg(item: FlightManifestCargoDto, decision: DgDecision) {
           <VCardTitle class="d-flex align-center">
             {{ manifest.manifestType === 'PASSENGER' ? 'Passenger / Patient' : 'Cargo' }}
             <VSpacer />
-            <VChip size="small" variant="tonal">{{ manifest.status }}</VChip>
+            <DsStatusBadge :value="manifest.status" />
           </VCardTitle>
           <VCardText>
             <VRow dense>
@@ -240,7 +240,7 @@ function decideDg(item: FlightManifestCargoDto, decision: DgDecision) {
                   <td>{{ item.dgCategoryLabel ?? 'Non-DG' }}</td>
                   <td>
                     <div class="d-flex align-center gap-1">
-                      <VChip size="x-small" variant="tonal">{{ item.dgAcceptanceStatus }}</VChip>
+                      <DsStatusBadge :value="item.dgAcceptanceStatus" />
                       <template v-if="item.dgCategoryId && data.permissions.mayReview">
                         <VBtn
                           icon="mdi-check"

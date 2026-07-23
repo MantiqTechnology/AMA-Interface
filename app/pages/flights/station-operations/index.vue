@@ -274,11 +274,14 @@ watch(
   },
   { immediate: true }
 );
-const operationalDate = ref<string>(todayIso());
+const operationalDate = ref<string>(
+  typeof route.query.date === 'string' ? route.query.date : todayIso()
+);
 
 const pending = ref(false);
 const error = ref('');
 const actionError = ref('');
+const actionSuccess = ref('');
 const loadingId = ref('');
 const lastUpdated = ref<Date | null>(null);
 
@@ -318,6 +321,37 @@ const workbenchAudit = computed(() =>
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
     .slice(0, 20)
 );
+
+function stationTaskBlocker(task: StationTaskRow) {
+  if (task.requiresEvidence && task.evidenceCount === 0) {
+    return 'Attach at least one evidence record before verification.';
+  }
+  const flight = workbenchFlights.value.find((item) => item.flightId === task.flightId);
+  if (!flight) return null;
+  if (task.taskCode === 'ORIGIN_HANDLING') {
+    const handlingReady = flight.services.some(
+      (service) =>
+        service.stationCode === selectedStationCode.value &&
+        service.serviceType === 'HANDLING' &&
+        ['CONFIRMED', 'COMPLETED'].includes(service.status)
+    );
+    if (!handlingReady) return 'Confirm the origin handling service first.';
+  }
+  if (task.taskCode.endsWith('STATION_SIGNOFF')) {
+    const prefix = task.taskCode.startsWith('ORIGIN_') ? 'ORIGIN_' : 'DESTINATION_';
+    const incomplete = flight.tasks.filter(
+      (candidate) =>
+        candidate.id !== task.id &&
+        candidate.stationId === task.stationId &&
+        candidate.taskCode.startsWith(prefix) &&
+        candidate.status !== 'VERIFIED'
+    );
+    if (incomplete.length) {
+      return `Complete ${incomplete.length} remaining ${prefix === 'ORIGIN_' ? 'origin' : 'destination'} task(s) first.`;
+    }
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Dummy dataset builders
@@ -680,6 +714,7 @@ async function runTaskAction(
 ) {
   loadingId.value = taskId;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/station-tasks/${taskId}/actions/${action}`, {
       method: 'POST',
@@ -695,6 +730,12 @@ async function runTaskAction(
             : { expectedVersion: version }
     });
     await refreshAll();
+    actionSuccess.value =
+      action === 'approve-occ'
+        ? 'OCC sign-off approval recorded.'
+        : action === 'verify'
+          ? 'Station task verified.'
+          : 'Station task started.';
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal memperbarui station task.';
   } finally {
@@ -724,6 +765,7 @@ async function addTaskEvidence() {
   if (!evidenceFileName.value.trim()) return;
   loadingId.value = evidenceTaskId.value;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/station-tasks/${evidenceTaskId.value}/evidence`, {
       method: 'POST',
@@ -736,6 +778,7 @@ async function addTaskEvidence() {
     });
     evidenceDialog.value = false;
     await refreshAll();
+    actionSuccess.value = 'Evidence added to the station task.';
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal menambahkan evidence.';
   } finally {
@@ -754,6 +797,7 @@ async function rejectTask() {
   if (!rejectionReason.value.trim()) return;
   loadingId.value = rejectionTaskId.value;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/station-tasks/${rejectionTaskId.value}/actions/reject`, {
       method: 'POST',
@@ -764,6 +808,7 @@ async function rejectTask() {
     });
     rejectionDialog.value = false;
     await refreshAll();
+    actionSuccess.value = 'Station task rejected.';
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal menolak station task.';
   } finally {
@@ -838,37 +883,6 @@ function formatLastUpdated(date: Date | null) {
   return `${formatted} WIT`;
 }
 
-const flightStatusMeta: Record<FlightStatus, { label: string; color: string; dot: string }> = {
-  LANDED: { label: 'Landed', color: '#64748B', dot: '#94A3B8' },
-  ARRIVING: { label: 'Arriving', color: '#2563EB', dot: '#60A5FA' },
-  SCHEDULED: { label: 'Scheduled', color: '#475569', dot: '#CBD5E1' },
-  DELAYED: { label: 'Delayed', color: '#DC2626', dot: '#F87171' },
-  DEPARTED: { label: 'Departed', color: '#16A34A', dot: '#4ADE80' },
-  BOARDING: { label: 'Boarding', color: '#7C3AED', dot: '#A78BFA' }
-};
-
-const readinessMeta: Record<ReadinessStatus, { label: string; icon: string; color: string }> = {
-  READY: { label: 'Ready', icon: 'mdi-check-circle', color: '#16A34A' },
-  CHECK: { label: 'Check', icon: 'mdi-alert-circle', color: '#D97706' },
-  NOT_READY: { label: 'Not Ready', icon: 'mdi-close-circle', color: '#DC2626' }
-};
-
-const serviceStatusColor: Record<ServiceStatus, string> = {
-  REQUESTED: 'info',
-  CONFIRMED: 'success',
-  COMPLETED: 'secondary',
-  REJECTED: 'error',
-  CANCELLED: 'error'
-};
-
-const costStatusColor: Record<CostStatus, string> = {
-  DRAFT: 'secondary',
-  SUBMITTED: 'warning',
-  APPROVED: 'success',
-  REJECTED: 'error',
-  VOID: 'secondary'
-};
-
 // ---------------------------------------------------------------------------
 // Computed view data
 // ---------------------------------------------------------------------------
@@ -892,8 +906,7 @@ interface KpiCard {
   label: string;
   value: string;
   icon: string;
-  iconBg: string;
-  iconColor: string;
+  tone: 'primary' | 'secondary' | 'info' | 'success' | 'warning';
   delta: number;
   goodDirection: 'up' | 'down';
 }
@@ -906,8 +919,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       label: 'Inbound Flights',
       value: numberFormat(kpi.inboundFlights),
       icon: 'mdi-airplane-landing',
-      iconBg: '#DBEAFE',
-      iconColor: '#2563EB',
+      tone: 'info',
       delta: kpi.delta.inboundFlights,
       goodDirection: 'up'
     },
@@ -916,8 +928,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       label: 'Outbound Flights',
       value: numberFormat(kpi.outboundFlights),
       icon: 'mdi-airplane-takeoff',
-      iconBg: '#DCFCE7',
-      iconColor: '#16A34A',
+      tone: 'success',
       delta: kpi.delta.outboundFlights,
       goodDirection: 'up'
     },
@@ -926,8 +937,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       label: 'Flights Needing Action',
       value: numberFormat(kpi.flightsNeedingAction),
       icon: 'mdi-alert',
-      iconBg: '#FFEDD5',
-      iconColor: '#EA580C',
+      tone: 'warning',
       delta: kpi.delta.flightsNeedingAction,
       goodDirection: 'down'
     },
@@ -936,8 +946,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       label: 'Pax Check-in / Boarded',
       value: `${numberFormat(kpi.paxCheckedIn)} / ${numberFormat(kpi.paxBoarded)}`,
       icon: 'mdi-account-group',
-      iconBg: '#EDE9FE',
-      iconColor: '#7C3AED',
+      tone: 'secondary',
       delta: kpi.delta.pax,
       goodDirection: 'up'
     },
@@ -946,8 +955,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       label: 'Cargo Weight (kg)',
       value: numberFormat(kpi.cargoWeightKg),
       icon: 'mdi-package-variant',
-      iconBg: '#FEF3C7',
-      iconColor: '#B45309',
+      tone: 'warning',
       delta: kpi.delta.cargoWeightKg,
       goodDirection: 'up'
     },
@@ -956,8 +964,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       label: 'Pending Services',
       value: numberFormat(kpi.pendingServices),
       icon: 'mdi-toolbox-outline',
-      iconBg: '#E0E7FF',
-      iconColor: '#4338CA',
+      tone: 'info',
       delta: kpi.delta.pendingServices,
       goodDirection: 'down'
     },
@@ -966,17 +973,16 @@ const kpiCards = computed<KpiCard[]>(() => {
       label: 'Pending Costs',
       value: numberFormat(kpi.pendingCosts),
       icon: 'mdi-currency-usd',
-      iconBg: '#D1FAE5',
-      iconColor: '#047857',
+      tone: 'success',
       delta: kpi.delta.pendingCosts,
       goodDirection: 'down'
     }
   ];
 });
 
-function deltaColor(card: KpiCard) {
+function deltaTone(card: KpiCard) {
   const actualDirection = card.delta >= 0 ? 'up' : 'down';
-  return actualDirection === card.goodDirection ? '#16A34A' : '#DC2626';
+  return actualDirection === card.goodDirection ? 'success' : 'error';
 }
 function deltaIcon(card: KpiCard) {
   return card.delta >= 0 ? 'mdi-arrow-up' : 'mdi-arrow-down';
@@ -995,14 +1001,19 @@ const donutSegments = computed(() => {
   };
   return [
     {
-      ...build(passenger.pct, '#2563EB'),
+      ...build(passenger.pct, 'rgb(var(--v-theme-primary))'),
       label: 'Passenger',
       count: passenger.count,
       pct: passenger.pct
     },
-    { ...build(cargo.pct, '#16A34A'), label: 'Cargo', count: cargo.count, pct: cargo.pct },
     {
-      ...build(positioning.pct, '#F59E0B'),
+      ...build(cargo.pct, 'rgb(var(--v-theme-success))'),
+      label: 'Cargo',
+      count: cargo.count,
+      pct: cargo.pct
+    },
+    {
+      ...build(positioning.pct, 'rgb(var(--v-theme-warning))'),
       label: 'Positioning',
       count: positioning.count,
       pct: positioning.pct
@@ -1018,35 +1029,35 @@ const exceptionItems = computed(() => {
       label: 'Delay > 15m',
       value: ex.delayOver15,
       icon: 'mdi-clock-alert-outline',
-      color: ex.delayOver15 > 0 ? '#DC2626' : '#16A34A'
+      tone: ex.delayOver15 > 0 ? 'error' : 'success'
     },
     {
       key: 'servicesOverdue',
       label: 'Services Overdue',
       value: ex.servicesOverdue,
       icon: 'mdi-clock-alert-outline',
-      color: ex.servicesOverdue > 0 ? '#DC2626' : '#16A34A'
+      tone: ex.servicesOverdue > 0 ? 'error' : 'success'
     },
     {
       key: 'costOverdue',
       label: 'Cost Overdue',
       value: ex.costOverdue,
       icon: 'mdi-clock-alert-outline',
-      color: ex.costOverdue > 0 ? '#DC2626' : '#16A34A'
+      tone: ex.costOverdue > 0 ? 'error' : 'success'
     },
     {
       key: 'manifestIssue',
       label: 'Manifest Issue',
       value: ex.manifestIssue,
       icon: ex.manifestIssue > 0 ? 'mdi-alert-circle-outline' : 'mdi-check-circle-outline',
-      color: ex.manifestIssue > 0 ? '#DC2626' : '#16A34A'
+      tone: ex.manifestIssue > 0 ? 'error' : 'success'
     },
     {
       key: 'techLogOpen',
       label: 'Tech Log Open',
       value: ex.techLogOpen,
       icon: 'mdi-book-alert-outline',
-      color: ex.techLogOpen > 0 ? '#EA580C' : '#16A34A'
+      tone: ex.techLogOpen > 0 ? 'warning' : 'success'
     }
   ];
 });
@@ -1058,12 +1069,14 @@ const exceptionItems = computed(() => {
 async function confirmService(row: StationServiceRow) {
   loadingId.value = row.id;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/station-services/${row.id}/actions/confirm`, {
       method: 'POST',
       body: { expectedVersion: row.version }
     });
     await refreshAll();
+    actionSuccess.value = 'Station service confirmed.';
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal memproses station service.';
   } finally {
@@ -1074,6 +1087,7 @@ async function confirmService(row: StationServiceRow) {
 async function processCost(row: StationCostRow) {
   loadingId.value = row.id;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     const action = row.status === 'DRAFT' ? 'submit' : 'approve';
     await fetchApi(`/api/flight-operations/station-costs/${row.id}/actions/${action}`, {
@@ -1081,6 +1095,8 @@ async function processCost(row: StationCostRow) {
       body: { expectedVersion: row.version }
     });
     await refreshAll();
+    actionSuccess.value =
+      row.status === 'DRAFT' ? 'Station cost submitted.' : 'Station cost approved.';
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal memproses station cost.';
   } finally {
@@ -1113,6 +1129,8 @@ async function submitCreateService() {
   const flight = dataset.value.flights.find((row) => row.flightId === serviceForm.flightId);
   if (!flight || !serviceForm.serviceTypeId || !serviceForm.serviceSupplierId) return;
   creatingService.value = true;
+  actionError.value = '';
+  actionSuccess.value = '';
   try {
     const created = await fetchApi<{
       id: string;
@@ -1144,6 +1162,7 @@ async function submitCreateService() {
       version: created.version
     });
     showCreateService.value = false;
+    actionSuccess.value = 'Station service created.';
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal membuat station service.';
   } finally {
@@ -1177,6 +1196,8 @@ async function submitCreateCost() {
   if (!costForm.amount || !costForm.description || !costForm.costCategoryId) return;
   const flight = dataset.value.flights.find((row) => row.flightId === costForm.flightId) ?? null;
   creatingCost.value = true;
+  actionError.value = '';
+  actionSuccess.value = '';
   try {
     const created = await fetchApi<{
       id: string;
@@ -1216,6 +1237,7 @@ async function submitCreateCost() {
       version: created.version
     });
     showCreateCost.value = false;
+    actionSuccess.value = 'Station cost created.';
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Gagal membuat station cost.';
   } finally {
@@ -1366,9 +1388,11 @@ function exportDailyReportCsv() {
     >
       {{ actionError }}
     </VAlert>
+    <VSnackbar v-model="actionSuccess" color="success" location="top end" timeout="3000">
+      {{ actionSuccess }}
+    </VSnackbar>
 
     <template v-if="!error">
-      <!-- KPI strip -->
       <!-- KPI strip -->
       <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         <!-- SKELETON LOADING (v-if dipindah ke template pembungkus) -->
@@ -1383,21 +1407,15 @@ function exportDailyReportCsv() {
           <VCard v-for="card in kpiCards" :key="card.key" border class="pa-4">
             <div class="mb-3 flex items-start justify-between">
               <span class="text-caption text-text-secondary">{{ card.label }}</span>
-              <div
-                class="flex items-center justify-center rounded-full"
-                :style="{ background: card.iconBg, width: '32px', height: '32px' }"
-              >
-                <VIcon :icon="card.icon" :color="card.iconColor" size="18" />
-              </div>
+              <VAvatar :color="card.tone" size="32" variant="tonal">
+                <VIcon :icon="card.icon" size="18" />
+              </VAvatar>
             </div>
             <div class="text-h5 font-weight-bold text-text-primary">{{ card.value }}</div>
             <div class="mt-1 flex items-center gap-1 text-caption text-text-secondary">
               <span>vs yesterday</span>
-              <span
-                class="flex items-center font-weight-medium"
-                :style="{ color: deltaColor(card) }"
-              >
-                <VIcon :icon="deltaIcon(card)" size="12" :color="deltaColor(card)" />
+              <span class="flex items-center font-weight-medium" :class="`text-${deltaTone(card)}`">
+                <VIcon :icon="deltaIcon(card)" size="12" :color="deltaTone(card)" />
                 {{ Math.abs(card.delta) }}%
               </span>
             </div>
@@ -1478,28 +1496,10 @@ function exportDailyReportCsv() {
                     <td class="hidden md:table-cell">{{ row.aircraftType }}</td>
                     <td class="hidden md:table-cell text-text-secondary">{{ row.type }}</td>
                     <td>
-                      <VChip
-                        size="small"
-                        variant="tonal"
-                        :style="{ color: flightStatusMeta[row.status].color }"
-                      >
-                        {{ flightStatusMeta[row.status].label }}
-                      </VChip>
+                      <DsStatusBadge :value="row.status" />
                     </td>
                     <td>
-                      <div class="flex items-center gap-1">
-                        <VIcon
-                          :icon="readinessMeta[row.readiness].icon"
-                          :color="readinessMeta[row.readiness].color"
-                          size="16"
-                        />
-                        <span
-                          class="text-caption font-weight-medium"
-                          :style="{ color: readinessMeta[row.readiness].color }"
-                        >
-                          {{ readinessMeta[row.readiness].label }}
-                        </span>
-                      </div>
+                      <DsStatusBadge :value="row.readiness" />
                     </td>
                     <td>{{ row.paxOnboard }} / {{ row.paxTotal }}</td>
                     <td class="hidden md:table-cell">{{ numberFormat(row.cargoWeightKg) }}</td>
@@ -1521,34 +1521,10 @@ function exportDailyReportCsv() {
               class="flex flex-wrap items-center gap-4 px-4 py-3 text-caption text-text-secondary"
             >
               <span>LT Local Time</span>
-              <span class="flex items-center gap-1">
-                <span
-                  class="inline-block h-2 w-2 rounded-full"
-                  :style="{ background: flightStatusMeta.LANDED.dot }"
-                />
-                Landed
-              </span>
-              <span class="flex items-center gap-1">
-                <span
-                  class="inline-block h-2 w-2 rounded-full"
-                  :style="{ background: flightStatusMeta.ARRIVING.dot }"
-                />
-                Arriving
-              </span>
-              <span class="flex items-center gap-1">
-                <span
-                  class="inline-block h-2 w-2 rounded-full"
-                  :style="{ background: flightStatusMeta.SCHEDULED.dot }"
-                />
-                Scheduled
-              </span>
-              <span class="flex items-center gap-1">
-                <span
-                  class="inline-block h-2 w-2 rounded-full"
-                  :style="{ background: flightStatusMeta.DELAYED.dot }"
-                />
-                Delayed
-              </span>
+              <DsStatusBadge value="LANDED" />
+              <DsStatusBadge value="ARRIVING" />
+              <DsStatusBadge value="SCHEDULED" />
+              <DsStatusBadge value="DELAYED" />
             </div>
           </VCard>
 
@@ -1558,7 +1534,13 @@ function exportDailyReportCsv() {
                 <h2 class="text-subtitle-1 font-weight-bold text-text-primary">Services</h2>
                 <p class="text-caption text-text-secondary">Recent &amp; pending services</p>
               </div>
-              <VBtn color="primary" size="small" prepend-icon="mdi-plus" @click="openCreateService">
+              <VBtn
+                v-if="can('station.operation.update').allowed"
+                color="primary"
+                size="small"
+                prepend-icon="mdi-plus"
+                @click="openCreateService"
+              >
                 Create Service
               </VBtn>
             </div>
@@ -1595,13 +1577,11 @@ function exportDailyReportCsv() {
                     <td class="text-text-secondary">{{ row.serviceType }}</td>
                     <td>{{ row.supplierName }}</td>
                     <td>
-                      <VChip size="small" :color="serviceStatusColor[row.status]" variant="tonal">
-                        {{ row.status }}
-                      </VChip>
+                      <DsStatusBadge :value="row.status" />
                     </td>
                     <td class="text-right">
                       <DsConfirmIconButton
-                        v-if="row.status === 'REQUESTED'"
+                        v-if="row.status === 'REQUESTED' && can('station.operation.update').allowed"
                         :action="() => confirmService(row)"
                         color="success"
                         confirm-icon="mdi-check"
@@ -1620,10 +1600,10 @@ function exportDailyReportCsv() {
                         v-else
                         density="comfortable"
                         icon="mdi-eye-outline"
-                        tooltip="View service"
+                        tooltip="Open service in flight workspace"
                         variant="text"
                         size="small"
-                        :to="`/flights/${row.flightId}`"
+                        :to="`/flights/station-operations/${row.flightId}?tab=services&sourceRecordId=${row.id}`"
                       />
                     </td>
                   </tr>
@@ -1637,7 +1617,7 @@ function exportDailyReportCsv() {
                 variant="text"
                 color="primary"
                 append-icon="mdi-arrow-right"
-                :to="`/flights/station-services?station=${selectedStationCode}&date=${operationalDate}`"
+                :to="`/flights/station-operations?stationCode=${selectedStationCode}&date=${operationalDate}`"
               >
                 View all services
               </VBtn>
@@ -1650,7 +1630,13 @@ function exportDailyReportCsv() {
                 <h2 class="text-subtitle-1 font-weight-bold text-text-primary">Costs</h2>
                 <p class="text-caption text-text-secondary">Recent &amp; pending costs</p>
               </div>
-              <VBtn color="primary" size="small" prepend-icon="mdi-plus" @click="openCreateCost">
+              <VBtn
+                v-if="can('station.operation.update').allowed"
+                color="primary"
+                size="small"
+                prepend-icon="mdi-plus"
+                @click="openCreateCost"
+              >
                 Create Cost
               </VBtn>
             </div>
@@ -1687,9 +1673,7 @@ function exportDailyReportCsv() {
                     <td>{{ row.costCategoryName }}</td>
                     <td>{{ money(row.amount, row.currencyCode) }}</td>
                     <td>
-                      <VChip size="small" :color="costStatusColor[row.status]" variant="tonal">
-                        {{ row.status }}
-                      </VChip>
+                      <DsStatusBadge :value="row.status" />
                     </td>
                     <td class="text-right">
                       <DsConfirmIconButton
@@ -1715,10 +1699,14 @@ function exportDailyReportCsv() {
                         v-else
                         density="comfortable"
                         icon="mdi-eye-outline"
-                        tooltip="View cost"
+                        tooltip="Open cost in flight workspace"
                         variant="text"
                         size="small"
-                        :to="row.flightId ? `/flights/${row.flightId}` : undefined"
+                        :to="
+                          row.flightId
+                            ? `/flights/station-operations/${row.flightId}?tab=costs&sourceRecordId=${row.id}`
+                            : undefined
+                        "
                       />
                     </td>
                   </tr>
@@ -1732,7 +1720,7 @@ function exportDailyReportCsv() {
                 variant="text"
                 color="primary"
                 append-icon="mdi-arrow-right"
-                :to="`/flights/station-costs?station=${selectedStationCode}&date=${operationalDate}`"
+                :to="`/flights/station-operations?stationCode=${selectedStationCode}&date=${operationalDate}`"
               >
                 View all costs
               </VBtn>
@@ -1792,6 +1780,9 @@ function exportDailyReportCsv() {
                     <div v-if="task.rejectionReason" class="text-caption text-error">
                       {{ task.rejectionReason }}
                     </div>
+                    <div v-else-if="stationTaskBlocker(task)" class="text-caption text-warning">
+                      {{ stationTaskBlocker(task) }}
+                    </div>
                   </td>
                   <td>
                     <VChip
@@ -1807,19 +1798,7 @@ function exportDailyReportCsv() {
                     {{ task.occDecision ?? 'Pending' }}
                   </td>
                   <td>
-                    <VChip
-                      :color="
-                        task.status === 'VERIFIED'
-                          ? 'success'
-                          : task.status === 'REJECTED'
-                            ? 'error'
-                            : 'warning'
-                      "
-                      size="small"
-                      variant="tonal"
-                    >
-                      {{ task.status }}
-                    </VChip>
+                    <DsStatusBadge :value="task.status" />
                   </td>
                   <td class="text-right">
                     <div class="flex justify-end gap-1">
@@ -1849,10 +1828,10 @@ function exportDailyReportCsv() {
                       <VBtn
                         v-if="
                           ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
-                            task.evidenceCount > 0 &&
                             can('station.task.verify').allowed
                         "
                         color="success"
+                        :disabled="Boolean(stationTaskBlocker(task))"
                         size="small"
                         variant="flat"
                         density="comfortable"
@@ -2066,7 +2045,14 @@ function exportDailyReportCsv() {
             <h2 class="mb-4 text-subtitle-1 font-weight-bold text-text-primary">Flights by Type</h2>
             <div class="flex items-center justify-center">
               <svg viewBox="0 0 120 120" width="140" height="140">
-                <circle cx="60" cy="60" r="45" fill="none" stroke="#E5E7EB" stroke-width="16" />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="45"
+                  fill="none"
+                  stroke="rgb(var(--v-theme-surface-variant))"
+                  stroke-width="16"
+                />
                 <circle
                   v-for="segment in donutSegments"
                   :key="segment.label"
@@ -2110,10 +2096,10 @@ function exportDailyReportCsv() {
               class="flex flex-col gap-1 pl-4 first:pl-0"
             >
               <span class="flex items-center gap-1 text-caption text-text-secondary">
-                <VIcon :icon="item.icon" :color="item.color" size="16" />
+                <VIcon :icon="item.icon" :color="item.tone" size="16" />
                 {{ item.label }}
               </span>
-              <span class="text-h6 font-weight-bold" :style="{ color: item.color }">{{
+              <span class="text-h6 font-weight-bold" :class="`text-${item.tone}`">{{
                 item.value
               }}</span>
             </div>
