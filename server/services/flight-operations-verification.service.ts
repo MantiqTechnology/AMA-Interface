@@ -2,7 +2,16 @@ import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import { FlightOperationsService } from './flight-operations.service';
-import type { FlightOperationDetailDto } from '#shared/contracts/flight-operations';
+import type {
+  CreateCargoBody,
+  CreatePassengerBody,
+  DgDecisionBody,
+  EmptyLoadSubmitBody,
+  FlightConcurrencyBody,
+  FlightOperationDetailDto,
+  ManifestRejectBody,
+  ManifestUnlockBody
+} from '#shared/contracts/flight-operations';
 import { DomainError } from '../utils/errors';
 import { getApplicationNow } from '../utils/time';
 
@@ -50,6 +59,567 @@ export class FlightOperationsVerificationService extends FlightOperationsService
 
   constructor(sqlite: Database.Database, routesService?: any) {
     super(sqlite, routesService);
+  }
+
+  private assertFlightConcurrency(flightId: string, expectedUpdatedAt: string) {
+    const row = this.sqlite
+      .prepare('SELECT updated_at FROM flight_operations WHERE id = ?')
+      .get(flightId) as { updated_at: string } | undefined;
+    if (!row) throw new DomainError('NOT_FOUND', `Flight ${flightId} not found.`, 404);
+    if (row.updated_at !== expectedUpdatedAt) {
+      throw new DomainError(
+        'FLIGHT_VERSION_CONFLICT',
+        'Flight data changed. Refresh before continuing.',
+        409,
+        { currentUpdatedAt: row.updated_at }
+      );
+    }
+  }
+
+  private requireOriginAction(flightId: string, ctx: ActorContext) {
+    const row = this.sqlite
+      .prepare('SELECT origin_station_id FROM flight_operations WHERE id = ?')
+      .get(flightId) as { origin_station_id: string } | undefined;
+    if (!row) throw new DomainError('NOT_FOUND', `Flight ${flightId} not found.`, 404);
+    this.validateStationScope(row.origin_station_id, ctx);
+    if (!['Station Admin', 'Demo Admin'].includes(ctx.role)) {
+      throw new DomainError(
+        'FLIGHT_ACTION_FORBIDDEN',
+        'Only the origin Station Admin may finalize check-in or prepare a manifest.',
+        403
+      );
+    }
+    return row.origin_station_id;
+  }
+
+  private requireOccAction(ctx: ActorContext) {
+    if (!['OCC', 'Demo Admin'].includes(ctx.role)) {
+      throw new DomainError(
+        'MANIFEST_ACTION_FORBIDDEN',
+        'This manifest decision requires OCC authority.',
+        403
+      );
+    }
+  }
+
+  private manifestRecord(manifestId: string) {
+    const row = this.sqlite
+      .prepare(
+        `SELECT manifest.*, type.code AS manifest_type, status.code AS status,
+                flight.current_status_id, flight.origin_station_id,
+                operation_status.code AS flight_status, service_type.code AS service_type
+         FROM flight_manifests manifest
+         JOIN manifest_types type ON type.id = manifest.manifest_type_id
+         JOIN manifest_statuses status ON status.id = manifest.status_id
+         JOIN flight_operations flight ON flight.id = manifest.flight_operation_id
+         JOIN flight_operation_statuses operation_status ON operation_status.id = flight.current_status_id
+         LEFT JOIN flight_service_types service_type ON service_type.id = flight.service_type_id
+         WHERE manifest.id = ?`
+      )
+      .get(manifestId) as
+      | {
+          id: string;
+          flight_operation_id: string;
+          manifest_type: 'PASSENGER' | 'CARGO';
+          status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'LOCKED';
+          version: number;
+          origin_station_id: string;
+          flight_status: string;
+          service_type: string | null;
+        }
+      | undefined;
+    if (!row) throw new DomainError('NOT_FOUND', `Manifest ${manifestId} not found.`, 404);
+    return row;
+  }
+
+  private assertManifestVersion(
+    manifest: ReturnType<FlightOperationsVerificationService['manifestRecord']>,
+    expectedVersion: number
+  ) {
+    if (manifest.version !== expectedVersion) {
+      throw new DomainError(
+        'MANIFEST_VERSION_CONFLICT',
+        'Manifest changed. Refresh before continuing.',
+        409,
+        { currentVersion: manifest.version }
+      );
+    }
+  }
+
+  private writeManifestAudit(
+    manifest: ReturnType<FlightOperationsVerificationService['manifestRecord']>,
+    action: string,
+    ctx: ActorContext,
+    afterStatus: string,
+    reason?: string,
+    evidenceIds?: string[]
+  ) {
+    void this.logAudit({
+      actorUserId: ctx.userId,
+      actorRole: ctx.role,
+      requestId: ctx.requestId,
+      flightId: manifest.flight_operation_id,
+      stationId: manifest.origin_station_id,
+      module: 'MANIFEST',
+      action,
+      beforeStatus: manifest.status,
+      afterStatus,
+      reason,
+      evidenceIds,
+      beforeVersion: manifest.version,
+      afterVersion: manifest.version + 1,
+      metadata: {
+        manifestId: manifest.id,
+        manifestType: manifest.manifest_type,
+        beforeVersion: manifest.version,
+        afterVersion: manifest.version + 1
+      }
+    });
+  }
+
+  closeCheckIn(flightId: string, body: FlightConcurrencyBody, ctx: ActorContext) {
+    const flight = this.requireFlight(flightId);
+    const stationId = this.requireOriginAction(flightId, ctx);
+    this.assertFlightConcurrency(flightId, body.expectedUpdatedAt);
+    if (flight.currentStatus !== 'CHECK_IN_OPEN') {
+      throw new DomainError(
+        'CHECK_IN_CLOSE_NOT_AVAILABLE',
+        'Check-in can only be finalized while it is open.',
+        409
+      );
+    }
+    const detail = super.transition(flightId, 'CHECK_IN_CLOSED', ctx.userId, { note: body.note });
+    this.invalidateStationVerification(
+      flightId,
+      'Check-in/load intake was finalized; origin sign-off must use the final load.',
+      ctx.userId,
+      ['ORIGIN_STATION_SIGNOFF']
+    );
+    void this.logAudit({
+      actorUserId: ctx.userId,
+      actorRole: ctx.role,
+      requestId: ctx.requestId,
+      flightId,
+      stationId,
+      module: 'DEPARTURE_ASSURANCE',
+      action: 'CLOSE_CHECK_IN',
+      beforeStatus: 'CHECK_IN_OPEN',
+      afterStatus: 'CHECK_IN_CLOSED',
+      reason: body.note
+    });
+    return detail;
+  }
+
+  getManifestWorkspace(flightId: string, ctx: ActorContext) {
+    this.assertFlightStationScope(flightId, ctx);
+    const detail = this.detail(flightId);
+    const mayViewSensitive = ['Station Admin', 'OCC', 'Demo Admin'].includes(ctx.role);
+    const passengers = detail.passengers.map((passenger) =>
+      mayViewSensitive
+        ? passenger
+        : { ...passenger, identityNumber: passenger.identityNumber ? 'REDACTED' : null }
+    );
+    return {
+      flight: { ...detail, passengers },
+      manifests: detail.manifests,
+      passengers,
+      cargo: detail.cargoItems,
+      permissions: {
+        mayPrepare: ['Station Admin', 'Demo Admin'].includes(ctx.role),
+        mayReview: ['OCC', 'Demo Admin'].includes(ctx.role),
+        mayViewSensitive
+      }
+    };
+  }
+
+  prepareManifestPassenger(body: CreatePassengerBody, ctx: ActorContext) {
+    const manifest = this.manifestRecord(body.manifestId);
+    this.requireOriginAction(manifest.flight_operation_id, ctx);
+    this.assertManifestVersion(manifest, body.expectedVersion);
+    const result = super.createPassenger(body);
+    this.invalidateStationVerification(
+      manifest.flight_operation_id,
+      'Passenger manifest load changed.',
+      ctx.userId,
+      ['ORIGIN_STATION_SIGNOFF']
+    );
+    void this.logAudit({
+      actorUserId: ctx.userId,
+      actorRole: ctx.role,
+      requestId: ctx.requestId,
+      flightId: manifest.flight_operation_id,
+      stationId: manifest.origin_station_id,
+      module: 'MANIFEST',
+      action: 'MANIFEST_PASSENGER_ADD',
+      beforeVersion: manifest.version,
+      afterVersion: manifest.version + 1,
+      metadata: { manifestId: manifest.id }
+    });
+    return result;
+  }
+
+  prepareManifestCargo(body: CreateCargoBody, ctx: ActorContext) {
+    const manifest = this.manifestRecord(body.manifestId);
+    this.requireOriginAction(manifest.flight_operation_id, ctx);
+    this.assertManifestVersion(manifest, body.expectedVersion);
+    const result = super.createCargo(body, ctx.userId);
+    this.invalidateStationVerification(
+      manifest.flight_operation_id,
+      'Cargo manifest load changed.',
+      ctx.userId,
+      ['ORIGIN_STATION_SIGNOFF']
+    );
+    void this.logAudit({
+      actorUserId: ctx.userId,
+      actorRole: ctx.role,
+      requestId: ctx.requestId,
+      flightId: manifest.flight_operation_id,
+      stationId: manifest.origin_station_id,
+      module: 'MANIFEST',
+      action: 'MANIFEST_CARGO_ADD',
+      beforeVersion: manifest.version,
+      afterVersion: manifest.version + 1,
+      metadata: { manifestId: manifest.id }
+    });
+    return result;
+  }
+
+  submitManifest(manifestId: string, body: EmptyLoadSubmitBody, ctx: ActorContext) {
+    return this.sqlite
+      .transaction(() => {
+        const manifest = this.manifestRecord(manifestId);
+        this.requireOriginAction(manifest.flight_operation_id, ctx);
+        this.assertManifestVersion(manifest, body.expectedVersion);
+        if (manifest.flight_status !== 'CHECK_IN_CLOSED' || manifest.status !== 'DRAFT') {
+          throw new DomainError(
+            'MANIFEST_SUBMIT_NOT_AVAILABLE',
+            'A draft manifest can only be submitted after check-in/load intake is closed.',
+            409
+          );
+        }
+        const itemTable =
+          manifest.manifest_type === 'PASSENGER'
+            ? 'flight_manifest_passengers'
+            : 'flight_manifest_cargo_items';
+        const itemCount = Number(
+          (
+            this.sqlite
+              .prepare(`SELECT COUNT(*) AS count FROM ${itemTable} WHERE manifest_id = ?`)
+              .get(manifestId) as { count: number }
+          ).count
+        );
+        if (itemCount === 0 && !body.emptyLoadReason) {
+          throw new DomainError(
+            'EMPTY_MANIFEST_REASON_REQUIRED',
+            'A reason is required when submitting an empty manifest.',
+            422
+          );
+        }
+        const now = timestamp();
+        this.sqlite
+          .prepare(
+            `UPDATE flight_manifests
+             SET status_id = 'manifest-status-submitted', submitted_by_user_id = ?,
+                 submitted_at = ?, rejection_reason = NULL, empty_load_reason = ?,
+                 version = version + 1, updated_at = ?
+             WHERE id = ?`
+          )
+          .run(ctx.userId, now, body.emptyLoadReason ?? null, now, manifestId);
+        this.invalidateStationVerification(
+          manifest.flight_operation_id,
+          'Manifest submitted with a new final-load snapshot.',
+          ctx.userId,
+          ['ORIGIN_STATION_SIGNOFF']
+        );
+        this.writeManifestAudit(manifest, 'MANIFEST_SUBMIT', ctx, 'SUBMITTED');
+        return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
+      })
+      .immediate();
+  }
+
+  approveManifest(manifestId: string, expectedVersion: number, ctx: ActorContext) {
+    return this.sqlite
+      .transaction(() => {
+        const manifest = this.manifestRecord(manifestId);
+        this.requireOccAction(ctx);
+        this.assertManifestVersion(manifest, expectedVersion);
+        if (manifest.status !== 'SUBMITTED') {
+          throw new DomainError(
+            'MANIFEST_APPROVE_NOT_AVAILABLE',
+            'Only a submitted manifest can be approved.',
+            409
+          );
+        }
+        if (manifest.manifest_type === 'CARGO') {
+          const unresolved = Number(
+            (
+              this.sqlite
+                .prepare(
+                  `SELECT COUNT(*) AS count
+                   FROM flight_manifest_cargo_items cargo
+                   JOIN dg_categories category ON category.id = cargo.dg_category_id
+                   JOIN dg_acceptance_statuses status ON status.id = cargo.dg_acceptance_status_id
+                   WHERE cargo.manifest_id = ? AND status.code != 'ACCEPTED'`
+                )
+                .get(manifestId) as { count: number }
+            ).count
+          );
+          if (unresolved > 0) {
+            throw new DomainError(
+              'DG_DECISION_REQUIRED',
+              'All dangerous-goods items require an OCC decision before cargo approval.',
+              422
+            );
+          }
+        }
+        const now = timestamp();
+        this.sqlite
+          .prepare(
+            `UPDATE flight_manifests
+             SET status_id = 'manifest-status-approved', approved_by_user_id = ?,
+                 approved_at = ?, version = version + 1, updated_at = ?
+             WHERE id = ?`
+          )
+          .run(ctx.userId, now, now, manifestId);
+        this.invalidateStationVerification(
+          manifest.flight_operation_id,
+          'Manifest approval changed the final-load snapshot.',
+          ctx.userId,
+          ['ORIGIN_STATION_SIGNOFF']
+        );
+        this.writeManifestAudit(manifest, 'MANIFEST_APPROVE', ctx, 'APPROVED');
+        return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
+      })
+      .immediate();
+  }
+
+  rejectManifest(manifestId: string, body: ManifestRejectBody, ctx: ActorContext) {
+    return this.sqlite
+      .transaction(() => {
+        const manifest = this.manifestRecord(manifestId);
+        this.requireOccAction(ctx);
+        this.assertManifestVersion(manifest, body.expectedVersion);
+        if (!['SUBMITTED', 'APPROVED'].includes(manifest.status)) {
+          throw new DomainError(
+            'MANIFEST_REJECT_NOT_AVAILABLE',
+            'Only a submitted or approved manifest can be rejected.',
+            409
+          );
+        }
+        const now = timestamp();
+        this.sqlite
+          .prepare(
+            `UPDATE flight_manifests
+             SET status_id = 'manifest-status-draft', rejection_reason = ?,
+                 approved_by_user_id = NULL, approved_at = NULL,
+                 version = version + 1, updated_at = ? WHERE id = ?`
+          )
+          .run(body.reason, now, manifestId);
+        this.invalidateStationVerification(
+          manifest.flight_operation_id,
+          'Manifest was rejected for correction.',
+          ctx.userId,
+          ['ORIGIN_STATION_SIGNOFF']
+        );
+        this.writeManifestAudit(manifest, 'MANIFEST_REJECT', ctx, 'DRAFT', body.reason);
+        return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
+      })
+      .immediate();
+  }
+
+  lockManifest(manifestId: string, expectedVersion: number, ctx: ActorContext) {
+    return this.sqlite
+      .transaction(() => {
+        const manifest = this.manifestRecord(manifestId);
+        this.requireOccAction(ctx);
+        this.assertManifestVersion(manifest, expectedVersion);
+        if (manifest.status !== 'APPROVED') {
+          throw new DomainError(
+            'MANIFEST_LOCK_NOT_AVAILABLE',
+            'Only an approved manifest can be locked.',
+            409
+          );
+        }
+        const now = timestamp();
+        this.sqlite
+          .prepare(
+            `UPDATE flight_manifests
+             SET status_id = 'manifest-status-locked', locked_by_user_id = ?,
+                 locked_at = ?, version = version + 1, updated_at = ? WHERE id = ?`
+          )
+          .run(ctx.userId, now, now, manifestId);
+        this.invalidateStationVerification(
+          manifest.flight_operation_id,
+          'Manifest was locked; origin sign-off must follow the final lock.',
+          ctx.userId,
+          ['ORIGIN_STATION_SIGNOFF']
+        );
+        this.writeManifestAudit(manifest, 'MANIFEST_LOCK', ctx, 'LOCKED');
+        return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
+      })
+      .immediate();
+  }
+
+  unlockManifest(manifestId: string, body: ManifestUnlockBody, ctx: ActorContext) {
+    return this.sqlite
+      .transaction(() => {
+        const manifest = this.manifestRecord(manifestId);
+        this.requireOccAction(ctx);
+        this.assertManifestVersion(manifest, body.expectedVersion);
+        if (
+          manifest.status !== 'LOCKED' ||
+          !['CHECK_IN_CLOSED', 'READY_FOR_DEPARTURE'].includes(manifest.flight_status)
+        ) {
+          throw new DomainError(
+            'MANIFEST_UNLOCK_NOT_AVAILABLE',
+            'A locked manifest is immutable after departure.',
+            409
+          );
+        }
+        const now = timestamp();
+        this.sqlite
+          .prepare(
+            `UPDATE flight_manifests
+             SET status_id = 'manifest-status-draft', locked_by_user_id = NULL, locked_at = NULL,
+                 approved_by_user_id = NULL, approved_at = NULL, rejection_reason = ?,
+                 version = version + 1, updated_at = ? WHERE id = ?`
+          )
+          .run(body.reason, now, manifestId);
+        if (manifest.flight_status === 'READY_FOR_DEPARTURE') {
+          this.sqlite
+            .prepare(
+              `UPDATE flight_operations
+               SET current_status_id = 'flight-operation-status-check-in-closed', updated_at = ?
+               WHERE id = ?`
+            )
+            .run(now, manifest.flight_operation_id);
+          this.sqlite
+            .prepare(
+              `INSERT INTO flight_status_histories (
+                 id, flight_id, from_status_id, to_status_id, action_type_id,
+                 reason_note, changed_by_user_id, changed_at, metadata_json
+               ) VALUES (?, ?, 'flight-operation-status-ready-for-departure',
+                 'flight-operation-status-check-in-closed', 'flight-action-type-manifest-unlock',
+                 ?, ?, ?, ?)`
+            )
+            .run(
+              `hist-${nanoid(12)}`,
+              manifest.flight_operation_id,
+              body.reason,
+              ctx.userId,
+              now,
+              JSON.stringify({ manifestId, reason: body.reason })
+            );
+        }
+        this.invalidateStationVerification(
+          manifest.flight_operation_id,
+          `Manifest unlocked: ${body.reason}`,
+          ctx.userId,
+          ['ORIGIN_STATION_SIGNOFF']
+        );
+        this.writeManifestAudit(manifest, 'MANIFEST_UNLOCK', ctx, 'DRAFT', body.reason);
+        return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
+      })
+      .immediate();
+  }
+
+  decideDangerousGoods(cargoItemId: string, body: DgDecisionBody, ctx: ActorContext) {
+    return this.sqlite
+      .transaction(() => {
+        this.requireOccAction(ctx);
+        const item = this.sqlite
+          .prepare(
+            `SELECT cargo.id, cargo.manifest_id, cargo.dg_category_id, manifest.version,
+                    manifest.flight_operation_id, manifest_status.code AS status,
+                    flight.origin_station_id
+             FROM flight_manifest_cargo_items cargo
+             JOIN flight_manifests manifest ON manifest.id = cargo.manifest_id
+             JOIN manifest_statuses manifest_status ON manifest_status.id = manifest.status_id
+             JOIN flight_operations flight ON flight.id = manifest.flight_operation_id
+             WHERE cargo.id = ?`
+          )
+          .get(cargoItemId) as
+          | {
+              id: string;
+              manifest_id: string;
+              dg_category_id: string | null;
+              version: number;
+              flight_operation_id: string;
+              status: string;
+              origin_station_id: string;
+            }
+          | undefined;
+        if (!item) throw new DomainError('NOT_FOUND', `Cargo item ${cargoItemId} not found.`, 404);
+        if (!item.dg_category_id) {
+          throw new DomainError(
+            'DG_DECISION_NOT_REQUIRED',
+            'This cargo item is not classified as dangerous goods.',
+            422
+          );
+        }
+        if (item.version !== body.expectedVersion) {
+          throw new DomainError(
+            'MANIFEST_VERSION_CONFLICT',
+            'Manifest changed. Refresh before continuing.',
+            409,
+            { currentVersion: item.version }
+          );
+        }
+        if (!['DRAFT', 'SUBMITTED'].includes(item.status)) {
+          throw new DomainError(
+            'DG_DECISION_NOT_AVAILABLE',
+            'DG decisions are only editable before manifest approval.',
+            409
+          );
+        }
+        const now = timestamp();
+        this.sqlite
+          .prepare(
+            `UPDATE flight_manifest_cargo_items
+             SET dg_acceptance_status_id = ?, dg_decided_by_user_id = ?,
+                 dg_decided_at = ?, dg_decision_reason = ?, dg_evidence_ids = ?, updated_at = ?
+             WHERE id = ?`
+          )
+          .run(
+            body.decision === 'ACCEPTED'
+              ? 'dg-acceptance-status-accepted'
+              : 'dg-acceptance-status-rejected',
+            ctx.userId,
+            now,
+            body.reason,
+            JSON.stringify(body.evidenceIds),
+            now,
+            cargoItemId
+          );
+        this.sqlite
+          .prepare('UPDATE flight_manifests SET version = version + 1, updated_at = ? WHERE id = ?')
+          .run(now, item.manifest_id);
+        this.invalidateStationVerification(
+          item.flight_operation_id,
+          'Dangerous-goods decision changed the final-load snapshot.',
+          ctx.userId,
+          ['ORIGIN_STATION_SIGNOFF']
+        );
+        void this.logAudit({
+          actorUserId: ctx.userId,
+          actorRole: ctx.role,
+          requestId: ctx.requestId,
+          flightId: item.flight_operation_id,
+          stationId: item.origin_station_id,
+          module: 'MANIFEST',
+          action: body.decision === 'ACCEPTED' ? 'DG_ACCEPT' : 'DG_REJECT',
+          reason: body.reason,
+          evidenceIds: body.evidenceIds,
+          metadata: {
+            cargoItemId,
+            manifestId: item.manifest_id,
+            beforeVersion: item.version,
+            afterVersion: item.version + 1
+          }
+        });
+        return this.getManifestWorkspace(item.flight_operation_id, ctx);
+      })
+      .immediate();
   }
 
   private getStationCodeById(stationId: string): string | null {
@@ -1152,6 +1722,292 @@ export class FlightOperationsVerificationService extends FlightOperationsService
     return this.evaluate(flightId, 'SYSTEM_VERIFICATION_EVALUATION').readinessChecks;
   }
 
+  evaluateDepartureAssurance(flightId: string, ctx: ActorContext) {
+    const flight = this.requireFlight(flightId);
+    if (
+      !['CHECK_IN_CLOSED', 'READY_FOR_DEPARTURE', 'CHECK_IN_OPEN'].includes(flight.currentStatus)
+    ) {
+      throw new DomainError(
+        'DEPARTURE_ASSURANCE_NOT_AVAILABLE',
+        'Departure assurance is available from check-in until departure.',
+        409
+      );
+    }
+
+    // Recalculate planning-owned sources first. The base evaluator only mutates
+    // planning workflow statuses, so it is safe for a check-in flight.
+    super.evaluate(flightId, ctx.userId);
+    const detail = this.detail(flightId);
+    const now = timestamp();
+    const commercial = ['SCHEDULED_PASSENGER', 'CHARTER_PASSENGER', 'CHARTER_CARGO'].includes(
+      detail.serviceTypeCode
+    );
+    const primaryManifestType =
+      detail.serviceTypeCode === 'CHARTER_CARGO'
+        ? 'CARGO'
+        : ['SCHEDULED_PASSENGER', 'CHARTER_PASSENGER', 'MEDEVAC'].includes(detail.serviceTypeCode)
+          ? 'PASSENGER'
+          : null;
+    const requiredManifestTypes = new Set<'PASSENGER' | 'CARGO'>();
+    if (primaryManifestType) requiredManifestTypes.add(primaryManifestType);
+    if (detail.passengers.length > 0) requiredManifestTypes.add('PASSENGER');
+    if (detail.cargoItems.length > 0) requiredManifestTypes.add('CARGO');
+    const requiredManifests = detail.manifests.filter((manifest) =>
+      requiredManifestTypes.has(manifest.manifestType)
+    );
+    const dgItems = detail.cargoItems.filter((item) => item.dgCategoryId);
+    const fuelRequired = detail.fuelRequests.length > 0;
+    const fuelPassed =
+      !fuelRequired ||
+      detail.fuelRequests.some((request) => ['UPLIFTED', 'POSTED'].includes(request.status));
+    const tasks = this.sqlite
+      .prepare(
+        `SELECT task.id, task.task_code, task.status, task.verified_at
+         FROM flight_station_tasks task
+         WHERE task.flight_id = ? AND task.station_id = ?`
+      )
+      .all(flightId, detail.originStationId) as Array<{
+      id: string;
+      task_code: string;
+      status: string;
+      verified_at: string | null;
+    }>;
+    const task = (code: string) => tasks.find((item) => item.task_code === code);
+    const handlingTask = task('ORIGIN_HANDLING');
+    const documentTask = task('ORIGIN_DOCUMENTS');
+    const signoffTask = task('ORIGIN_STATION_SIGNOFF');
+    const signoffApprovals = signoffTask
+      ? (this.sqlite
+          .prepare(
+            `SELECT approval_stage, decision
+             FROM flight_station_task_approvals WHERE task_id = ?`
+          )
+          .all(signoffTask.id) as Array<{ approval_stage: string; decision: string }>)
+      : [];
+    const signoffPassed =
+      signoffTask?.status === 'VERIFIED' &&
+      Boolean(signoffTask.verified_at) &&
+      new Date(signoffTask.verified_at!).getTime() >
+        new Date(now).getTime() - 24 * 60 * 60 * 1000 &&
+      requiredManifests.every(
+        (manifest) =>
+          Boolean(manifest.lockedAt) &&
+          new Date(signoffTask.verified_at!).getTime() >= new Date(manifest.lockedAt!).getTime()
+      ) &&
+      ['STATION', 'OCC'].every((stage) =>
+        signoffApprovals.some(
+          (approval) =>
+            approval.approval_stage === stage &&
+            ['APPROVED', 'OVERRIDDEN'].includes(approval.decision)
+        )
+      );
+    const operationalTaskCodes = [
+      'ORIGIN_HANDOVER',
+      'ORIGIN_CHECKLIST',
+      ...(commercial ? ['ORIGIN_HANDLING'] : []),
+      ...(detail.serviceTypeCode !== 'POSITIONING' ? ['ORIGIN_DOCUMENTS'] : [])
+    ];
+    const operationalTasks = tasks.filter((item) => operationalTaskCodes.includes(item.task_code));
+    const departureResults = [
+      {
+        code: 'MANIFEST_APPROVED',
+        name: 'Required manifest approved',
+        required: requiredManifestTypes.size > 0,
+        passed:
+          requiredManifestTypes.size === 0 ||
+          (requiredManifests.length === requiredManifestTypes.size &&
+            requiredManifests.every((manifest) =>
+              ['APPROVED', 'LOCKED'].includes(manifest.status)
+            )),
+        note: requiredManifestTypes.size
+          ? `Every required/loaded manifest must be approved: ${[...requiredManifestTypes].join(', ')}.`
+          : 'No operational manifest is required for positioning.'
+      },
+      {
+        code: 'MANIFEST_LOCKED',
+        name: 'Required manifest locked',
+        required: requiredManifestTypes.size > 0,
+        passed:
+          requiredManifestTypes.size === 0 ||
+          (requiredManifests.length === requiredManifestTypes.size &&
+            requiredManifests.every((manifest) => manifest.status === 'LOCKED')),
+        note: requiredManifestTypes.size
+          ? `Every required/loaded manifest must be locked by OCC: ${[...requiredManifestTypes].join(', ')}.`
+          : 'No operational manifest is required for positioning.'
+      },
+      {
+        code: 'DG_ACCEPTANCE',
+        name: 'Dangerous goods acceptance',
+        required: dgItems.length > 0,
+        passed:
+          dgItems.length === 0 || dgItems.every((item) => item.dgAcceptanceStatus === 'ACCEPTED'),
+        note:
+          dgItems.length > 0
+            ? 'Every DG cargo item requires an accepted OCC decision with evidence.'
+            : 'No dangerous goods cargo is present.'
+      },
+      {
+        code: 'FUEL_CONFIRMED',
+        name: 'Fuel confirmed',
+        required: fuelRequired,
+        passed: fuelPassed,
+        note: fuelRequired
+          ? 'A requested fuel workflow must reach uplifted or posted.'
+          : 'No fuel workflow is requested.'
+      },
+      {
+        code: 'HANDLING_CONFIRMED',
+        name: 'Handling confirmed',
+        required: commercial,
+        passed: !commercial || handlingTask?.status === 'VERIFIED',
+        note: commercial
+          ? 'Origin handling task requires evidence and verification.'
+          : 'Handling is not a departure gate for this service type.'
+      },
+      {
+        code: 'DEPARTURE_DOCUMENTS',
+        name: 'Departure documents verified',
+        required: detail.serviceTypeCode !== 'POSITIONING',
+        passed: detail.serviceTypeCode === 'POSITIONING' || documentTask?.status === 'VERIFIED',
+        note: 'Origin document task requires evidence and verification.'
+      },
+      {
+        code: 'ORIGIN_OPERATIONAL_TASKS',
+        name: 'Origin operational tasks completed',
+        required: true,
+        passed:
+          operationalTasks.length === operationalTaskCodes.length &&
+          operationalTasks.every((item) => item.status === 'VERIFIED'),
+        note: 'All required origin tasks must be verified.'
+      },
+      {
+        code: 'ORIGIN_STATION_SIGNOFF',
+        name: 'Origin station sign-off',
+        required: true,
+        passed: Boolean(signoffPassed),
+        note: 'Station Admin verification and OCC second approval are required.'
+      }
+    ];
+    const upsert = this.sqlite.prepare(
+      `INSERT INTO flight_readiness_checks (
+         id, flight_id, check_code, check_name, status_id, is_required,
+         evaluated_at, evaluated_by_user_id, result_note, source_reference,
+         classification, calculation_status, verification_status, effective_status,
+         calculated_at, assurance_phase, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTURE', ?, ?)
+       ON CONFLICT(flight_id, check_code) DO UPDATE SET
+         check_name = excluded.check_name, status_id = excluded.status_id,
+         is_required = excluded.is_required, evaluated_at = excluded.evaluated_at,
+         evaluated_by_user_id = excluded.evaluated_by_user_id,
+         result_note = excluded.result_note, source_reference = excluded.source_reference,
+         calculation_status = excluded.calculation_status,
+         verification_status = excluded.verification_status,
+         effective_status = excluded.effective_status, calculated_at = excluded.calculated_at,
+         assurance_phase = 'DEPARTURE', updated_at = excluded.updated_at`
+    );
+    for (const result of departureResults) {
+      const status = !result.required ? 'NOT_APPLICABLE' : result.passed ? 'PASS' : 'PENDING';
+      const effectiveStatus = !result.required
+        ? 'NOT_APPLICABLE'
+        : result.passed
+          ? 'PASSED'
+          : 'BLOCKED';
+      upsert.run(
+        `check-${flightId}-${result.code.toLowerCase().replaceAll('_', '-')}`,
+        flightId,
+        result.code,
+        result.name,
+        `readiness-status-${status.toLowerCase().replaceAll('_', '-')}`,
+        result.required ? 1 : 0,
+        now,
+        ctx.userId,
+        result.note,
+        result.code.startsWith('MANIFEST') || result.code === 'DG_ACCEPTANCE'
+          ? 'flight_manifests'
+          : result.code.startsWith('ORIGIN') ||
+              result.code === 'HANDLING_CONFIRMED' ||
+              result.code === 'DEPARTURE_DOCUMENTS'
+            ? 'flight_station_tasks'
+            : 'flight_fuel_requests',
+        'ENFORCED',
+        result.passed ? 'PASS' : result.required ? 'UNKNOWN' : 'NOT_APPLICABLE',
+        result.passed ? 'VERIFIED' : result.required ? 'PENDING' : 'NOT_REQUIRED',
+        effectiveStatus,
+        now,
+        now,
+        now
+      );
+    }
+    void this.logAudit({
+      actorUserId: ctx.userId,
+      actorRole: ctx.role,
+      requestId: ctx.requestId,
+      flightId,
+      stationId: detail.originStationId,
+      module: 'DEPARTURE_ASSURANCE',
+      action: 'DEPARTURE_ASSURANCE_EVALUATED',
+      metadata: {
+        blockers: departureResults
+          .filter((result) => result.required && !result.passed)
+          .map((r) => r.code)
+      }
+    });
+    return this.detail(flightId);
+  }
+
+  markReadyForDeparture(flightId: string, body: FlightConcurrencyBody, ctx: ActorContext) {
+    this.requireOccAction(ctx);
+    this.assertFlightConcurrency(flightId, body.expectedUpdatedAt);
+    const flight = this.requireFlight(flightId);
+    if (flight.currentStatus !== 'CHECK_IN_CLOSED') {
+      throw new DomainError(
+        'READY_FOR_DEPARTURE_NOT_AVAILABLE',
+        'Flight must be in check-in closed state.',
+        409
+      );
+    }
+    this.evaluateDepartureAssurance(flightId, ctx);
+    const blockers = this.sqlite
+      .prepare(
+        `SELECT check_code, result_note FROM flight_readiness_checks
+         WHERE flight_id = ?
+           AND (
+             assurance_phase = 'DEPARTURE'
+             OR check_code IN (
+               'ROUTE_AVAILABILITY', 'AIRCRAFT_SERVICEABILITY', 'AIRCRAFT_LOCATION',
+               'AIRCRAFT_SCHEDULE', 'AIRCRAFT_CAPACITY', 'CREW_AVAILABILITY',
+               'CREW_LICENSE_MEDICAL', 'PLANNING_DOCUMENTS', 'SEPARATION_OF_DUTIES'
+             )
+           )
+           AND is_required = 1 AND effective_status != 'PASSED'`
+      )
+      .all(flightId) as Array<{ check_code: string; result_note: string | null }>;
+    if (blockers.length) {
+      throw new DomainError(
+        'DEPARTURE_ASSURANCE_BLOCKED',
+        'Departure assurance still has blocking requirements.',
+        422,
+        { blockers }
+      );
+    }
+    const ready = super.transition(flightId, 'READY_FOR_DEPARTURE', ctx.userId, {
+      note: body.note
+    });
+    void this.logAudit({
+      actorUserId: ctx.userId,
+      actorRole: ctx.role,
+      requestId: ctx.requestId,
+      flightId,
+      stationId: ready.originStationId,
+      module: 'DEPARTURE_ASSURANCE',
+      action: 'MARK_READY_FOR_DEPARTURE',
+      beforeStatus: 'CHECK_IN_CLOSED',
+      afterStatus: 'READY_FOR_DEPARTURE',
+      reason: body.note
+    });
+    return ready;
+  }
+
   // Method to run critical readiness checks before departure
   runCriticalReadinessChecksBeforeDeparture(flightId: string) {
     const criticalChecks = [
@@ -1162,22 +2018,27 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       'AIRCRAFT_CAPACITY',
       'CREW_AVAILABILITY',
       'CREW_LICENSE_MEDICAL',
-      'MANIFEST_APPROVED',
+      'MANIFEST_LOCKED',
       'DG_ACCEPTANCE',
       'FUEL_CONFIRMED',
-      'REQUIRED_DOCUMENTS',
+      'DEPARTURE_DOCUMENTS',
       'HANDLING_CONFIRMED',
       'SEPARATION_OF_DUTIES',
+      'ORIGIN_OPERATIONAL_TASKS',
       'ORIGIN_STATION_SIGNOFF'
     ];
 
-    this.evaluate(flightId, 'SYSTEM_PRE_DEPARTURE_REVALIDATION');
+    this.evaluateDepartureAssurance(flightId, {
+      userId: 'SYSTEM_PRE_DEPARTURE_REVALIDATION',
+      role: 'Demo Admin',
+      stationCodes: ['ALL']
+    });
 
     const failedChecks: string[] = [];
     const rows = this.sqlite
       .prepare(
         `
-      SELECT check_code, effective_status, classification
+      SELECT check_code, effective_status, classification, is_required
       FROM flight_readiness_checks
       WHERE flight_id = ? AND check_code IN (${criticalChecks.map(() => '?').join(',')})
     `
@@ -1185,7 +2046,11 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       .all(flightId, ...criticalChecks) as any[];
 
     for (const row of rows) {
-      if (row.effective_status !== 'PASSED' && row.effective_status !== 'NOT_APPLICABLE') {
+      if (
+        Number(row.is_required) === 1 &&
+        row.effective_status !== 'PASSED' &&
+        row.effective_status !== 'NOT_APPLICABLE'
+      ) {
         failedChecks.push(row.check_code);
       }
     }
@@ -2150,8 +3015,9 @@ export class FlightOperationsVerificationService extends FlightOperationsService
     const insertSql = `
       INSERT INTO flight_operational_audit (
         id, actor_user_id, actor_role, flight_id, station_id, module, action,
-        before_status, after_status, reason, evidence_ids, request_id, metadata, timestamp, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        before_status, after_status, before_version, after_version, reason,
+        evidence_ids, request_id, metadata, timestamp, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     this.sqlite
@@ -2166,6 +3032,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         input.action,
         input.beforeStatus || null,
         input.afterStatus || null,
+        input.beforeVersion ?? null,
+        input.afterVersion ?? null,
         input.reason || null,
         input.evidenceIds ? JSON.stringify(input.evidenceIds) : null,
         input.requestId || null,

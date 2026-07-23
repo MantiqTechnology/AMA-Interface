@@ -26,6 +26,7 @@ import {
   corporateAssetStatements
 } from './migrations/corporate-assets';
 import { migrateVerificationData } from './migrations/operations/verification-migration';
+import { migrateManifestAssuranceData } from './migrations/operations/manifest-assurance-migration';
 
 type FlightOperationLookupSeed = {
   table: string;
@@ -85,6 +86,8 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['APPROVED', 'Approved'],
       ['SCHEDULED', 'Scheduled'],
       ['CHECK_IN_OPEN', 'Check-In Open'],
+      ['CHECK_IN_CLOSED', 'Check-In Closed'],
+      ['READY_FOR_DEPARTURE', 'Ready For Departure'],
       ['IN_PROGRESS', 'In Progress'],
       ['LANDED', 'Landed'],
       ['PENDING_CLOSURE', 'Pending Closure'],
@@ -116,6 +119,16 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['APPROVE', 'Approve'],
       ['SCHEDULE', 'Schedule'],
       ['OPEN_CHECK_IN', 'Open Check-In'],
+      ['CLOSE_CHECK_IN', 'Close Check-In'],
+      ['DEPARTURE_ASSURANCE_EVALUATED', 'Departure Assurance Evaluated'],
+      ['MARK_READY_FOR_DEPARTURE', 'Mark Ready For Departure'],
+      ['MANIFEST_SUBMIT', 'Manifest Submit'],
+      ['MANIFEST_APPROVE', 'Manifest Approve'],
+      ['MANIFEST_REJECT', 'Manifest Reject'],
+      ['MANIFEST_LOCK', 'Manifest Lock'],
+      ['MANIFEST_UNLOCK', 'Manifest Unlock'],
+      ['DG_ACCEPT', 'DG Accept'],
+      ['DG_REJECT', 'DG Reject'],
       ['DEPART', 'Depart'],
       ['LAND', 'Land'],
       ['MARK_PENDING_CLOSURE', 'Mark Pending Closure'],
@@ -1199,6 +1212,22 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'flight_readiness_checks', 'expiry_at', 'TEXT');
     ensureColumn(sqlite, 'flight_readiness_checks', 'invalidation_reason', 'TEXT');
     ensureColumn(sqlite, 'flight_readiness_checks', 'source_record_ids', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'assurance_phase', 'TEXT');
+    ensureColumn(sqlite, 'flight_operational_audit', 'before_version', 'INTEGER');
+    ensureColumn(sqlite, 'flight_operational_audit', 'after_version', 'INTEGER');
+    ensureColumn(sqlite, 'flight_manifests', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_manifests', 'submitted_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'submitted_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'locked_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'rejection_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'empty_load_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'empty_load_confirmed_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'empty_load_confirmed_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_decided_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_decided_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_decision_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_evidence_ids', 'TEXT');
+    migrateManifestAssuranceData(sqlite);
     ensureColumn(
       sqlite,
       'flight_operations',

@@ -91,7 +91,9 @@ const normalTransitions: Partial<Record<FlightOperationStatus, FlightOperationSt
   READY_FOR_APPROVAL: ['APPROVED'],
   APPROVED: ['SCHEDULED'],
   SCHEDULED: ['CHECK_IN_OPEN'],
-  CHECK_IN_OPEN: ['IN_PROGRESS'],
+  CHECK_IN_OPEN: ['CHECK_IN_CLOSED'],
+  CHECK_IN_CLOSED: ['READY_FOR_DEPARTURE'],
+  READY_FOR_DEPARTURE: ['IN_PROGRESS'],
   IN_PROGRESS: ['LANDED', 'DIVERTED'],
   LANDED: ['PENDING_CLOSURE'],
   PENDING_CLOSURE: ['CLOSED'],
@@ -350,6 +352,8 @@ function actionTypeForStatus(status: FlightOperationStatus) {
     APPROVED: 'APPROVE',
     SCHEDULED: 'SCHEDULE',
     CHECK_IN_OPEN: 'OPEN_CHECK_IN',
+    CHECK_IN_CLOSED: 'CLOSE_CHECK_IN',
+    READY_FOR_DEPARTURE: 'MARK_READY_FOR_DEPARTURE',
     IN_PROGRESS: 'DEPART',
     LANDED: 'LAND',
     PENDING_CLOSURE: 'MARK_PENDING_CLOSURE',
@@ -617,6 +621,8 @@ export class FlightOperationsService {
           classification:
             (str(item.classification) as FlightReadinessCheckDto['classification']) ??
             'SYSTEM_CHECK',
+          assurancePhase:
+            (str(item.assurance_phase) as FlightReadinessCheckDto['assurancePhase']) ?? null,
           calculationStatus:
             (str(item.calculation_status) as FlightReadinessCheckDto['calculationStatus']) ??
             (status === 'PASS'
@@ -1750,35 +1756,107 @@ export class FlightOperationsService {
   }
 
   createPassenger(body: CreatePassengerBody) {
-    this.requireManifest(body.manifestId);
-    this.sqlite
-      .prepare(
-        `INSERT INTO flight_manifest_passengers (
-          id, manifest_id, full_name, identity_type, identity_number, weight_kg, seat_number,
-          baggage_weight_kg, remarks, created_at, updated_at
-        ) VALUES (@id, @manifestId, @fullName, @identityType, @identityNumber, @weightKg, @seatNumber,
-          @baggageWeightKg, @remarks, @createdAt, @updatedAt)`
-      )
-      .run({ id: nanoid(), createdAt: timestamp(), updatedAt: timestamp(), ...body });
+    const manifest = this.requireManifest(body.manifestId);
+    if (manifest.locked_at) {
+      throw new DomainError(
+        'MANIFEST_LOCKED',
+        'Unlock the manifest before changing its load.',
+        409
+      );
+    }
+    if (num(manifest.version) !== body.expectedVersion) {
+      throw new DomainError(
+        'MANIFEST_VERSION_CONFLICT',
+        'Manifest changed. Refresh before continuing.',
+        409,
+        { currentVersion: num(manifest.version) }
+      );
+    }
+    this.sqlite.transaction(() => {
+      const now = timestamp();
+      const passenger = {
+        manifestId: body.manifestId,
+        fullName: body.fullName,
+        identityType: body.identityType,
+        identityNumber: body.identityNumber,
+        weightKg: body.weightKg,
+        seatNumber: body.seatNumber,
+        baggageWeightKg: body.baggageWeightKg,
+        remarks: body.remarks
+      };
+      this.sqlite
+        .prepare(
+          `INSERT INTO flight_manifest_passengers (
+            id, manifest_id, full_name, identity_type, identity_number, weight_kg, seat_number,
+            baggage_weight_kg, remarks, created_at, updated_at
+          ) VALUES (@id, @manifestId, @fullName, @identityType, @identityNumber, @weightKg, @seatNumber,
+            @baggageWeightKg, @remarks, @createdAt, @updatedAt)`
+        )
+        .run({ id: nanoid(), createdAt: now, updatedAt: now, ...passenger });
+      this.returnManifestToDraft(body.manifestId, now);
+    })();
     return this.detail(String(this.manifestFlightOperationId(body.manifestId)));
   }
 
   createCargo(body: CreateCargoBody, actorUserId: string) {
-    this.requireManifest(body.manifestId);
-    this.sqlite
-      .prepare(
-        `INSERT INTO flight_manifest_cargo_items (
-          id, manifest_id, description, sender_name, receiver_name, actual_weight_kg,
-          volume_weight_kg, chargeable_weight_kg, dg_category_id, dg_acceptance_status_id,
-          remarks, created_at, updated_at
-        ) VALUES (@id, @manifestId, @description, @senderName, @receiverName, @actualWeightKg,
-          @volumeWeightKg, @chargeableWeightKg, @dgCategoryId, @dgAcceptanceStatusId, @remarks,
-          @createdAt, @updatedAt)`
-      )
-      .run({ id: nanoid(), createdAt: timestamp(), updatedAt: timestamp(), ...body });
+    const manifest = this.requireManifest(body.manifestId);
+    if (manifest.locked_at) {
+      throw new DomainError(
+        'MANIFEST_LOCKED',
+        'Unlock the manifest before changing its load.',
+        409
+      );
+    }
+    if (num(manifest.version) !== body.expectedVersion) {
+      throw new DomainError(
+        'MANIFEST_VERSION_CONFLICT',
+        'Manifest changed. Refresh before continuing.',
+        409,
+        { currentVersion: num(manifest.version) }
+      );
+    }
+    this.sqlite.transaction(() => {
+      const now = timestamp();
+      const cargo = {
+        manifestId: body.manifestId,
+        description: body.description,
+        senderName: body.senderName,
+        receiverName: body.receiverName,
+        actualWeightKg: body.actualWeightKg,
+        volumeWeightKg: body.volumeWeightKg,
+        chargeableWeightKg: body.chargeableWeightKg,
+        dgCategoryId: body.dgCategoryId,
+        dgAcceptanceStatusId: body.dgAcceptanceStatusId,
+        remarks: body.remarks
+      };
+      this.sqlite
+        .prepare(
+          `INSERT INTO flight_manifest_cargo_items (
+            id, manifest_id, description, sender_name, receiver_name, actual_weight_kg,
+            volume_weight_kg, chargeable_weight_kg, dg_category_id, dg_acceptance_status_id,
+            remarks, created_at, updated_at
+          ) VALUES (@id, @manifestId, @description, @senderName, @receiverName, @actualWeightKg,
+            @volumeWeightKg, @chargeableWeightKg, @dgCategoryId, @dgAcceptanceStatusId, @remarks,
+            @createdAt, @updatedAt)`
+        )
+        .run({ id: nanoid(), createdAt: now, updatedAt: now, ...cargo });
+      this.returnManifestToDraft(body.manifestId, now);
+    })();
     const flightId = String(this.manifestFlightOperationId(body.manifestId));
     this.evaluateReadiness(flightId, false, actorUserId);
     return this.detail(flightId);
+  }
+
+  private returnManifestToDraft(manifestId: string, now: string) {
+    this.sqlite
+      .prepare(
+        `UPDATE flight_manifests
+         SET status_id = 'manifest-status-draft', submitted_by_user_id = NULL,
+             submitted_at = NULL, approved_by_user_id = NULL, approved_at = NULL,
+             rejection_reason = NULL, version = version + 1, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(now, manifestId);
   }
 
   createFuel(body: CreateFuelRequestBody, actorUserId: string) {
@@ -2553,9 +2631,15 @@ export class FlightOperationsService {
         pic.availability_status as pic_availability_status,
         cop.full_name as copilot_name,
         cop.availability_status as copilot_availability_status,
-        (SELECT COUNT(*) FROM flight_readiness_checks chk WHERE chk.flight_id = f.id AND chk.is_required = 1) as required_checks,
-        (SELECT COUNT(*) FROM flight_readiness_checks chk JOIN readiness_statuses rs ON rs.id = chk.status_id WHERE chk.flight_id = f.id AND rs.code = 'PASS') as pass_checks,
-        (SELECT COUNT(*) FROM flight_readiness_checks chk JOIN readiness_statuses rs ON rs.id = chk.status_id WHERE chk.flight_id = f.id AND rs.code = 'NOT_APPLICABLE') as na_checks
+        (SELECT COUNT(*) FROM flight_readiness_checks chk
+          WHERE chk.flight_id = f.id AND chk.is_required = 1
+            AND (chk.assurance_phase = 'PLANNING' OR chk.assurance_phase IS NULL)) as required_checks,
+        (SELECT COUNT(*) FROM flight_readiness_checks chk JOIN readiness_statuses rs ON rs.id = chk.status_id
+          WHERE chk.flight_id = f.id AND rs.code = 'PASS'
+            AND (chk.assurance_phase = 'PLANNING' OR chk.assurance_phase IS NULL)) as pass_checks,
+        (SELECT COUNT(*) FROM flight_readiness_checks chk JOIN readiness_statuses rs ON rs.id = chk.status_id
+          WHERE chk.flight_id = f.id AND rs.code = 'NOT_APPLICABLE'
+            AND (chk.assurance_phase = 'PLANNING' OR chk.assurance_phase IS NULL)) as na_checks
       FROM flight_operations f
       JOIN flight_types flight_type ON flight_type.id = f.flight_type_id
       JOIN flight_service_types service_type ON service_type.id = f.service_type_id
@@ -3363,8 +3447,31 @@ export class FlightOperationsService {
       HANDLING_CONFIRMED: 'ORIGIN_HANDLING',
       REQUIRED_DOCUMENTS: 'ORIGIN_DOCUMENTS'
     };
+    const planningCodes = new Set([
+      'ROUTE_AVAILABILITY',
+      'AIRCRAFT_SERVICEABILITY',
+      'AIRCRAFT_LOCATION',
+      'AIRCRAFT_SCHEDULE',
+      'AIRCRAFT_CAPACITY',
+      'CREW_AVAILABILITY',
+      'CREW_LICENSE_MEDICAL',
+      'REQUIRED_DOCUMENTS',
+      'FINANCE_INITIALIZED',
+      'SEPARATION_OF_DUTIES'
+    ]);
+    const planningCalculated = calculated
+      .filter((result) => planningCodes.has(result.checkCode))
+      .map((result) =>
+        result.checkCode === 'REQUIRED_DOCUMENTS'
+          ? {
+              ...result,
+              checkCode: 'PLANNING_DOCUMENTS',
+              checkName: 'Planning documents'
+            }
+          : result
+      );
     const results = [
-      ...calculated,
+      ...planningCalculated,
       {
         checkCode: 'ORIGIN_STATION_SIGNOFF',
         checkName: 'Origin station sign-off',
@@ -3421,7 +3528,9 @@ export class FlightOperationsService {
               : 'PENDING'
         : 'NOT_REQUIRED';
       const isRequired =
-        Boolean(definition?.gate) && result.checkCode !== 'DESTINATION_STATION_SIGNOFF';
+        definition?.assurancePhase === 'PLANNING' &&
+        Boolean(definition.gate) &&
+        result.checkCode !== 'DESTINATION_STATION_SIGNOFF';
       const effectiveStatus =
         calculationStatus === 'NOT_APPLICABLE'
           ? 'NOT_APPLICABLE'
@@ -3463,12 +3572,12 @@ export class FlightOperationsService {
             id, flight_id, check_code, check_name, status_id, is_required, evaluated_at,
             evaluated_by_user_id, result_note, source_reference, classification,
             calculation_status, verification_status, effective_status, calculated_at, expiry_at,
-            source_record_ids, created_at, updated_at
+            source_record_ids, assurance_phase, created_at, updated_at
           ) VALUES (
             @id, @flightId, @checkCode, @checkName, @statusId, @isRequired, @evaluatedAt,
             @actorUserId, @resultNote, @sourceReference, @classification,
             @calculationStatus, @verificationStatus, @effectiveStatus, @calculatedAt, @expiryAt,
-            @sourceRecordIds, @createdAt, @updatedAt
+            @sourceRecordIds, @assurancePhase, @createdAt, @updatedAt
           )
           ON CONFLICT(flight_id, check_code) DO UPDATE SET
             status_id = excluded.status_id,
@@ -3483,6 +3592,7 @@ export class FlightOperationsService {
             calculated_at = excluded.calculated_at,
             expiry_at = excluded.expiry_at,
             source_record_ids = excluded.source_record_ids,
+            assurance_phase = excluded.assurance_phase,
             is_required = excluded.is_required,
             updated_at = excluded.updated_at`
         )
@@ -3504,6 +3614,10 @@ export class FlightOperationsService {
           calculatedAt: now,
           expiryAt: result.expiryAt,
           sourceRecordIds: JSON.stringify(result.sourceRecordIds),
+          assurancePhase:
+            result.checkCode === 'DESTINATION_STATION_SIGNOFF'
+              ? null
+              : (getReadinessClassification(result.checkCode)?.assurancePhase ?? 'PLANNING'),
           createdAt: now,
           updatedAt: now
         });
@@ -3909,7 +4023,7 @@ export class FlightOperationsService {
     }>;
   }
 
-  private listManifests(id: string): FlightManifestDto[] {
+  protected listManifests(id: string): FlightManifestDto[] {
     return (
       this.sqlite
         .prepare(
@@ -3936,7 +4050,16 @@ export class FlightOperationsService {
       cargoCount: num(row.cargo_count),
       cargoActualWeightKg: num(row.cargo_actual_weight_kg),
       dgPendingCount: num(row.dg_pending_count),
-      dgRejectedCount: num(row.dg_rejected_count)
+      dgRejectedCount: num(row.dg_rejected_count),
+      version: num(row.version),
+      submittedByUserId: str(row.submitted_by_user_id),
+      submittedAt: str(row.submitted_at),
+      approvedByUserId: str(row.approved_by_user_id),
+      approvedAt: str(row.approved_at),
+      lockedByUserId: str(row.locked_by_user_id),
+      lockedAt: str(row.locked_at),
+      rejectionReason: str(row.rejection_reason),
+      emptyLoadReason: str(row.empty_load_reason)
     }));
   }
 
@@ -3993,6 +4116,10 @@ export class FlightOperationsService {
       dgAcceptanceStatus: String(
         row.dg_acceptance_status
       ) as FlightManifestCargoDto['dgAcceptanceStatus'],
+      dgDecisionByUserId: str(row.dg_decided_by_user_id),
+      dgDecisionAt: str(row.dg_decided_at),
+      dgDecisionReason: str(row.dg_decision_reason),
+      dgEvidenceIds: stringArray(row.dg_evidence_ids),
       remarks: str(row.remarks)
     }));
   }

@@ -107,13 +107,13 @@ const navItems = computed<NavItem[]>(() =>
           visible: true
         },
         {
-          label: 'Readiness',
+          label: 'Planning Readiness',
           to: '/flights/readiness',
           icon: 'mdi-clipboard-pulse-outline',
           visible: true
         },
         {
-          label: 'Manifest',
+          label: 'Manifest Control',
           to: '/flights/manifest',
           icon: 'mdi-account-box-multiple-outline',
           visible: true
@@ -125,7 +125,7 @@ const navItems = computed<NavItem[]>(() =>
           visible: true
         },
         {
-          label: 'Station Ops',
+          label: 'Station Operations',
           to: '/flights/station-operations',
           icon: 'mdi-airport',
           visible: true
@@ -267,7 +267,7 @@ const navItems = computed<NavItem[]>(() =>
       visible: true,
       children: [
         {
-          label: 'Passenger Manifest',
+          label: 'Passenger Sales & Check-in',
           to: '/ticketing/passenger',
           icon: 'mdi-account-multiple-outline',
           visible: true

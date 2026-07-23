@@ -52,6 +52,9 @@ const lifecycle = [
   'READY_FOR_APPROVAL',
   'APPROVED',
   'SCHEDULED',
+  'CHECK_IN_OPEN',
+  'CHECK_IN_CLOSED',
+  'READY_FOR_DEPARTURE',
   'IN_PROGRESS',
   'LANDED',
   'PENDING_CLOSURE',
@@ -107,7 +110,27 @@ const validActions = computed(() => {
       action: 'open-check-in'
     });
   }
-  if (status === 'CHECK_IN_OPEN' && can('flight.departure.execute').allowed) {
+  if (status === 'CHECK_IN_OPEN' && can('flight.checkin.close').allowed) {
+    actions.push({
+      label: 'Close Check-in / Load Intake',
+      icon: 'mdi-account-lock-outline',
+      action: 'close-check-in'
+    });
+  }
+  if (status === 'CHECK_IN_CLOSED' && can('flight.departure.assurance.evaluate').allowed) {
+    actions.push({
+      label: 'Evaluate Departure Assurance',
+      icon: 'mdi-shield-airplane-outline',
+      action: 'evaluate-departure-assurance'
+    });
+    actions.push({
+      label: 'Mark Ready for Departure',
+      icon: 'mdi-airplane-check',
+      action: 'mark-ready-for-departure',
+      color: 'success'
+    });
+  }
+  if (status === 'READY_FOR_DEPARTURE' && can('flight.departure.execute').allowed) {
     actions.push({ label: 'Record Departure', icon: 'mdi-airplane-takeoff', action: 'depart' });
   }
   if (status === 'IN_PROGRESS') {
@@ -332,7 +355,13 @@ async function runAction(action: string) {
   }
   actionLoading.value = true;
   try {
-    await fetchApi<FlightOperationDetailDto>(actionUrl(action), { method: 'POST', body: {} });
+    const concurrencyActions = ['close-check-in', 'mark-ready-for-departure'];
+    await fetchApi<FlightOperationDetailDto>(actionUrl(action), {
+      method: 'POST',
+      body: concurrencyActions.includes(action)
+        ? { expectedUpdatedAt: flight.value?.updatedAt }
+        : {}
+    });
     await refresh();
   } catch (errorValue) {
     actionError.value = errorValue instanceof Error ? errorValue.message : 'Action failed';
@@ -1121,7 +1150,7 @@ function historyActor(item: FlightStatusHistoryDto) {
               <VBtn
                 append-icon="mdi-open-in-new"
                 size="small"
-                to="/flights/manifest"
+                :to="`/flights/${flight.id}/manifest`"
                 variant="text"
               >
                 Open Passenger Manifest
@@ -1147,7 +1176,7 @@ function historyActor(item: FlightStatusHistoryDto) {
               <VBtn
                 append-icon="mdi-open-in-new"
                 size="small"
-                to="/flights/manifest"
+                :to="`/flights/${flight.id}/manifest`"
                 variant="text"
               >
                 Open Cargo Manifest
