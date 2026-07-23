@@ -14,3 +14,6 @@ dist
 public/uploads/local
 .env
 .DS_Store
+# Local Pi runtime state
+.atl/
+.pi/

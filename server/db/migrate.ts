@@ -25,6 +25,7 @@ import {
   corporateAssetDropStatements,
   corporateAssetStatements
 } from './migrations/corporate-assets';
+import { migrateVerificationData } from './migrations/operations/verification-migration';
 
 type FlightOperationLookupSeed = {
   table: string;
@@ -712,6 +713,14 @@ const createStatements = [
     evaluated_by_user_id TEXT,
     result_note TEXT,
     source_reference TEXT,
+    classification TEXT,
+    calculation_status TEXT,
+    verification_status TEXT,
+    effective_status TEXT,
+    calculated_at TEXT,
+    expiry_at TEXT,
+    invalidation_reason TEXT,
+    source_record_ids TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (flight_id, check_code)
@@ -796,6 +805,7 @@ const createStatements = [
     confirmed_at TEXT,
     confirmed_by_user_id TEXT,
     rejection_note TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -812,6 +822,7 @@ const createStatements = [
     submitted_by_user_id TEXT,
     approved_by_user_id TEXT,
     approved_at TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK (amount >= 0)
@@ -847,6 +858,106 @@ const createStatements = [
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS flight_station_tasks (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    phase TEXT NOT NULL,
+    task_code TEXT NOT NULL,
+    task_title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    assigned_role TEXT,
+    assigned_user_id TEXT,
+    source_record_type TEXT,
+    source_record_id TEXT,
+    requires_evidence INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    rejection_reason TEXT,
+    verified_by_user_id TEXT,
+    verified_at TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id, station_id, phase, task_code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_station_task_approvals (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES flight_station_tasks(id) ON DELETE CASCADE,
+    approval_stage TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    reason TEXT,
+    approved_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (task_id, approval_stage)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_verification_evidence (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    station_task_id TEXT REFERENCES flight_station_tasks(id) ON DELETE SET NULL,
+    readiness_check_code TEXT,
+    upload_id TEXT,
+    document_type TEXT,
+    file_name TEXT NOT NULL,
+    notes TEXT,
+    uploaded_by_user_id TEXT NOT NULL,
+    uploaded_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_readiness_verifications (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    check_code TEXT NOT NULL,
+    verification_status TEXT NOT NULL,
+    verifier_user_id TEXT,
+    evidence_references TEXT,
+    verified_at TEXT,
+    expired_at TEXT,
+    invalidated_at TEXT,
+    invalidation_reason TEXT,
+    source_snapshot TEXT,
+    source_hash TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id, check_code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_operational_audit (
+    id TEXT PRIMARY KEY,
+    actor_user_id TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    station_id TEXT REFERENCES stations(id),
+    module TEXT NOT NULL,
+    action TEXT NOT NULL,
+    before_status TEXT,
+    after_status TEXT,
+    reason TEXT,
+    evidence_ids TEXT,
+    request_id TEXT,
+    metadata TEXT,
+    timestamp TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_actual_reconciliations (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    planned_passengers INTEGER,
+    actual_passengers INTEGER,
+    planned_cargo_kg REAL,
+    actual_cargo_kg REAL,
+    no_show_passengers INTEGER DEFAULT 0,
+    offloaded_cargo_kg REAL DEFAULT 0,
+    total_discrepancy_note TEXT,
+    reconciled_by_user_id TEXT NOT NULL,
+    reconciled_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id)
+  )`,
   ...ticketingStatements,
   ...inventoryStatements,
   ...corporateAssetStatements,
@@ -861,7 +972,17 @@ const createStatements = [
   `CREATE INDEX IF NOT EXISTS idx_flight_readiness_checks_flight ON flight_readiness_checks(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_manifests_flight_operation ON flight_manifests(flight_operation_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_fuel_requests_flight ON flight_fuel_requests(flight_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_flight_station_costs_flight ON flight_station_costs(flight_id)`
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_costs_flight ON flight_station_costs(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_flight ON flight_station_tasks(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_station ON flight_station_tasks(station_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_phase ON flight_station_tasks(phase)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_task_approvals_task ON flight_station_task_approvals(task_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_verification_evidence_flight ON flight_verification_evidence(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_verification_evidence_task ON flight_verification_evidence(station_task_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_readiness_verifications_flight ON flight_readiness_verifications(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_operational_audit_flight ON flight_operational_audit(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_operational_audit_actor ON flight_operational_audit(actor_user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_actual_reconciliations_flight ON flight_actual_reconciliations(flight_id)`
 ];
 
 const dropStatements = [
@@ -880,6 +1001,12 @@ const dropStatements = [
   'DROP TABLE IF EXISTS accounting_periods',
   'DROP TABLE IF EXISTS flight_finance_handoffs',
   'DROP TABLE IF EXISTS flight_maintenance_handoffs',
+  'DROP TABLE IF EXISTS flight_actual_reconciliations',
+  'DROP TABLE IF EXISTS flight_operational_audit',
+  'DROP TABLE IF EXISTS flight_readiness_verifications',
+  'DROP TABLE IF EXISTS flight_verification_evidence',
+  'DROP TABLE IF EXISTS flight_station_task_approvals',
+  'DROP TABLE IF EXISTS flight_station_tasks',
   'DROP TABLE IF EXISTS flight_station_costs',
   'DROP TABLE IF EXISTS flight_station_service_requests',
   'DROP TABLE IF EXISTS flight_fuel_requests',
@@ -1059,6 +1186,21 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'flight_operations', 'order_number', "TEXT NOT NULL DEFAULT ''");
     ensureColumn(
       sqlite,
+      'flight_station_service_requests',
+      'version',
+      'INTEGER NOT NULL DEFAULT 1'
+    );
+    ensureColumn(sqlite, 'flight_station_costs', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'classification', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'calculation_status', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'verification_status', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'effective_status', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'calculated_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'expiry_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'invalidation_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'source_record_ids', 'TEXT');
+    ensureColumn(
+      sqlite,
       'flight_operations',
       'flight_request_id',
       'TEXT REFERENCES flight_requests(id)'
@@ -1210,6 +1352,18 @@ export function runMigrations(sqlite: Database.Database) {
       `UPDATE flight_operations
        SET order_number = 'FO-' || substr(flight_number, 5)
        WHERE order_number IS NULL OR order_number = ''`
+    );
+    // Migrate verification data for existing flights after schema is ready
+    migrateVerificationData(sqlite);
+    sqlite.exec(
+      `DELETE FROM flight_actual_reconciliations
+       WHERE rowid NOT IN (
+         SELECT MAX(rowid) FROM flight_actual_reconciliations GROUP BY flight_id
+       )`
+    );
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_actual_reconciliations_unique_flight
+       ON flight_actual_reconciliations(flight_id)`
     );
     recreateIndexes(sqlite);
     sqlite.exec(

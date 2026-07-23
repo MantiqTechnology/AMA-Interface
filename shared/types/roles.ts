@@ -54,7 +54,10 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.valuation.read',
     'asset.read',
     'asset.finance.read',
-    'master_data.read'
+    'master_data.read',
+    'station.task.view',
+    'readiness.view',
+    'flight.closure.execute'
   ],
   OCC: [
     'platform.dashboard.view',
@@ -73,7 +76,12 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'document.read',
     'document.upload',
     'inventory.read',
-    'master_data.read'
+    'master_data.read',
+    'station.task.view',
+    'station.signoff.approve',
+    'readiness.view',
+    'readiness.attest',
+    'flight.departure.execute'
   ],
   'Station Admin': [
     'platform.dashboard.view',
@@ -90,7 +98,17 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read',
     'asset.assign',
     'asset.move',
-    'master_data.read'
+    'master_data.read',
+    'station.task.view',
+    'station.task.assign',
+    'station.task.start',
+    'station.task.verify',
+    'station.task.reject',
+    'station.evidence.add',
+    'station.origin.signoff',
+    'station.destination.signoff',
+    'readiness.view',
+    'readiness.attest'
   ],
   'Finance Reviewer': [
     'platform.dashboard.view',

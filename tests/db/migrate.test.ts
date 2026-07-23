@@ -231,6 +231,42 @@ describe('database migrations', () => {
     sqlite.close();
   });
 
+  it('adds readiness assurance columns to an existing readiness table', () => {
+    const sqlite = new Database(':memory:');
+    runMigrations(sqlite);
+    sqlite.exec('DROP TABLE flight_readiness_checks');
+    sqlite.exec(`CREATE TABLE flight_readiness_checks (
+      id TEXT PRIMARY KEY,
+      flight_id TEXT NOT NULL,
+      check_code TEXT NOT NULL,
+      check_name TEXT NOT NULL,
+      status_id TEXT NOT NULL,
+      is_required INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (flight_id, check_code)
+    )`);
+
+    runMigrations(sqlite);
+
+    const columns = (
+      sqlite.prepare('PRAGMA table_info(flight_readiness_checks)').all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        'classification',
+        'calculation_status',
+        'verification_status',
+        'effective_status',
+        'calculated_at',
+        'expiry_at',
+        'invalidation_reason',
+        'source_record_ids'
+      ])
+    );
+    sqlite.close();
+  });
+
   it('enforces positive distance and duration for fresh route tables', () => {
     const sqlite = new Database(':memory:');
     runMigrations(sqlite);
