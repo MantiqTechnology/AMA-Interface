@@ -240,7 +240,13 @@ const selectedStationCode = ref<string>(
 );
 const route = useRoute();
 watch(stationScope, (scope) => {
-  if (!scope.includes(selectedStationCode.value)) selectedStationCode.value = scope[0] ?? 'DJJ';
+  const requested =
+    typeof route.query.stationCode === 'string' ? route.query.stationCode : undefined;
+  if (requested && scope.includes(requested)) {
+    selectedStationCode.value = requested;
+  } else if (!scope.includes(selectedStationCode.value)) {
+    selectedStationCode.value = scope[0] ?? 'DJJ';
+  }
 });
 const { can } = useAuthorization();
 const corporateAssetSummary = ref<{
@@ -770,6 +776,18 @@ watch([selectedStationCode, operationalDate], () => {
 });
 
 onMounted(() => {
+  if (typeof route.query.flightId === 'string') {
+    const query = { ...route.query };
+    delete query.flightId;
+    void navigateTo(
+      {
+        path: `/flights/station-operations/${route.query.flightId}`,
+        query
+      },
+      { replace: true }
+    );
+    return;
+  }
   loadOptions();
   loadStationOperations();
 });
@@ -1489,8 +1507,8 @@ function exportDailyReportCsv() {
                       <DsTooltipIconButton
                         density="comfortable"
                         icon="mdi-square-edit-outline"
-                        :to="`/flights/${row.flightId}`"
-                        tooltip="View flight"
+                        :to="`/flights/station-operations/${row.flightId}`"
+                        tooltip="Open station flight workspace"
                         variant="text"
                       />
                     </td>
@@ -1762,7 +1780,7 @@ function exportDailyReportCsv() {
                 >
                   <td>
                     <NuxtLink
-                      :to="`/flights/${task.flightId}`"
+                      :to="`/flights/station-operations/${task.flightId}?phase=${task.phase}`"
                       class="font-weight-medium text-primary"
                     >
                       {{ task.flightNumber }}
@@ -1906,7 +1924,7 @@ function exportDailyReportCsv() {
             >
               <div class="flex flex-wrap items-center gap-2">
                 <NuxtLink
-                  :to="`/flights/${entry.flightId}`"
+                  :to="`/flights/station-operations/${entry.flightId}`"
                   class="font-weight-medium text-primary"
                 >
                   {{ entry.flightNumber }}

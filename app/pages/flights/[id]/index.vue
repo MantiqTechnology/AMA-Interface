@@ -1218,7 +1218,7 @@ function historyActor(item: FlightStatusHistoryDto) {
               <VBtn
                 append-icon="mdi-open-in-new"
                 size="small"
-                to="/flights/station-operations"
+                :to="`/flights/station-operations/${flight.id}`"
                 variant="text"
               >
                 Open Station Handling
