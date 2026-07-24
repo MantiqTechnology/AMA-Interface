@@ -20,7 +20,10 @@ const color = computed(() => {
       'received',
       'issued',
       'ordered',
-      'verified'
+      'verified',
+      'ready',
+      'ready_for_approval',
+      'ready_for_departure'
     ].includes(normalizedValue.value)
   ) {
     return 'success';
@@ -28,8 +31,9 @@ const color = computed(() => {
   if (
     [
       'warning',
-      'ready_for_approval',
       'pending',
+      'pending_readiness',
+      'pending_closure',
       'requested',
       'submitted',
       'in_progress',
@@ -41,7 +45,10 @@ const color = computed(() => {
       'partially_received',
       'partially_ordered',
       'pending_approval',
-      'counted'
+      'counted',
+      'check',
+      'check_in_open',
+      'check_in_closed'
     ].includes(normalizedValue.value)
   ) {
     return 'warning';
@@ -54,11 +61,16 @@ const color = computed(() => {
       'rejected',
       'grounded',
       'cancelled',
+      'canceled',
+      'delayed',
+      'diverted',
       'aog',
       'unserviceable',
       'scrapped',
       'expired',
-      'reversed'
+      'reversed',
+      'not_ready',
+      'reopened_for_correction'
     ].includes(normalizedValue.value)
   ) {
     return 'danger';

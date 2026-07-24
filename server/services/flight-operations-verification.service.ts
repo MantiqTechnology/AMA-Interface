@@ -895,6 +895,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           .map((item) => ({
             id: String(item.id),
             stationTaskId: item.station_task_id ? String(item.station_task_id) : null,
+            uploadId: item.upload_id ? String(item.upload_id) : null,
             taskCode: item.task_code ? String(item.task_code) : null,
             documentType: String(item.document_type),
             fileName: String(item.file_name),
@@ -1104,9 +1105,9 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       const evidenceCount = this.sqlite
         .prepare(
           `SELECT COUNT(*) as count FROM flight_verification_evidence
-           WHERE station_task_id = ? AND uploaded_at >= ?`
+           WHERE station_task_id = ?`
         )
-        .get(input.taskId, currentTask.updated_at) as { count: number };
+        .get(input.taskId) as { count: number };
 
       if (evidenceCount.count === 0) {
         throw new DomainError(

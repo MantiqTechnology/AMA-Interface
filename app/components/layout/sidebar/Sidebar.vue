@@ -92,55 +92,55 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'Flight Control',
       icon: 'mdi-airplane',
-      visible: true,
+      visible: can('flight.read').allowed,
       children: [
         {
           label: 'Flights',
           to: '/flights',
           icon: 'mdi-airplane-marker',
-          visible: true
+          visible: can('flight.read').allowed
         },
         {
           label: 'Flight Requests',
           to: '/flights/requests',
           icon: 'mdi-clipboard-plus-outline',
-          visible: true
+          visible: can('flight_request.read').allowed
         },
         {
           label: 'Planning Readiness',
           to: '/flights/readiness',
           icon: 'mdi-clipboard-pulse-outline',
-          visible: true
+          visible: can('readiness.view').allowed
         },
         {
           label: 'Manifest Control',
           to: '/flights/manifest',
           icon: 'mdi-account-box-multiple-outline',
-          visible: true
+          visible: can('flight.manifest.view').allowed
         },
         {
           label: 'Fuel Control',
           to: '/flights/fuel',
           icon: 'mdi-fuel',
-          visible: true
+          visible: can('flight.read').allowed && can('flight.fuel.update').allowed
         },
         {
           label: 'Station Operations',
           to: '/flights/station-operations',
           icon: 'mdi-airport',
-          visible: true
+          visible: can('station.task.view').allowed
         },
         {
           label: 'Actual & Closure',
           to: '/flights/actual-closure',
           icon: 'mdi-airplane-check',
-          visible: true
+          visible: can('flight.read').allowed
         },
         {
           label: 'Maintenance',
           to: '/flights/maintenance',
           icon: 'mdi-wrench-clock',
-          visible: true
+          visible: can('flight.read').allowed
         },
         {
           label: 'Aircraft',

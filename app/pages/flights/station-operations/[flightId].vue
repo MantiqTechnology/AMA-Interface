@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { LocalUploadDto } from '#shared/contracts/uploads';
+
 type Task = {
   id: string;
   stationId: string;
@@ -59,6 +61,7 @@ type WorkbenchFlight = {
   evidence: Array<{
     id: string;
     stationTaskId: string | null;
+    uploadId: string | null;
     taskCode: string | null;
     documentType: string;
     fileName: string;
@@ -94,9 +97,16 @@ const flightId = computed(() => String(route.params.flightId));
 const selectedPhase = ref(
   typeof route.query.phase === 'string' ? route.query.phase : 'ORIGIN_DEPARTURE'
 );
-const activeTab = ref('tasks');
+const workspaceTabs = ['tasks', 'services', 'evidence', 'costs', 'arrival', 'audit'] as const;
+const activeTab = ref(
+  typeof route.query.tab === 'string' &&
+    workspaceTabs.includes(route.query.tab as (typeof workspaceTabs)[number])
+    ? route.query.tab
+    : 'tasks'
+);
 const loadingId = ref('');
 const actionError = ref('');
+const actionSuccess = ref('');
 const { can } = useAuthorization();
 
 const {
@@ -124,6 +134,32 @@ const tasks = computed(() =>
 const signoffTasks = computed(() =>
   tasks.value.filter((task) => task.taskCode.endsWith('STATION_SIGNOFF'))
 );
+function taskBlocker(task: Task) {
+  if (task.requiresEvidence && task.evidenceCount === 0) {
+    return 'Attach evidence before verification.';
+  }
+  if (task.taskCode === 'ORIGIN_HANDLING') {
+    const handlingReady = flight.value?.services.some(
+      (service) =>
+        service.stationCode === task.stationCode &&
+        service.serviceType === 'HANDLING' &&
+        ['CONFIRMED', 'COMPLETED'].includes(service.status)
+    );
+    if (!handlingReady) return 'Confirm the origin handling service first.';
+  }
+  if (task.taskCode.endsWith('STATION_SIGNOFF')) {
+    const prefix = task.taskCode.startsWith('ORIGIN_') ? 'ORIGIN_' : 'DESTINATION_';
+    const incomplete = (flight.value?.tasks ?? []).filter(
+      (candidate) =>
+        candidate.id !== task.id &&
+        candidate.stationId === task.stationId &&
+        candidate.taskCode.startsWith(prefix) &&
+        candidate.status !== 'VERIFIED'
+    );
+    if (incomplete.length) return `Complete ${incomplete.length} remaining station task(s) first.`;
+  }
+  return null;
+}
 const phaseOptions = computed(() => {
   const phases = new Set((flight.value?.tasks ?? []).map((task) => task.phase));
   return [...phases].map((value) => ({
@@ -145,6 +181,10 @@ watch(
   },
   { immediate: true }
 );
+watch(activeTab, (tab) => {
+  if (route.query.tab === tab) return;
+  void navigateTo({ query: { ...route.query, tab } }, { replace: true });
+});
 
 function formatDateTime(value: string | null) {
   if (!value) return '-';
@@ -161,6 +201,7 @@ function money(value: number, currency: string) {
 async function taskAction(task: Task, action: 'start' | 'verify' | 'approve-occ') {
   loadingId.value = `${task.id}-${action}`;
   actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/station-tasks/${task.id}/actions/${action}`, {
       method: 'POST',
@@ -179,6 +220,12 @@ async function taskAction(task: Task, action: 'start' | 'verify' | 'approve-occ'
             : { expectedVersion: task.version }
     });
     await refresh();
+    actionSuccess.value =
+      action === 'approve-occ'
+        ? 'OCC sign-off approval recorded.'
+        : action === 'verify'
+          ? 'Station task verified.'
+          : 'Station task started.';
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : 'Task action failed.';
   } finally {
@@ -188,29 +235,43 @@ async function taskAction(task: Task, action: 'start' | 'verify' | 'approve-occ'
 
 const evidenceDialog = ref(false);
 const selectedTask = ref<Task | null>(null);
-const evidenceFileName = ref('');
+const evidenceFile = ref<File | File[] | null>(null);
 const evidenceNotes = ref('');
 function openEvidence(task: Task) {
   selectedTask.value = task;
-  evidenceFileName.value = '';
+  evidenceFile.value = null;
   evidenceNotes.value = '';
   evidenceDialog.value = true;
 }
+function selectedEvidenceFile() {
+  return Array.isArray(evidenceFile.value) ? evidenceFile.value[0] : evidenceFile.value;
+}
 async function saveEvidence() {
-  if (!selectedTask.value || !evidenceFileName.value.trim()) return;
+  const file = selectedEvidenceFile();
+  if (!selectedTask.value || !file) return;
   loadingId.value = `${selectedTask.value.id}-evidence`;
+  actionError.value = '';
+  actionSuccess.value = '';
   try {
+    const form = new FormData();
+    form.append('file', file);
+    const upload = await fetchApi<LocalUploadDto>('/api/uploads', {
+      method: 'POST',
+      body: form
+    });
     await fetchApi(`/api/flight-operations/station-tasks/${selectedTask.value.id}/evidence`, {
       method: 'POST',
       body: {
         expectedVersion: selectedTask.value.version,
-        fileName: evidenceFileName.value,
+        uploadId: upload.id,
+        fileName: upload.originalName,
         documentType: 'STATION_OPERATION_EVIDENCE',
         notes: evidenceNotes.value || undefined
       }
     });
     evidenceDialog.value = false;
     await refresh();
+    actionSuccess.value = 'Evidence added to the station task.';
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : 'Evidence could not be saved.';
   } finally {
@@ -223,6 +284,8 @@ async function serviceAction(
   action: 'confirm' | 'reject'
 ) {
   loadingId.value = `${service.id}-${action}`;
+  actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/station-services/${service.id}/actions/${action}`, {
       method: 'POST',
@@ -235,6 +298,8 @@ async function serviceAction(
             }
     });
     await refresh();
+    actionSuccess.value =
+      action === 'confirm' ? 'Station service confirmed.' : 'Station service rejected.';
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : 'Service action failed.';
   } finally {
@@ -244,12 +309,16 @@ async function serviceAction(
 
 async function costAction(cost: WorkbenchFlight['costs'][number], action: 'submit' | 'approve') {
   loadingId.value = `${cost.id}-${action}`;
+  actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/station-costs/${cost.id}/actions/${action}`, {
       method: 'POST',
       body: { expectedVersion: cost.version }
     });
     await refresh();
+    actionSuccess.value =
+      action === 'submit' ? 'Station cost submitted.' : 'Station cost approved.';
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : 'Cost action failed.';
   } finally {
@@ -287,12 +356,15 @@ watch(
 );
 async function saveReconciliation() {
   loadingId.value = 'reconciliation';
+  actionError.value = '';
+  actionSuccess.value = '';
   try {
     await fetchApi(`/api/flight-operations/flights/${flightId.value}/actions/reconcile-actuals`, {
       method: 'POST',
       body: reconciliation
     });
     await refresh();
+    actionSuccess.value = 'Actual load reconciliation saved.';
   } catch (caught) {
     actionError.value =
       caught instanceof Error ? caught.message : 'Actual reconciliation could not be saved.';
@@ -360,7 +432,7 @@ async function saveReconciliation() {
         </VCardText>
       </VCard>
 
-      <VTabs v-model="activeTab" class="mb-3" show-arrows>
+      <VTabs v-model="activeTab" class="mb-3 border-b bg-background" color="primary" show-arrows>
         <VTab value="tasks">Tasks</VTab>
         <VTab value="services">Services</VTab>
         <VTab value="evidence">Evidence & Sign-off</VTab>
@@ -415,8 +487,12 @@ async function saveReconciliation() {
                       Evidence
                     </VBtn>
                     <VBtn
-                      v-if="task.status === 'IN_PROGRESS' && can('station.task.verify').allowed"
+                      v-if="
+                        ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
+                          can('station.task.verify').allowed
+                      "
                       color="success"
+                      :disabled="Boolean(taskBlocker(task))"
                       size="small"
                       variant="tonal"
                       @click="taskAction(task, 'verify')"
@@ -425,6 +501,9 @@ async function saveReconciliation() {
                     </VBtn>
                   </div>
                 </template>
+                <div v-if="taskBlocker(task)" class="mt-1 text-caption text-warning">
+                  {{ taskBlocker(task) }}
+                </div>
               </VListItem>
               <VListItem v-if="tasks.length === 0" title="No task in this phase" />
             </VList>
@@ -444,11 +523,15 @@ async function saveReconciliation() {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="service in flight.services" :key="service.id">
+                <tr
+                  v-for="service in flight.services"
+                  :key="service.id"
+                  :class="{ 'bg-primary-lighten-5': route.query.sourceRecordId === service.id }"
+                >
                   <td>{{ service.stationCode }}</td>
                   <td>{{ service.serviceType }}</td>
                   <td>{{ service.supplierName }}</td>
-                  <td>{{ service.status }}</td>
+                  <td><DsStatusBadge :value="service.status" /></td>
                   <td class="text-right">
                     <VBtn
                       v-if="
@@ -473,6 +556,11 @@ async function saveReconciliation() {
                     </VBtn>
                   </td>
                 </tr>
+                <tr v-if="flight.services.length === 0">
+                  <td class="py-6 text-center text-text-muted" colspan="5">
+                    No station services recorded for this flight.
+                  </td>
+                </tr>
               </tbody>
             </VTable>
             <VCardActions>
@@ -494,7 +582,19 @@ async function saveReconciliation() {
                     :key="item.id"
                     :subtitle="`${item.taskCode ?? 'Flight'} · ${formatDateTime(item.uploadedAt)} · ${item.uploadedByUserId}`"
                     :title="item.fileName"
-                  />
+                  >
+                    <template v-if="item.uploadId" #append>
+                      <VBtn
+                        append-icon="mdi-open-in-new"
+                        :href="`/api/uploads/${encodeURIComponent(item.uploadId)}/file`"
+                        size="small"
+                        target="_blank"
+                        variant="text"
+                      >
+                        View
+                      </VBtn>
+                    </template>
+                  </VListItem>
                   <VListItem v-if="flight.evidence.length === 0" title="No evidence uploaded" />
                 </VList>
               </VCard>
@@ -525,6 +625,11 @@ async function saveReconciliation() {
                       </VBtn>
                     </template>
                   </VListItem>
+                  <VListItem
+                    v-if="signoffTasks.length === 0"
+                    subtitle="Select a phase containing an origin or destination sign-off task."
+                    title="No sign-off task in this phase"
+                  />
                 </VList>
               </VCard>
             </VCol>
@@ -548,12 +653,16 @@ async function saveReconciliation() {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="cost in flight.costs" :key="cost.id">
+                <tr
+                  v-for="cost in flight.costs"
+                  :key="cost.id"
+                  :class="{ 'bg-primary-lighten-5': route.query.sourceRecordId === cost.id }"
+                >
                   <td>{{ cost.stationCode }}</td>
                   <td>{{ cost.costCategoryName }}</td>
                   <td>{{ cost.description }}</td>
                   <td>{{ money(cost.amount, cost.currencyCode) }}</td>
-                  <td>{{ cost.status }}</td>
+                  <td><DsStatusBadge :value="cost.status" /></td>
                   <td class="text-right">
                     <VBtn
                       v-if="cost.status === 'DRAFT' && can('station.operation.update').allowed"
@@ -571,6 +680,11 @@ async function saveReconciliation() {
                     >
                       Approve
                     </VBtn>
+                  </td>
+                </tr>
+                <tr v-if="flight.costs.length === 0">
+                  <td class="py-6 text-center text-text-muted" colspan="6">
+                    No station costs recorded for this flight.
                   </td>
                 </tr>
               </tbody>
@@ -648,7 +762,7 @@ async function saveReconciliation() {
 
         <VWindowItem value="audit">
           <VCard border>
-            <VTimeline align="start" density="compact">
+            <VTimeline v-if="flight.audit.length" align="start" density="compact">
               <VTimelineItem
                 v-for="entry in flight.audit"
                 :key="entry.id"
@@ -664,6 +778,9 @@ async function saveReconciliation() {
                 </div>
               </VTimelineItem>
             </VTimeline>
+            <VCardText v-else class="py-8 text-center text-text-muted">
+              No operational audit events recorded yet.
+            </VCardText>
           </VCard>
         </VWindowItem>
       </VWindow>
@@ -673,17 +790,36 @@ async function saveReconciliation() {
       <VCard>
         <VCardTitle>Add station evidence</VCardTitle>
         <VCardText>
-          <VTextField v-model="evidenceFileName" label="File / upload reference" />
+          <VFileInput
+            v-model="evidenceFile"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+            label="Choose evidence file"
+            prepend-icon="mdi-paperclip"
+            show-size
+            variant="outlined"
+          />
+          <div class="mb-3 text-caption text-text-muted">
+            Maximum 25 MB. The file is stored in the application upload folder.
+          </div>
           <VTextarea v-model="evidenceNotes" label="Notes" />
         </VCardText>
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="evidenceDialog = false">Cancel</VBtn>
-          <VBtn color="primary" :disabled="!evidenceFileName.trim()" @click="saveEvidence">
-            Save evidence
+          <VBtn
+            color="primary"
+            :disabled="!selectedEvidenceFile()"
+            :loading="loadingId === `${selectedTask?.id}-evidence`"
+            prepend-icon="mdi-upload"
+            @click="saveEvidence"
+          >
+            Upload evidence
           </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
+    <VSnackbar v-model="actionSuccess" color="success" location="top end" timeout="3000">
+      {{ actionSuccess }}
+    </VSnackbar>
   </VContainer>
 </template>
