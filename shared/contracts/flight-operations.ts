@@ -800,12 +800,20 @@ export const createFlightOperationBodySchema = z.object({
   priorityId: referenceIdSchema,
   routeId: z.string().min(1),
   customerId: nullableIdSchema,
+  billingType: z.string().trim().min(1).max(50).optional(),
+  estimatedRevenue: nullableNonnegativeNumberSchema,
   aircraftId: nullableIdSchema,
   pilotInCommandId: nullableIdSchema,
   coPilotId: nullableIdSchema,
   scheduledDepartureAt: nullableIsoDateTimeSchema,
   scheduledArrivalAt: nullableIsoDateTimeSchema,
   remarks: z.preprocess(blankToNull, z.string().trim().max(1000).nullable().optional())
+});
+
+export const flightOperationCommercialUpdateBodySchema = z.object({
+  customerId: nullableIdSchema,
+  billingType: z.string().trim().min(1).max(50),
+  estimatedRevenue: nullableNonnegativeNumberSchema
 });
 
 export const createFlightRequestBodySchema = z.object({

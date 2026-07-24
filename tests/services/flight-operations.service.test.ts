@@ -384,6 +384,52 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
+  it('requires commercial details for direct commercial entry and recalculates after saving them', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const created = services.flightOperations.create(
+      {
+        flightDate: '2026-08-20',
+        flightTypeId: 'flight-type-charter',
+        serviceTypeId: 'flight-service-type-charter-passenger',
+        priorityId: 'flight-priority-normal',
+        routeId: 'route-djj-wmx',
+        customerId: 'cust-papua-logistics',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: '2026-08-20T03:00:00.000Z',
+        scheduledArrivalAt: '2026-08-20T04:00:00.000Z',
+        remarks: 'Direct commercial entry readiness'
+      },
+      occActor
+    );
+
+    expect(
+      services.flightOperations
+        .evaluate(created.id, occActor)
+        .readinessChecks.find((check) => check.checkCode === 'FINANCE_INITIALIZED')
+    ).toMatchObject({
+      status: 'PENDING',
+      resultNote: 'Customer, billing type, or revenue estimate is incomplete.'
+    });
+
+    const updated = services.flightOperations.updateCommercialDetails(
+      created.id,
+      {
+        customerId: 'cust-papua-logistics',
+        billingType: 'CHARTER',
+        estimatedRevenue: 28000000
+      },
+      occActor
+    );
+    expect(updated.currentStatus).toBe('BLOCKED');
+    expect(
+      updated.readinessChecks.find((check) => check.checkCode === 'FINANCE_INITIALIZED')
+    ).toMatchObject({ status: 'PASS' });
+
+    sqlite.close();
+  });
+
   it('allows a system-ready draft to proceed before departure verification', async () => {
     const { services, sqlite } = await createSeededTestServices();
 

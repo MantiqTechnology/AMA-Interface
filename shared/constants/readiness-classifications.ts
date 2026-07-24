@@ -125,7 +125,7 @@ export const READINESS_CLASSIFICATIONS: ReadinessClassification[] = [
   },
   {
     check: 'FINANCE_INITIALIZED',
-    classification: 'INFORMATIONAL',
+    classification: 'SYSTEM_CHECK',
     gate: false,
     verificationRequired: false,
     evidenceRequired: false,

@@ -1311,7 +1311,7 @@ export class FlightOperationsService {
           @serviceTypeId, 'Direct Operational Entry', @priorityId, @routeId, @originStationId,
           @destinationStationId, @customerId, @aircraftId, @pilotInCommandId, @coPilotId,
           @scheduledDepartureAt, @scheduledArrivalAt, 'flight-operation-status-draft', @createdByUserId,
-          NULL, @remarks, 'CHARTER', NULL, 'IDR', 0, NULL, @createdAt, @updatedAt
+          NULL, @remarks, @billingType, @estimatedRevenue, 'IDR', 0, NULL, @createdAt, @updatedAt
         )`
       )
       .run({
@@ -1326,6 +1326,8 @@ export class FlightOperationsService {
         originStationId: route.origin_station_id,
         destinationStationId: route.destination_station_id,
         customerId: input.customerId ?? null,
+        billingType: input.billingType ?? 'CHARTER',
+        estimatedRevenue: input.estimatedRevenue ?? null,
         aircraftId: input.aircraftId ?? null,
         pilotInCommandId: input.pilotInCommandId ?? null,
         coPilotId: input.coPilotId ?? null,
@@ -1373,6 +1375,8 @@ export class FlightOperationsService {
              origin_station_id = @originStationId,
              destination_station_id = @destinationStationId,
              customer_id = @customerId,
+             billing_type = @billingType,
+             estimated_revenue = @estimatedRevenue,
              aircraft_id = @aircraftId,
              pilot_in_command_id = @pilotInCommandId,
              co_pilot_id = @coPilotId,
@@ -1392,6 +1396,8 @@ export class FlightOperationsService {
         originStationId: route.origin_station_id,
         destinationStationId: route.destination_station_id,
         customerId: input.customerId ?? null,
+        billingType: input.billingType ?? 'CHARTER',
+        estimatedRevenue: input.estimatedRevenue ?? null,
         aircraftId: input.aircraftId ?? null,
         pilotInCommandId: input.pilotInCommandId ?? null,
         coPilotId: input.coPilotId ?? null,
@@ -1409,6 +1415,55 @@ export class FlightOperationsService {
       actorUserId
     );
     this.evaluateReadiness(id, false, actorUserId);
+    return this.detail(id);
+  }
+
+  updateCommercialDetails(
+    id: string,
+    input: { customerId: string | null; billingType: string; estimatedRevenue: number | null },
+    actorUserId: string
+  ) {
+    const flight = this.requireFlight(id);
+    if (
+      !['DRAFT', 'PENDING_READINESS', 'BLOCKED', 'REOPENED_FOR_CORRECTION'].includes(
+        flight.currentStatus
+      )
+    ) {
+      throw new DomainError(
+        'FLIGHT_LOCKED_FOR_EDIT',
+        'Commercial details can only be edited while the flight is draft or reopened.',
+        409
+      );
+    }
+    const commercialService = [
+      'SCHEDULED_PASSENGER',
+      'CHARTER_PASSENGER',
+      'CHARTER_CARGO'
+    ].includes(flight.serviceTypeCode);
+    if (commercialService && (!input.customerId || input.estimatedRevenue === null)) {
+      throw new DomainError(
+        'COMMERCIAL_DETAILS_INCOMPLETE',
+        'Commercial flights require a customer and estimated revenue.',
+        422
+      );
+    }
+
+    this.sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET customer_id = ?, billing_type = ?, estimated_revenue = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(input.customerId, input.billingType, input.estimatedRevenue, timestamp(), id);
+    this.invalidateStationVerification(
+      id,
+      'Commercial billing details changed.',
+      actorUserId,
+      [],
+      ['FINANCE_INITIALIZED']
+    );
+    const shouldUpdateStatus = ['PENDING_READINESS', 'BLOCKED'].includes(flight.currentStatus);
+    this.evaluateReadiness(id, shouldUpdateStatus, actorUserId);
     return this.detail(id);
   }
 
@@ -3926,7 +3981,8 @@ export class FlightOperationsService {
     const crewAvailabilityFailed = crewConflict || Boolean(unavailableCrew);
     const financeRequired =
       commercialService || (flight.serviceTypeCode === 'MEDEVAC' && Boolean(flight.customerId));
-    const financeInitialized = Boolean(flight.customerId && flight.billingType);
+    const financeInitialized =
+      Boolean(flight.customerId && flight.billingType) && flight.estimatedRevenue !== null;
     const documentsRequired = flight.serviceTypeCode !== 'POSITIONING';
     const documentsReady = num(rows.requiredDocuments.count) >= 2;
     const aircraftScheduleConflict = Boolean(
@@ -4071,7 +4127,7 @@ export class FlightOperationsService {
           ? 'Commercial billing is not required for this service type.'
           : financeInitialized
             ? 'Customer and billing tracking are initialized.'
-            : 'Customer or billing type is incomplete.',
+            : 'Customer, billing type, or revenue estimate is incomplete.',
         sourceReference: 'flight_operations'
       },
       {

@@ -2,6 +2,7 @@
 import FlightReasonSelect from '../../../features/operations/flight-reasons/FlightReasonSelect.vue';
 import StationSelect from '../../../features/operations/stations/StationSelect.vue';
 import ActualTimeDialog from '../../../features/operations/flight-operations/ActualTimeDialog.vue';
+import CustomerSelect from '../../../features/commercial/customers/CustomerSelect.vue';
 import type { AircraftOption } from '#shared/features/operations/aircraft';
 import type { StationOption } from '#shared/features/operations/stations';
 import type {
@@ -31,7 +32,30 @@ const selectedIssue = ref<FlightReadinessCheckDto | null>(null);
 const historyFilter = ref('ALL');
 const actualTimeDialog = ref(false);
 const actualTimeAction = ref<'depart' | 'land'>('depart');
+const commercialDialog = ref(false);
+const commercialSaving = ref(false);
+const commercialError = ref('');
+const commercialForm = reactive({
+  customerId: null as string | null,
+  billingType: 'CHARTER',
+  estimatedRevenue: null as number | null
+});
+const billingTypeOptions = [
+  'CHARTER',
+  'SCHEDULED_PASSENGER',
+  'CARGO',
+  'INTERNAL_POSITIONING',
+  'NON_REVENUE'
+];
 const { can } = useAuthorization();
+const canEditCommercialDetails = computed(
+  () =>
+    Boolean(flight.value) &&
+    ['DRAFT', 'PENDING_READINESS', 'BLOCKED', 'REOPENED_FOR_CORRECTION'].includes(
+      flight.value?.currentStatus ?? ''
+    ) &&
+    can('flight.create.direct').allowed
+);
 
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
@@ -346,6 +370,35 @@ function readinessIcon(category: FlightReadinessCheckDto['category']) {
 function openIssue(item: FlightReadinessCheckDto) {
   selectedIssue.value = item;
   issueDrawer.value = true;
+}
+
+function openCommercialDetails() {
+  if (!flight.value) return;
+  commercialForm.customerId = flight.value.customerId;
+  commercialForm.billingType = flight.value.billingType;
+  commercialForm.estimatedRevenue = flight.value.estimatedRevenue;
+  commercialError.value = '';
+  commercialDialog.value = true;
+}
+
+async function saveCommercialDetails() {
+  if (!flight.value || commercialSaving.value) return;
+  commercialSaving.value = true;
+  commercialError.value = '';
+  try {
+    await fetchApi<FlightOperationDetailDto>(
+      `/api/flight-operations/flights/${flight.value.id}/commercial`,
+      { method: 'PATCH', body: commercialForm }
+    );
+    await refresh();
+    commercialDialog.value = false;
+    actionSuccess.value = 'Commercial details updated and readiness recalculated.';
+  } catch (errorValue) {
+    commercialError.value =
+      errorValue instanceof Error ? errorValue.message : 'Commercial details could not be saved.';
+  } finally {
+    commercialSaving.value = false;
+  }
 }
 
 function actionUrl(action: string) {
@@ -1317,6 +1370,15 @@ function historyActor(item: FlightStatusHistoryDto) {
               <div class="record-head">
                 <VIcon icon="mdi-file-document-outline" />
                 <h2>Billing & Invoice</h2>
+                <VSpacer />
+                <VBtn
+                  v-if="canEditCommercialDetails"
+                  size="small"
+                  variant="tonal"
+                  @click="openCommercialDetails"
+                >
+                  Edit commercial details
+                </VBtn>
                 <FlightsFlightStatusChip
                   :status="flight.currentStatus === 'CLOSED' ? 'READY' : 'NOT_YET_BILLABLE'"
                 />
@@ -1455,9 +1517,18 @@ function historyActor(item: FlightStatusHistoryDto) {
             <strong>{{ selectedIssue.recommendedAction }}</strong>
           </div>
           <VBtn
-            v-if="selectedIssue.actionHref"
+            v-if="selectedIssue.checkCode === 'FINANCE_INITIALIZED' && canEditCommercialDetails"
             block
             class="mt-6"
+            color="secondary"
+            @click="openCommercialDetails"
+          >
+            Edit commercial details
+          </VBtn>
+          <VBtn
+            v-if="selectedIssue.actionHref"
+            block
+            :class="selectedIssue.checkCode === 'FINANCE_INITIALIZED' ? 'mt-2' : 'mt-6'"
             color="secondary"
             :to="selectedIssue.actionHref"
           >
@@ -1465,6 +1536,44 @@ function historyActor(item: FlightStatusHistoryDto) {
           </VBtn>
         </div>
       </VNavigationDrawer>
+
+      <VDialog v-model="commercialDialog" max-width="560">
+        <VCard>
+          <VCardTitle>Commercial details</VCardTitle>
+          <VCardText>
+            <VAlert v-if="commercialError" class="mb-4" color="error" variant="tonal">
+              {{ commercialError }}
+            </VAlert>
+            <p class="mb-4 text-body-2 text-medium-emphasis">
+              Commercial flights require a billing customer and revenue estimate before readiness
+              can pass. Non-revenue direct flights can use the appropriate non-revenue billing type.
+            </p>
+            <CustomerSelect v-model="commercialForm.customerId" label="Billing customer" />
+            <VSelect
+              v-model="commercialForm.billingType"
+              class="mt-4"
+              :items="billingTypeOptions"
+              label="Billing type"
+              variant="outlined"
+            />
+            <VTextField
+              v-model.number="commercialForm.estimatedRevenue"
+              class="mt-4"
+              label="Estimated revenue (IDR)"
+              min="0"
+              type="number"
+              variant="outlined"
+            />
+          </VCardText>
+          <VCardActions>
+            <VSpacer />
+            <VBtn variant="text" @click="commercialDialog = false">Cancel</VBtn>
+            <VBtn color="primary" :loading="commercialSaving" @click="saveCommercialDetails">
+              Save commercial details
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
 
       <ActualTimeDialog
         v-if="flight"
