@@ -127,7 +127,7 @@ describe('Operational Verification and Readiness Assurance', () => {
         check_code TEXT,
         check_name TEXT,
         status_id TEXT,
-        is_required INTEGER,
+        is_required INTEGER NOT NULL DEFAULT 1,
         evaluated_at TEXT,
         evaluated_by_user_id TEXT,
         result_note TEXT,
@@ -140,8 +140,10 @@ describe('Operational Verification and Readiness Assurance', () => {
         expiry_at TEXT,
         invalidation_reason TEXT,
         source_record_ids TEXT,
+        assurance_phase TEXT,
         created_at TEXT,
-        updated_at TEXT
+        updated_at TEXT,
+        UNIQUE(flight_id, check_code)
       );
       
       CREATE TABLE flight_readiness_verifications (
@@ -172,6 +174,8 @@ describe('Operational Verification and Readiness Assurance', () => {
         action TEXT,
         before_status TEXT,
         after_status TEXT,
+        before_version INTEGER,
+        after_version INTEGER,
         reason TEXT,
         evidence_ids TEXT,
         request_id TEXT,
@@ -504,7 +508,9 @@ describe('Operational Verification and Readiness Assurance', () => {
   });
 
   it('should run critical readiness checks before departure', async () => {
-    vi.spyOn(service, 'evaluate').mockReturnValue({} as never);
+    const evaluateDepartureAssurance = vi
+      .spyOn(service, 'evaluateDepartureAssurance')
+      .mockReturnValue({} as never);
     const criticalChecks = [
       'ROUTE_AVAILABILITY',
       'AIRCRAFT_SERVICEABILITY',
@@ -513,19 +519,21 @@ describe('Operational Verification and Readiness Assurance', () => {
       'AIRCRAFT_CAPACITY',
       'CREW_AVAILABILITY',
       'CREW_LICENSE_MEDICAL',
-      'MANIFEST_APPROVED',
+      'MANIFEST_LOCKED',
       'DG_ACCEPTANCE',
       'FUEL_CONFIRMED',
-      'REQUIRED_DOCUMENTS',
+      'DEPARTURE_DOCUMENTS',
       'HANDLING_CONFIRMED',
       'SEPARATION_OF_DUTIES',
+      'ORIGIN_OPERATIONAL_TASKS',
       'ORIGIN_STATION_SIGNOFF'
     ];
     const insert = sqlite.prepare(
       `INSERT INTO flight_readiness_checks (
-         id, flight_id, check_code, check_name, status_id, classification,
-         effective_status, created_at, updated_at
-       ) VALUES (?, 'flight-1', ?, ?, 'status-pass', 'SYSTEM_CHECK', 'PASSED', ?, ?)`
+         id, flight_id, check_code, check_name, status_id, is_required, classification,
+         effective_status, assurance_phase, created_at, updated_at
+       ) VALUES (?, 'flight-1', ?, ?, 'status-pass', 1, 'SYSTEM_CHECK',
+         'PASSED', 'DEPARTURE', ?, ?)`
     );
     for (const code of criticalChecks) {
       insert.run(
@@ -538,6 +546,31 @@ describe('Operational Verification and Readiness Assurance', () => {
     }
     const result = await service.runCriticalReadinessChecksBeforeDeparture('flight-1');
     expect(result).toEqual({ allPassed: true, failedChecks: [] });
+    expect(evaluateDepartureAssurance).toHaveBeenCalledWith('flight-1', {
+      userId: 'SYSTEM_PRE_DEPARTURE_REVALIDATION',
+      role: 'Demo Admin',
+      stationCodes: ['ALL']
+    });
+
+    const setGate = sqlite.prepare(
+      `UPDATE flight_readiness_checks
+       SET effective_status = ?, is_required = ?
+       WHERE flight_id = 'flight-1' AND check_code = ?`
+    );
+    for (const code of criticalChecks) {
+      setGate.run('BLOCKED', 1, code);
+      expect(service.runCriticalReadinessChecksBeforeDeparture('flight-1')).toEqual({
+        allPassed: false,
+        failedChecks: [code]
+      });
+      setGate.run('PASSED', 1, code);
+    }
+
+    setGate.run('BLOCKED', 0, 'DG_ACCEPTANCE');
+    expect(service.runCriticalReadinessChecksBeforeDeparture('flight-1')).toEqual({
+      allPassed: true,
+      failedChecks: []
+    });
   });
 
   it('should maintain audit trail for all operations', async () => {

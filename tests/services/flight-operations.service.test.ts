@@ -57,51 +57,46 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
-  it('treats accepted dangerous goods as passed and locked manifests as approved', async () => {
+  it('treats accepted dangerous goods and locked manifests as passed at departure', async () => {
     const { services, sqlite } = await createSeededTestServices();
-    const cargoManifest = sqlite
-      .prepare(
-        `SELECT manifest.id
-         FROM flight_manifests manifest
-         JOIN manifest_types type ON type.id = manifest.manifest_type_id
-         WHERE manifest.flight_operation_id = 'fop-ticketing-passenger'
-           AND type.code = 'CARGO'`
-      )
-      .get() as { id: string };
-    const dgCategory = sqlite.prepare('SELECT id FROM dg_categories ORDER BY id LIMIT 1').get() as {
-      id: string;
-    };
     const acceptedStatus = sqlite
       .prepare("SELECT id FROM dg_acceptance_statuses WHERE code = 'ACCEPTED'")
       .get() as { id: string };
     sqlite
       .prepare(
-        `INSERT INTO flight_manifest_cargo_items (
-           id, manifest_id, description, actual_weight_kg, dg_category_id,
-           dg_acceptance_status_id, created_at, updated_at
-         ) VALUES ('cargo-dg-readiness-test', ?, 'Accepted DG test cargo', 10, ?, ?, ?, ?)`
+        `UPDATE flight_manifest_cargo_items
+         SET dg_acceptance_status_id = ?
+         WHERE id = 'fop-dg-cargo-1'`
       )
-      .run(
-        cargoManifest.id,
-        dgCategory.id,
-        acceptedStatus.id,
-        new Date().toISOString(),
-        new Date().toISOString()
-      );
+      .run(acceptedStatus.id);
     sqlite
       .prepare(
         `UPDATE flight_manifests
          SET status_id = 'manifest-status-locked'
-         WHERE flight_operation_id = 'fop-ticketing-passenger'`
+         WHERE flight_operation_id = 'fop-dg-pending'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-check-in-closed'
+         WHERE id = 'fop-dg-pending'`
       )
       .run();
 
-    const evaluated = services.flightOperations.evaluate('fop-ticketing-passenger', occActor);
+    const evaluated = services.flightOperations.evaluateDepartureAssurance('fop-dg-pending', {
+      userId: occActor,
+      role: 'OCC',
+      stationCodes: ['ALL']
+    });
     expect(
       evaluated.readinessChecks.find((check) => check.checkCode === 'DG_ACCEPTANCE')
     ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
     expect(
       evaluated.readinessChecks.find((check) => check.checkCode === 'MANIFEST_APPROVED')
+    ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'MANIFEST_LOCKED')
     ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
 
     sqlite.close();
@@ -348,7 +343,7 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
-  it('marks commercial-only readiness checks not applicable for a positioning flight', async () => {
+  it('marks commercial-only planning checks not applicable for a positioning flight', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const created = services.flightOperations.create(
       {
@@ -369,23 +364,27 @@ describe('FlightOperationsService', () => {
     );
 
     const evaluated = services.flightOperations.evaluate(created.id, occActor);
-    for (const code of [
-      'MANIFEST_APPROVED',
-      'DG_ACCEPTANCE',
-      'FUEL_CONFIRMED',
-      'HANDLING_CONFIRMED',
-      'FINANCE_INITIALIZED',
-      'REQUIRED_DOCUMENTS'
-    ]) {
+    for (const code of ['FINANCE_INITIALIZED', 'PLANNING_DOCUMENTS']) {
       expect(evaluated.readinessChecks.find((check) => check.checkCode === code)).toMatchObject({
         status: 'NOT_APPLICABLE'
       });
+    }
+    for (const code of [
+      'MANIFEST_APPROVED',
+      'MANIFEST_LOCKED',
+      'DG_ACCEPTANCE',
+      'FUEL_CONFIRMED',
+      'HANDLING_CONFIRMED',
+      'DEPARTURE_DOCUMENTS',
+      'ORIGIN_OPERATIONAL_TASKS'
+    ]) {
+      expect(evaluated.readinessChecks.some((check) => check.checkCode === code)).toBe(false);
     }
 
     sqlite.close();
   });
 
-  it('keeps a system-ready draft blocked until operational verification is complete', async () => {
+  it('allows a system-ready draft to proceed before departure verification', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
     const created = services.flightOperations.create(
@@ -466,21 +465,12 @@ describe('FlightOperationsService', () => {
     expect(['PENDING_READINESS', 'READY_FOR_APPROVAL']).toContain(submitted.currentStatus);
 
     const evaluated = services.flightOperations.evaluate(created.id, occActor);
-    expect(evaluated.currentStatus).toBe('PENDING_READINESS');
-    expect(evaluated.readinessChecks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          checkCode: 'ORIGIN_STATION_SIGNOFF',
-          effectiveStatus: 'BLOCKED'
-        }),
-        expect.objectContaining({
-          checkCode: 'REQUIRED_DOCUMENTS',
-          effectiveStatus: 'BLOCKED'
-        })
-      ])
-    );
-    expect(() => services.flightOperations.approve(created.id, {}, adminActor)).toThrow(
-      'Flight must be ready for approval'
+    expect(evaluated.currentStatus).toBe('READY_FOR_APPROVAL');
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'PLANNING_DOCUMENTS')
+    ).toMatchObject({ effectiveStatus: 'PASSED' });
+    expect(services.flightOperations.approve(created.id, {}, adminActor).currentStatus).toBe(
+      'APPROVED'
     );
 
     sqlite.close();
