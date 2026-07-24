@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { LocalUploadDto } from '#shared/contracts/uploads';
+import {
+  normalizeStationWorkspaceTab,
+  type StationWorkspaceTab
+} from '../../../utils/operations/station-workspace-navigation';
 
 type Task = {
   id: string;
@@ -40,22 +44,35 @@ type WorkbenchFlight = {
   tasks: Task[];
   services: Array<{
     id: string;
+    stationId: string;
     stationCode: string;
+    serviceSupplierId: string;
     serviceType: string;
+    serviceTypeId: string;
     supplierName: string;
     status: string;
+    referenceRate: number | null;
+    confirmedAt: string | null;
+    confirmedByUserId: string | null;
     rejectionNote: string | null;
     version: number;
   }>;
   costs: Array<{
     id: string;
+    stationId: string;
     stationCode: string;
+    vendorId: string | null;
     vendorName: string | null;
+    costCategoryId: string;
     costCategoryName: string;
     description: string;
     amount: number;
+    currencyId: string;
     currencyCode: string;
     status: string;
+    submittedByUserId: string | null;
+    approvedByUserId: string | null;
+    approvedAt: string | null;
     version: number;
   }>;
   evidence: Array<{
@@ -97,13 +114,13 @@ const flightId = computed(() => String(route.params.flightId));
 const selectedPhase = ref(
   typeof route.query.phase === 'string' ? route.query.phase : 'ORIGIN_DEPARTURE'
 );
-const workspaceTabs = ['tasks', 'services', 'evidence', 'costs', 'arrival', 'audit'] as const;
-const activeTab = ref(
-  typeof route.query.tab === 'string' &&
-    workspaceTabs.includes(route.query.tab as (typeof workspaceTabs)[number])
-    ? route.query.tab
-    : 'tasks'
-);
+const activeTab = computed<StationWorkspaceTab>({
+  get: () => normalizeStationWorkspaceTab(route.query.tab),
+  set: (tab) => {
+    if (route.query.tab === tab) return;
+    void navigateTo({ query: { ...route.query, tab } });
+  }
+});
 const loadingId = ref('');
 const actionError = ref('');
 const actionSuccess = ref('');
@@ -123,6 +140,24 @@ const {
   { default: () => [] }
 );
 const flight = computed(() => flights.value[0] ?? null);
+const sourceRecordId = computed(() =>
+  typeof route.query.sourceRecordId === 'string' ? route.query.sourceRecordId : null
+);
+const selectedService = computed(
+  () => flight.value?.services.find((service) => service.id === sourceRecordId.value) ?? null
+);
+const selectedCost = computed(
+  () => flight.value?.costs.find((cost) => cost.id === sourceRecordId.value) ?? null
+);
+const detailDrawerOpen = computed({
+  get: () => Boolean(selectedService.value || selectedCost.value),
+  set: (open) => {
+    if (open) return;
+    const query = { ...route.query };
+    delete query.sourceRecordId;
+    void navigateTo({ query }, { replace: true });
+  }
+});
 const stationCode = computed(() =>
   selectedPhase.value.startsWith('ORIGIN')
     ? flight.value?.originStationCode
@@ -181,10 +216,15 @@ watch(
   },
   { immediate: true }
 );
-watch(activeTab, (tab) => {
-  if (route.query.tab === tab) return;
-  void navigateTo({ query: { ...route.query, tab } }, { replace: true });
-});
+function detailQuery(tab: 'services' | 'costs', id: string) {
+  return {
+    query: {
+      ...route.query,
+      tab,
+      sourceRecordId: id
+    }
+  };
+}
 
 function formatDateTime(value: string | null) {
   if (!value) return '-';
@@ -533,27 +573,36 @@ async function saveReconciliation() {
                   <td>{{ service.supplierName }}</td>
                   <td><DsStatusBadge :value="service.status" /></td>
                   <td class="text-right">
-                    <VBtn
-                      v-if="
-                        service.status === 'REQUESTED' && can('station.operation.update').allowed
-                      "
-                      size="small"
-                      variant="tonal"
-                      @click="serviceAction(service, 'confirm')"
-                    >
-                      Confirm
-                    </VBtn>
-                    <VBtn
-                      v-if="
-                        service.status === 'REQUESTED' && can('station.operation.update').allowed
-                      "
-                      color="error"
-                      size="small"
-                      variant="text"
-                      @click="serviceAction(service, 'reject')"
-                    >
-                      Reject
-                    </VBtn>
+                    <div class="d-flex justify-end ga-1">
+                      <DsTooltipIconButton
+                        density="comfortable"
+                        icon="mdi-eye-outline"
+                        :to="detailQuery('services', service.id)"
+                        tooltip="View service details"
+                        variant="text"
+                      />
+                      <VBtn
+                        v-if="
+                          service.status === 'REQUESTED' && can('station.operation.update').allowed
+                        "
+                        size="small"
+                        variant="tonal"
+                        @click="serviceAction(service, 'confirm')"
+                      >
+                        Confirm
+                      </VBtn>
+                      <VBtn
+                        v-if="
+                          service.status === 'REQUESTED' && can('station.operation.update').allowed
+                        "
+                        color="error"
+                        size="small"
+                        variant="text"
+                        @click="serviceAction(service, 'reject')"
+                      >
+                        Reject
+                      </VBtn>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="flight.services.length === 0">
@@ -664,22 +713,31 @@ async function saveReconciliation() {
                   <td>{{ money(cost.amount, cost.currencyCode) }}</td>
                   <td><DsStatusBadge :value="cost.status" /></td>
                   <td class="text-right">
-                    <VBtn
-                      v-if="cost.status === 'DRAFT' && can('station.operation.update').allowed"
-                      size="small"
-                      variant="text"
-                      @click="costAction(cost, 'submit')"
-                    >
-                      Submit
-                    </VBtn>
-                    <VBtn
-                      v-if="cost.status === 'SUBMITTED' && can('station.cost.approve').allowed"
-                      size="small"
-                      variant="tonal"
-                      @click="costAction(cost, 'approve')"
-                    >
-                      Approve
-                    </VBtn>
+                    <div class="d-flex justify-end ga-1">
+                      <DsTooltipIconButton
+                        density="comfortable"
+                        icon="mdi-eye-outline"
+                        :to="detailQuery('costs', cost.id)"
+                        tooltip="View cost details"
+                        variant="text"
+                      />
+                      <VBtn
+                        v-if="cost.status === 'DRAFT' && can('station.operation.update').allowed"
+                        size="small"
+                        variant="text"
+                        @click="costAction(cost, 'submit')"
+                      >
+                        Submit
+                      </VBtn>
+                      <VBtn
+                        v-if="cost.status === 'SUBMITTED' && can('station.cost.approve').allowed"
+                        size="small"
+                        variant="tonal"
+                        @click="costAction(cost, 'approve')"
+                      >
+                        Approve
+                      </VBtn>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="flight.costs.length === 0">
@@ -785,6 +843,219 @@ async function saveReconciliation() {
         </VWindowItem>
       </VWindow>
     </template>
+
+    <VNavigationDrawer
+      v-model="detailDrawerOpen"
+      aria-labelledby="station-record-detail-title"
+      aria-modal="true"
+      disable-route-watcher
+      location="right"
+      role="dialog"
+      temporary
+      width="460"
+    >
+      <template v-if="selectedService">
+        <div class="pa-4">
+          <div class="d-flex align-start ga-3">
+            <VAvatar color="primary" variant="tonal">
+              <VIcon icon="mdi-handshake-outline" />
+            </VAvatar>
+            <div class="min-w-0">
+              <div class="text-overline text-primary">Station service</div>
+              <h2 id="station-record-detail-title" class="text-h6 font-weight-bold">
+                {{ selectedService.serviceType }}
+              </h2>
+              <div class="text-body-2 text-medium-emphasis">
+                {{ selectedService.stationCode }} · {{ selectedService.supplierName }}
+              </div>
+            </div>
+            <VSpacer />
+            <VBtn
+              aria-label="Close service details"
+              icon="mdi-close"
+              variant="text"
+              @click="detailDrawerOpen = false"
+            />
+          </div>
+        </div>
+        <VDivider />
+        <div class="pa-4">
+          <div class="mb-4 d-flex align-center justify-space-between">
+            <span class="text-caption text-medium-emphasis">Current status</span>
+            <DsStatusBadge :value="selectedService.status" />
+          </div>
+
+          <VCard border variant="flat">
+            <VList density="compact">
+              <VListItem title="Station" :subtitle="selectedService.stationCode" />
+              <VListItem title="Service type" :subtitle="selectedService.serviceType" />
+              <VListItem title="Supplier" :subtitle="selectedService.supplierName" />
+              <VListItem
+                title="Reference rate"
+                :subtitle="
+                  selectedService.referenceRate === null
+                    ? 'Not recorded'
+                    : money(selectedService.referenceRate, 'IDR')
+                "
+              />
+              <VListItem
+                title="Confirmed at"
+                :subtitle="formatDateTime(selectedService.confirmedAt)"
+              />
+              <VListItem
+                title="Confirmed by"
+                :subtitle="selectedService.confirmedByUserId ?? 'Not confirmed'"
+              />
+              <VListItem
+                v-if="selectedService.rejectionNote"
+                title="Rejection note"
+                :subtitle="selectedService.rejectionNote"
+              />
+            </VList>
+          </VCard>
+
+          <div class="mt-4 text-caption text-medium-emphasis">
+            Record {{ selectedService.id }} · Version {{ selectedService.version }}
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="selectedCost">
+        <div class="pa-4">
+          <div class="d-flex align-start ga-3">
+            <VAvatar color="secondary" variant="tonal">
+              <VIcon icon="mdi-receipt-text-outline" />
+            </VAvatar>
+            <div class="min-w-0">
+              <div class="text-overline text-secondary">Station cost</div>
+              <h2 id="station-record-detail-title" class="text-h6 font-weight-bold">
+                {{ selectedCost.costCategoryName }}
+              </h2>
+              <div class="text-body-2 text-medium-emphasis">
+                {{ selectedCost.stationCode }} ·
+                {{ selectedCost.vendorName ?? 'No vendor assigned' }}
+              </div>
+            </div>
+            <VSpacer />
+            <VBtn
+              aria-label="Close cost details"
+              icon="mdi-close"
+              variant="text"
+              @click="detailDrawerOpen = false"
+            />
+          </div>
+        </div>
+        <VDivider />
+        <div class="pa-4">
+          <div class="mb-4 d-flex align-center justify-space-between">
+            <div>
+              <div class="text-caption text-medium-emphasis">Amount</div>
+              <div class="text-h5 font-weight-bold">
+                {{ money(selectedCost.amount, selectedCost.currencyCode) }}
+              </div>
+            </div>
+            <DsStatusBadge :value="selectedCost.status" />
+          </div>
+
+          <VAlert class="mb-4" type="info" variant="tonal">
+            Financial records do not complete operational station sign-off.
+          </VAlert>
+
+          <VCard border variant="flat">
+            <VList density="compact">
+              <VListItem title="Station" :subtitle="selectedCost.stationCode" />
+              <VListItem title="Category" :subtitle="selectedCost.costCategoryName" />
+              <VListItem
+                title="Vendor"
+                :subtitle="selectedCost.vendorName ?? 'No vendor assigned'"
+              />
+              <VListItem title="Description" :subtitle="selectedCost.description" />
+              <VListItem
+                title="Submitted by"
+                :subtitle="selectedCost.submittedByUserId ?? 'Not submitted'"
+              />
+              <VListItem
+                title="Approved by"
+                :subtitle="selectedCost.approvedByUserId ?? 'Not approved'"
+              />
+              <VListItem title="Approved at" :subtitle="formatDateTime(selectedCost.approvedAt)" />
+            </VList>
+          </VCard>
+
+          <div class="mt-4 text-caption text-medium-emphasis">
+            Record {{ selectedCost.id }} · Version {{ selectedCost.version }}
+          </div>
+        </div>
+      </template>
+
+      <template #append>
+        <div
+          v-if="selectedService?.status === 'REQUESTED' && can('station.operation.update').allowed"
+          class="d-flex align-center justify-space-between ga-2 pa-4"
+        >
+          <span class="text-caption text-medium-emphasis">Service actions</span>
+          <div class="d-flex ga-1">
+            <DsConfirmIconButton
+              :action="() => serviceAction(selectedService, 'reject')"
+              aria-label="Reject station service"
+              color="error"
+              confirm-icon="mdi-close-circle-outline"
+              confirm-text="Reject"
+              icon="mdi-close-circle-outline"
+              :message="`Reject ${selectedService.serviceType} service from ${selectedService.supplierName}.`"
+              title="Reject station service?"
+              tone="error"
+              tooltip="Reject service"
+              variant="tonal"
+            />
+            <DsConfirmIconButton
+              :action="() => serviceAction(selectedService, 'confirm')"
+              aria-label="Confirm station service"
+              color="success"
+              confirm-icon="mdi-check-circle-outline"
+              confirm-text="Confirm service"
+              icon="mdi-check-circle-outline"
+              :message="`Confirm ${selectedService.serviceType} service from ${selectedService.supplierName}.`"
+              title="Confirm station service?"
+              tone="success"
+              tooltip="Confirm service"
+              variant="flat"
+            />
+          </div>
+        </div>
+        <div v-else-if="selectedCost" class="d-flex align-center justify-space-between ga-2 pa-4">
+          <span class="text-caption text-medium-emphasis">Cost actions</span>
+          <DsConfirmIconButton
+            v-if="selectedCost.status === 'DRAFT' && can('station.operation.update').allowed"
+            :action="() => costAction(selectedCost, 'submit')"
+            aria-label="Submit station cost"
+            color="primary"
+            confirm-icon="mdi-send-check-outline"
+            confirm-text="Submit cost"
+            icon="mdi-send-check-outline"
+            :message="`Submit ${money(selectedCost.amount, selectedCost.currencyCode)} station cost for review.`"
+            title="Submit station cost?"
+            tone="primary"
+            tooltip="Submit cost"
+            variant="flat"
+          />
+          <DsConfirmIconButton
+            v-if="selectedCost.status === 'SUBMITTED' && can('station.cost.approve').allowed"
+            :action="() => costAction(selectedCost, 'approve')"
+            aria-label="Approve station cost"
+            color="success"
+            confirm-icon="mdi-check-decagram-outline"
+            confirm-text="Approve cost"
+            icon="mdi-check-decagram-outline"
+            :message="`Approve ${money(selectedCost.amount, selectedCost.currencyCode)} station cost.`"
+            title="Approve station cost?"
+            tone="success"
+            tooltip="Approve cost"
+            variant="flat"
+          />
+        </div>
+      </template>
+    </VNavigationDrawer>
 
     <VDialog v-model="evidenceDialog" max-width="560">
       <VCard>
