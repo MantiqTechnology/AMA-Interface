@@ -12,7 +12,65 @@ const mobileDrawer = useState('ama-sidebar-mobile-open', () => false);
 const { data: dashboardOverview } = await useAsyncData('topbar-dashboard-overview', () =>
   fetchApi<DashboardDto>('/api/dashboard')
 );
-const notifications = computed(() => dashboardOverview.value?.alerts.slice(0, 5) ?? []);
+
+const demoNotifications = [
+  {
+    id: 'ntf-001',
+    severity: 'critical',
+    title: 'GA204 Delayed 45 Minutes',
+    message: 'Keberangkatan tertunda akibat cuaca buruk di CGK. ETD baru 14:35 WIB.',
+    time: '2m ago'
+  },
+  {
+    id: 'ntf-002',
+    severity: 'warning',
+    title: 'Gate Change - QZ512',
+    message: 'Gate dipindahkan dari B12 ke C04. Ground staff sudah diinformasikan.',
+    time: '10m ago'
+  },
+  {
+    id: 'ntf-003',
+    severity: 'critical',
+    title: 'FOD Terdeteksi di Runway 07',
+    message: 'Inspeksi runway sedang berlangsung, keberangkatan sementara ditahan.',
+    time: '18m ago'
+  },
+  {
+    id: 'ntf-004',
+    severity: 'warning',
+    title: 'GSE Maintenance Due',
+    message: 'Belt Loader BL-01 (SUB - Surabaya) dijadwalkan maintenance dalam 2 hari.',
+    time: '32m ago'
+  },
+  {
+    id: 'ntf-005',
+    severity: 'info',
+    title: 'Flight Closure Completed',
+    message: 'Flight closure untuk JT-682 telah selesai diproses dan diarsipkan.',
+    time: '1h ago'
+  }
+];
+
+const notifications = computed(() => {
+  const apiAlerts = dashboardOverview.value?.alerts ?? [];
+  return apiAlerts.length ? apiAlerts.slice(0, 5) : demoNotifications;
+});
+
+const criticalCount = computed(
+  () => notifications.value.filter((n) => n.severity === 'critical').length
+);
+const bellColor = computed(() => (criticalCount.value > 0 ? 'error' : 'warning'));
+
+const severityIcon: Record<string, string> = {
+  critical: 'mdi-alert-circle',
+  warning: 'mdi-alert',
+  info: 'mdi-information-outline'
+};
+const severityColor: Record<string, string> = {
+  critical: '#E5484D',
+  warning: '#F5A623',
+  info: '#3B5BFF'
+};
 
 onMounted(() => session.load());
 
@@ -70,10 +128,10 @@ function openMobileNavigation() {
 
       <VMenu eager location="bottom end" :close-on-content-click="false">
         <template #activator="{ props }">
-          <VBtn v-bind="props" aria-label="Notifications" icon="mdi-bell-outline" variant="text">
+          <VBtn v-bind="props" aria-label="Notifications" icon variant="text">
             <VBadge
               v-if="notifications.length"
-              color="danger"
+              :color="bellColor"
               :content="notifications.length"
               floating
             >
@@ -83,26 +141,52 @@ function openMobileNavigation() {
           </VBtn>
         </template>
 
-        <VCard border min-width="360">
-          <VCardTitle class="flex items-center justify-between text-brand-primary">
-            Notifications
+        <VCard border min-width="380" max-width="380">
+          <VCardTitle class="d-flex align-center justify-space-between text-brand-primary pa-4">
+            <div class="d-flex align-center" style="gap: 8px">
+              <span>Notifications</span>
+              <VChip v-if="criticalCount" color="error" size="x-small" variant="flat">
+                {{ criticalCount }} critical
+              </VChip>
+            </div>
             <VChip color="accent-cenderawasih" size="small" variant="tonal">Demo</VChip>
           </VCardTitle>
           <VDivider />
-          <VList v-if="notifications.length" lines="three">
-            <VListItem v-for="notification in notifications" :key="notification.id">
+          <VList v-if="notifications.length" lines="three" density="comfortable" class="py-0">
+            <VListItem
+              v-for="notification in notifications"
+              :key="notification.id"
+              class="notif-item"
+            >
               <template #prepend>
-                <DsStatusBadge :value="notification.severity" />
+                <VAvatar :color="severityColor[notification.severity] + '22'" size="36">
+                  <VIcon
+                    :color="severityColor[notification.severity]"
+                    :icon="severityIcon[notification.severity]"
+                    size="20"
+                  />
+                </VAvatar>
               </template>
-              <VListItemTitle>{{ notification.title }}</VListItemTitle>
-              <VListItemSubtitle>
+              <VListItemTitle class="font-weight-medium">{{ notification.title }}</VListItemTitle>
+              <VListItemSubtitle class="text-wrap">
                 {{ notification.message }}
               </VListItemSubtitle>
+              <template #append>
+                <span class="text-caption text-medium-emphasis" style="white-space: nowrap">{{
+                  notification.time
+                }}</span>
+              </template>
             </VListItem>
           </VList>
           <VAlert v-else class="ma-4" color="success" variant="tonal">
             No operational alerts.
           </VAlert>
+          <VDivider />
+          <VCardActions class="justify-center py-2">
+            <VBtn variant="text" size="small" color="primary" append-icon="mdi-arrow-right">
+              View all notifications
+            </VBtn>
+          </VCardActions>
         </VCard>
       </VMenu>
 
@@ -140,3 +224,9 @@ function openMobileNavigation() {
     </div>
   </VAppBar>
 </template>
+
+<style scoped>
+.notif-item + .notif-item {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+</style>
