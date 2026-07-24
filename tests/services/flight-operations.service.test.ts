@@ -629,6 +629,33 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
+  it('does not re-block aircraft location after actual departure', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const created = createReadinessDraft(services);
+
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET actual_departure_at = '2026-08-20T03:05:00.000Z'
+         WHERE id = ?`
+      )
+      .run(created.id);
+    sqlite
+      .prepare(`UPDATE aircraft SET current_station_id = 'st-wmx' WHERE id = 'ac-pk-ama'`)
+      .run();
+
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
+    const location = evaluated.readinessChecks.find(
+      (check) => check.checkCode === 'AIRCRAFT_LOCATION'
+    );
+
+    expect(location).toMatchObject({
+      status: 'PASS',
+      resultNote: 'Aircraft location was validated at departure.'
+    });
+    sqlite.close();
+  });
+
   it('blocks readiness when selected crew is not available in master data', async () => {
     const { services, sqlite } = await createSeededTestServices();
 

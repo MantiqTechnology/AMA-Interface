@@ -3965,7 +3965,9 @@ export class FlightOperationsService {
     const aircraftPass = flight.aircraftServiceability === 'SERVICEABLE' && !maintenanceDue;
     const aircraftCurrentStationCode = str(rows.aircraft?.current_station_code ?? null);
     const aircraftLocationPass =
-      Boolean(rows.aircraft) && aircraftCurrentStationCode === flight.originStationCode;
+      Boolean(rows.aircraft) &&
+      (Boolean(flight.actualDepartureAt) ||
+        aircraftCurrentStationCode === flight.originStationCode);
     const aircraftCapacityPass =
       Boolean(rows.aircraft) &&
       num(rows.passengerCount.count) <= num(rows.aircraft?.passenger_capacity ?? 0) &&
@@ -4055,7 +4057,9 @@ export class FlightOperationsService {
         checkName: 'Aircraft location',
         status: aircraftLocationPass ? 'PASS' : 'FAIL',
         resultNote: aircraftLocationPass
-          ? `Aircraft is positioned at ${flight.originStationCode}.`
+          ? flight.actualDepartureAt
+            ? 'Aircraft location was validated at departure.'
+            : `Aircraft is positioned at ${flight.originStationCode}.`
           : `Aircraft current station ${aircraftCurrentStationCode ?? 'unknown'} does not match departure station ${flight.originStationCode}.`,
         sourceReference: 'aircraft.current_station_id'
       },

@@ -843,11 +843,11 @@ export async function seedOperationsMasterData(
     },
     {
       id: 'ac-pk-amb',
-      currentStationId: 'st-tim',
+      currentStationId: 'st-wmx',
       lastMaintenanceCheckAt: context.date(-19),
       nextMaintenanceDueAt: context.date(3),
       serviceabilityNote:
-        'Serviceable; current station differs from DJJ and requires positioning review.'
+        'Serviceable and positioned at WMX for the active WMX-OKS operational scenario.'
     },
     {
       id: 'ac-pk-amc',
