@@ -49,12 +49,25 @@ function readinessCodeForTask(taskCode: string) {
 
 export class FlightOperationsVerificationService extends FlightOperationsService {
   invalidateFlightDocumentVerification(flightId: string, actorUserId: string) {
-    this.invalidateStationVerification(flightId, 'Flight document source changed.', actorUserId, [
-      'ORIGIN_DOCUMENTS',
-      'ORIGIN_STATION_SIGNOFF',
-      'DESTINATION_DOCUMENTS',
-      'DESTINATION_STATION_SIGNOFF'
-    ]);
+    this.invalidateStationVerification(
+      flightId,
+      'Flight document source changed.',
+      actorUserId,
+      [
+        'ORIGIN_DOCUMENTS',
+        'ORIGIN_STATION_SIGNOFF',
+        'DESTINATION_DOCUMENTS',
+        'DESTINATION_STATION_SIGNOFF'
+      ],
+      [
+        'PLANNING_DOCUMENTS',
+        'REQUIRED_DOCUMENTS',
+        'DEPARTURE_DOCUMENTS',
+        'ORIGIN_OPERATIONAL_TASKS',
+        'ORIGIN_STATION_SIGNOFF',
+        'DESTINATION_STATION_SIGNOFF'
+      ]
+    );
   }
 
   constructor(sqlite: Database.Database, routesService?: any) {
@@ -193,6 +206,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       flightId,
       'Check-in/load intake was finalized; origin sign-off must use the final load.',
       ctx.userId,
+      ['ORIGIN_STATION_SIGNOFF'],
       ['ORIGIN_STATION_SIGNOFF']
     );
     void this.logAudit({
@@ -241,7 +255,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       manifest.flight_operation_id,
       'Passenger manifest load changed.',
       ctx.userId,
-      ['ORIGIN_STATION_SIGNOFF']
+      ['ORIGIN_STATION_SIGNOFF'],
+      ['AIRCRAFT_CAPACITY', 'MANIFEST_APPROVED', 'MANIFEST_LOCKED', 'ORIGIN_STATION_SIGNOFF']
     );
     void this.logAudit({
       actorUserId: ctx.userId,
@@ -267,7 +282,14 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       manifest.flight_operation_id,
       'Cargo manifest load changed.',
       ctx.userId,
-      ['ORIGIN_STATION_SIGNOFF']
+      ['ORIGIN_STATION_SIGNOFF'],
+      [
+        'AIRCRAFT_CAPACITY',
+        'MANIFEST_APPROVED',
+        'MANIFEST_LOCKED',
+        'DG_ACCEPTANCE',
+        'ORIGIN_STATION_SIGNOFF'
+      ]
     );
     void this.logAudit({
       actorUserId: ctx.userId,
@@ -329,7 +351,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           manifest.flight_operation_id,
           'Manifest submitted with a new final-load snapshot.',
           ctx.userId,
-          ['ORIGIN_STATION_SIGNOFF']
+          ['ORIGIN_STATION_SIGNOFF'],
+          ['MANIFEST_APPROVED', 'MANIFEST_LOCKED', 'ORIGIN_STATION_SIGNOFF']
         );
         this.writeManifestAudit(manifest, 'MANIFEST_SUBMIT', ctx, 'SUBMITTED');
         return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
@@ -385,7 +408,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           manifest.flight_operation_id,
           'Manifest approval changed the final-load snapshot.',
           ctx.userId,
-          ['ORIGIN_STATION_SIGNOFF']
+          ['ORIGIN_STATION_SIGNOFF'],
+          ['MANIFEST_APPROVED', 'MANIFEST_LOCKED', 'ORIGIN_STATION_SIGNOFF']
         );
         this.writeManifestAudit(manifest, 'MANIFEST_APPROVE', ctx, 'APPROVED');
         return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
@@ -419,7 +443,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           manifest.flight_operation_id,
           'Manifest was rejected for correction.',
           ctx.userId,
-          ['ORIGIN_STATION_SIGNOFF']
+          ['ORIGIN_STATION_SIGNOFF'],
+          ['MANIFEST_APPROVED', 'MANIFEST_LOCKED', 'ORIGIN_STATION_SIGNOFF']
         );
         this.writeManifestAudit(manifest, 'MANIFEST_REJECT', ctx, 'DRAFT', body.reason);
         return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
@@ -452,7 +477,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           manifest.flight_operation_id,
           'Manifest was locked; origin sign-off must follow the final lock.',
           ctx.userId,
-          ['ORIGIN_STATION_SIGNOFF']
+          ['ORIGIN_STATION_SIGNOFF'],
+          ['MANIFEST_APPROVED', 'MANIFEST_LOCKED', 'ORIGIN_STATION_SIGNOFF']
         );
         this.writeManifestAudit(manifest, 'MANIFEST_LOCK', ctx, 'LOCKED');
         return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
@@ -515,7 +541,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           manifest.flight_operation_id,
           `Manifest unlocked: ${body.reason}`,
           ctx.userId,
-          ['ORIGIN_STATION_SIGNOFF']
+          ['ORIGIN_STATION_SIGNOFF'],
+          ['MANIFEST_APPROVED', 'MANIFEST_LOCKED', 'ORIGIN_STATION_SIGNOFF']
         );
         this.writeManifestAudit(manifest, 'MANIFEST_UNLOCK', ctx, 'DRAFT', body.reason);
         return this.getManifestWorkspace(manifest.flight_operation_id, ctx);
@@ -598,7 +625,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
           item.flight_operation_id,
           'Dangerous-goods decision changed the final-load snapshot.',
           ctx.userId,
-          ['ORIGIN_STATION_SIGNOFF']
+          ['ORIGIN_STATION_SIGNOFF'],
+          ['DG_ACCEPTANCE', 'MANIFEST_APPROVED', 'MANIFEST_LOCKED', 'ORIGIN_STATION_SIGNOFF']
         );
         void this.logAudit({
           actorUserId: ctx.userId,

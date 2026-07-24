@@ -1966,6 +1966,38 @@ export class FlightOperationsService {
     return this.detail(flightId);
   }
 
+  private stationServiceVerificationTaskCodes(
+    flightId: string,
+    stationId: string,
+    serviceTypeId: string
+  ) {
+    const context = this.sqlite
+      .prepare(
+        `SELECT flight.origin_station_id, flight.destination_station_id,
+                service_type.code AS service_type_code
+         FROM flight_operations flight
+         JOIN station_service_types service_type ON service_type.id = ?
+         WHERE flight.id = ?`
+      )
+      .get(serviceTypeId, flightId) as SqlRow | undefined;
+    if (!context) throw notFound('Station service context', flightId);
+    const serviceTypeCode = String(context.service_type_code);
+
+    if (stationId === String(context.origin_station_id)) {
+      return [
+        ...(serviceTypeCode === 'HANDLING' ? ['ORIGIN_HANDLING'] : []),
+        'ORIGIN_STATION_SIGNOFF'
+      ];
+    }
+    if (stationId === String(context.destination_station_id)) {
+      return [
+        ...(serviceTypeCode === 'HANDLING' ? ['DESTINATION_HANDLING'] : []),
+        'DESTINATION_STATION_SIGNOFF'
+      ];
+    }
+    return [];
+  }
+
   createStationService(body: CreateStationServiceBody, actorUserId: string) {
     const flight = this.requireFlight(body.flightId);
     if (![flight.originStationId, flight.destinationStationId].includes(body.stationId)) {
@@ -1989,7 +2021,7 @@ export class FlightOperationsService {
       body.flightId,
       'Station service request changed.',
       actorUserId,
-      ['ORIGIN_HANDLING', 'ORIGIN_STATION_SIGNOFF']
+      this.stationServiceVerificationTaskCodes(body.flightId, body.stationId, body.serviceTypeId)
     );
     this.evaluateReadiness(body.flightId, false, actorUserId);
     return this.listStationServices({ flightId: body.flightId }).find(
@@ -2030,7 +2062,11 @@ export class FlightOperationsService {
       String(row.flight_id),
       'Station service confirmation changed.',
       actorUserId,
-      ['ORIGIN_HANDLING', 'ORIGIN_STATION_SIGNOFF']
+      this.stationServiceVerificationTaskCodes(
+        String(row.flight_id),
+        String(row.station_id),
+        String(row.service_type_id)
+      )
     );
     this.evaluateReadiness(String(row.flight_id), false, actorUserId);
     return this.detail(String(row.flight_id));
@@ -2069,7 +2105,11 @@ export class FlightOperationsService {
       String(row.flight_id),
       `Station service rejected: ${reason}`,
       actorUserId,
-      ['ORIGIN_HANDLING', 'ORIGIN_STATION_SIGNOFF']
+      this.stationServiceVerificationTaskCodes(
+        String(row.flight_id),
+        String(row.station_id),
+        String(row.service_type_id)
+      )
     );
     this.evaluateReadiness(String(row.flight_id), false, actorUserId);
     return this.detail(String(row.flight_id));
@@ -3253,59 +3293,97 @@ export class FlightOperationsService {
     flightId: string,
     reason: string,
     actorUserId: string,
-    taskCodes?: string[]
+    taskCodes?: string[],
+    readinessCheckCodes?: string[]
   ) {
+    if (taskCodes?.length === 0 && readinessCheckCodes?.length === 0) return;
+    const shouldInvalidateTasks = taskCodes === undefined || taskCodes.length > 0;
     const params: Array<string> = [timestamp(), flightId];
     const taskFilter = taskCodes?.length
       ? ` AND task_code IN (${taskCodes.map(() => '?').join(',')})`
       : '';
     if (taskCodes) params.push(...taskCodes);
-    const affected = this.sqlite
-      .prepare(
-        `SELECT id, station_id, status, task_code FROM flight_station_tasks
-         WHERE flight_id = ?${taskFilter}`
-      )
-      .all(flightId, ...(taskCodes ?? [])) as Array<{
-      id: string;
-      station_id: string;
-      status: string;
-      task_code: string;
-    }>;
+    const affected = shouldInvalidateTasks
+      ? (this.sqlite
+          .prepare(
+            `SELECT id, station_id, status, task_code FROM flight_station_tasks
+             WHERE flight_id = ?${taskFilter}`
+          )
+          .all(flightId, ...(taskCodes ?? [])) as Array<{
+          id: string;
+          station_id: string;
+          status: string;
+          task_code: string;
+        }>)
+      : [];
     const verified = affected.filter((task) => task.status === 'VERIFIED');
-    if (!verified.length) return;
+    const readinessCodes = [
+      ...new Set(
+        readinessCheckCodes ??
+          taskCodes?.flatMap((code) => {
+            if (code === 'ORIGIN_HANDLING') {
+              return ['HANDLING_CONFIRMED', 'ORIGIN_OPERATIONAL_TASKS'];
+            }
+            if (code === 'ORIGIN_DOCUMENTS') {
+              return [
+                'PLANNING_DOCUMENTS',
+                'REQUIRED_DOCUMENTS',
+                'DEPARTURE_DOCUMENTS',
+                'ORIGIN_OPERATIONAL_TASKS'
+              ];
+            }
+            if (code.startsWith('ORIGIN_') && !code.endsWith('STATION_SIGNOFF')) {
+              return [code, 'ORIGIN_OPERATIONAL_TASKS'];
+            }
+            return [code];
+          }) ??
+          []
+      )
+    ];
+    const readinessFilter =
+      taskCodes || readinessCheckCodes
+        ? ` AND check_code IN (${readinessCodes.map(() => '?').join(',') || "''"})`
+        : '';
 
-    this.sqlite
-      .prepare(
-        `UPDATE flight_station_tasks
-         SET status = 'PENDING', verified_by_user_id = NULL, verified_at = NULL,
-             rejection_reason = NULL, version = version + 1, updated_at = ?
-         WHERE flight_id = ?${taskFilter}`
-      )
-      .run(...params);
-    this.sqlite
-      .prepare(
-        `DELETE FROM flight_station_task_approvals
-         WHERE task_id IN (
-           SELECT id FROM flight_station_tasks WHERE flight_id = ?${taskFilter}
-         )`
-      )
-      .run(flightId, ...(taskCodes ?? []));
+    if (verified.length) {
+      this.sqlite
+        .prepare(
+          `UPDATE flight_station_tasks
+           SET status = 'PENDING', verified_by_user_id = NULL, verified_at = NULL,
+               rejection_reason = NULL, version = version + 1, updated_at = ?
+           WHERE flight_id = ?${taskFilter} AND status = 'VERIFIED'`
+        )
+        .run(...params);
+      this.sqlite
+        .prepare(
+          `DELETE FROM flight_station_task_approvals
+           WHERE task_id IN (${verified.map(() => '?').join(',')})`
+        )
+        .run(...verified.map((task) => task.id));
+    }
     this.sqlite
       .prepare(
         `UPDATE flight_readiness_checks
-         SET verification_status = 'PENDING', effective_status = 'BLOCKED',
+         SET status_id = CASE
+               WHEN calculation_status = 'NOT_APPLICABLE' THEN status_id
+               ELSE 'readiness-status-pending'
+             END,
+             calculation_status = CASE
+               WHEN calculation_status = 'NOT_APPLICABLE' THEN calculation_status
+               ELSE 'UNKNOWN'
+             END,
+             verification_status = CASE
+               WHEN calculation_status = 'NOT_APPLICABLE' THEN 'NOT_REQUIRED'
+               ELSE 'PENDING'
+             END,
+             effective_status = CASE
+               WHEN calculation_status = 'NOT_APPLICABLE' THEN 'NOT_APPLICABLE'
+               ELSE 'BLOCKED'
+             END,
              invalidation_reason = ?, updated_at = ?
-         WHERE flight_id = ?`
+         WHERE flight_id = ?${readinessFilter}`
       )
-      .run(reason, timestamp(), flightId);
-    const readinessCodes = taskCodes?.map((code) => {
-      if (code === 'ORIGIN_HANDLING') return 'HANDLING_CONFIRMED';
-      if (code === 'ORIGIN_DOCUMENTS') return 'REQUIRED_DOCUMENTS';
-      return code;
-    });
-    const readinessFilter = readinessCodes?.length
-      ? ` AND check_code IN (${readinessCodes.map(() => '?').join(',')})`
-      : '';
+      .run(reason, timestamp(), flightId, ...readinessCodes);
     this.sqlite
       .prepare(
         `UPDATE flight_readiness_verifications
@@ -3313,7 +3391,7 @@ export class FlightOperationsService {
              invalidation_reason = ?, updated_at = ?
          WHERE flight_id = ? AND verification_status = 'VERIFIED'${readinessFilter}`
       )
-      .run(timestamp(), reason, timestamp(), flightId, ...(readinessCodes ?? []));
+      .run(timestamp(), reason, timestamp(), flightId, ...readinessCodes);
     const audit = this.sqlite.prepare(
       `INSERT INTO flight_operational_audit (
          id, actor_user_id, actor_role, flight_id, station_id, module, action,
