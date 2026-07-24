@@ -1467,6 +1467,32 @@ export class FlightOperationsService {
     return this.detail(id);
   }
 
+  updateAircraftAssignment(id: string, aircraftId: string, actorUserId: string) {
+    const flight = this.requireFlight(id);
+    if (
+      !['DRAFT', 'PENDING_READINESS', 'BLOCKED', 'REOPENED_FOR_CORRECTION'].includes(
+        flight.currentStatus
+      )
+    ) {
+      throw new DomainError(
+        'FLIGHT_LOCKED_FOR_EDIT',
+        'Aircraft can only be changed while the flight is editable.',
+        409
+      );
+    }
+    const aircraft = this.sqlite.prepare('SELECT id FROM aircraft WHERE id = ?').get(aircraftId) as
+      SqlRow | undefined;
+    if (!aircraft)
+      throw new DomainError('AIRCRAFT_NOT_FOUND', 'Selected aircraft was not found.', 404);
+    this.sqlite
+      .prepare('UPDATE flight_operations SET aircraft_id = ?, updated_at = ? WHERE id = ?')
+      .run(aircraftId, timestamp(), id);
+    this.invalidateStationVerification(id, 'Aircraft assignment changed.', actorUserId);
+    const shouldUpdateStatus = ['PENDING_READINESS', 'BLOCKED'].includes(flight.currentStatus);
+    this.evaluateReadiness(id, shouldUpdateStatus, actorUserId);
+    return this.detail(id);
+  }
+
   submit(id: string, actorUserId: string) {
     const flight = this.requireFlight(id);
     if (flight.currentStatus !== 'DRAFT' && flight.currentStatus !== 'REOPENED_FOR_CORRECTION') {

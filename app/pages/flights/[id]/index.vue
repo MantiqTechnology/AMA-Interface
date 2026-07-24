@@ -33,6 +33,10 @@ const historyFilter = ref('ALL');
 const actualTimeDialog = ref(false);
 const actualTimeAction = ref<'depart' | 'land'>('depart');
 const commercialDialog = ref(false);
+const aircraftDialog = ref(false);
+const aircraftSaving = ref(false);
+const aircraftError = ref('');
+const selectedAircraftId = ref<string | null>(null);
 const commercialSaving = ref(false);
 const commercialError = ref('');
 const commercialForm = reactive({
@@ -379,6 +383,33 @@ function openCommercialDetails() {
   commercialForm.estimatedRevenue = flight.value.estimatedRevenue;
   commercialError.value = '';
   commercialDialog.value = true;
+}
+
+function openAircraftAssignment() {
+  if (!flight.value) return;
+  selectedAircraftId.value = flight.value.aircraftId;
+  aircraftError.value = '';
+  aircraftDialog.value = true;
+}
+
+async function saveAircraftAssignment() {
+  if (!flight.value || !selectedAircraftId.value || aircraftSaving.value) return;
+  aircraftSaving.value = true;
+  aircraftError.value = '';
+  try {
+    await fetchApi(`/api/flight-operations/flights/${flight.value.id}/aircraft`, {
+      method: 'PATCH',
+      body: { aircraftId: selectedAircraftId.value }
+    });
+    await refresh();
+    aircraftDialog.value = false;
+    actionSuccess.value = 'Aircraft assignment updated and readiness recalculated.';
+  } catch (errorValue) {
+    aircraftError.value =
+      errorValue instanceof Error ? errorValue.message : 'Aircraft assignment could not be saved.';
+  } finally {
+    aircraftSaving.value = false;
+  }
 }
 
 async function saveCommercialDetails() {
@@ -978,7 +1009,13 @@ function historyActor(item: FlightStatusHistoryDto) {
                   <VIcon icon="mdi-airplane-edit" />
                   <h2>Aircraft Assignment</h2>
                   <VSpacer />
-                  <VBtn disabled prepend-icon="mdi-swap-horizontal" size="small" variant="tonal">
+                  <VBtn
+                    v-if="canEditCommercialDetails"
+                    prepend-icon="mdi-swap-horizontal"
+                    size="small"
+                    variant="tonal"
+                    @click="openAircraftAssignment"
+                  >
                     Change Aircraft
                   </VBtn>
                 </div>
@@ -1526,6 +1563,15 @@ function historyActor(item: FlightStatusHistoryDto) {
             Edit commercial details
           </VBtn>
           <VBtn
+            v-if="selectedIssue.checkCode === 'AIRCRAFT_LOCATION' && canEditCommercialDetails"
+            block
+            class="mt-6"
+            color="secondary"
+            @click="openAircraftAssignment"
+          >
+            Open aircraft assignment
+          </VBtn>
+          <VBtn
             v-if="selectedIssue.actionHref"
             block
             :class="selectedIssue.checkCode === 'FINANCE_INITIALIZED' ? 'mt-2' : 'mt-6'"
@@ -1570,6 +1616,43 @@ function historyActor(item: FlightStatusHistoryDto) {
             <VBtn variant="text" @click="commercialDialog = false">Cancel</VBtn>
             <VBtn color="primary" :loading="commercialSaving" @click="saveCommercialDetails">
               Save commercial details
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
+
+      <VDialog v-model="aircraftDialog" max-width="560">
+        <VCard>
+          <VCardTitle>Change aircraft assignment</VCardTitle>
+          <VCardText>
+            <VAlert v-if="aircraftError" class="mb-4" color="error" variant="tonal">
+              {{
+                aircraftError
+              }}
+            </VAlert>
+            <VSelect
+              v-model="selectedAircraftId"
+              :items="aircraftOptions"
+              item-title="registrationNumber"
+              item-value="id"
+              label="Aircraft"
+              variant="outlined"
+            />
+            <p class="mt-3 text-body-2 text-medium-emphasis">
+              Readiness will verify that the selected aircraft is currently at the departure
+              station.
+            </p>
+          </VCardText>
+          <VCardActions>
+            <VSpacer />
+            <VBtn variant="text" @click="aircraftDialog = false">Cancel</VBtn>
+            <VBtn
+              color="primary"
+              :disabled="!selectedAircraftId"
+              :loading="aircraftSaving"
+              @click="saveAircraftAssignment"
+            >
+              Save assignment
             </VBtn>
           </VCardActions>
         </VCard>

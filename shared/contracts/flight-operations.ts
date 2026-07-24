@@ -816,6 +816,10 @@ export const flightOperationCommercialUpdateBodySchema = z.object({
   estimatedRevenue: nullableNonnegativeNumberSchema
 });
 
+export const flightOperationAircraftUpdateBodySchema = z.object({
+  aircraftId: z.string().trim().min(1)
+});
+
 export const createFlightRequestBodySchema = z.object({
   flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   flightTypeId: referenceIdSchema,
