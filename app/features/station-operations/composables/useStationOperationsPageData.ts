@@ -1,0 +1,90 @@
+import { fetchApi } from '../../../composables/useApiEnvelope';
+import type {
+  ApiStationFlight,
+  StationAuditRow,
+  StationDataset,
+  StationTaskRow
+} from '../types/stationOperations';
+import { useStationOperationsContext } from './useStationOperationsContext';
+import {
+  buildDatasetFromApi,
+  createEmptyDataset,
+  flattenAudit,
+  flattenStationTasks
+} from '../utils/stationOperationsTransformers';
+import type { StationOperationsPageData } from 'app/pages/flights/station-operations/index.vue';
+export function useStationOperationsPageData(): StationOperationsPageData {
+  const context = useStationOperationsContext();
+  const route = useRoute();
+
+  const pending = ref<boolean>(false);
+  const workbenchFlights = ref<ApiStationFlight[]>([]);
+  const dataset = ref<StationDataset>(createEmptyDataset());
+
+  let requestSequence = 0;
+
+  const stationTasks = computed<StationTaskRow[]>(() =>
+    flattenStationTasks(context.selectedStationCode.value, workbenchFlights.value)
+  );
+
+  const workbenchAudit = computed<StationAuditRow[]>(() => flattenAudit(workbenchFlights.value));
+
+  async function load(): Promise<void> {
+    const currentRequest = ++requestSequence;
+    pending.value = true;
+    context.error.value = '';
+
+    try {
+      const flights = await fetchApi<ApiStationFlight[]>(
+        '/api/flight-operations/station-operations',
+        {
+          query: {
+            stationCode: context.selectedStationCode.value,
+            operationalDate: context.operationalDateIso.value,
+            phase: typeof route.query.phase === 'string' ? route.query.phase : undefined
+          }
+        }
+      );
+
+      if (currentRequest !== requestSequence) return;
+
+      workbenchFlights.value = flights;
+      dataset.value = buildDatasetFromApi(context.selectedStationCode.value, flights);
+      context.lastUpdated.value = new Date();
+    } catch (error) {
+      if (currentRequest !== requestSequence) return;
+
+      context.error.value =
+        error instanceof Error ? error.message : 'Gagal memuat data Station Operations.';
+    } finally {
+      if (currentRequest === requestSequence) {
+        pending.value = false;
+      }
+    }
+  }
+
+  const stopWatch = watch(
+    [context.selectedStationCode, context.operationalDateIso],
+    () => void load(),
+    { immediate: true }
+  );
+
+  onMounted(() => {
+    context.registerRefreshHandler(load);
+  });
+
+  onBeforeUnmount(() => {
+    stopWatch();
+    context.registerRefreshHandler(null);
+  });
+
+  return {
+    context,
+    pending,
+    dataset,
+    workbenchFlights,
+    stationTasks,
+    workbenchAudit,
+    load
+  };
+}

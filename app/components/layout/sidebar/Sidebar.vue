@@ -35,6 +35,13 @@ const masterDataVisible = computed(() => can('platform.module.manage').allowed);
 const routeMasterDataVisible = computed(
   () => masterDataVisible.value || can('master_data.read').allowed
 );
+const financeVisible = computed(
+  () => can('finance.invoice.read').allowed || can('finance.accounting.read').allowed
+);
+
+const commercialVisible = computed(
+  () => masterDataVisible.value || can('commercial.contract.read').allowed
+);
 
 const navItems = computed<NavItem[]>(() =>
   [
@@ -153,7 +160,7 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'Commercial',
       icon: 'mdi-handshake-outline',
-      visible: masterDataVisible.value,
+      visible: commercialVisible.value,
       children: [
         {
           label: 'Customers',
@@ -172,6 +179,12 @@ const navItems = computed<NavItem[]>(() =>
           to: '/master-data/rates',
           icon: 'mdi-cash-multiple',
           visible: masterDataVisible.value
+        },
+        {
+          label: 'Contracts & Subsidies',
+          to: '/marketing/contracts-subsidies',
+          icon: 'mdi-file-sign',
+          visible: can('commercial.contract.read').allowed || masterDataVisible.value
         }
       ].filter((child) => child.visible)
     },
@@ -294,11 +307,17 @@ const navItems = computed<NavItem[]>(() =>
     },
     {
       label: 'Finance',
-      icon: 'mdi-cash-register',
-      visible: true,
+      icon: 'mdi-finance',
+      visible: financeVisible.value,
       children: [
         {
-          label: 'Invoice',
+          label: 'Overview',
+          to: '/finance/dashboard',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: 'Invoices',
           to: '/invoices',
           icon: 'mdi-file-document-outline',
           visible: can('finance.invoice.read').allowed
@@ -309,6 +328,25 @@ const navItems = computed<NavItem[]>(() =>
           icon: 'mdi-book-open-page-variant-outline',
           visible: can('finance.accounting.read').allowed
         },
+        {
+          label: 'Trial Balance',
+          to: '/finance/trial-balance',
+          icon: 'mdi-scale-balance',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: 'HPP & Margin',
+          to: '/finance/hpp',
+          icon: 'mdi-chart-bar-stacked',
+          visible: can('finance.accounting.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'Master Data',
+      icon: 'mdi-database-cog-outline',
+      visible: masterDataVisible.value,
+      children: [
         {
           label: 'Vendors',
           to: '/master-data/vendors',
