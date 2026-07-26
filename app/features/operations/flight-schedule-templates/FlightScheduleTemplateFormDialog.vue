@@ -5,6 +5,7 @@ import type {
 } from '#shared/features/operations/flight-schedule-templates';
 import RouteSelect from '../routes/RouteSelect.vue';
 import AircraftSelect from '../aircraft/AircraftSelect.vue';
+import FlightCapacityProfileSelect from '../flight-capacity-profiles/FlightCapacityProfileSelect.vue';
 const props = defineProps<{ modelValue: boolean; record?: FlightScheduleTemplateDto | null }>();
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
@@ -18,13 +19,26 @@ const form = reactive<FlightScheduleTemplateInput>({
   routeId: '',
   serviceTypeId: 'flight-service-type-charter-cargo',
   defaultAircraftId: null,
+  capacityProfileId: null,
   operatingDays: [],
   departureTimeLocal: '',
   arrivalTimeLocal: '',
+  arrivalDayOffset: 0,
+  bookingOpenMinutesBefore: 4320,
   bookingOpenHoursBefore: 72,
   bookingCloseMinutesBefore: 60,
+  effectiveFrom: null,
+  effectiveUntil: null,
+  internalOperationalNote: null,
   scheduleNote: null
 });
+const serviceTypeItems = [
+  { title: 'Charter Cargo', value: 'flight-service-type-charter-cargo' },
+  { title: 'Charter Passenger', value: 'flight-service-type-charter-passenger' },
+  { title: 'Scheduled Passenger', value: 'flight-service-type-scheduled-passenger' },
+  { title: 'Medevac', value: 'flight-service-type-medevac' },
+  { title: 'Positioning', value: 'flight-service-type-positioning' }
+] as const;
 const required = (label: string) => (value: unknown) =>
   Array.isArray(value)
     ? value.length > 0 || `${label} is required`
@@ -47,6 +61,9 @@ watch(
       defaultAircraftId: props.record
         ? (props.record.defaultAircraftId as FlightScheduleTemplateInput['defaultAircraftId'])
         : null,
+      capacityProfileId: props.record
+        ? (props.record.capacityProfileId as FlightScheduleTemplateInput['capacityProfileId'])
+        : null,
       operatingDays: props.record
         ? (props.record.operatingDays as FlightScheduleTemplateInput['operatingDays'])
         : [],
@@ -56,6 +73,13 @@ watch(
       arrivalTimeLocal: props.record
         ? (props.record.arrivalTimeLocal as FlightScheduleTemplateInput['arrivalTimeLocal'])
         : '',
+      arrivalDayOffset: props.record
+        ? (props.record.arrivalDayOffset as FlightScheduleTemplateInput['arrivalDayOffset'])
+        : 0,
+      bookingOpenMinutesBefore: props.record
+        ? (props.record
+            .bookingOpenMinutesBefore as FlightScheduleTemplateInput['bookingOpenMinutesBefore'])
+        : 4320,
       bookingOpenHoursBefore: props.record
         ? (props.record
             .bookingOpenHoursBefore as FlightScheduleTemplateInput['bookingOpenHoursBefore'])
@@ -64,8 +88,18 @@ watch(
         ? (props.record
             .bookingCloseMinutesBefore as FlightScheduleTemplateInput['bookingCloseMinutesBefore'])
         : 60,
+      effectiveFrom: props.record
+        ? (props.record.effectiveFrom as FlightScheduleTemplateInput['effectiveFrom'])
+        : null,
+      effectiveUntil: props.record
+        ? (props.record.effectiveUntil as FlightScheduleTemplateInput['effectiveUntil'])
+        : null,
       scheduleNote: props.record
         ? (props.record.scheduleNote as FlightScheduleTemplateInput['scheduleNote'])
+        : null,
+      internalOperationalNote: props.record
+        ? (props.record
+            .internalOperationalNote as FlightScheduleTemplateInput['internalOperationalNote'])
         : null
     });
   }
@@ -80,7 +114,10 @@ async function submit() {
       props.record
         ? '/api/master-data/flight-schedule-templates/' + props.record.id
         : '/api/master-data/flight-schedule-templates',
-      { method: props.record ? 'PUT' : 'POST', body: { ...form } }
+      {
+        method: props.record ? 'PUT' : 'POST',
+        body: { ...form, expectedVersion: props.record?.version }
+      }
     );
     emit('saved', record);
     emit('update:modelValue', false);
@@ -120,13 +157,7 @@ async function submit() {
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.serviceTypeId"
-                :items="[
-                  'flight-service-type-charter-cargo',
-                  'flight-service-type-charter-passenger',
-                  'flight-service-type-scheduled-passenger',
-                  'flight-service-type-medevac',
-                  'flight-service-type-positioning'
-                ]"
+                :items="serviceTypeItems"
                 label="Service type"
                 :rules="[required('Service type')]"
                 variant="outlined"
@@ -134,6 +165,13 @@ async function submit() {
             </VCol>
             <VCol cols="12" md="6">
               <AircraftSelect v-model="form.defaultAircraftId" label="Default aircraft" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <FlightCapacityProfileSelect
+                v-model="form.capacityProfileId"
+                label="Capacity profile"
+                :allow-create="false"
+              />
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
@@ -166,8 +204,16 @@ async function submit() {
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
-                v-model.number="form.bookingOpenHoursBefore"
-                label="Booking opens before"
+                v-model.number="form.arrivalDayOffset"
+                label="Arrival day offset"
+                type="number"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model.number="form.bookingOpenMinutesBefore"
+                label="Booking opens before (minutes)"
                 :rules="[required('Booking opens before')]"
                 type="number"
                 variant="outlined"
@@ -182,10 +228,34 @@ async function submit() {
                 variant="outlined"
               />
             </VCol>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="form.effectiveFrom"
+                label="Effective from"
+                type="date"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="form.effectiveUntil"
+                label="Effective until"
+                type="date"
+                variant="outlined"
+              />
+            </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.scheduleNote"
                 label="Schedule note"
+                rows="3"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VTextarea
+                v-model="form.internalOperationalNote"
+                label="Internal operational note"
                 rows="3"
                 variant="outlined"
               />

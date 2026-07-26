@@ -2,6 +2,7 @@
 import { useDisplay } from 'vuetify';
 import { useTheme } from 'vuetify';
 import type { DashboardDto } from '#shared/contracts/operations-monitoring';
+import { AMA_THEME_HEX } from '../../constants/themeColors';
 
 const route = useRoute();
 const session = useDemoSession();
@@ -67,9 +68,9 @@ const severityIcon: Record<string, string> = {
   info: 'mdi-information-outline'
 };
 const severityColor: Record<string, string> = {
-  critical: '#E5484D',
-  warning: '#F5A623',
-  info: '#3B5BFF'
+  critical: AMA_THEME_HEX.danger,
+  warning: AMA_THEME_HEX.warning,
+  info: AMA_THEME_HEX.info
 };
 
 onMounted(() => session.load());
@@ -227,6 +228,6 @@ function openMobileNavigation() {
 
 <style scoped>
 .notif-item + .notif-item {
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid rgba(var(--v-theme-border-default), 0.7);
 }
 </style>

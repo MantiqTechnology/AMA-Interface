@@ -34,6 +34,7 @@ export class CargoBookingService {
   async create(input: CreateCargoBookingInput) {
     const flight = this.salesRepository.getBookableFlight(input.flightOperationId, 'CARGO');
     if (!flight) throw notFound('Bookable cargo flight', input.flightOperationId);
+    let commissionSnapshot = null as ReturnType<AgentRepository['getCommissionSnapshot']> | null;
     if (input.agentId) {
       const agent = await this.agentRepository.getById(input.agentId);
       if (!agent?.isActive) {
@@ -66,11 +67,21 @@ export class CargoBookingService {
         : flight.cargoPriceBasis === 'VOLUME_WEIGHT'
           ? volumeWeightKg
           : chargeableWeightKg;
-    const totalTariff = Math.max(
-      Math.round(pricingWeightKg * flight.baseRate),
-      flight.minimumCharge ?? 0
+    const pricingWeightGrams = Math.round(pricingWeightKg * 1000);
+    const variableTariff = Number(
+      (BigInt(pricingWeightGrams) * BigInt(flight.baseRate) + 500n) / 1000n
     );
-    const taxAmount = Math.round((totalTariff * flight.taxRateBasisPoints) / 10_000);
+    const totalTariff = Math.max(variableTariff, flight.minimumCharge ?? 0);
+    if (input.agentId) {
+      commissionSnapshot = this.agentRepository.getCommissionSnapshot(
+        input.agentId,
+        totalTariff,
+        flight.currencyCode
+      );
+    }
+    const taxAmount = Number(
+      (BigInt(totalTariff) * BigInt(flight.taxRateBasisPoints) + 5000n) / 10_000n
+    );
     const id = `AWB-${nanoid(8).toUpperCase()}`;
     const timestamp = new Date().toISOString();
     try {
@@ -91,9 +102,33 @@ export class CargoBookingService {
         dgAcceptanceStatus: input.isDangerous ? 'PENDING' : 'NOT_APPLICABLE',
         paymentMethod: input.paymentMethod,
         agentId: input.agentId || null,
+        agentCodeSnapshot: commissionSnapshot?.agentCodeSnapshot ?? null,
+        agentNameSnapshot: commissionSnapshot?.agentNameSnapshot ?? null,
+        commissionRuleId: commissionSnapshot?.commissionRuleId ?? null,
+        commissionRuleVersion: commissionSnapshot?.commissionRuleVersion ?? null,
+        commissionBasisType: commissionSnapshot?.commissionBasisType ?? null,
+        commissionBasisAmount: commissionSnapshot?.commissionBasisAmount ?? null,
+        commissionAmount: commissionSnapshot?.commissionAmount ?? null,
+        commissionCurrency: commissionSnapshot?.commissionCurrency ?? null,
         tariffRate: flight.baseRate,
         totalTariff,
         rateCardId: flight.rateCardId,
+        sourceRateVersion: flight.sourceRateVersion,
+        rateCodeSnapshot: flight.rateCodeSnapshot,
+        currencySnapshot: flight.currencyCode,
+        baseRateSnapshot: flight.baseRate,
+        minimumChargeSnapshot: flight.minimumCharge,
+        rateUnitSnapshot: flight.rateUnitSnapshot,
+        priceBasisSnapshot: flight.priceBasisSnapshot,
+        taxRuleSnapshot: flight.taxCode,
+        pricingScopeSnapshot: flight.pricingScopeSnapshot,
+        calculationLinesSnapshot: JSON.stringify([
+          `Cargo basis: ${flight.cargoPriceBasis ?? 'CHARGEABLE_WEIGHT'}.`,
+          `Pricing weight grams: ${pricingWeightGrams}.`,
+          `Minimum charge minor: ${flight.minimumCharge ?? 0}.`,
+          `Tax basis points: ${flight.taxRateBasisPoints}.`
+        ]),
+        totalAmountSnapshot: totalTariff + taxAmount,
         taxCodeId: flight.taxCodeId,
         taxCode: flight.taxCode,
         taxRateBasisPoints: flight.taxRateBasisPoints,

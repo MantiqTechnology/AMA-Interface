@@ -1,3 +1,7 @@
 import { getCustomerService } from '../../../features/commercial/customers';
 import { defineApiEventHandler } from '../../../utils/api-response';
-export default defineApiEventHandler(() => getCustomerService().options());
+import { requireDemoPermission } from '../../../utils/auth';
+export default defineApiEventHandler((event) => {
+  requireDemoPermission(event, 'customer.read');
+  return getCustomerService().options();
+});

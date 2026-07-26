@@ -83,7 +83,7 @@ async function toggle(station: StationDto) {
             <tr v-for="station in stations" :key="station.id">
               <td>{{ station.stationCode }}</td>
               <td>{{ station.stationName }}</td>
-              <td>{{ station.cityOrRegion }}, {{ station.province }}</td>
+              <td>{{ station.city }}, {{ station.province }}</td>
               <td>{{ station.airportType }}</td>
               <td>
                 <VChip v-if="station.hasFuelService" size="small">Fuel</VChip>

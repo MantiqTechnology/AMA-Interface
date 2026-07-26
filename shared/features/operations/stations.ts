@@ -3,6 +3,15 @@ import { z } from 'zod';
 const emptyToNull = (value: unknown) =>
   typeof value === 'string' && value.trim() === '' ? null : value;
 
+export const stationAirportTypes = ['AIRPORT', 'AIRSTRIP', 'STOL_AIRFIELD'] as const;
+export type StationAirportType = (typeof stationAirportTypes)[number];
+
+export const stationOperationalStatuses = ['ACTIVE', 'INACTIVE', 'SUSPENDED'] as const;
+export type StationOperationalStatus = (typeof stationOperationalStatuses)[number];
+
+export const stationSurfaceTypes = ['ASPHALT', 'CONCRETE', 'GRASS', 'GRAVEL', 'SAND'] as const;
+export type StationSurfaceType = (typeof stationSurfaceTypes)[number];
+
 export const stationListQuerySchema = z.object({
   active: z.enum(['active', 'inactive', 'all']).default('active'),
   search: z.string().trim().max(80).optional().default('')
@@ -18,9 +27,29 @@ export const stationInputSchema = z.object({
     .min(1)
     .transform((value) => value.toUpperCase()),
   stationName: z.string().trim().min(1),
-  cityOrRegion: z.string().trim().min(1),
-  province: z.string().trim().min(1),
-  airportType: z.enum(['AIRPORT', 'AIRSTRIP', 'STOL_AIRFIELD']),
+  iataCode: z
+    .preprocess(emptyToNull, z.string().trim().length(3).nullable())
+    .optional()
+    .default(null),
+  icaoCode: z
+    .preprocess(emptyToNull, z.string().trim().length(4).nullable())
+    .optional()
+    .default(null),
+  airportType: z.enum(stationAirportTypes).nullable().optional().default(null),
+  operationalStatus: z.enum(stationOperationalStatuses).optional().default('ACTIVE'),
+  city: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
+  province: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
+  countryCode: z
+    .preprocess(emptyToNull, z.string().trim().length(2).nullable())
+    .optional()
+    .default(null),
+  timezone: z.string().trim().optional().default('Asia/Jayapura'),
+  latitude: z.number().min(-90).max(90).nullable().optional().default(null),
+  longitude: z.number().min(-180).max(180).nullable().optional().default(null),
+  elevationFt: z.number().int().nullable().optional().default(null),
+  surfaceType: z.enum(stationSurfaceTypes).nullable().optional().default(null),
+  runwayLengthM: z.number().int().positive().nullable().optional().default(null),
+  runwayWidthM: z.number().int().positive().nullable().optional().default(null),
   stationPicName: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
   stationPicPhone: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
   operationalNotes: z
@@ -37,9 +66,36 @@ export const stationInputSchema = z.object({
 export type StationListQuery = z.infer<typeof stationListQuerySchema>;
 export type StationInput = z.infer<typeof stationInputSchema>;
 
-export type StationDto = Omit<StationInput, 'airportType'> & {
+export type StationPicDto = {
+  name: string | null;
+  phone: string | null;
+};
+
+export type StationDto = {
   id: string;
-  airportType: string;
+  stationCode: string;
+  stationName: string;
+  iataCode: string | null;
+  icaoCode: string | null;
+  airportType: StationAirportType | null;
+  operationalStatus: StationOperationalStatus;
+  city: string | null;
+  province: string | null;
+  countryCode: string | null;
+  timezone: string;
+  latitude: number | null;
+  longitude: number | null;
+  elevationFt: number | null;
+  surfaceType: StationSurfaceType | null;
+  runwayLengthM: number | null;
+  runwayWidthM: number | null;
+  stationPic: StationPicDto;
+  operationalNotes: string | null;
+  isRemoteStation: boolean;
+  lowConnectivityMode: boolean;
+  hasFuelService: boolean;
+  hasHandlingService: boolean;
+  hasParkingService: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -49,5 +105,5 @@ export type StationOption = {
   id: string;
   stationCode: string;
   stationName: string;
-  cityOrRegion: string;
+  city: string | null;
 };

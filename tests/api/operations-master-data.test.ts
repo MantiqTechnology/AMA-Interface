@@ -6,8 +6,10 @@ import type { ApiResponse } from '../../shared/contracts/api';
 import type { AircraftDto, AircraftOption } from '../../shared/features/operations/aircraft';
 import type { FlightCapacityProfileOption } from '../../shared/features/operations/flight-capacity-profiles';
 import type {
+  FlightScheduleTemplateDetailDto,
   FlightScheduleTemplateDto,
-  FlightScheduleTemplateOption
+  FlightScheduleTemplateOption,
+  ScheduleTemplateHistoryItemDto
 } from '../../shared/features/operations/flight-schedule-templates';
 import type { PersonnelOption } from '../../shared/features/operations/personnel';
 import type {
@@ -201,6 +203,103 @@ describe('operations master data APIs', () => {
     if (!schedules.ok) throw new Error(schedules.error.message);
     expect(schedules.data).toHaveLength(1);
     expect(schedules.data[0]?.templateCode).toBe('SCH_DJJ_NBX_MON_THU');
+  });
+
+  it('returns enriched schedule template detail, duplicates as draft, manages lifecycle, and records history', async () => {
+    const detail = await $fetch<ApiResponse<FlightScheduleTemplateDetailDto>>(
+      '/api/master-data/flight-schedule-templates/schedule-djj-nbx-mon-thu'
+    );
+    expect(detail.ok).toBe(true);
+    if (!detail.ok) throw new Error(detail.error.message);
+    expect(detail.data).toMatchObject({
+      templateCode: 'SCH_DJJ_NBX_MON_THU',
+      lifecycleStatus: 'ACTIVE',
+      version: 1,
+      route: {
+        routeCode: 'DJJ-NBX',
+        origin: { stationCode: 'DJJ', stationName: expect.any(String) },
+        destination: { stationCode: 'NBX', stationName: expect.any(String) }
+      },
+      serviceType: { name: 'Scheduled Passenger' },
+      defaultAircraft: { registration: 'PK-AMB' },
+      bookingOpenMinutesBefore: 10080,
+      bookingCloseMinutesBefore: 5400,
+      arrivalDayOffset: 0
+    });
+    expect(detail.data.route.id).not.toBe(detail.data.route.routeCode);
+    expect(detail.data.serviceType.name).not.toBe(detail.data.serviceType.id);
+
+    const duplicate = await $fetch<ApiResponse<FlightScheduleTemplateDto>>(
+      '/api/master-data/flight-schedule-templates/schedule-djj-nbx-mon-thu/duplicate',
+      { method: 'POST', body: { templateCode: 'SCH_DJJ_NBX_MON_THU_TEST_COPY' } }
+    );
+    expect(duplicate.ok).toBe(true);
+    if (!duplicate.ok) throw new Error(duplicate.error.message);
+    expect(duplicate.data).toMatchObject({
+      templateCode: 'SCH_DJJ_NBX_MON_THU_TEST_COPY',
+      lifecycleStatus: 'DRAFT',
+      isActive: false,
+      version: 1,
+      routeId: 'route-djj-nbx'
+    });
+
+    const activated = await $fetch<ApiResponse<FlightScheduleTemplateDto>>(
+      `/api/master-data/flight-schedule-templates/${duplicate.data.id}/activate`,
+      { method: 'POST' }
+    );
+    expect(activated.ok && activated.data.lifecycleStatus).toBe('ACTIVE');
+
+    const deactivated = await $fetch<ApiResponse<FlightScheduleTemplateDto>>(
+      `/api/master-data/flight-schedule-templates/${duplicate.data.id}/deactivate`,
+      { method: 'POST' }
+    );
+    expect(deactivated.ok && deactivated.data.lifecycleStatus).toBe('INACTIVE');
+
+    const history = await $fetch<ApiResponse<ScheduleTemplateHistoryItemDto[]>>(
+      `/api/master-data/flight-schedule-templates/${duplicate.data.id}/history`
+    );
+    expect(history.ok).toBe(true);
+    if (!history.ok) throw new Error(history.error.message);
+    expect(history.data.map((item) => item.action)).toEqual(
+      expect.arrayContaining(['DUPLICATED', 'ACTIVATED', 'DEACTIVATED'])
+    );
+  });
+
+  it('rejects stale schedule template updates with optimistic concurrency', async () => {
+    const detail = await $fetch<ApiResponse<FlightScheduleTemplateDetailDto>>(
+      '/api/master-data/flight-schedule-templates/schedule-djj-wmx-mwf'
+    );
+    expect(detail.ok).toBe(true);
+    if (!detail.ok) throw new Error(detail.error.message);
+
+    const stale = await $fetch<ApiResponse<FlightScheduleTemplateDto>>(
+      '/api/master-data/flight-schedule-templates/schedule-djj-wmx-mwf',
+      {
+        method: 'PUT',
+        ignoreResponseError: true,
+        body: {
+          templateCode: detail.data.templateCode,
+          expectedVersion: detail.data.version + 1,
+          routeId: detail.data.routeId,
+          serviceTypeId: detail.data.serviceTypeId,
+          defaultAircraftId: detail.data.defaultAircraftId,
+          capacityProfileId: detail.data.capacityProfileId,
+          operatingDays: detail.data.operatingDays,
+          departureTimeLocal: detail.data.departureTimeLocal,
+          arrivalTimeLocal: detail.data.arrivalTimeLocal,
+          arrivalDayOffset: detail.data.arrivalDayOffset,
+          bookingOpenMinutesBefore: detail.data.bookingOpenMinutesBefore,
+          bookingCloseMinutesBefore: detail.data.bookingCloseMinutesBefore,
+          effectiveFrom: detail.data.effectiveFrom,
+          effectiveUntil: detail.data.effectiveUntil,
+          scheduleNote: 'Stale update should not apply.',
+          internalOperationalNote: detail.data.internalOperationalNote
+        }
+      }
+    );
+    expect(stale.ok).toBe(false);
+    if (stale.ok) throw new Error('Expected stale update to fail.');
+    expect(stale.error.code).toBe('SCHEDULE_TEMPLATE_VERSION_CONFLICT');
   });
 
   it('enforces route read and manage permissions on the server', async () => {

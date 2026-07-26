@@ -10,6 +10,7 @@ import { FlightOperationsVerificationService } from './flight-operations-verific
 import { OperationsMonitoringService } from './operations-monitoring.service';
 import { createAccountingService } from '../features/finance/accounting';
 import { createInvoiceService } from '../features/finance/invoices';
+import { createFinanceReportingService } from '../features/finance/reporting';
 
 export type Services = ReturnType<typeof createServices>;
 
@@ -19,6 +20,7 @@ export function createServices(sqlite: Database.Database) {
   return {
     flightOperations: new FlightOperationsVerificationService(sqlite, routesService),
     accounting: createAccountingService(sqlite),
+    financeReporting: createFinanceReportingService(sqlite),
     invoices: createInvoiceService(sqlite),
     dashboard: new DashboardService(sqlite),
     operationsMonitoring: new OperationsMonitoringService(sqlite)

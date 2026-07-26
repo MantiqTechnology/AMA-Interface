@@ -74,9 +74,14 @@ export type RouteProfileStationDto = {
   id: string;
   stationCode: string;
   stationName: string;
-  cityOrRegion: string;
-  province: string;
-  airportType: string;
+  iataCode: string | null;
+  icaoCode: string | null;
+  airportType: string | null;
+  operationalStatus: string;
+  city: string | null;
+  province: string | null;
+  countryCode: string | null;
+  timezone: string;
   operationalNotes: string | null;
   isActive: boolean;
 };

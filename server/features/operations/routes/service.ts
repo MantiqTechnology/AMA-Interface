@@ -37,24 +37,30 @@ export class RoutesService {
     const route = await this.get(id);
     const evaluatedAt = this.now().toISOString();
     const evaluatedDate = evaluatedAt.slice(0, 10);
-    const [stationRelations, scheduleRows, capacityRows, rateRows, reverseRoute, flightRows] =
-      await Promise.all([
-        this.repository.getStations(route),
-        this.repository.getActiveScheduleTemplates(route.id),
-        this.repository.getActiveCapacityProfiles(route.id),
-        this.repository.getEffectiveRateServiceTypes(
-          route.originStationId,
-          route.destinationStationId,
-          evaluatedDate
-        ),
-        this.repository.getReverseRoute(route.originStationId, route.destinationStationId),
-        this.repository.getUpcomingFlights(route, evaluatedAt)
-      ]);
+    const [
+      originStation,
+      destinationStation,
+      scheduleRows,
+      capacityRows,
+      rateRows,
+      reverseRoute,
+      flightRows
+    ] = await Promise.all([
+      this.stationsRepository.getById(route.originStationId),
+      this.stationsRepository.getById(route.destinationStationId),
+      this.repository.getActiveScheduleTemplates(route.id),
+      this.repository.getActiveCapacityProfiles(route.id),
+      this.repository.getEffectiveRateServiceTypes(
+        route.originStationId,
+        route.destinationStationId,
+        evaluatedDate
+      ),
+      this.repository.getReverseRoute(route.originStationId, route.destinationStationId),
+      this.repository.getUpcomingFlights(route, evaluatedAt)
+    ]);
 
-    const origin = stationRelations.origin ? this.toProfileStation(stationRelations.origin) : null;
-    const destination = stationRelations.destination
-      ? this.toProfileStation(stationRelations.destination)
-      : null;
+    const origin = originStation ? this.toProfileStation(originStation) : null;
+    const destination = destinationStation ? this.toProfileStation(destinationStation) : null;
     const scheduleTemplates = scheduleRows.map((row) => ({
       ...row,
       operatingDays: row.operatingDays.split(',').filter(Boolean)
@@ -102,7 +108,7 @@ export class RoutesService {
       )
       .map((flight) => ({ ...flight }));
     const papuaTimezone = [origin, destination].every((station) =>
-      station?.province.toLowerCase().startsWith('papua')
+      station?.province?.toLowerCase().startsWith('papua')
     );
 
     return {
@@ -207,9 +213,14 @@ export class RoutesService {
       id: station.id,
       stationCode: station.stationCode,
       stationName: station.stationName,
-      cityOrRegion: station.cityOrRegion,
+      iataCode: station.iataCode,
+      icaoCode: station.icaoCode,
+      city: station.city,
       province: station.province,
+      countryCode: station.countryCode,
+      timezone: station.timezone,
       airportType: station.airportType,
+      operationalStatus: station.operationalStatus,
       operationalNotes: station.operationalNotes,
       isActive: station.isActive
     };

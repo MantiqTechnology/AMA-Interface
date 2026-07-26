@@ -1,108 +1,100 @@
 <script setup lang="ts">
 import type { ApexAxisChartSeries, ApexOptions } from 'apexcharts';
-import { financeDashboardDemo } from '../../composables/useFinanceDemoData';
+import type {
+  FinanceDashboardDto,
+  FinanceReportingPeriodDto
+} from '#shared/features/finance/reporting';
+import { AMA_THEME_HEX } from '../../constants/themeColors';
 
 useHead({ title: 'Finance Dashboard · PT AMA' });
 
-const selectedPeriod = ref('2026-07');
+const route = useRoute();
+const router = useRouter();
+const selectedPeriod = ref(typeof route.query.period === 'string' ? route.query.period : '');
 const refreshing = ref(false);
 
-const { data: source, refresh } = await useAsyncData('finance-dashboard-demo', async () => {
-  return financeDashboardDemo;
+const { data: periods, error: periodsError } = await useAsyncData('finance-reporting-periods', () =>
+  fetchApi<FinanceReportingPeriodDto[]>('/api/finance/reporting/periods')
+);
+
+if (!selectedPeriod.value) selectedPeriod.value = periods.value?.[0]?.code ?? '';
+
+const {
+  data: dashboard,
+  pending,
+  error,
+  refresh
+} = await useAsyncData(
+  'finance-reporting-dashboard',
+  () =>
+    fetchApi<FinanceDashboardDto>('/api/finance/reporting/dashboard', {
+      query: selectedPeriod.value ? { period: selectedPeriod.value } : {}
+    }),
+  { watch: [selectedPeriod] }
+);
+
+watch(selectedPeriod, (period) => {
+  if (period && route.query.period !== period) {
+    void router.replace({ query: { ...route.query, period } });
+  }
 });
 
-const dashboard = computed(() => source.value ?? financeDashboardDemo);
-
-const chartPalette = {
-  green: '#27805B',
-  greenSoft: '#73A98C',
-  amber: '#D9951A',
-  red: '#B9473B',
-  slate: '#64748B',
-  grid: '#E2E8F0'
-};
+const periodOptions = computed(
+  () =>
+    periods.value?.map((period) => ({
+      title: `${period.name} (${period.status})`,
+      value: period.code
+    })) ?? []
+);
 
 const marginSeries = computed<ApexAxisChartSeries>(() => [
   {
-    name: 'Gross Margin',
-    data: dashboard.value.margins.map((item) => item.value)
+    name: 'Gross margin',
+    data: (dashboard.value?.profitability ?? []).map((line) => line.grossMarginPercent ?? 0)
   }
 ]);
 
 const marginOptions = computed<ApexOptions>(() => ({
-  chart: {
-    toolbar: { show: false },
-    fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif'
-  },
-  colors: dashboard.value.margins.map((item) =>
-    item.value >= 20 ? chartPalette.green : item.value >= 12 ? chartPalette.amber : chartPalette.red
-  ),
+  chart: { toolbar: { show: false } },
+  colors: (dashboard.value?.profitability ?? []).map((line) => {
+    const margin = line.grossMarginPercent ?? 0;
+    return margin >= 20
+      ? AMA_THEME_HEX.success
+      : margin >= 10
+        ? AMA_THEME_HEX.warning
+        : AMA_THEME_HEX.danger;
+  }),
   dataLabels: {
     enabled: true,
     formatter: (value) => `${Number(value).toFixed(1)}%`,
     offsetX: 8,
-    style: { colors: ['#334155'], fontSize: '12px', fontWeight: 600 }
+    style: { colors: [AMA_THEME_HEX.textPrimary], fontSize: '12px', fontWeight: 600 }
   },
-  grid: {
-    borderColor: chartPalette.grid,
-    strokeDashArray: 3,
-    padding: { left: 4, right: 30 }
-  },
+  grid: { borderColor: AMA_THEME_HEX.borderDefault, strokeDashArray: 3 },
   legend: { show: false },
+  noData: { text: 'No profitability data for this period.' },
   plotOptions: {
-    bar: {
-      borderRadius: 4,
-      distributed: true,
-      horizontal: true,
-      barHeight: '54%'
-    }
+    bar: { borderRadius: 4, distributed: true, horizontal: true, barHeight: '52%' }
   },
-  tooltip: {
-    y: { formatter: (value) => `${value.toFixed(1)}%` }
-  },
+  tooltip: { y: { formatter: (value) => `${value.toFixed(1)}%` } },
   xaxis: {
-    categories: dashboard.value.margins.map((item) => item.label),
-    labels: { formatter: (value) => `${value}%` },
-    max: 35
-  },
-  yaxis: {
-    labels: { style: { colors: chartPalette.slate, fontWeight: 600 } }
+    categories: (dashboard.value?.profitability ?? []).map((line) => line.label),
+    labels: { formatter: (value) => `${value}%` }
   }
 }));
 
-function sparklineOptions(tone: 'green' | 'amber' | 'red' = 'green'): ApexOptions {
-  const color =
-    tone === 'amber' ? chartPalette.amber : tone === 'red' ? chartPalette.red : chartPalette.green;
-  return {
-    chart: {
-      animations: { enabled: false },
-      sparkline: { enabled: true },
-      toolbar: { show: false }
-    },
-    colors: [color],
-    fill: {
-      opacity: 0.12,
-      type: 'solid'
-    },
-    stroke: {
-      curve: 'smooth',
-      width: 2
-    },
-    tooltip: { enabled: false }
-  };
-}
-
-function sparklineSeries(label: string, trend: number[]): ApexAxisChartSeries {
-  return [{ name: label, data: trend }];
-}
-
-function rupiahCompact(value: number) {
+function moneyCompact(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
-    currency: 'IDR',
+    currency: dashboard.value?.currencyCode ?? 'IDR',
     notation: 'compact',
     maximumFractionDigits: 2
   }).format(value);
+}
+
+function actionValue(item: FinanceDashboardDto['actions'][number]) {
+  if (item.id === 'overdue-ar') return moneyCompact(Number(item.value));
+  return item.value;
 }
 
 async function refreshDashboard() {
@@ -110,179 +102,221 @@ async function refreshDashboard() {
   try {
     await refresh();
   } finally {
-    window.setTimeout(() => {
-      refreshing.value = false;
-    }, 300);
+    refreshing.value = false;
   }
 }
 </script>
 
 <template>
-  <div class="finance-page">
-    <div class="finance-page-shell">
-      <FinanceFinancePageHeader
-        v-model:period="selectedPeriod"
-        subtitle="Ringkasan kinerja keuangan, risiko, dan profitabilitas PT AMA."
-        title="Dashboard Finance"
-        @refresh="refreshDashboard"
-      >
-        <template #actions>
-          <span
-            v-if="refreshing"
-            class="inline-flex h-10 items-center rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-600"
-          >
-            Memperbarui…
-          </span>
-        </template>
-      </FinanceFinancePageHeader>
+  <div class="mx-auto flex w-full max-w-[1600px] flex-col gap-5 p-4 md:p-6">
+    <FinancePageHeader
+      v-model:period="selectedPeriod"
+      :period-options="periodOptions"
+      :refreshing="refreshing"
+      subtitle="Posted ledger performance, receivable risk, and operational profitability."
+      title="Finance Dashboard"
+      @refresh="refreshDashboard"
+    />
 
+    <VAlert v-if="periodsError || error" color="error" variant="tonal">
+      <div class="font-weight-bold">Unable to load Finance reporting</div>
+      <div class="mt-1">Posted ledger and reporting data could not be retrieved.</div>
+      <template #append>
+        <VBtn variant="text" @click="refreshDashboard">Retry</VBtn>
+      </template>
+    </VAlert>
+
+    <template v-else-if="pending || !dashboard">
+      <VSkeletonLoader type="heading, paragraph" />
       <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <FinanceFinanceKpiCard
-          v-for="metric in dashboard.kpis"
-          :key="metric.label"
-          :metric="metric"
-        />
+        <VSkeletonLoader v-for="index in 5" :key="index" type="article" />
+      </section>
+      <div class="grid gap-5 xl:grid-cols-2">
+        <VSkeletonLoader type="image, paragraph" />
+        <VSkeletonLoader type="table-heading, table-row@4" />
+      </div>
+    </template>
+
+    <template v-else>
+      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Finance metrics">
+        <FinanceKpiCard v-for="metric in dashboard.metrics" :key="metric.key" :metric="metric" />
       </section>
 
-      <FinanceFinancePanel
-        subtitle="Indikator dihitung dari data ledger dan sub-ledger pada periode terpilih."
-        title="Rasio Keuangan"
+      <FinancePanel
+        subtitle="Control signals are derived from posted journals and accounting workflow state."
+        title="Ledger Control"
       >
-        <div class="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
-          <article
-            v-for="group in dashboard.ratioGroups"
-            :key="group.label"
-            class="rounded-lg border border-slate-200 bg-slate-50/70 p-4"
-          >
-            <h3 class="text-sm font-semibold text-slate-900">{{ group.label }}</h3>
-            <div class="mt-4 space-y-3">
-              <div
-                v-for="ratio in group.ratios"
-                :key="ratio.label"
-                class="grid grid-cols-[minmax(0,1fr)_96px] items-center gap-3 rounded-lg bg-white px-3 py-3 ring-1 ring-slate-200"
-              >
-                <div class="min-w-0">
-                  <p class="truncate text-xs font-medium text-slate-500">{{ ratio.label }}</p>
-                  <p class="mt-1 font-mono text-lg font-semibold tabular-nums text-slate-950">
-                    {{ ratio.value }}
-                  </p>
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <template v-for="control in dashboard.controls" :key="control.label">
+            <NuxtLink
+              v-if="control.route"
+              class="rounded-lg border border-border-default bg-bg-canvas p-4 text-text-primary transition hover:border-brand-secondary"
+              :to="control.route"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-xs font-medium text-text-secondary">{{ control.label }}</p>
+                  <p class="mt-1 text-base font-semibold">{{ control.value }}</p>
                 </div>
-                <ChartsFeatureApexChart
-                  :height="42"
-                  :options="sparklineOptions()"
-                  :series="sparklineSeries(ratio.label, ratio.trend)"
-                  type="area"
+                <VIcon
+                  :color="
+                    control.status === 'SUCCESS'
+                      ? 'success'
+                      : control.status === 'DANGER'
+                        ? 'error'
+                        : control.status === 'WARNING'
+                          ? 'warning'
+                          : 'primary'
+                  "
+                  :icon="
+                    control.status === 'SUCCESS'
+                      ? 'mdi-check-circle-outline'
+                      : control.status === 'DANGER'
+                        ? 'mdi-alert-circle-outline'
+                        : 'mdi-information-outline'
+                  "
+                />
+              </div>
+            </NuxtLink>
+            <div
+              v-else
+              class="rounded-lg border border-border-default bg-bg-canvas p-4 text-text-primary"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-xs font-medium text-text-secondary">{{ control.label }}</p>
+                  <p class="mt-1 text-base font-semibold">{{ control.value }}</p>
+                </div>
+                <VIcon
+                  :color="
+                    control.status === 'SUCCESS'
+                      ? 'success'
+                      : control.status === 'DANGER'
+                        ? 'error'
+                        : control.status === 'WARNING'
+                          ? 'warning'
+                          : 'primary'
+                  "
+                  :icon="
+                    control.status === 'SUCCESS'
+                      ? 'mdi-check-circle-outline'
+                      : control.status === 'DANGER'
+                        ? 'mdi-alert-circle-outline'
+                        : 'mdi-information-outline'
+                  "
                 />
               </div>
             </div>
-          </article>
+          </template>
         </div>
-      </FinanceFinancePanel>
+      </FinancePanel>
 
-      <div class="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <FinanceFinancePanel
-          subtitle="Gross margin setelah HPP per kategori layanan."
-          title="Margin per Lini Bisnis"
+      <div class="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <FinancePanel
+          subtitle="Revenue and allocated operational cost from immutable invoice snapshots."
+          title="Gross Margin by Business Line"
         >
           <ChartsFeatureApexChart
-            :height="310"
+            :height="300"
             :options="marginOptions"
             :series="marginSeries"
             type="bar"
           />
-        </FinanceFinancePanel>
+          <VBtn class="mt-2" prepend-icon="mdi-chart-box-outline" to="/finance/hpp" variant="text">
+            Open profitability breakdown
+          </VBtn>
+        </FinancePanel>
 
-        <FinanceFinancePanel
-          subtitle="Revenue rute untuk memindai konsentrasi dan underperformance."
-          title="Rute Tersibuk vs Tersepi"
+        <FinancePanel
+          subtitle="IDR revenue from flight invoice snapshots in the selected period."
+          title="Route Revenue"
         >
-          <div class="grid gap-5 md:grid-cols-2">
+          <div
+            v-if="dashboard.busiestRoutes.length || dashboard.quietestRoutes.length"
+            class="grid gap-5 md:grid-cols-2"
+          >
             <section>
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-sm font-semibold text-slate-900">Top 5 by revenue</h3>
-                <span class="text-xs text-slate-500">Tertinggi</span>
-              </div>
-              <ol class="mt-3 divide-y divide-slate-100">
+              <h3 class="text-sm font-semibold text-text-primary">Highest revenue</h3>
+              <ol class="mt-3 divide-y divide-border-default">
                 <li
-                  v-for="route in dashboard.busiestRoutes"
-                  :key="route.route"
+                  v-for="item in dashboard.busiestRoutes"
+                  :key="item.route"
                   class="grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-2 py-3"
                 >
-                  <span class="font-mono text-xs text-slate-400">{{ route.rank }}</span>
-                  <span class="truncate text-sm font-medium text-slate-700">{{ route.route }}</span>
-                  <span class="font-mono text-xs font-semibold tabular-nums text-slate-900">
-                    {{ rupiahCompact(route.revenue) }}
+                  <span class="font-mono text-xs text-text-secondary">{{ item.rank }}</span>
+                  <span class="truncate text-sm font-medium text-text-primary">{{
+                    item.route
+                  }}</span>
+                  <span class="font-mono text-xs font-semibold tabular-nums text-text-primary">
+                    {{ moneyCompact(item.revenueMinor) }}
                   </span>
                 </li>
               </ol>
             </section>
-
             <section>
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-sm font-semibold text-slate-900">Bottom 5 by revenue</h3>
-                <span class="text-xs text-slate-500">Terendah</span>
-              </div>
-              <ol class="mt-3 divide-y divide-slate-100">
+              <h3 class="text-sm font-semibold text-text-primary">Lowest revenue</h3>
+              <ol class="mt-3 divide-y divide-border-default">
                 <li
-                  v-for="route in dashboard.quietestRoutes"
-                  :key="route.route"
+                  v-for="item in dashboard.quietestRoutes"
+                  :key="item.route"
                   class="grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-2 py-3"
                 >
-                  <span class="font-mono text-xs text-slate-400">{{ route.rank }}</span>
-                  <span class="truncate text-sm font-medium text-slate-700">{{ route.route }}</span>
-                  <span class="font-mono text-xs font-semibold tabular-nums text-rose-700">
-                    {{ rupiahCompact(route.revenue) }}
+                  <span class="font-mono text-xs text-text-secondary">{{ item.rank }}</span>
+                  <span class="truncate text-sm font-medium text-text-primary">{{
+                    item.route
+                  }}</span>
+                  <span class="font-mono text-xs font-semibold tabular-nums text-text-primary">
+                    {{ moneyCompact(item.revenueMinor) }}
                   </span>
                 </li>
               </ol>
             </section>
           </div>
-        </FinanceFinancePanel>
+          <div v-else class="py-10 text-center text-sm text-text-secondary">
+            No invoiced route revenue is available for this period.
+          </div>
+        </FinancePanel>
       </div>
 
-      <FinanceFinancePanel
-        subtitle="Item yang memerlukan tindakan dari Finance, Accounting, atau Marketing."
-        title="Perlu Perhatian"
+      <FinancePanel
+        subtitle="Items with a valid destination and a current backend condition."
+        title="Requires Attention"
       >
-        <div class="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+        <div v-if="dashboard.actions.length" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <NuxtLink
             v-for="item in dashboard.actions"
             :key="item.id"
-            class="group rounded-lg border p-4 transition hover:-translate-y-0.5 hover:shadow-sm"
-            :class="
-              item.tone === 'danger'
-                ? 'border-rose-200 bg-rose-50/60'
-                : 'border-amber-200 bg-amber-50/60'
-            "
-            :to="item.to"
+            class="rounded-lg border border-border-default bg-bg-canvas p-4 text-text-primary transition hover:border-brand-secondary"
+            :to="item.route"
           >
             <div class="flex items-start gap-3">
-              <span
-                class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-bold"
-                :class="
-                  item.tone === 'danger'
-                    ? 'bg-rose-100 text-rose-700'
-                    : 'bg-amber-100 text-amber-800'
-                "
-              >
-                !
-              </span>
+              <VIcon
+                :color="item.tone === 'DANGER' ? 'error' : 'warning'"
+                :icon="item.tone === 'DANGER' ? 'mdi-alert-circle-outline' : 'mdi-alert-outline'"
+              />
               <div class="min-w-0">
-                <h3 class="text-sm font-semibold text-slate-900">{{ item.title }}</h3>
-                <p class="mt-1 text-sm leading-5 text-slate-600">{{ item.detail }}</p>
-                <p class="mt-3 font-mono text-sm font-semibold tabular-nums text-slate-950">
-                  {{ item.value }}
+                <h3 class="text-sm font-semibold">{{ item.title }}</h3>
+                <p class="mt-1 text-sm leading-5 text-text-secondary">{{ item.detail }}</p>
+                <p class="mt-3 font-mono text-sm font-semibold tabular-nums">
+                  {{ actionValue(item) }}
                 </p>
               </div>
             </div>
           </NuxtLink>
         </div>
-      </FinanceFinancePanel>
+        <div v-else class="py-8 text-center text-sm text-text-secondary">
+          No Finance items require immediate attention.
+        </div>
+      </FinancePanel>
 
-      <p class="text-right text-xs text-slate-400">
-        Nilai demo · sumber data akhir diarahkan ke Accounting Events, Journal, AR/AP, dan kontrak
-        Marketing.
+      <p class="text-right text-xs text-text-secondary">
+        As of
+        {{
+          new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(
+            new Date(dashboard.asOf)
+          )
+        }}
       </p>
-    </div>
+    </template>
   </div>
 </template>

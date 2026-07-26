@@ -1,12 +1,23 @@
-import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const stations = sqliteTable('stations', {
   id: text('id').primaryKey(),
   stationCode: text('station_code').notNull().unique(),
   stationName: text('station_name').notNull(),
-  cityOrRegion: text('city_or_region').notNull(),
-  province: text('province').notNull(),
-  airportType: text('airport_type').notNull(),
+  iataCode: text('iata_code'),
+  icaoCode: text('icao_code'),
+  airportType: text('airport_type'),
+  operationalStatus: text('operational_status').notNull().default('ACTIVE'),
+  city: text('city'),
+  province: text('province'),
+  countryCode: text('country_code'),
+  timezone: text('timezone').notNull().default('Asia/Jayapura'),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+  elevationFt: integer('elevation_ft'),
+  surfaceType: text('surface_type'),
+  runwayLengthM: integer('runway_length_m'),
+  runwayWidthM: integer('runway_width_m'),
   stationPicName: text('station_pic_name'),
   stationPicPhone: text('station_pic_phone'),
   operationalNotes: text('operational_notes'),
@@ -120,15 +131,37 @@ export const flightScheduleTemplates = sqliteTable('flight_schedule_templates', 
     .notNull()
     .references(() => flightServiceTypes.id),
   defaultAircraftId: text('default_aircraft_id').references(() => aircraft.id),
+  capacityProfileId: text('capacity_profile_id').references(() => flightCapacityProfiles.id),
   operatingDays: text('operating_days').notNull(),
   departureTimeLocal: text('departure_time_local').notNull(),
   arrivalTimeLocal: text('arrival_time_local').notNull(),
+  arrivalDayOffset: integer('arrival_day_offset').notNull().default(0),
+  bookingOpenMinutesBefore: integer('booking_open_minutes_before').notNull().default(4320),
   bookingOpenHoursBefore: integer('booking_open_hours_before').notNull().default(72),
   bookingCloseMinutesBefore: integer('booking_close_minutes_before').notNull().default(60),
+  lifecycleStatus: text('lifecycle_status').notNull().default('ACTIVE'),
+  effectiveFrom: text('effective_from'),
+  effectiveUntil: text('effective_until'),
   scheduleNote: text('schedule_note'),
+  internalOperationalNote: text('internal_operational_note'),
+  version: integer('version').notNull().default(1),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
+});
+
+export const scheduleTemplateAuditLogs = sqliteTable('schedule_template_audit_logs', {
+  id: text('id').primaryKey(),
+  templateId: text('template_id')
+    .notNull()
+    .references(() => flightScheduleTemplates.id),
+  action: text('action').notNull(),
+  actorId: text('actor_id'),
+  actorName: text('actor_name'),
+  changedFields: text('changed_fields').notNull().default('[]'),
+  metadata: text('metadata'),
+  requestId: text('request_id'),
+  occurredAt: text('occurred_at').notNull()
 });
 
 export const flightCapacityProfiles = sqliteTable('flight_capacity_profiles', {
@@ -154,10 +187,24 @@ export const flightCapacityProfiles = sqliteTable('flight_capacity_profiles', {
   updatedAt: text('updated_at').notNull()
 });
 
+export const departments = sqliteTable('departments', {
+  id: text('id').primaryKey(),
+  departmentCode: text('department_code').notNull().unique(),
+  departmentName: text('department_name').notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
 export const crews = sqliteTable('crews', {
   id: text('id').primaryKey(),
   employeeCode: text('employee_code').notNull().unique(),
   fullName: text('full_name').notNull(),
+  gender: text('gender'),
+  dateOfBirth: text('date_of_birth'),
+  nationalityCode: text('nationality_code'),
+  phone: text('phone'),
+  email: text('email'),
   crewRole: text('crew_role').notNull(),
   licenseType: text('license_type'),
   licenseNumber: text('license_number'),
@@ -168,10 +215,93 @@ export const crews = sqliteTable('crews', {
   dutyStationId: text('duty_station_id').references(() => stations.id),
   readinessNote: text('readiness_note'),
   unit: text('unit').notNull(),
+  departmentId: text('department_id').references(() => departments.id),
+  supervisorPersonnelId: text('supervisor_personnel_id'),
   employmentStatus: text('employment_status').notNull(),
+  lifecycleStatus: text('lifecycle_status').notNull().default('ACTIVE'),
+  version: integer('version').notNull().default(1),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
+});
+
+export const personnelLicenses = sqliteTable('personnel_licenses', {
+  id: text('id').primaryKey(),
+  personnelId: text('personnel_id')
+    .notNull()
+    .references(() => crews.id),
+  licenseType: text('license_type').notNull(),
+  licenseNumber: text('license_number').notNull(),
+  issuingAuthority: text('issuing_authority'),
+  issueDate: text('issue_date'),
+  expiryDate: text('expiry_date'),
+  isPrimary: integer('is_primary', { mode: 'boolean' }).notNull().default(false),
+  status: text('status').notNull().default('ACTIVE'),
+  documentId: text('document_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const personnelMedicalCertificates = sqliteTable('personnel_medical_certificates', {
+  id: text('id').primaryKey(),
+  personnelId: text('personnel_id')
+    .notNull()
+    .references(() => crews.id),
+  certificateType: text('certificate_type').notNull(),
+  certificateNumber: text('certificate_number'),
+  issueDate: text('issue_date'),
+  expiryDate: text('expiry_date').notNull(),
+  status: text('status').notNull().default('ACTIVE'),
+  restrictions: text('restrictions'),
+  issuingAuthority: text('issuing_authority'),
+  documentId: text('document_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const personnelQualifications = sqliteTable('personnel_qualifications', {
+  id: text('id').primaryKey(),
+  personnelId: text('personnel_id')
+    .notNull()
+    .references(() => crews.id),
+  qualificationType: text('qualification_type').notNull(),
+  referenceType: text('reference_type'),
+  referenceId: text('reference_id'),
+  issuedAt: text('issued_at'),
+  expiresAt: text('expires_at'),
+  status: text('status').notNull().default('VALID'),
+  notes: text('notes'),
+  documentId: text('document_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const personnelNotes = sqliteTable('personnel_notes', {
+  id: text('id').primaryKey(),
+  personnelId: text('personnel_id')
+    .notNull()
+    .references(() => crews.id),
+  noteType: text('note_type').notNull().default('GENERAL'),
+  visibility: text('visibility').notNull().default('INTERNAL'),
+  noteText: text('note_text').notNull(),
+  authorId: text('author_id'),
+  authorName: text('author_name'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const personnelAuditLogs = sqliteTable('personnel_audit_logs', {
+  id: text('id').primaryKey(),
+  personnelId: text('personnel_id')
+    .notNull()
+    .references(() => crews.id),
+  action: text('action').notNull(),
+  actorId: text('actor_id'),
+  actorName: text('actor_name'),
+  changedFields: text('changed_fields').notNull().default('[]'),
+  metadata: text('metadata'),
+  requestId: text('request_id'),
+  occurredAt: text('occurred_at').notNull()
 });
 
 export const flightReasons = sqliteTable('flight_reasons', {

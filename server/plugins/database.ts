@@ -2,12 +2,12 @@ import { getDbClient } from '../db/client';
 import { runMigrations } from '../db/migrate';
 import { resetDemoDatabase } from '../db/reset-demo';
 import { resetScenarioBaselineOnce } from '../db/startup-reset';
+import { shouldResetDemoDatabaseOnStartup } from '../db/startup-policy';
 
 export default defineNitroPlugin(async () => {
   const config = useRuntimeConfig();
-  const skipStartupReset = process.env.AMA_SKIP_STARTUP_RESET === 'true';
 
-  if (String(config.demoMode) !== 'false' && !skipStartupReset) {
+  if (shouldResetDemoDatabaseOnStartup(config)) {
     await resetScenarioBaselineOnce(() =>
       resetDemoDatabase(config.dbPath, { resetDocuments: true })
     );

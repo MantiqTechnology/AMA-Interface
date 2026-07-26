@@ -1,72 +1,98 @@
 <script setup lang="ts">
-import { trialBalanceDemo, type TrialBalanceAccount } from '../../composables/useFinanceDemoData';
+import type {
+  FinanceReportingPeriodDto,
+  FinanceTrialBalanceDto,
+  TrialBalanceAccountDto
+} from '#shared/features/finance/reporting';
 
-useHead({ title: 'Neraca Saldo · PT AMA' });
+useHead({ title: 'Trial Balance · PT AMA' });
 
-type Category = TrialBalanceAccount['category'];
+type Category = TrialBalanceAccountDto['accountType'];
 
-const selectedPeriod = ref('2026-07');
+const route = useRoute();
+const router = useRouter();
+const selectedPeriod = ref(typeof route.query.period === 'string' ? route.query.period : '');
 const search = ref('');
-const selectedCategory = ref<'Semua' | Category>('Semua');
+const selectedCategory = ref<'ALL' | Category>('ALL');
 const collapsedGroups = ref<Set<Category>>(new Set());
+const refreshing = ref(false);
+const categoryOrder: Category[] = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
+const categoryLabels: Record<Category, string> = {
+  ASSET: 'Assets',
+  LIABILITY: 'Liabilities',
+  EQUITY: 'Equity',
+  REVENUE: 'Revenue',
+  EXPENSE: 'Expenses'
+};
 
-const categoryOrder: Category[] = ['Aset', 'Kewajiban', 'Ekuitas', 'Pendapatan', 'Beban'];
-
-const { data: source, refresh } = await useAsyncData(
-  'trial-balance-demo',
-  async () => trialBalanceDemo
+const { data: periods, error: periodsError } = await useAsyncData('finance-reporting-periods', () =>
+  fetchApi<FinanceReportingPeriodDto[]>('/api/finance/reporting/periods')
 );
-const accounts = computed(() => source.value ?? trialBalanceDemo);
+if (!selectedPeriod.value) selectedPeriod.value = periods.value?.[0]?.code ?? '';
 
+const {
+  data: report,
+  pending,
+  error,
+  refresh
+} = await useAsyncData(
+  'finance-trial-balance',
+  () =>
+    fetchApi<FinanceTrialBalanceDto>('/api/finance/reporting/trial-balance', {
+      query: selectedPeriod.value ? { period: selectedPeriod.value } : {}
+    }),
+  { watch: [selectedPeriod] }
+);
+
+watch(selectedPeriod, (period) => {
+  if (period && route.query.period !== period) {
+    void router.replace({ query: { ...route.query, period } });
+  }
+});
+
+const periodOptions = computed(
+  () =>
+    periods.value?.map((period) => ({
+      title: `${period.name} (${period.status})`,
+      value: period.code
+    })) ?? []
+);
+const categoryItems = computed(() => [
+  { title: 'All account types', value: 'ALL' as const },
+  ...categoryOrder.map((value: Category) => ({ title: categoryLabels[value], value }))
+]);
+const accounts = computed(() => report.value?.accounts ?? []);
 const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase();
   return accounts.value.filter((account) => {
     const matchesCategory =
-      selectedCategory.value === 'Semua' || account.category === selectedCategory.value;
+      selectedCategory.value === 'ALL' || account.accountType === selectedCategory.value;
     const matchesSearch =
       !query ||
-      [account.code, account.name, account.category, account.subcategory].some((value) =>
+      [account.code, account.name, categoryLabels[account.accountType]].some((value) =>
         value.toLowerCase().includes(query)
       );
     return matchesCategory && matchesSearch;
   });
 });
-
 const groupedAccounts = computed(() =>
   categoryOrder
     .map((category) => ({
       category,
-      rows: filteredAccounts.value.filter((account) => account.category === category)
+      rows: filteredAccounts.value.filter((account) => account.accountType === category)
     }))
     .filter((group) => group.rows.length > 0)
 );
 
-const totals = computed(() =>
-  accounts.value.reduce(
-    (result, account) => {
-      result.debit += account.debit;
-      result.credit += account.credit;
-      return result;
-    },
-    { debit: 0, credit: 0 }
-  )
-);
-
-const isBalanced = computed(() => Math.abs(totals.value.debit - totals.value.credit) < 0.5);
-const abnormalCount = computed(() => accounts.value.filter((account) => account.abnormal).length);
-const negativeCashCount = computed(
-  () => accounts.value.filter((account) => account.negativeCash).length
-);
-
-function groupSubtotal(rows: TrialBalanceAccount[]) {
+function groupSubtotal(rows: TrialBalanceAccountDto[]) {
   return rows.reduce(
     (result, account) => {
-      result.debit += account.debit;
-      result.credit += account.credit;
-      result.actual += account.actualBalance;
+      result.debit += account.debitMinor;
+      result.credit += account.creditMinor;
+      result.balance += account.balanceMinor;
       return result;
     },
-    { debit: 0, credit: 0, actual: 0 }
+    { debit: 0, credit: 0, balance: 0 }
   );
 }
 
@@ -77,10 +103,10 @@ function toggleGroup(category: Category) {
   collapsedGroups.value = next;
 }
 
-function rupiah(value: number) {
+function money(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
-    currency: 'IDR',
+    currency: report.value?.currencyCode ?? 'IDR',
     maximumFractionDigits: 0
   }).format(value);
 }
@@ -93,31 +119,34 @@ function accountingNumber(value: number) {
   return value < 0 ? `(${formatted})` : formatted;
 }
 
-function rowClass(account: TrialBalanceAccount) {
-  if (account.abnormal) return 'bg-rose-50/90 hover:bg-rose-100/70';
-  if (account.negativeCash) return 'bg-amber-50/70 hover:bg-amber-100/60';
-  return 'bg-white hover:bg-slate-50';
+async function refreshReport() {
+  refreshing.value = true;
+  try {
+    await refresh();
+  } finally {
+    refreshing.value = false;
+  }
 }
 
 function exportCsv() {
-  if (!import.meta.client) return;
+  if (!import.meta.client || !report.value) return;
   const header = [
-    'Kode Akun',
-    'Nama Akun',
-    'Kategori',
+    'Account Code',
+    'Account Name',
+    'Account Type',
     'Debit',
-    'Kredit',
-    'Saldo Normal',
-    'Saldo Aktual'
+    'Credit',
+    'Normal Balance',
+    'Balance'
   ];
-  const rows = accounts.value.map((account) => [
+  const rows = report.value.accounts.map((account) => [
     account.code,
     account.name,
-    account.category,
-    account.debit,
-    account.credit,
+    account.accountType,
+    account.debitMinor,
+    account.creditMinor,
     account.normalBalance,
-    account.actualBalance
+    account.balanceMinor
   ]);
   const csv = [header, ...rows]
     .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','))
@@ -126,247 +155,241 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'trial-balance-2026-07.csv';
+  anchor.download = `trial-balance-${report.value.period.code}.csv`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
 </script>
 
 <template>
-  <div class="finance-page">
-    <div class="finance-page-shell">
-      <FinanceFinancePageHeader
-        v-model:period="selectedPeriod"
-        subtitle="Validasi posisi saldo akun terhadap saldo normal Chart of Accounts."
-        title="Neraca Saldo (Trial Balance)"
-        @refresh="refresh"
-      >
-        <template #actions>
-          <button
-            class="inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-            type="button"
-            @click="exportCsv"
-          >
-            Export CSV
-          </button>
-        </template>
-      </FinanceFinancePageHeader>
-
-      <section class="grid gap-3 md:grid-cols-3">
-        <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Debit</p>
-          <p class="mt-2 font-mono text-xl font-semibold tabular-nums text-slate-950">
-            {{ rupiah(totals.debit) }}
-          </p>
-        </article>
-        <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Kredit</p>
-          <p class="mt-2 font-mono text-xl font-semibold tabular-nums text-slate-950">
-            {{ rupiah(totals.credit) }}
-          </p>
-        </article>
-        <article
-          class="rounded-xl border p-4 shadow-sm"
-          :class="isBalanced ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'"
+  <div class="mx-auto flex w-full max-w-[1600px] flex-col gap-5 p-4 md:p-6">
+    <FinancePageHeader
+      v-model:period="selectedPeriod"
+      :period-options="periodOptions"
+      :refreshing="refreshing"
+      subtitle="Posted balances by Chart of Accounts through the selected period end."
+      title="Trial Balance"
+      @refresh="refreshReport"
+    >
+      <template #actions>
+        <VBtn
+          :disabled="!report"
+          prepend-icon="mdi-download-outline"
+          variant="tonal"
+          @click="exportCsv"
         >
-          <p
-            class="text-xs font-semibold uppercase tracking-wide"
-            :class="isBalanced ? 'text-emerald-700' : 'text-rose-700'"
-          >
-            Status Neraca
+          Export CSV
+        </VBtn>
+      </template>
+    </FinancePageHeader>
+
+    <VAlert v-if="periodsError || error" color="error" variant="tonal">
+      <div class="font-weight-bold">Unable to load Trial Balance</div>
+      <div class="mt-1">Posted ledger balances could not be retrieved.</div>
+      <template #append><VBtn variant="text" @click="refreshReport">Retry</VBtn></template>
+    </VAlert>
+
+    <template v-else-if="pending || !report">
+      <section class="grid gap-3 md:grid-cols-3">
+        <VSkeletonLoader v-for="index in 3" :key="index" type="article" />
+      </section>
+      <VSkeletonLoader type="table-heading, table-row@8" />
+    </template>
+
+    <template v-else>
+      <section class="grid gap-3 md:grid-cols-3" aria-label="Trial Balance totals">
+        <article class="rounded-lg border border-border-default bg-bg-surface p-4">
+          <p class="text-xs font-semibold text-text-secondary">Total debit</p>
+          <p class="mt-2 font-mono text-xl font-semibold tabular-nums text-text-primary">
+            {{ money(report.totals.debitMinor) }}
           </p>
+        </article>
+        <article class="rounded-lg border border-border-default bg-bg-surface p-4">
+          <p class="text-xs font-semibold text-text-secondary">Total credit</p>
+          <p class="mt-2 font-mono text-xl font-semibold tabular-nums text-text-primary">
+            {{ money(report.totals.creditMinor) }}
+          </p>
+        </article>
+        <article class="rounded-lg border border-border-default bg-bg-surface p-4">
+          <p class="text-xs font-semibold text-text-secondary">Control status</p>
           <div class="mt-2 flex items-center gap-2">
-            <span
-              class="grid h-7 w-7 place-items-center rounded-full text-sm font-bold text-white"
-              :class="isBalanced ? 'bg-emerald-600' : 'bg-rose-600'"
-            >
-              {{ isBalanced ? '✓' : '×' }}
-            </span>
-            <span
-              class="text-base font-semibold"
-              :class="isBalanced ? 'text-emerald-800' : 'text-rose-800'"
-            >
-              {{ isBalanced ? 'Debit dan kredit balance' : 'Debit dan kredit tidak balance' }}
+            <VIcon
+              :color="report.totals.balanced ? 'success' : 'error'"
+              :icon="
+                report.totals.balanced ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline'
+              "
+            />
+            <span class="text-base font-semibold text-text-primary">
+              {{ report.totals.balanced ? 'Debit and credit balanced' : 'Balance mismatch' }}
             </span>
           </div>
+          <p v-if="!report.totals.balanced" class="mt-2 text-sm text-danger">
+            Difference: {{ money(report.totals.differenceMinor) }}
+          </p>
         </article>
       </section>
 
-      <FinanceFinancePanel :padded="false">
+      <FinancePanel :padded="false">
         <template #actions>
           <div class="flex flex-wrap items-center gap-2">
-            <FinanceFinanceStatusBadge
-              :value="`${abnormalCount} saldo abnormal`"
-              :tone="abnormalCount ? 'danger' : 'success'"
+            <FinanceStatusBadge
+              :tone="report.totals.abnormalAccountCount ? 'danger' : 'success'"
+              :value="`${report.totals.abnormalAccountCount} abnormal balances`"
             />
-            <FinanceFinanceStatusBadge
-              :value="`${negativeCashCount} kas negatif`"
-              :tone="negativeCashCount ? 'warning' : 'success'"
+            <FinanceStatusBadge
+              :tone="report.totals.negativeCashCount ? 'warning' : 'success'"
+              :value="`${report.totals.negativeCashCount} negative cash accounts`"
             />
           </div>
         </template>
 
-        <div class="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4">
-          <label class="min-w-[240px] flex-1">
-            <span class="sr-only">Cari akun</span>
-            <input
-              v-model="search"
-              class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              placeholder="Cari kode atau nama akun…"
-              type="search"
-            >
-          </label>
-          <label>
-            <span class="sr-only">Kategori akun</span>
-            <select
-              v-model="selectedCategory"
-              class="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-            >
-              <option value="Semua">Semua kategori</option>
-              <option v-for="category in categoryOrder" :key="category" :value="category">
-                {{ category }}
-              </option>
-            </select>
-          </label>
+        <div
+          class="grid gap-3 border-b border-border-default p-4 md:grid-cols-[minmax(240px,1fr)_220px]"
+        >
+          <VTextField
+            v-model="search"
+            clearable
+            density="compact"
+            hide-details
+            label="Search account"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+          />
+          <VSelect
+            v-model="selectedCategory"
+            density="compact"
+            hide-details
+            :items="categoryItems"
+            label="Account type"
+            variant="outlined"
+          />
         </div>
 
-        <div class="finance-table-wrap max-h-[68vh]">
-          <table class="finance-table">
-            <thead>
+        <div v-if="groupedAccounts.length" class="max-h-[68vh] overflow-auto">
+          <table class="w-full min-w-[980px] border-collapse text-sm">
+            <thead class="sticky top-0 z-[1] bg-bg-canvas text-left text-xs text-text-secondary">
               <tr>
-                <th class="w-10"><span class="sr-only">Validasi</span></th>
-                <th>Kode Akun</th>
-                <th>Nama Akun</th>
-                <th>Kategori</th>
-                <th class="text-right">Debit</th>
-                <th class="text-right">Kredit</th>
-                <th class="text-center">Saldo Normal</th>
-                <th class="text-right">Saldo Aktual</th>
+                <th class="w-10 p-3"><span class="sr-only">Validation</span></th>
+                <th class="p-3">Account</th>
+                <th class="p-3">Type</th>
+                <th class="p-3 text-right">Debit</th>
+                <th class="p-3 text-right">Credit</th>
+                <th class="p-3 text-center">Normal</th>
+                <th class="p-3 text-right">Balance</th>
               </tr>
             </thead>
             <tbody>
               <template v-for="group in groupedAccounts" :key="group.category">
-                <tr class="sticky top-[41px] z-[5] bg-slate-100 shadow-[0_1px_0_0_#e2e8f0]">
-                  <td colspan="4" class="!py-2.5">
+                <tr class="border-t border-border-default bg-bg-canvas">
+                  <td colspan="3" class="p-3">
                     <button
-                      class="flex w-full items-center gap-2 text-left text-xs font-bold uppercase tracking-wide text-slate-700"
+                      class="flex w-full items-center gap-2 text-left text-xs font-bold text-text-primary"
                       type="button"
                       @click="toggleGroup(group.category)"
                     >
-                      <span
-                        class="grid h-5 w-5 place-items-center rounded bg-white text-slate-500 ring-1 ring-slate-200"
-                      >
-                        {{ collapsedGroups.has(group.category) ? '+' : '−' }}
-                      </span>
-                      {{ group.category }}
+                      <VIcon
+                        :icon="
+                          collapsedGroups.has(group.category)
+                            ? 'mdi-chevron-right'
+                            : 'mdi-chevron-down'
+                        "
+                        size="18"
+                      />
+                      {{ categoryLabels[group.category] }}
                     </button>
                   </td>
-                  <td class="finance-number !py-2.5 font-semibold">
+                  <td class="p-3 text-right font-mono font-semibold tabular-nums">
                     {{ accountingNumber(groupSubtotal(group.rows).debit) }}
                   </td>
-                  <td class="finance-number !py-2.5 font-semibold">
+                  <td class="p-3 text-right font-mono font-semibold tabular-nums">
                     {{ accountingNumber(groupSubtotal(group.rows).credit) }}
                   </td>
-                  <td class="!py-2.5" />
-                  <td class="finance-number !py-2.5 font-semibold">
-                    {{ accountingNumber(groupSubtotal(group.rows).actual) }}
+                  <td />
+                  <td class="p-3 text-right font-mono font-semibold tabular-nums">
+                    {{ accountingNumber(groupSubtotal(group.rows).balance) }}
                   </td>
                 </tr>
-
                 <tr
                   v-for="account in collapsedGroups.has(group.category) ? [] : group.rows"
                   :key="account.id"
-                  class="transition"
-                  :class="rowClass(account)"
+                  class="border-t border-border-default bg-bg-surface text-text-primary hover:bg-bg-canvas"
                 >
-                  <td>
-                    <span
-                      v-if="account.abnormal"
-                      class="grid h-6 w-6 place-items-center rounded-full bg-rose-100 text-xs font-bold text-rose-700"
-                      title="Saldo tidak sesuai posisi normal akun"
-                    >
-                      !
-                    </span>
-                    <span
-                      v-else-if="account.negativeCash"
-                      class="grid h-6 w-6 place-items-center rounded-full bg-amber-100 text-xs font-bold text-amber-800"
-                      title="Saldo negatif masih valid secara notasi, tetapi perlu perhatian"
-                    >
-                      !
-                    </span>
-                  </td>
-                  <td class="font-mono text-xs font-semibold tabular-nums text-slate-700">
-                    {{ account.code }}
-                  </td>
-                  <td>
-                    <p class="font-medium text-slate-900">{{ account.name }}</p>
-                    <p class="mt-0.5 text-xs text-slate-500">{{ account.subcategory }}</p>
-                  </td>
-                  <td>
-                    <span class="text-sm text-slate-600">{{ account.category }}</span>
-                  </td>
-                  <td class="finance-number">{{ accountingNumber(account.debit) }}</td>
-                  <td class="finance-number">{{ accountingNumber(account.credit) }}</td>
-                  <td class="text-center">
-                    <span
-                      class="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-bold"
-                      :class="
-                        account.normalBalance === 'D'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-amber-100 text-amber-800'
+                  <td class="p-3">
+                    <VTooltip
+                      v-if="account.abnormal || account.negativeCash"
+                      :text="
+                        account.negativeCash
+                          ? 'Negative cash balance requires review.'
+                          : 'Balance is opposite to the account normal balance.'
                       "
                     >
-                      {{ account.normalBalance }}
-                    </span>
+                      <template #activator="{ props: tooltipProps }">
+                        <VIcon
+                          v-bind="tooltipProps"
+                          :color="account.negativeCash ? 'warning' : 'error'"
+                          icon="mdi-alert-outline"
+                          size="18"
+                        />
+                      </template>
+                    </VTooltip>
+                  </td>
+                  <td class="p-3">
+                    <p class="font-medium">{{ account.name }}</p>
+                    <p class="mt-0.5 font-mono text-xs tabular-nums text-text-secondary">
+                      {{ account.code }}
+                    </p>
+                  </td>
+                  <td class="p-3 text-text-secondary">
+                    {{ categoryLabels[account.accountType] }}
+                  </td>
+                  <td class="p-3 text-right font-mono tabular-nums">
+                    {{ accountingNumber(account.debitMinor) }}
+                  </td>
+                  <td class="p-3 text-right font-mono tabular-nums">
+                    {{ accountingNumber(account.creditMinor) }}
+                  </td>
+                  <td class="p-3 text-center">
+                    <VChip size="x-small" variant="tonal">
+                      {{ account.normalBalance === 'DEBIT' ? 'D' : 'C' }}
+                    </VChip>
                   </td>
                   <td
-                    class="finance-number font-semibold"
-                    :class="
-                      account.abnormal
-                        ? 'text-rose-700'
-                        : account.negativeCash
-                          ? 'text-amber-800'
-                          : 'text-slate-900'
-                    "
+                    class="p-3 text-right font-mono font-semibold tabular-nums"
+                    :class="account.abnormal ? 'text-danger' : ''"
                   >
-                    {{ accountingNumber(account.actualBalance) }}
+                    {{ accountingNumber(account.balanceMinor) }}
                   </td>
                 </tr>
               </template>
             </tbody>
-            <tfoot>
-              <tr class="bg-slate-950 text-white">
-                <td colspan="4" class="px-4 py-4 text-sm font-bold uppercase tracking-wide">
-                  Total
+            <tfoot class="sticky bottom-0 bg-brand-primary text-white">
+              <tr>
+                <td colspan="3" class="p-4 font-semibold">Total posted ledger</td>
+                <td class="p-4 text-right font-mono font-semibold tabular-nums">
+                  {{ accountingNumber(report.totals.debitMinor) }}
                 </td>
-                <td class="finance-number px-4 py-4 font-bold">
-                  {{ accountingNumber(totals.debit) }}
+                <td class="p-4 text-right font-mono font-semibold tabular-nums">
+                  {{ accountingNumber(report.totals.creditMinor) }}
                 </td>
-                <td class="finance-number px-4 py-4 font-bold">
-                  {{ accountingNumber(totals.credit) }}
-                </td>
-                <td colspan="2" class="px-4 py-4 text-right">
-                  <span
-                    class="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold"
-                    :class="isBalanced ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'"
-                  >
-                    {{ isBalanced ? '✓ BALANCE' : '× TIDAK BALANCE' }}
-                  </span>
+                <td colspan="2" class="p-4 text-right font-semibold">
+                  {{ report.totals.balanced ? 'BALANCED' : 'OUT OF BALANCE' }}
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
+        <div v-else class="py-12 text-center text-sm text-text-secondary">
+          No accounts match the selected filters.
+        </div>
 
         <footer
-          class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500"
+          class="flex flex-wrap gap-x-5 gap-y-2 border-t border-border-default bg-bg-canvas px-4 py-3 text-xs text-text-secondary"
         >
-          <span><b class="text-emerald-700">D</b> = saldo normal Debit</span>
-          <span><b class="text-amber-700">K</b> = saldo normal Kredit</span>
-          <span><b class="text-rose-700">!</b> = saldo bertentangan dengan posisi normal</span>
-          <span><b class="text-amber-700">!</b> = kas negatif/perlu perhatian</span>
+          <span>D = normal debit balance</span>
+          <span>C = normal credit balance</span>
+          <span>Balances include posted journals through {{ report.period.endDate }}</span>
         </footer>
-      </FinanceFinancePanel>
-    </div>
+      </FinancePanel>
+    </template>
   </div>
 </template>

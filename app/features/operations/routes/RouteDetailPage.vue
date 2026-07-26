@@ -141,8 +141,8 @@ function serviceSourceLabel(source: string) {
             </VChip>
           </div>
           <p class="text-body-1 text-text-secondary">
-            {{ profile.origin?.cityOrRegion ?? 'Origin station unavailable' }} to
-            {{ profile.destination?.cityOrRegion ?? 'destination station unavailable' }}
+            {{ profile.origin?.city ?? 'Origin station unavailable' }} to
+            {{ profile.destination?.city ?? 'destination station unavailable' }}
           </p>
           <div class="mt-2 d-flex flex-wrap align-center ga-2 text-body-2 text-text-secondary">
             <span>{{ profile.route.routeCode }}</span>
@@ -245,7 +245,7 @@ function serviceSourceLabel(source: string) {
                 <div class="route-station route-station--origin">
                   <div class="route-station__code">{{ profile.origin?.stationCode ?? '?' }}</div>
                   <div class="mt-2 font-weight-bold text-text-primary">
-                    {{ profile.origin?.cityOrRegion ?? 'Station unavailable' }}
+                    {{ profile.origin?.city ?? 'Station unavailable' }}
                   </div>
                   <div class="text-caption text-text-secondary">
                     {{ profile.origin?.stationName ?? 'Origin relation is missing' }}
@@ -265,7 +265,7 @@ function serviceSourceLabel(source: string) {
                     {{ profile.destination?.stationCode ?? '?' }}
                   </div>
                   <div class="mt-2 font-weight-bold text-text-primary">
-                    {{ profile.destination?.cityOrRegion ?? 'Station unavailable' }}
+                    {{ profile.destination?.city ?? 'Station unavailable' }}
                   </div>
                   <div class="text-caption text-text-secondary">
                     {{ profile.destination?.stationName ?? 'Destination relation is missing' }}

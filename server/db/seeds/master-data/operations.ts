@@ -8,7 +8,12 @@ import {
   routes,
   flightScheduleTemplates,
   flightCapacityProfiles,
-  flightReasons
+  flightReasons,
+  departments,
+  personnelLicenses,
+  personnelMedicalCertificates,
+  personnelQualifications,
+  personnelNotes
 } from '../../schema/operations';
 
 export async function seedOperationsMasterData(
@@ -23,9 +28,20 @@ export async function seedOperationsMasterData(
         id: 'st-djj',
         stationCode: 'DJJ',
         stationName: 'Sentani / Jayapura Station',
-        cityOrRegion: 'Jayapura',
-        province: 'Papua',
+        iataCode: 'DJJ',
+        icaoCode: 'WAJJ',
         airportType: 'AIRPORT',
+        operationalStatus: 'ACTIVE',
+        city: 'Jayapura',
+        province: 'Papua',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        latitude: -2.5769,
+        longitude: 140.516,
+        elevationFt: 287,
+        surfaceType: 'ASPHALT',
+        runwayLengthM: 2000,
+        runwayWidthM: 30,
         hasFuelService: true,
         hasHandlingService: true,
         hasParkingService: true,
@@ -37,9 +53,20 @@ export async function seedOperationsMasterData(
         id: 'st-wmx',
         stationCode: 'WMX',
         stationName: 'Wamena Station',
-        cityOrRegion: 'Wamena',
-        province: 'Papua Pegunungan',
+        iataCode: 'WMX',
+        icaoCode: 'WAVV',
         airportType: 'AIRPORT',
+        operationalStatus: 'ACTIVE',
+        city: 'Wamena',
+        province: 'Papua Pegunungan',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        latitude: -4.1028,
+        longitude: 138.957,
+        elevationFt: 5210,
+        surfaceType: 'ASPHALT',
+        runwayLengthM: 1800,
+        runwayWidthM: 30,
         hasFuelService: true,
         hasHandlingService: true,
         hasParkingService: true,
@@ -51,9 +78,20 @@ export async function seedOperationsMasterData(
         id: 'st-tim',
         stationCode: 'TIM',
         stationName: 'Timika Station',
-        cityOrRegion: 'Timika',
-        province: 'Papua Tengah',
+        iataCode: 'TIM',
+        icaoCode: 'WABP',
         airportType: 'AIRPORT',
+        operationalStatus: 'ACTIVE',
+        city: 'Timika',
+        province: 'Papua Tengah',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        latitude: -4.5283,
+        longitude: 136.887,
+        elevationFt: 103,
+        surfaceType: 'ASPHALT',
+        runwayLengthM: 2200,
+        runwayWidthM: 45,
         hasFuelService: true,
         hasHandlingService: true,
         hasParkingService: true,
@@ -65,9 +103,20 @@ export async function seedOperationsMasterData(
         id: 'st-nbx',
         stationCode: 'NBX',
         stationName: 'Nabire Station',
-        cityOrRegion: 'Nabire',
-        province: 'Papua Tengah',
+        iataCode: 'NBX',
+        icaoCode: 'WABI',
         airportType: 'AIRPORT',
+        operationalStatus: 'ACTIVE',
+        city: 'Nabire',
+        province: 'Papua Tengah',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        latitude: -3.367,
+        longitude: 135.597,
+        elevationFt: 19,
+        surfaceType: 'ASPHALT',
+        runwayLengthM: 1600,
+        runwayWidthM: 30,
         hasFuelService: false,
         hasHandlingService: true,
         hasParkingService: true,
@@ -79,9 +128,20 @@ export async function seedOperationsMasterData(
         id: 'st-oks',
         stationCode: 'OKS',
         stationName: 'Oksibil Airstrip',
-        cityOrRegion: 'Oksibil',
-        province: 'Papua Pegunungan',
+        iataCode: 'OKL',
+        icaoCode: 'WAJO',
         airportType: 'AIRSTRIP',
+        operationalStatus: 'ACTIVE',
+        city: 'Oksibil',
+        province: 'Papua Pegunungan',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        latitude: -4.8833,
+        longitude: 140.616,
+        elevationFt: 4200,
+        surfaceType: 'GRAVEL',
+        runwayLengthM: 900,
+        runwayWidthM: 15,
         hasFuelService: false,
         hasHandlingService: true,
         hasParkingService: false,
@@ -93,9 +153,20 @@ export async function seedOperationsMasterData(
         id: 'st-dex',
         stationCode: 'DEX',
         stationName: 'Dekai Airstrip',
-        cityOrRegion: 'Dekai',
-        province: 'Papua Pegunungan',
+        iataCode: 'DEX',
+        icaoCode: 'WADK',
         airportType: 'STOL_AIRFIELD',
+        operationalStatus: 'ACTIVE',
+        city: 'Dekai',
+        province: 'Papua Pegunungan',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        latitude: -4.857,
+        longitude: 139.483,
+        elevationFt: 2100,
+        surfaceType: 'GRASS',
+        runwayLengthM: 800,
+        runwayWidthM: 12,
         hasFuelService: false,
         hasHandlingService: false,
         hasParkingService: false,
@@ -107,9 +178,20 @@ export async function seedOperationsMasterData(
         id: 'st-mkq',
         stationCode: 'MKQ',
         stationName: 'Merauke Station',
-        cityOrRegion: 'Merauke',
-        province: 'Papua Selatan',
+        iataCode: 'MKQ',
+        icaoCode: 'WAKK',
         airportType: 'AIRPORT',
+        operationalStatus: 'SUSPENDED',
+        city: 'Merauke',
+        province: 'Papua Selatan',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        latitude: -8.52,
+        longitude: 140.418,
+        elevationFt: 10,
+        surfaceType: 'ASPHALT',
+        runwayLengthM: 2500,
+        runwayWidthM: 45,
         hasFuelService: true,
         hasHandlingService: true,
         hasParkingService: true,
@@ -217,6 +299,20 @@ export async function seedOperationsMasterData(
     .onConflictDoNothing();
 
   await db
+    .insert(departments)
+    .values([
+      {
+        id: 'dept-ops',
+        departmentCode: 'OPS',
+        departmentName: 'Operations',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      }
+    ])
+    .onConflictDoNothing();
+
+  await db
     .insert(crews)
     .values([
       {
@@ -230,6 +326,7 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: context.date(143),
         baseStationId: 'st-djj',
         unit: 'Flight Operations',
+        departmentId: 'dept-ops',
         employmentStatus: 'PERMANENT',
         isActive: true,
         createdAt: referenceNow,
@@ -246,6 +343,7 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: context.date(16),
         baseStationId: 'st-wmx',
         unit: 'Flight Operations',
+        departmentId: 'dept-ops',
         employmentStatus: 'PERMANENT',
         isActive: true,
         createdAt: referenceNow,
@@ -262,6 +360,7 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: context.date(-17),
         baseStationId: 'st-tim',
         unit: 'Flight Operations',
+        departmentId: 'dept-ops',
         employmentStatus: 'PERMANENT',
         isActive: true,
         createdAt: referenceNow,
@@ -278,6 +377,7 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: context.date(128),
         baseStationId: 'st-djj',
         unit: 'Flight Operations',
+        departmentId: 'dept-ops',
         employmentStatus: 'PERMANENT',
         isActive: true,
         createdAt: referenceNow,
@@ -294,6 +394,7 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: context.date(212),
         baseStationId: 'st-wmx',
         unit: 'Flight Operations',
+        departmentId: 'dept-ops',
         employmentStatus: 'CONTRACT',
         isActive: true,
         createdAt: referenceNow,
@@ -310,6 +411,7 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: null,
         baseStationId: 'st-djj',
         unit: 'Ground Operations',
+        departmentId: 'dept-ops',
         employmentStatus: 'PERMANENT',
         isActive: true,
         createdAt: referenceNow,
@@ -326,8 +428,138 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: null,
         baseStationId: 'st-tim',
         unit: 'OCC',
+        departmentId: 'dept-ops',
         employmentStatus: 'PERMANENT',
         isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      }
+    ])
+    .onConflictDoNothing();
+
+  const crewCredentialSeeds = [
+    {
+      id: 'crew-pic-valid',
+      licenseType: 'CPL',
+      licenseNumber: 'LIC-PIC-001',
+      licenseExpiryDate: context.date(174),
+      medicalExpiryDate: context.date(143)
+    },
+    {
+      id: 'crew-pic-expiring',
+      licenseType: 'CPL',
+      licenseNumber: 'LIC-PIC-002',
+      licenseExpiryDate: context.date(10),
+      medicalExpiryDate: context.date(16)
+    },
+    {
+      id: 'crew-pic-expired',
+      licenseType: 'CPL',
+      licenseNumber: 'LIC-PIC-003',
+      licenseExpiryDate: context.date(-22),
+      medicalExpiryDate: context.date(-17)
+    },
+    {
+      id: 'crew-cop-valid',
+      licenseType: 'CPL',
+      licenseNumber: 'LIC-COP-001',
+      licenseExpiryDate: context.date(154),
+      medicalExpiryDate: context.date(128)
+    },
+    {
+      id: 'crew-cop-valid-2',
+      licenseType: 'CPL',
+      licenseNumber: 'LIC-COP-002',
+      licenseExpiryDate: context.date(240),
+      medicalExpiryDate: context.date(212)
+    }
+  ];
+
+  await db
+    .insert(personnelLicenses)
+    .values(
+      crewCredentialSeeds.map((crew) => ({
+        id: `plic-${crew.id}`,
+        personnelId: crew.id,
+        licenseType: crew.licenseType,
+        licenseNumber: crew.licenseNumber,
+        issuingAuthority: 'Directorate General of Civil Aviation',
+        issueDate: context.date(-211),
+        expiryDate: crew.licenseExpiryDate,
+        isPrimary: true,
+        status: crew.licenseExpiryDate < context.date(0) ? 'EXPIRED' : 'ACTIVE',
+        documentId: null,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      }))
+    )
+    .onConflictDoNothing();
+
+  await db
+    .insert(personnelMedicalCertificates)
+    .values(
+      crewCredentialSeeds.map((crew) => ({
+        id: `pmed-${crew.id}`,
+        personnelId: crew.id,
+        certificateType: 'Class 1 Medical',
+        certificateNumber: `MED-${crew.licenseNumber}`,
+        issueDate: context.date(-105),
+        expiryDate: crew.medicalExpiryDate,
+        status: crew.medicalExpiryDate < context.date(0) ? 'EXPIRED' : 'ACTIVE',
+        restrictions: null,
+        issuingAuthority: 'AMA Aviation Medical Examiner',
+        documentId: null,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      }))
+    )
+    .onConflictDoNothing();
+
+  await db
+    .insert(personnelQualifications)
+    .values([
+      {
+        id: 'pqual-crew-cop-valid-crm',
+        personnelId: 'crew-cop-valid',
+        qualificationType: 'CRM',
+        referenceType: 'TRAINING',
+        referenceId: null,
+        issuedAt: context.date(-80),
+        expiresAt: context.date(285),
+        status: 'VALID',
+        notes: 'Crew resource management recurrent training.',
+        documentId: null,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'pqual-crew-cop-valid-c208',
+        personnelId: 'crew-cop-valid',
+        qualificationType: 'Aircraft Type Rating',
+        referenceType: 'AIRCRAFT_TYPE',
+        referenceId: 'C208B',
+        issuedAt: context.date(-120),
+        expiresAt: context.date(245),
+        status: 'VALID',
+        notes: 'Cessna Caravan 208B co-pilot qualification.',
+        documentId: null,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      }
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(personnelNotes)
+    .values([
+      {
+        id: 'pnote-crew-cop-valid-operational',
+        personnelId: 'crew-cop-valid',
+        noteType: 'OPERATIONAL',
+        visibility: 'INTERNAL',
+        noteText: 'Available co-pilot for the main DJJ readiness pass scenario.',
+        authorId: 'USR-SYSTEM',
+        authorName: 'AMA System',
         createdAt: referenceNow,
         updatedAt: referenceNow
       }
@@ -460,12 +692,21 @@ export async function seedOperationsMasterData(
         routeId: 'route-djj-wmx',
         serviceTypeId: 'flight-service-type-scheduled-passenger',
         defaultAircraftId: 'ac-pk-ama',
+        capacityProfileId: null,
         operatingDays: 'MON,WED,FRI',
         departureTimeLocal: '07:30',
         arrivalTimeLocal: '08:25',
+        arrivalDayOffset: 0,
+        bookingOpenMinutesBefore: 10080,
         bookingOpenHoursBefore: 168,
         bookingCloseMinutesBefore: 90,
+        lifecycleStatus: 'ACTIVE',
+        effectiveFrom: '2026-01-01',
+        effectiveUntil: null,
         scheduleNote: 'Passenger-heavy morning rotation for counter/ticketing preview.',
+        internalOperationalNote:
+          'Operational template only; generated flights keep their own schedule snapshot.',
+        version: 1,
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -476,12 +717,20 @@ export async function seedOperationsMasterData(
         routeId: 'route-djj-nbx',
         serviceTypeId: 'flight-service-type-scheduled-passenger',
         defaultAircraftId: 'ac-pk-amb',
+        capacityProfileId: null,
         operatingDays: 'MON,THU',
         departureTimeLocal: '10:00',
         arrivalTimeLocal: '11:20',
+        arrivalDayOffset: 0,
+        bookingOpenMinutesBefore: 10080,
         bookingOpenHoursBefore: 168,
-        bookingCloseMinutesBefore: 90,
+        bookingCloseMinutesBefore: 5400,
+        lifecycleStatus: 'ACTIVE',
+        effectiveFrom: '2026-01-01',
+        effectiveUntil: null,
         scheduleNote: 'Scheduled passenger rotation prepared for the published route profile.',
+        internalOperationalNote: 'Primary Nabire scheduled passenger pattern.',
+        version: 1,
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -492,12 +741,20 @@ export async function seedOperationsMasterData(
         routeId: 'route-tim-dex',
         serviceTypeId: 'flight-service-type-charter-cargo',
         defaultAircraftId: 'ac-pk-amb',
+        capacityProfileId: null,
         operatingDays: 'TUE,THU',
         departureTimeLocal: '09:15',
         arrivalTimeLocal: '10:40',
+        arrivalDayOffset: 0,
+        bookingOpenMinutesBefore: 5760,
         bookingOpenHoursBefore: 96,
         bookingCloseMinutesBefore: 120,
+        lifecycleStatus: 'ACTIVE',
+        effectiveFrom: '2026-01-01',
+        effectiveUntil: null,
         scheduleNote: 'Cargo-heavy STOL support template for future cargo rotation.',
+        internalOperationalNote: null,
+        version: 1,
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -508,12 +765,20 @@ export async function seedOperationsMasterData(
         routeId: 'route-nbx-wmx',
         serviceTypeId: 'flight-service-type-charter-passenger',
         defaultAircraftId: 'ac-pk-amc',
+        capacityProfileId: null,
         operatingDays: 'SAT',
         departureTimeLocal: '11:00',
         arrivalTimeLocal: '12:15',
+        arrivalDayOffset: 0,
+        bookingOpenMinutesBefore: 4320,
         bookingOpenHoursBefore: 72,
         bookingCloseMinutesBefore: 60,
+        lifecycleStatus: 'ACTIVE',
+        effectiveFrom: '2026-01-01',
+        effectiveUntil: null,
         scheduleNote: 'Weekend charter passenger template for readiness preview.',
+        internalOperationalNote: null,
+        version: 1,
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -524,12 +789,20 @@ export async function seedOperationsMasterData(
         routeId: 'route-mkq-djj',
         serviceTypeId: 'flight-service-type-positioning',
         defaultAircraftId: 'ac-pk-amb',
+        capacityProfileId: null,
         operatingDays: 'SUN',
         departureTimeLocal: '13:45',
         arrivalTimeLocal: '15:50',
+        arrivalDayOffset: 0,
+        bookingOpenMinutesBefore: 2880,
         bookingOpenHoursBefore: 48,
         bookingCloseMinutesBefore: 45,
+        lifecycleStatus: 'ACTIVE',
+        effectiveFrom: '2026-01-01',
+        effectiveUntil: null,
         scheduleNote: 'Positioning return template for operations visibility only.',
+        internalOperationalNote: null,
+        version: 1,
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow

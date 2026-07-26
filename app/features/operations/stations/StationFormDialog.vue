@@ -14,9 +14,20 @@ const serverError = ref('');
 const form = reactive<StationInput>({
   stationCode: '',
   stationName: '',
-  cityOrRegion: '',
-  province: '',
+  iataCode: null,
+  icaoCode: null,
   airportType: 'AIRPORT',
+  operationalStatus: 'ACTIVE',
+  city: null,
+  province: null,
+  countryCode: null,
+  timezone: 'Asia/Jayapura',
+  latitude: null,
+  longitude: null,
+  elevationFt: null,
+  surfaceType: null,
+  runwayLengthM: null,
+  runwayWidthM: null,
   stationPicName: null,
   stationPicPhone: null,
   operationalNotes: null,
@@ -38,9 +49,20 @@ watch(
     Object.assign(form, {
       stationCode: props.station?.stationCode ?? '',
       stationName: props.station?.stationName ?? '',
-      cityOrRegion: props.station?.cityOrRegion ?? '',
-      province: props.station?.province ?? '',
-      airportType: (props.station?.airportType as StationInput['airportType']) ?? 'AIRPORT',
+      iataCode: props.station?.iataCode ?? null,
+      icaoCode: props.station?.icaoCode ?? null,
+      airportType: props.station?.airportType ?? 'AIRPORT',
+      operationalStatus: props.station?.operationalStatus ?? 'ACTIVE',
+      city: props.station?.city ?? null,
+      province: props.station?.province ?? null,
+      countryCode: props.station?.countryCode ?? null,
+      timezone: props.station?.timezone ?? 'Asia/Jayapura',
+      latitude: props.station?.latitude ?? null,
+      longitude: props.station?.longitude ?? null,
+      elevationFt: props.station?.elevationFt ?? null,
+      surfaceType: props.station?.surfaceType ?? null,
+      runwayLengthM: props.station?.runwayLengthM ?? null,
+      runwayWidthM: props.station?.runwayWidthM ?? null,
       stationPicName: props.station?.stationPicName ?? null,
       stationPicPhone: props.station?.stationPicPhone ?? null,
       operationalNotes: props.station?.operationalNotes ?? null,
@@ -116,7 +138,7 @@ async function submit() {
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
-                v-model="form.cityOrRegion"
+                v-model="form.city"
                 label="City or region"
                 :rules="[required('City or region')]"
                 variant="outlined"

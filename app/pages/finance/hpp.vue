@@ -1,301 +1,315 @@
 <script setup lang="ts">
-import type { ApexAxisChartSeries, ApexNonAxisChartSeries, ApexOptions } from 'apexcharts';
-import { hppBusinessLinesDemo, type HppBusinessLine } from '../../composables/useFinanceDemoData';
+import type { ApexAxisChartSeries, ApexOptions } from 'apexcharts';
+import type {
+  FinanceProfitabilityDto,
+  FinanceReportingPeriodDto
+} from '#shared/features/finance/reporting';
+import { AMA_THEME_HEX } from '../../constants/themeColors';
 
-useHead({ title: 'Breakdown HPP · PT AMA' });
+useHead({ title: 'Profitability & HPP · PT AMA' });
 
-const selectedPeriod = ref('2026-07');
-const expanded = ref<Set<string>>(new Set(['charter']));
-const { data: source, refresh } = await useAsyncData(
-  'hpp-business-lines-demo',
-  async () => hppBusinessLinesDemo
+const route = useRoute();
+const router = useRouter();
+const selectedPeriod = ref(typeof route.query.period === 'string' ? route.query.period : '');
+const refreshing = ref(false);
+
+const { data: periods, error: periodsError } = await useAsyncData('finance-reporting-periods', () =>
+  fetchApi<FinanceReportingPeriodDto[]>('/api/finance/reporting/periods')
 );
-const businessLines = computed(() => source.value ?? hppBusinessLinesDemo);
+if (!selectedPeriod.value) selectedPeriod.value = periods.value?.[0]?.code ?? '';
 
-const palette = {
-  green: '#27805B',
-  amber: '#D9951A',
-  red: '#B9473B',
-  slate: '#94A3B8',
-  grid: '#E2E8F0'
-};
+const {
+  data: report,
+  pending,
+  error,
+  refresh
+} = await useAsyncData(
+  'finance-profitability',
+  () =>
+    fetchApi<FinanceProfitabilityDto>('/api/finance/reporting/profitability', {
+      query: selectedPeriod.value ? { period: selectedPeriod.value } : {}
+    }),
+  { watch: [selectedPeriod] }
+);
 
+watch(selectedPeriod, (period) => {
+  if (period && route.query.period !== period) {
+    void router.replace({ query: { ...route.query, period } });
+  }
+});
+
+const periodOptions = computed(
+  () =>
+    periods.value?.map((period) => ({
+      title: `${period.name} (${period.status})`,
+      value: period.code
+    })) ?? []
+);
+const activeLines = computed(
+  () => report.value?.lines.filter((line) => line.revenueMinor || line.costMinor) ?? []
+);
 const comparisonSeries = computed<ApexAxisChartSeries>(() => [
   {
-    name: 'Gross Margin',
-    data: businessLines.value.map((line) => line.grossMargin)
+    name: 'Revenue',
+    data: activeLines.value.map((line) => line.revenueMinor)
+  },
+  {
+    name: 'Allocated cost',
+    data: activeLines.value.map((line) => line.costMinor)
   }
 ]);
-
 const comparisonOptions = computed<ApexOptions>(() => ({
-  chart: { toolbar: { show: false }, fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif' },
-  colors: businessLines.value.map((line) => marginColor(line.grossMargin)),
-  dataLabels: {
-    enabled: true,
-    formatter: (value) => `${Number(value).toFixed(1)}%`,
-    offsetY: -18,
-    style: { colors: ['#334155'], fontSize: '12px', fontWeight: 700 }
-  },
-  grid: { borderColor: palette.grid, strokeDashArray: 3 },
-  legend: { show: false },
-  plotOptions: {
-    bar: {
-      borderRadius: 5,
-      columnWidth: '48%',
-      distributed: true,
-      dataLabels: { position: 'top' }
-    }
-  },
-  tooltip: { y: { formatter: (value) => `${value.toFixed(1)}%` } },
+  chart: { toolbar: { show: false } },
+  colors: [AMA_THEME_HEX.secondary, AMA_THEME_HEX.warning],
+  dataLabels: { enabled: false },
+  grid: { borderColor: AMA_THEME_HEX.borderDefault, strokeDashArray: 3 },
+  legend: { position: 'top', horizontalAlign: 'left' },
+  noData: { text: 'No profitability data for this period.' },
+  plotOptions: { bar: { borderRadius: 4, columnWidth: '46%' } },
+  tooltip: { y: { formatter: (value) => money(value) } },
   xaxis: {
-    categories: businessLines.value.map((line) => line.label),
-    axisBorder: { color: palette.grid },
-    axisTicks: { color: palette.grid },
-    labels: { style: { colors: '#64748B', fontWeight: 600 } }
+    categories: activeLines.value.map((line) => line.label),
+    axisBorder: { color: AMA_THEME_HEX.borderDefault },
+    axisTicks: { color: AMA_THEME_HEX.borderDefault }
   },
   yaxis: {
-    min: 0,
-    max: 35,
-    tickAmount: 7,
-    labels: { formatter: (value) => `${value.toFixed(0)}%` }
+    labels: { formatter: (value) => moneyCompact(value) }
   }
 }));
 
-function marginColor(margin: number) {
-  if (margin >= 20) return palette.green;
-  if (margin >= 12) return palette.amber;
-  return palette.red;
-}
-
-function marginTone(margin: number): 'success' | 'warning' | 'danger' {
-  if (margin >= 20) return 'success';
-  if (margin >= 12) return 'warning';
-  return 'danger';
-}
-
-function donutSeries(line: HppBusinessLine): ApexNonAxisChartSeries {
-  return [line.breakdown.direct, line.breakdown.indirect, line.breakdown.nonOperating];
-}
-
-function donutOptions(line: HppBusinessLine): ApexOptions {
-  return {
-    chart: { toolbar: { show: false }, fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif' },
-    colors: [palette.green, palette.amber, palette.red],
-    dataLabels: { enabled: false },
-    labels: ['Direct Cost', 'Indirect Cost', 'Non-Operating Cost'],
-    legend: { show: false },
-    plotOptions: {
-      pie: {
-        donut: {
-          size: '68%',
-          labels: {
-            show: true,
-            name: { show: true, fontSize: '11px', color: '#64748B' },
-            value: {
-              show: true,
-              fontSize: '17px',
-              fontWeight: 700,
-              color: '#0F172A',
-              formatter: (value) => `${value}%`
-            },
-            total: {
-              show: true,
-              label: 'HPP',
-              formatter: () => rupiahCompact(line.hpp)
-            }
-          }
-        }
-      }
-    },
-    stroke: { width: 0 },
-    tooltip: { y: { formatter: (value) => `${value}% dari HPP` } }
-  };
-}
-
-function rupiah(value: number) {
+function money(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
-    currency: 'IDR',
+    currency: report.value?.currencyCode ?? 'IDR',
     maximumFractionDigits: 0
   }).format(value);
 }
 
-function rupiahCompact(value: number) {
+function moneyCompact(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
-    currency: 'IDR',
+    currency: report.value?.currencyCode ?? 'IDR',
     notation: 'compact',
     maximumFractionDigits: 2
   }).format(value);
 }
 
-function costValue(line: HppBusinessLine, percentage: number) {
-  return line.hpp * (percentage / 100);
+function marginTone(value: number | null): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (value === null) return 'neutral';
+  if (value >= 20) return 'success';
+  if (value >= 10) return 'warning';
+  return 'danger';
 }
 
-function toggleExpanded(id: string) {
-  const next = new Set(expanded.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  expanded.value = next;
+async function refreshReport() {
+  refreshing.value = true;
+  try {
+    await refresh();
+  } finally {
+    refreshing.value = false;
+  }
 }
 </script>
 
 <template>
-  <div class="finance-page">
-    <div class="finance-page-shell">
-      <FinanceFinancePageHeader
-        v-model:period="selectedPeriod"
-        subtitle="Analisis Harga Pokok Penjualan dan gross margin untuk setiap lini bisnis."
-        title="Breakdown HPP per Lini Bisnis"
-        @refresh="refresh"
-      />
+  <div class="mx-auto flex w-full max-w-[1600px] flex-col gap-5 p-4 md:p-6">
+    <FinancePageHeader
+      v-model:period="selectedPeriod"
+      :period-options="periodOptions"
+      :refreshing="refreshing"
+      subtitle="Revenue and operational cost allocation from immutable invoice finance snapshots."
+      title="Profitability & HPP"
+      @refresh="refreshReport"
+    />
 
-      <FinanceFinancePanel
-        subtitle="Perbandingan langsung untuk mengidentifikasi kategori yang paling dan paling tidak menguntungkan."
-        title="Perbandingan Gross Margin"
-      >
-        <ChartsFeatureApexChart
-          :height="330"
-          :options="comparisonOptions"
-          :series="comparisonSeries"
-          type="bar"
-        />
-      </FinanceFinancePanel>
+    <VAlert v-if="periodsError || error" color="error" variant="tonal">
+      <div class="font-weight-bold">Unable to load profitability reporting</div>
+      <div class="mt-1">Invoice snapshots and operational cost data could not be retrieved.</div>
+      <template #append><VBtn variant="text" @click="refreshReport">Retry</VBtn></template>
+    </VAlert>
 
-      <section class="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        <article
-          v-for="line in businessLines"
-          :key="line.id"
-          class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-        >
-          <header class="border-b border-slate-100 p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  HPP {{ line.label }}
-                </p>
-                <p class="mt-2 font-mono text-xl font-semibold tabular-nums text-slate-950">
-                  {{ rupiahCompact(line.hpp) }}
-                </p>
-              </div>
-              <FinanceFinanceStatusBadge
-                :tone="marginTone(line.grossMargin)"
-                :value="`${line.grossMargin.toFixed(1)}% margin`"
-              />
-            </div>
-            <dl class="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
-              <div>
-                <dt class="text-xs text-slate-500">Pendapatan</dt>
-                <dd class="mt-1 font-mono text-sm font-semibold tabular-nums text-slate-900">
-                  {{ rupiahCompact(line.revenue) }}
-                </dd>
-              </div>
-              <div>
-                <dt class="text-xs text-slate-500">Gross Profit</dt>
-                <dd class="mt-1 font-mono text-sm font-semibold tabular-nums text-emerald-700">
-                  {{ rupiahCompact(line.revenue - line.hpp) }}
-                </dd>
-              </div>
-            </dl>
-          </header>
+    <template v-else-if="pending || !report">
+      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <VSkeletonLoader v-for="index in 4" :key="index" type="article" />
+      </section>
+      <VSkeletonLoader type="image, table-heading, table-row@3" />
+    </template>
 
-          <div class="p-4">
-            <FeatureApexChart
-              :height="220"
-              :options="donutOptions(line)"
-              :series="donutSeries(line)"
-              type="donut"
+    <template v-else>
+      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Profitability totals">
+        <article class="rounded-lg border border-border-default bg-bg-surface p-4">
+          <p class="text-xs font-medium text-text-secondary">Revenue</p>
+          <p class="mt-2 font-mono text-xl font-semibold tabular-nums text-text-primary">
+            {{ moneyCompact(report.totals.revenueMinor) }}
+          </p>
+        </article>
+        <article class="rounded-lg border border-border-default bg-bg-surface p-4">
+          <p class="text-xs font-medium text-text-secondary">Operational cost</p>
+          <p class="mt-2 font-mono text-xl font-semibold tabular-nums text-text-primary">
+            {{ moneyCompact(report.totals.costMinor) }}
+          </p>
+        </article>
+        <article class="rounded-lg border border-border-default bg-bg-surface p-4">
+          <p class="text-xs font-medium text-text-secondary">Gross profit</p>
+          <p
+            class="mt-2 font-mono text-xl font-semibold tabular-nums"
+            :class="report.totals.grossProfitMinor >= 0 ? 'text-success' : 'text-danger'"
+          >
+            {{ moneyCompact(report.totals.grossProfitMinor) }}
+          </p>
+        </article>
+        <article class="rounded-lg border border-border-default bg-bg-surface p-4">
+          <p class="text-xs font-medium text-text-secondary">Gross margin</p>
+          <div class="mt-2 flex items-center gap-2">
+            <p class="font-mono text-xl font-semibold tabular-nums text-text-primary">
+              {{
+                report.totals.grossMarginPercent === null
+                  ? '—'
+                  : `${report.totals.grossMarginPercent.toFixed(1)}%`
+              }}
+            </p>
+            <FinanceStatusBadge
+              :tone="marginTone(report.totals.grossMarginPercent)"
+              :value="
+                report.totals.grossMarginPercent === null
+                  ? 'No revenue'
+                  : report.totals.grossMarginPercent >= 20
+                    ? 'Healthy'
+                    : 'Review'
+              "
             />
-
-            <div class="mt-2 space-y-3">
-              <div class="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-2">
-                <span class="h-2.5 w-2.5 rounded-sm bg-emerald-600" />
-                <div>
-                  <p class="text-xs font-medium text-slate-700">Direct Cost</p>
-                  <p class="text-[11px] text-slate-500">Fuel, crew, handling, aircraft operation</p>
-                </div>
-                <div class="text-right">
-                  <p class="font-mono text-xs font-semibold tabular-nums text-slate-900">
-                    {{ line.breakdown.direct }}%
-                  </p>
-                  <p class="font-mono text-[11px] tabular-nums text-slate-500">
-                    {{ rupiahCompact(costValue(line, line.breakdown.direct)) }}
-                  </p>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-2">
-                <span class="h-2.5 w-2.5 rounded-sm bg-amber-500" />
-                <div>
-                  <p class="text-xs font-medium text-slate-700">Indirect Cost</p>
-                  <p class="text-[11px] text-slate-500">Alokasi station, overhead, dan support</p>
-                </div>
-                <div class="text-right">
-                  <p class="font-mono text-xs font-semibold tabular-nums text-slate-900">
-                    {{ line.breakdown.indirect }}%
-                  </p>
-                  <p class="font-mono text-[11px] tabular-nums text-slate-500">
-                    {{ rupiahCompact(costValue(line, line.breakdown.indirect)) }}
-                  </p>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-2">
-                <span class="h-2.5 w-2.5 rounded-sm bg-rose-600" />
-                <div>
-                  <p class="text-xs font-medium text-slate-700">Non-Operating Cost</p>
-                  <p class="text-[11px] text-slate-500">Penyesuaian di luar operasi utama</p>
-                </div>
-                <div class="text-right">
-                  <p class="font-mono text-xs font-semibold tabular-nums text-slate-900">
-                    {{ line.breakdown.nonOperating }}%
-                  </p>
-                  <p class="font-mono text-[11px] tabular-nums text-slate-500">
-                    {{ rupiahCompact(costValue(line, line.breakdown.nonOperating)) }}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <button
-              class="mt-4 flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              type="button"
-              @click="toggleExpanded(line.id)"
-            >
-              <span>{{ expanded.has(line.id) ? 'Sembunyikan detail' : 'Lihat detail' }}</span>
-              <span>{{ expanded.has(line.id) ? '↑' : '↓' }}</span>
-            </button>
-
-            <div
-              v-if="expanded.has(line.id)"
-              class="mt-3 rounded-lg bg-slate-950 p-3 text-sm text-slate-200"
-            >
-              <dl class="space-y-2">
-                <div class="flex justify-between gap-4">
-                  <dt class="text-slate-400">Revenue</dt>
-                  <dd class="font-mono tabular-nums">{{ rupiah(line.revenue) }}</dd>
-                </div>
-                <div class="flex justify-between gap-4">
-                  <dt class="text-slate-400">Total HPP</dt>
-                  <dd class="font-mono tabular-nums">{{ rupiah(line.hpp) }}</dd>
-                </div>
-                <div class="flex justify-between gap-4 border-t border-slate-700 pt-2">
-                  <dt class="font-semibold text-white">Gross Profit</dt>
-                  <dd class="font-mono font-semibold tabular-nums text-emerald-300">
-                    {{ rupiah(line.revenue - line.hpp) }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
           </div>
         </article>
       </section>
 
-      <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        HPP demo menggunakan tiga kelompok biaya. Pada implementasi produksi, indirect cost
-        sebaiknya ditarik dari allocation run yang memiliki policy snapshot dan audit trail.
+      <div class="grid min-w-0 items-start gap-5">
+        <FinancePanel
+          class="min-w-0"
+          subtitle="Revenue compared with allocated fuel, station, and maintenance cost."
+          title="Revenue vs HPP"
+        >
+          <ChartsFeatureApexChart
+            :height="330"
+            :options="comparisonOptions"
+            :series="comparisonSeries"
+            type="bar"
+          />
+        </FinancePanel>
+
+        <FinancePanel
+          :padded="false"
+          class="min-w-0"
+          subtitle="Costs are allocated to business lines within each flight snapshot."
+          title="Business Line Breakdown"
+        >
+          <div v-if="activeLines.length" class="min-w-0 overflow-x-auto">
+            <table class="w-full min-w-[760px] border-collapse text-sm">
+              <thead class="bg-bg-canvas text-left text-xs text-text-secondary">
+                <tr>
+                  <th class="p-3">Business line</th>
+                  <th class="p-3 text-right">Revenue</th>
+                  <th class="p-3 text-right">HPP</th>
+                  <th class="p-3 text-right">Gross profit</th>
+                  <th class="p-3 text-right">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="line in activeLines"
+                  :key="line.id"
+                  class="border-t border-border-default text-text-primary"
+                >
+                  <td class="p-3 font-semibold">{{ line.label }}</td>
+                  <td class="p-3 text-right font-mono tabular-nums">
+                    {{ money(line.revenueMinor) }}
+                  </td>
+                  <td class="p-3 text-right font-mono tabular-nums">
+                    {{ money(line.costMinor) }}
+                  </td>
+                  <td
+                    class="p-3 text-right font-mono font-semibold tabular-nums"
+                    :class="line.grossProfitMinor >= 0 ? 'text-success' : 'text-danger'"
+                  >
+                    {{ money(line.grossProfitMinor) }}
+                  </td>
+                  <td class="p-3 text-right">
+                    <FinanceStatusBadge
+                      :tone="marginTone(line.grossMarginPercent)"
+                      :value="
+                        line.grossMarginPercent === null
+                          ? '—'
+                          : `${line.grossMarginPercent.toFixed(1)}%`
+                      "
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="py-12 text-center text-sm text-text-secondary">
+            No invoiced revenue or operational cost is available for this period.
+          </div>
+        </FinancePanel>
       </div>
-    </div>
+
+      <FinancePanel
+        subtitle="Canonical cost components retained in each invoice finance snapshot."
+        title="Cost Composition"
+      >
+        <div v-if="activeLines.length" class="grid gap-4 lg:grid-cols-3">
+          <section
+            v-for="line in activeLines"
+            :key="line.id"
+            class="rounded-lg border border-border-default bg-bg-canvas p-4"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="text-sm font-semibold text-text-primary">{{ line.label }}</h3>
+              <span class="font-mono text-xs font-semibold tabular-nums text-text-secondary">
+                {{ moneyCompact(line.costMinor) }}
+              </span>
+            </div>
+            <dl class="mt-4 space-y-3 text-sm">
+              <div class="flex items-center justify-between gap-4">
+                <dt class="text-text-secondary">Fuel</dt>
+                <dd class="font-mono font-medium tabular-nums text-text-primary">
+                  {{ money(line.costs.fuelMinor) }}
+                </dd>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <dt class="text-text-secondary">Station services</dt>
+                <dd class="font-mono font-medium tabular-nums text-text-primary">
+                  {{ money(line.costs.stationMinor) }}
+                </dd>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <dt class="text-text-secondary">Maintenance</dt>
+                <dd class="font-mono font-medium tabular-nums text-text-primary">
+                  {{ money(line.costs.maintenanceMinor) }}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+        <div v-else class="py-8 text-center text-sm text-text-secondary">
+          No cost composition is available.
+        </div>
+      </FinancePanel>
+
+      <VAlert color="info" icon="mdi-information-outline" variant="tonal">
+        HPP uses the immutable Finance snapshot captured at invoice finalization. Shared flight
+        costs are allocated to Charter, Passenger, and Cargo by each line's revenue share within
+        that flight. This report does not rewrite invoices or posted journals.
+      </VAlert>
+
+      <p class="text-right text-xs text-text-secondary">
+        As of
+        {{
+          new Intl.DateTimeFormat('id-ID', {
+            dateStyle: 'medium',
+            timeStyle: 'short'
+          }).format(new Date(report.asOf))
+        }}
+      </p>
+    </template>
   </div>
 </template>

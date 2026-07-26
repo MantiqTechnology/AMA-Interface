@@ -11,6 +11,12 @@ const form = reactive<AgentInput>({
   agentName: '',
   agentType: 'TICKET_AGENT',
   stationId: null,
+  customerAccountId: null,
+  responsiblePersonnelId: null,
+  primaryContactId: null,
+  bookingChannelCode: null,
+  defaultCurrencyCode: 'IDR',
+  operationalNote: null,
   commissionBasisPoints: null,
   contactPerson: null,
   phone: null
@@ -33,13 +39,32 @@ watch(
         ? (props.record.agentType as AgentInput['agentType'])
         : 'TICKET_AGENT',
       stationId: props.record ? (props.record.stationId as AgentInput['stationId']) : null,
+      customerAccountId: props.record
+        ? (props.record.customerAccountId as AgentInput['customerAccountId'])
+        : null,
+      responsiblePersonnelId: props.record
+        ? (props.record.responsiblePersonnelId as AgentInput['responsiblePersonnelId'])
+        : null,
+      primaryContactId: props.record
+        ? (props.record.primaryContactId as AgentInput['primaryContactId'])
+        : null,
+      bookingChannelCode: props.record
+        ? (props.record.bookingChannelCode as AgentInput['bookingChannelCode'])
+        : null,
+      defaultCurrencyCode: props.record
+        ? (props.record.defaultCurrencyCode as AgentInput['defaultCurrencyCode'])
+        : 'IDR',
+      operationalNote: props.record
+        ? (props.record.operationalNote as AgentInput['operationalNote'])
+        : null,
       commissionBasisPoints: props.record
         ? (props.record.commissionBasisPoints as AgentInput['commissionBasisPoints'])
         : null,
       contactPerson: props.record
         ? (props.record.contactPerson as AgentInput['contactPerson'])
         : null,
-      phone: props.record ? (props.record.phone as AgentInput['phone']) : null
+      phone: props.record ? (props.record.phone as AgentInput['phone']) : null,
+      expectedVersion: props.record?.version
     });
   }
 );
@@ -96,7 +121,17 @@ async function submit() {
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.agentType"
-                :items="['TICKET_AGENT', 'CARGO_AGENT', 'STATION_COUNTER']"
+                :items="[
+                  'TICKET_AGENT',
+                  'CARGO_AGENT',
+                  'STATION_COUNTER',
+                  'OTA',
+                  'TRAVEL_AGENCY',
+                  'SALES_AGENT',
+                  'CORPORATE_AGENT',
+                  'ONLINE_CHANNEL',
+                  'OTHER'
+                ]"
                 label="Agent type"
                 :rules="[required('Agent type')]"
                 variant="outlined"
@@ -108,8 +143,24 @@ async function submit() {
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.commissionBasisPoints"
-                label="Commission rate"
+                label="Commission basis points"
                 type="number"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="form.defaultCurrencyCode"
+                label="Default currency"
+                maxlength="3"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="form.bookingChannelCode"
+                label="Booking channel"
+                type="text"
                 variant="outlined"
               />
             </VCol>
@@ -123,6 +174,14 @@ async function submit() {
             </VCol>
             <VCol cols="12" md="6">
               <VTextField v-model="form.phone" label="Phone" type="text" variant="outlined" />
+            </VCol>
+            <VCol cols="12">
+              <VTextarea
+                v-model="form.operationalNote"
+                label="Operational note"
+                rows="2"
+                variant="outlined"
+              />
             </VCol>
           </VRow>
         </VForm>

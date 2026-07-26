@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import type { SemanticTone } from '../../composables/useFinanceDemoData';
+type SemanticTone = 'success' | 'warning' | 'danger' | 'neutral';
 
 const props = defineProps<{
   value: string;
   tone?: SemanticTone;
 }>();
 
-const toneClasses: Record<SemanticTone, string> = {
-  success: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  warning: 'bg-amber-50 text-amber-800 ring-amber-200',
-  danger: 'bg-rose-50 text-rose-700 ring-rose-200',
-  neutral: 'bg-slate-100 text-slate-700 ring-slate-200'
+const toneColors: Record<SemanticTone, string> = {
+  success: 'success',
+  warning: 'warning',
+  danger: 'error',
+  neutral: 'secondary'
 };
 
 const resolvedTone = computed<SemanticTone>(() => {
@@ -33,13 +33,11 @@ const resolvedTone = computed<SemanticTone>(() => {
   return 'neutral';
 });
 
-const classes = computed(() => toneClasses[resolvedTone.value]);
+const color = computed(() => toneColors[resolvedTone.value]);
 </script>
+
 <template>
-  <span
-    class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset"
-    :class="classes"
-  >
+  <VChip :color="color" density="compact" size="small" variant="tonal">
     {{ value }}
-  </span>
+  </VChip>
 </template>
