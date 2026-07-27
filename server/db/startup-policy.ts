@@ -13,3 +13,10 @@ export function shouldResetDemoDatabaseOnStartup(
     env.AMA_SKIP_STARTUP_RESET !== 'true'
   );
 }
+
+export function shouldSeedDemoDatabaseOnStartup(
+  config: { demoMode?: unknown },
+  env: StartupResetEnv = process.env as StartupResetEnv
+) {
+  return String(config.demoMode) === 'true' && env.AMA_SKIP_STARTUP_RESET !== 'true';
+}
