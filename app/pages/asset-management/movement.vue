@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ApiResponse } from '#shared/contracts/api';
+import AssetMetricCard from '../../features/corporate-assets/components/AssetMetricCard.vue';
 import CorporateAssetsShell from '../../features/corporate-assets/components/CorporateAssetsShell.vue';
 
 definePageMeta({ layout: 'default' });
@@ -12,6 +13,15 @@ const { data, status, error, refresh } = await useFetch<ApiResponse<any[]>>(
   '/api/asset-management/movements'
 );
 const movements = computed(() => (data.value?.ok ? data.value.data : []));
+const movementSummary = computed(() => ({
+  total: movements.value.length,
+  crossStation: movements.value.filter((item: any) => item.fromStationId !== item.toStationId)
+    .length,
+  custodianChanges: movements.value.filter(
+    (item: any) => item.newEmployeeId || item.newCustodianNameSnapshot
+  ).length,
+  assets: new Set(movements.value.map((item: any) => item.assetId)).size
+}));
 watch(session.role, async () => {
   data.value = null;
   await refresh();
@@ -54,6 +64,43 @@ const displayDate = (value: string) => new Date(value).toLocaleString('id-ID');
         Pilih aset untuk dipindah
       </VBtn>
     </template>
+    <VRow dense class="mb-4">
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Movements"
+          :value="movementSummary.total"
+          icon="mdi-map-marker-path"
+          detail="Recorded transfers"
+        />
+      </VCol>
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Cross-station"
+          :value="movementSummary.crossStation"
+          icon="mdi-airplane-marker"
+          tone="amber"
+          detail="Station handovers"
+        />
+      </VCol>
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Custodian changes"
+          :value="movementSummary.custodianChanges"
+          icon="mdi-account-switch-outline"
+          tone="blue"
+          detail="Movement with reassignment"
+        />
+      </VCol>
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Assets moved"
+          :value="movementSummary.assets"
+          icon="mdi-package-variant"
+          tone="slate"
+          detail="Unique assets"
+        />
+      </VCol>
+    </VRow>
     <VCard border elevation="0">
       <VCardText>
         <VRow dense>

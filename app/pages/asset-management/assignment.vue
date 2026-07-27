@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ApiResponse } from '#shared/contracts/api';
+import AssetMetricCard from '../../features/corporate-assets/components/AssetMetricCard.vue';
 import AssetStatusBadge from '../../features/corporate-assets/components/AssetStatusBadge.vue';
 import CorporateAssetsShell from '../../features/corporate-assets/components/CorporateAssetsShell.vue';
 
@@ -12,6 +13,13 @@ const { data, status, error, refresh } = await useFetch<ApiResponse<any[]>>(
   '/api/asset-management/assignments'
 );
 const assignments = computed(() => (data.value?.ok ? data.value.data : []));
+const assignmentSummary = computed(() => ({
+  active: assignments.value.filter((item: any) => !item.endedAt).length,
+  returned: assignments.value.filter((item: any) => item.endedAt).length,
+  departments: new Set(assignments.value.map((item: any) => item.departmentId).filter(Boolean))
+    .size,
+  assets: new Set(assignments.value.map((item: any) => item.assetId)).size
+}));
 watch(session.role, async () => {
   data.value = null;
   await refresh();
@@ -55,6 +63,43 @@ const displayDate = (value: string) => new Date(value).toLocaleString('id-ID');
         Pilih aset untuk assign
       </VBtn>
     </template>
+    <VRow dense class="mb-4">
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Active custody"
+          :value="assignmentSummary.active"
+          icon="mdi-account-check-outline"
+          detail="Current assignments"
+        />
+      </VCol>
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Returned"
+          :value="assignmentSummary.returned"
+          icon="mdi-keyboard-return"
+          tone="green"
+          detail="Closed assignments"
+        />
+      </VCol>
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Departments"
+          :value="assignmentSummary.departments"
+          icon="mdi-office-building-outline"
+          tone="slate"
+          detail="Custody coverage"
+        />
+      </VCol>
+      <VCol cols="6" md="3">
+        <AssetMetricCard
+          label="Assets tracked"
+          :value="assignmentSummary.assets"
+          icon="mdi-package-variant"
+          tone="blue"
+          detail="Assignment history"
+        />
+      </VCol>
+    </VRow>
     <VCard border elevation="0">
       <VCardText>
         <VRow dense>

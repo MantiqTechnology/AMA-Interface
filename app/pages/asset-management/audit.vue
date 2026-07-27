@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ApiResponse } from '#shared/contracts/api';
+import AssetMetricCard from '../../features/corporate-assets/components/AssetMetricCard.vue';
 import AssetStatusBadge from '../../features/corporate-assets/components/AssetStatusBadge.vue';
 import CorporateAssetsShell from '../../features/corporate-assets/components/CorporateAssetsShell.vue';
 
@@ -59,28 +60,30 @@ const displayDate = (value: string) => new Date(value).toLocaleString('id-ID');
     </template>
     <VRow class="mb-4">
       <VCol cols="12" sm="4">
-        <VCard border elevation="0">
-          <VCardText>
-            <div class="text-caption">Audit records</div>
-            <div class="text-h5 font-weight-bold">{{ audits.length }}</div>
-          </VCardText>
-        </VCard>
+        <AssetMetricCard
+          label="Audit records"
+          :value="audits.length"
+          icon="mdi-clipboard-text-clock-outline"
+          detail="Recorded inspections"
+        />
       </VCol>
       <VCol cols="12" sm="4">
-        <VCard border elevation="0">
-          <VCardText>
-            <div class="text-caption">Discrepancies</div>
-            <div class="text-h5 font-weight-bold">{{ discrepancyCount }}</div>
-          </VCardText>
-        </VCard>
+        <AssetMetricCard
+          label="Discrepancies"
+          :value="discrepancyCount"
+          icon="mdi-alert-circle-outline"
+          tone="amber"
+          detail="Physical mismatches"
+        />
       </VCol>
       <VCol cols="12" sm="4">
-        <VCard border elevation="0">
-          <VCardText>
-            <div class="text-caption">Pending reconciliation</div>
-            <div class="text-h5 font-weight-bold">{{ pendingCount }}</div>
-          </VCardText>
-        </VCard>
+        <AssetMetricCard
+          label="Pending reconciliation"
+          :value="pendingCount"
+          icon="mdi-clipboard-alert-outline"
+          tone="red"
+          detail="Requires follow-up"
+        />
       </VCol>
     </VRow>
     <VCard border elevation="0">
