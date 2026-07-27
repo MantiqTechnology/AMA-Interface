@@ -161,7 +161,7 @@ const filteredTasks = computed(() => {
     </div>
   </VCard>
 
-  <AddTaskEvidenceDialog
+  <VerificationAddTaskEvidenceDialog
     v-model="verification.evidenceDialog.value"
     :loading="Boolean(verification.loadingId.value)"
     :file="verification.evidenceFile.value"
@@ -170,7 +170,7 @@ const filteredTasks = computed(() => {
     @update:notes="verification.evidenceNotes.value = $event"
     @submit="verification.addTaskEvidence"
   />
-  <RejectStationTaskDialog
+  <VerificationRejectStationTaskDialog
     v-model="verification.rejectionDialog.value"
     :loading="Boolean(verification.loadingId.value)"
     :reason="verification.rejectionReason.value"
