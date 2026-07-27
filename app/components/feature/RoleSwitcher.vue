@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { demoRoles, type DemoRole } from '#shared/types/roles';
 
-const { session, refreshSession, switchRole } = useDemoAuth();
-
-await refreshSession();
+const session = useDemoSession();
+await session.load();
 
 async function onRoleChange(role: DemoRole | null) {
   if (!role) return;
-  await switchRole(role);
+  await session.switchRole(role);
 }
 </script>
 
@@ -19,7 +18,7 @@ async function onRoleChange(role: DemoRole | null) {
     max-width="260"
     min-width="220"
     :items="demoRoles"
-    :model-value="session.role"
+    :model-value="session.role.value"
     variant="outlined"
     @update:model-value="onRoleChange"
   />

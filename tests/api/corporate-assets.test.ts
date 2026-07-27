@@ -119,4 +119,27 @@ describe('Corporate Assets APIs', () => {
       true
     );
   });
+
+  it('exposes restored workflow feeds with station and finance permissions', async () => {
+    for (const path of ['assignments', 'movements', 'audits']) {
+      const response = await $fetch<ApiResponse<any[]>>(`/api/asset-management/${path}`, {
+        headers: role('Station Admin')
+      });
+      expect(response.ok).toBe(true);
+      expect(response.ok && response.data).toEqual(expect.any(Array));
+    }
+
+    const denied = await $fetch<ApiResponse<unknown>>('/api/asset-management/finance', {
+      headers: role('Maintenance Manager'),
+      ignoreResponseError: true
+    });
+    expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+
+    const finance = await $fetch<ApiResponse<any[]>>('/api/asset-management/finance', {
+      headers: role('Director')
+    });
+    expect(finance.ok && finance.data.some((item) => item.assetNumber === 'FA-GSE-00001')).toBe(
+      true
+    );
+  });
 });

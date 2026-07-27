@@ -1,16 +1,36 @@
 <script setup lang="ts">
 defineProps<{ title: string; description?: string }>();
 const route = useRoute();
-const tabs = [
-  { label: 'Overview', to: '/asset-management/overview', icon: 'mdi-view-dashboard-outline' },
-  { label: 'Asset Register', to: '/asset-management/register', icon: 'mdi-clipboard-list-outline' },
-  {
-    label: 'Maintenance Queue',
-    to: '/asset-management/maintenance',
-    icon: 'mdi-wrench-clock-outline'
-  }
-];
-const active = computed(() => tabs.find((tab) => route.path.startsWith(tab.to))?.to ?? null);
+const { can } = useAuthorization();
+const tabs = computed(() =>
+  [
+    { label: 'Overview', to: '/asset-management/overview', icon: 'mdi-view-dashboard-outline' },
+    {
+      label: 'Asset Register',
+      to: '/asset-management/register',
+      icon: 'mdi-clipboard-list-outline'
+    },
+    {
+      label: 'Assignments',
+      to: '/asset-management/assignment',
+      icon: 'mdi-account-arrow-right-outline'
+    },
+    { label: 'Movements', to: '/asset-management/movement', icon: 'mdi-swap-horizontal' },
+    {
+      label: 'Maintenance Queue',
+      to: '/asset-management/maintenance',
+      icon: 'mdi-wrench-clock-outline'
+    },
+    { label: 'Audits', to: '/asset-management/audit', icon: 'mdi-clipboard-check-outline' },
+    {
+      label: 'Finance',
+      to: '/asset-management/finance',
+      icon: 'mdi-calculator-variant-outline',
+      visible: can('asset.finance.read').allowed
+    }
+  ].filter((tab) => tab.visible !== false)
+);
+const active = computed(() => tabs.value.find((tab) => route.path.startsWith(tab.to))?.to ?? null);
 </script>
 
 <template>

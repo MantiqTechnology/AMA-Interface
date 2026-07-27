@@ -711,7 +711,8 @@ export class CorporateAssetService {
         .prepare(
           `INSERT INTO asset_audits
         (id, audit_number, asset_id, auditor_employee_id, auditor_name_snapshot, audited_at,
-         notes, has_discrepancy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         station_id_snapshot, location_snapshot, condition_snapshot, notes, has_discrepancy,
+         created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           auditId,
@@ -720,6 +721,9 @@ export class CorporateAssetService {
           input.auditorEmployeeId,
           input.auditorNameSnapshot,
           input.auditedAt,
+          before.station_id,
+          before.location_detail,
+          before.condition_status,
           input.notes,
           hasDiscrepancy ? 1 : 0,
           timestamp
@@ -975,6 +979,113 @@ export class CorporateAssetService {
         )
         .all(...(scoped ? scope : [])) as Row[]
     ).map((row) => this.camel(row));
+  }
+
+  listAssignments(scope: readonly string[]) {
+    const scoped = !scope.includes('ALL');
+    return (
+      this.sqlite
+        .prepare(
+          `SELECT assignment.*, asset.asset_code, asset.name asset_name,
+      employee.full_name employee_name, department.department_name,
+      assignment_station.station_code
+      FROM asset_assignments assignment
+      JOIN managed_assets asset ON asset.id = assignment.asset_id
+      LEFT JOIN employees employee ON employee.id = assignment.employee_id
+      LEFT JOIN departments department ON department.id = assignment.department_id
+      LEFT JOIN stations assignment_station ON assignment_station.id = assignment.station_id
+      LEFT JOIN stations current_station ON current_station.id = asset.station_id
+      ${scoped ? `WHERE current_station.station_code IN (${scope.map(() => '?').join(',')})` : ''}
+      ORDER BY CASE WHEN assignment.ended_at IS NULL THEN 0 ELSE 1 END, assignment.started_at DESC`
+        )
+        .all(...(scoped ? scope : [])) as Row[]
+    ).map((row) => this.camel(row));
+  }
+
+  listMovements(scope: readonly string[]) {
+    const scoped = !scope.includes('ALL');
+    return (
+      this.sqlite
+        .prepare(
+          `SELECT movement.*, asset.asset_code, asset.name asset_name,
+      from_station.station_code from_station_code, to_station.station_code to_station_code,
+      employee.full_name new_employee_name
+      FROM asset_custody_movements movement
+      JOIN managed_assets asset ON asset.id = movement.asset_id
+      LEFT JOIN stations from_station ON from_station.id = movement.from_station_id
+      LEFT JOIN stations to_station ON to_station.id = movement.to_station_id
+      LEFT JOIN stations current_station ON current_station.id = asset.station_id
+      LEFT JOIN employees employee ON employee.id = movement.new_employee_id
+      ${scoped ? `WHERE current_station.station_code IN (${scope.map(() => '?').join(',')})` : ''}
+      ORDER BY movement.moved_at DESC`
+        )
+        .all(...(scoped ? scope : [])) as Row[]
+    ).map((row) => this.camel(row));
+  }
+
+  listAudits(scope: readonly string[]) {
+    const scoped = !scope.includes('ALL');
+    return (
+      this.sqlite
+        .prepare(
+          `SELECT audit.*, asset.asset_code, asset.name asset_name,
+      audit.location_snapshot, audit.condition_snapshot, station.station_code,
+      employee.full_name auditor_employee_name,
+      COUNT(line.id) line_count,
+      SUM(CASE WHEN line.discrepancy_type IS NOT NULL THEN 1 ELSE 0 END) discrepancy_count
+      FROM asset_audits audit
+      JOIN managed_assets asset ON asset.id = audit.asset_id
+      LEFT JOIN stations station ON station.id = audit.station_id_snapshot
+      LEFT JOIN employees employee ON employee.id = audit.auditor_employee_id
+      LEFT JOIN asset_audit_lines line ON line.audit_id = audit.id
+      ${scoped ? `WHERE station.station_code IN (${scope.map(() => '?').join(',')})` : ''}
+      GROUP BY audit.id
+      ORDER BY audit.audited_at DESC`
+        )
+        .all(...(scoped ? scope : [])) as Row[]
+    ).map((row) => this.camel(row));
+  }
+
+  listFinancialAssets(scope: readonly string[]) {
+    const scoped = !scope.includes('ALL');
+    return (
+      this.sqlite
+        .prepare(
+          `SELECT asset.id asset_id, asset.asset_code, asset.name asset_name, asset.category,
+      station.station_code, register.asset_number, register.status financial_status,
+      register.acquisition_date, register.cost_minor acquisition_value_minor,
+      register.currency_code, register.useful_life_months,
+      COALESCE(SUM(CASE WHEN schedule.status = 'POSTED'
+        THEN schedule.depreciation_amount_minor ELSE 0 END), 0) accumulated_depreciation_minor,
+      register.cost_minor - COALESCE(SUM(CASE WHEN schedule.status = 'POSTED'
+        THEN schedule.depreciation_amount_minor ELSE 0 END), 0) current_book_value_minor,
+      COALESCE(MAX(CASE WHEN schedule.status = 'POSTED' THEN period.end_date END),
+        register.acquisition_date) as_of_date,
+      policy.insurer, policy.policy_number, policy.coverage_minor, policy.premium_minor,
+      policy.expiry_date insurance_expiry_date, policy.status insurance_status
+      FROM managed_assets asset
+      LEFT JOIN stations station ON station.id = asset.station_id
+      LEFT JOIN asset_register register ON register.managed_asset_id = asset.id
+      LEFT JOIN depreciation_schedules schedule ON schedule.asset_id = register.id
+      LEFT JOIN accounting_periods period ON period.id = schedule.period_id
+      LEFT JOIN asset_insurance_policies policy ON policy.id = (
+        SELECT latest.id FROM asset_insurance_policies latest
+        WHERE latest.asset_id = asset.id
+        ORDER BY CASE latest.status WHEN 'ACTIVE' THEN 0 ELSE 1 END, latest.expiry_date DESC
+        LIMIT 1
+      )
+      ${scoped ? `WHERE station.station_code IN (${scope.map(() => '?').join(',')})` : ''}
+      GROUP BY asset.id, register.id, policy.id
+      ORDER BY asset.asset_code`
+        )
+        .all(...(scoped ? scope : [])) as Row[]
+    ).map((row) => {
+      const item = this.camel(row) as any;
+      return {
+        ...item,
+        financialStatus: row.asset_number === null ? 'NOT_CAPITALIZED' : item.financialStatus
+      };
+    });
   }
 
   requireWorkOrder(id: string) {

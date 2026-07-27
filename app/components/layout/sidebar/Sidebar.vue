@@ -267,10 +267,34 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('asset.read').allowed
         },
         {
+          label: 'Assignments',
+          to: '/asset-management/assignment',
+          icon: 'mdi-account-arrow-right-outline',
+          visible: can('asset.read').allowed
+        },
+        {
+          label: 'Movements',
+          to: '/asset-management/movement',
+          icon: 'mdi-swap-horizontal',
+          visible: can('asset.read').allowed
+        },
+        {
           label: 'Maintenance Queue',
           to: '/asset-management/maintenance',
           icon: 'mdi-wrench-outline',
           visible: can('asset.read').allowed
+        },
+        {
+          label: 'Audits',
+          to: '/asset-management/audit',
+          icon: 'mdi-clipboard-check-outline',
+          visible: can('asset.read').allowed
+        },
+        {
+          label: 'Finance',
+          to: '/asset-management/finance',
+          icon: 'mdi-calculator-variant-outline',
+          visible: can('asset.finance.read').allowed
         }
       ].filter((child) => child.visible)
     },

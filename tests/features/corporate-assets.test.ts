@@ -68,6 +68,119 @@ describe('Corporate Assets domain', () => {
     expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   });
 
+  it('provides scoped persistent feeds for restored asset-management workflows', () => {
+    const before = assets.getAsset('asset-it-laptop-01', ['ALL']);
+    const moved = assets.moveAsset(
+      before.id,
+      {
+        expectedVersion: before.version,
+        toStationId: 'st-djj',
+        toLocationType: 'DEPARTMENT',
+        toLocation: 'DJJ Finance Room',
+        newEmployeeId: null,
+        newCustodianNameSnapshot: null,
+        reason: 'Persistent movement feed test.',
+        movedAt: '2026-07-22T08:00:00.000Z'
+      },
+      'USR-DEMO-ADMIN',
+      ['ALL'],
+      true
+    );
+    assets.recordAudit(
+      moved.id,
+      {
+        expectedVersion: moved.version,
+        auditorEmployeeId: 'emp-hendra',
+        auditorNameSnapshot: 'Hendra Gunawan',
+        auditedAt: '2026-07-22T09:00:00.000Z',
+        notes: 'Persistent audit feed test.',
+        lines: [
+          {
+            fieldName: 'locationDetail',
+            expectedValue: moved.locationDetail,
+            actualValue: moved.locationDetail,
+            discrepancyType: null,
+            notes: null
+          }
+        ]
+      },
+      'USR-DEMO-ADMIN',
+      ['ALL']
+    );
+
+    expect(assets.listAssignments(['ALL'])).not.toHaveLength(0);
+    expect(assets.listMovements(['ALL'])).not.toHaveLength(0);
+    expect(assets.listAudits(['ALL'])).not.toHaveLength(0);
+    expect(
+      assets.listFinancialAssets(['ALL']).find((item) => item.assetId === 'asset-gse-gpu-01')
+    ).toMatchObject({
+      assetNumber: 'FA-GSE-00001',
+      financialStatus: 'ACTIVE'
+    });
+
+    expect(assets.listAssignments(['WMX']).every((item) => item.stationCode === 'WMX')).toBe(true);
+    expect(
+      assets
+        .listMovements(['WMX'])
+        .every((item) => item.fromStationCode === 'WMX' || item.toStationCode === 'WMX')
+    ).toBe(true);
+    expect(assets.listAudits(['WMX']).every((item) => item.stationCode === 'WMX')).toBe(true);
+    expect(assets.listFinancialAssets(['WMX']).every((item) => item.stationCode === 'WMX')).toBe(
+      true
+    );
+  });
+
+  it('keeps current custody feeds private while retaining audit-time station snapshots', () => {
+    const before = assets.getAsset('asset-vehicle-wmx-01', ['ALL']);
+    const audited = assets.recordAudit(
+      before.id,
+      {
+        expectedVersion: before.version,
+        auditorEmployeeId: null,
+        auditorNameSnapshot: 'WMX Auditor',
+        auditedAt: '2026-07-22T07:00:00.000Z',
+        notes: null,
+        lines: [
+          {
+            fieldName: 'locationDetail',
+            expectedValue: before.locationDetail,
+            actualValue: before.locationDetail,
+            discrepancyType: null,
+            notes: null
+          }
+        ]
+      },
+      'USR-DEMO-ADMIN',
+      ['ALL']
+    );
+    assets.moveAsset(
+      audited.id,
+      {
+        expectedVersion: audited.version,
+        toStationId: 'st-djj',
+        toLocationType: 'STATION',
+        toLocation: 'DJJ secured parking',
+        newEmployeeId: null,
+        newCustodianNameSnapshot: null,
+        reason: 'Approved cross-station custody transfer.',
+        movedAt: '2026-07-22T08:00:00.000Z'
+      },
+      'USR-DEMO-ADMIN',
+      ['ALL'],
+      true
+    );
+
+    expect(assets.listAssignments(['WMX']).some((item) => item.assetId === before.id)).toBe(false);
+    expect(assets.listMovements(['WMX']).some((item) => item.assetId === before.id)).toBe(false);
+    expect(assets.listMovements(['DJJ']).some((item) => item.assetId === before.id)).toBe(true);
+    expect(assets.listAudits(['WMX']).find((item) => item.assetId === before.id)).toMatchObject({
+      stationCode: 'WMX',
+      locationSnapshot: before.locationDetail,
+      conditionSnapshot: before.conditionStatus
+    });
+    expect(assets.listAudits(['DJJ']).some((item) => item.assetId === before.id)).toBe(false);
+  });
+
   it('generates category codes atomically and rejects duplicate serial numbers', () => {
     const base = {
       name: 'Demo monitor',

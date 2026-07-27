@@ -1213,6 +1213,23 @@ export function runMigrations(sqlite: Database.Database) {
       'TEXT REFERENCES managed_assets(id)'
     );
     ensureColumn(sqlite, 'asset_maintenance_work_orders', 'completion_evidence_reference', 'TEXT');
+    ensureColumn(sqlite, 'asset_audits', 'station_id_snapshot', 'TEXT REFERENCES stations(id)');
+    ensureColumn(sqlite, 'asset_audits', 'location_snapshot', 'TEXT');
+    ensureColumn(sqlite, 'asset_audits', 'condition_snapshot', 'TEXT');
+    sqlite.exec(`UPDATE asset_audits
+      SET station_id_snapshot = COALESCE(
+            station_id_snapshot,
+            (SELECT station_id FROM managed_assets WHERE managed_assets.id = asset_audits.asset_id)
+          ),
+          location_snapshot = COALESCE(
+            location_snapshot,
+            (SELECT location_detail FROM managed_assets WHERE managed_assets.id = asset_audits.asset_id)
+          ),
+          condition_snapshot = COALESCE(
+            condition_snapshot,
+            (SELECT condition_status FROM managed_assets WHERE managed_assets.id = asset_audits.asset_id)
+          )
+      WHERE station_id_snapshot IS NULL OR location_snapshot IS NULL OR condition_snapshot IS NULL`);
     sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_single_live_maintenance
       ON asset_maintenance_work_orders(asset_id)
       WHERE status IN ('OPEN', 'IN_PROGRESS', 'WAITING_PARTS')`);
