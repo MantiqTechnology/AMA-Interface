@@ -25,6 +25,7 @@ export type ServiceStatus = 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'REJECTED'
 export type CostStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'VOID';
 
 export interface StationOption {
+  id: string;
   code: string;
   name: string;
 }
@@ -228,7 +229,9 @@ export interface StationOperationsContext {
   operationalDateIso: ReadonlyValue<string>;
   stationMaster: ReadonlyValue<StationOption[]>;
   stationOptions: ReadonlyValue<StationOption[]>;
+  stationOptionsPending: ReadonlyValue<boolean>;
   selectedStationLabel: ReadonlyValue<string>;
+  selectedStationId: ReadonlyValue<string>;
   canChangeStation: ReadonlyValue<boolean>;
   canReadAssets: ReadonlyValue<boolean>;
   lastUpdated: MutableValue<Date | null>;

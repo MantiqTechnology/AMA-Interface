@@ -4,7 +4,7 @@ import { useStationServices } from '../../../features/station-operations/composa
 import type { StationServiceRow } from '../../../features/station-operations/types/stationOperations';
 import { money } from '../../../features/station-operations/utils/stationOperationsFormatters';
 
-const { pending, dataset, load } = useStationOperationsPageData();
+const { context, pending, dataset, load } = useStationOperationsPageData();
 const services = useStationServices(dataset, load);
 
 const search = ref('');
@@ -57,7 +57,7 @@ const filteredServices = computed<StationServiceRow[]>(() => {
         />
         <VSelect
           v-model="status"
-          :items="['ALL', 'REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED']"
+          :items="['ALL', 'REQUESTED', 'CONFIRMED', 'COMPLETED', 'REJECTED', 'CANCELLED']"
           label="Status"
           density="compact"
           hide-details
@@ -68,6 +68,8 @@ const filteredServices = computed<StationServiceRow[]>(() => {
           v-if="services.can('station.operation.update').allowed"
           color="primary"
           prepend-icon="mdi-plus"
+          :loading="services.optionsLoading.value || context.stationOptionsPending.value"
+          :disabled="pending || dataset.flights.length === 0 || !context.selectedStationId.value"
           @click="services.openCreateService"
         >
           Create Service

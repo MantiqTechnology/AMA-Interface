@@ -132,10 +132,15 @@ describe('station operations flight workspace', () => {
     );
     expect(handlingTask).toBeDefined();
 
+    const startedHandlingTask = await services.flightOperations.startStationTask(
+      handlingTask.id,
+      handlingTask.version,
+      admin
+    );
     await services.flightOperations.addStationTaskEvidence(
       {
         stationTaskId: handlingTask.id,
-        expectedVersion: handlingTask.version,
+        expectedVersion: startedHandlingTask.version,
         fileName: 'origin-handling-confirmation.pdf',
         documentType: 'STATION_OPERATION_EVIDENCE'
       },
@@ -144,7 +149,7 @@ describe('station operations flight workspace', () => {
     await services.flightOperations.verifyStationTask(
       {
         taskId: handlingTask.id,
-        expectedVersion: handlingTask.version,
+        expectedVersion: startedHandlingTask.version,
         reason: 'Origin handling source and evidence checked.'
       },
       admin

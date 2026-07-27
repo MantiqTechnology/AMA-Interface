@@ -3,15 +3,16 @@ import { expect, test, type Page } from '@playwright/test';
 const DEMO_SEED_DATE = '2026-07-17';
 
 async function gotoStationOps(page: Page) {
-  await page.goto('/flights/station-operations', { waitUntil: 'networkidle' });
-  await expect(page.getByRole('heading', { name: 'Station Operations Desk' })).toBeVisible();
+  await page.goto(`/flights/station-operations?stationCode=DJJ&date=${DEMO_SEED_DATE}`, {
+    waitUntil: 'networkidle'
+  });
+  await expect(page.getByRole('heading', { name: 'Station Operations' })).toBeVisible();
 }
 
 async function setOperationalDate(page: Page, date: string) {
-  const datePicker = page.locator('main input[type="date"]').first();
-  await datePicker.fill(date);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('main input[type="date"]').first()).toHaveValue(date);
+  await page.goto(`/flights/station-operations?stationCode=DJJ&date=${date}`, {
+    waitUntil: 'networkidle'
+  });
 }
 
 async function waitForStationOperationsResponse(page: Page) {
@@ -38,21 +39,24 @@ test('station operations shows flight board for seed date', async ({ page }) => 
   await gotoStationOps(page);
   await setOperationalDate(page, DEMO_SEED_DATE);
 
-  await expect(page.getByRole('heading', { name: 'Flight Board' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Priority Flight Board' })).toBeVisible();
 
   const firstTableRows = page.locator('main table').first().locator('tbody tr');
   await expect(firstTableRows.first()).toBeVisible();
   await expect(firstTableRows).toHaveCount(3);
 });
 
-test('station operations shows services and costs sections', async ({ page }) => {
+test('station operations opens service and cost creation dialogs', async ({ page }) => {
   await gotoStationOps(page);
-  await setOperationalDate(page, DEMO_SEED_DATE);
 
-  await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Costs' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create Service' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create Cost' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Services' }).click();
+  await page.getByRole('button', { name: 'Create Service' }).click();
+  await expect(page.getByRole('heading', { name: 'Create Station Service' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  await page.getByRole('tab', { name: 'Costs' }).click();
+  await page.getByRole('button', { name: 'Create Cost' }).click();
+  await expect(page.getByRole('heading', { name: 'Create Station Cost' })).toBeVisible();
 });
 
 test('switching station updates the flight board', async ({ page }) => {
@@ -60,13 +64,33 @@ test('switching station updates the flight board', async ({ page }) => {
   await setOperationalDate(page, DEMO_SEED_DATE);
 
   const responsePromise = waitForStationOperationsResponse(page);
-  const stationSelect = page.locator('main').getByRole('combobox').first();
-  await stationSelect.click();
-  await page.getByRole('option', { name: 'Wamena' }).click();
+  const stationSelect = page.getByRole('combobox', { name: 'Station' });
+  await stationSelect.press('ArrowDown');
+  await page.getByRole('option', { name: /WMX/u }).click();
   await responsePromise;
 
-  await expect(page.getByRole('heading', { name: 'Flight Board' })).toBeVisible();
-  await expect(page.getByText('All flights for WMX on 17 Jul 2026')).toBeVisible();
+  await expect(page.getByText(/WMX -/u).first()).toBeVisible();
+});
+
+test('station task actions open their required dialogs', async ({ page }) => {
+  await gotoStationOps(page);
+  await page.getByRole('tab', { name: 'Verification' }).click();
+
+  await expect(page.getByRole('button', { name: 'Add evidence' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Start task' }).first().click();
+  await expect(page.getByRole('button', { name: 'Add evidence' }).first()).toBeVisible();
+
+  const addEvidence = page.getByRole('button', { name: 'Add evidence' }).first();
+  await expect(addEvidence).toBeVisible();
+  await addEvidence.click();
+  await expect(page.getByRole('heading', { name: 'Add Task Evidence' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  const rejectTask = page.getByRole('button', { name: 'Reject task' }).first();
+  if (await rejectTask.isVisible()) {
+    await rejectTask.click();
+    await expect(page.getByRole('heading', { name: 'Reject Station Task' })).toBeVisible();
+  }
 });
 
 test('verification evidence persists after reload', async ({ page }) => {
@@ -79,17 +103,29 @@ test('verification evidence persists after reload', async ({ page }) => {
   const before = await beforeResponse.json();
   const task = before.data
     .flatMap(
-      (flight: { tasks: Array<{ id: string; evidenceCount: number; version: number }> }) =>
-        flight.tasks
+      (flight: {
+        tasks: Array<{ id: string; evidenceCount: number; version: number; status: string }>;
+      }) => flight.tasks
     )
-    .find((candidate: { id: string }) => candidate.id);
+    .find((candidate: { status: string }) => candidate.status === 'PENDING');
   expect(task).toBeTruthy();
+
+  const startResponse = await page.request.post(
+    `/api/flight-operations/station-tasks/${task.id}/actions/start`,
+    {
+      data: {
+        expectedVersion: task.version
+      }
+    }
+  );
+  expect(startResponse.ok()).toBe(true);
+  const started = await startResponse.json();
 
   const evidenceResponse = await page.request.post(
     `/api/flight-operations/station-tasks/${task.id}/evidence`,
     {
       data: {
-        expectedVersion: task.version,
+        expectedVersion: started.data.version,
         fileName: `playwright-${Date.now()}.pdf`,
         documentType: 'STATION_OPERATION_EVIDENCE',
         notes: 'Persistent E2E evidence'

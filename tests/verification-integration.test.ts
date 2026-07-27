@@ -269,9 +269,13 @@ describe('Operational Verification and Readiness Assurance', () => {
       },
       stationAdminCtx
     );
+    const started = await service.startStationTask(task.id, task.version, stationAdminCtx);
 
     await expect(
-      service.verifyStationTask({ taskId: task.id, expectedVersion: task.version }, stationAdminCtx)
+      service.verifyStationTask(
+        { taskId: task.id, expectedVersion: started.version },
+        stationAdminCtx
+      )
     ).rejects.toThrow('This task requires at least one evidence');
   });
 
@@ -287,18 +291,19 @@ describe('Operational Verification and Readiness Assurance', () => {
       },
       stationAdminCtx
     );
+    const started = await service.startStationTask(task.id, task.version, stationAdminCtx);
 
     await service.addStationTaskEvidence(
       {
         stationTaskId: task.id,
-        expectedVersion: task.version,
+        expectedVersion: started.version,
         fileName: 'handling-confirmation.pdf'
       },
       stationAdminCtx
     );
 
     const verifiedTask = await service.verifyStationTask(
-      { taskId: task.id, expectedVersion: task.version },
+      { taskId: task.id, expectedVersion: started.version },
       stationAdminCtx
     );
     expect(verifiedTask.status).toBe('VERIFIED');
@@ -329,14 +334,19 @@ describe('Operational Verification and Readiness Assurance', () => {
       },
       stationAdminCtx
     );
+    const started = await service.startStationTask(task.id, task.version, stationAdminCtx);
 
     await service.addStationTaskEvidence(
-      { stationTaskId: task.id, expectedVersion: task.version, fileName: 'signoff-evidence.pdf' },
+      {
+        stationTaskId: task.id,
+        expectedVersion: started.version,
+        fileName: 'signoff-evidence.pdf'
+      },
       stationAdminCtx
     );
 
     const stationVerified = await service.verifyStationTask(
-      { taskId: task.id, expectedVersion: task.version },
+      { taskId: task.id, expectedVersion: started.version },
       stationAdminCtx
     );
 
@@ -369,16 +379,17 @@ describe('Operational Verification and Readiness Assurance', () => {
       },
       stationAdminCtx
     );
+    const started = await service.startStationTask(task.id, task.version, stationAdminCtx);
     await service.addStationTaskEvidence(
       {
         stationTaskId: task.id,
-        expectedVersion: task.version,
+        expectedVersion: started.version,
         fileName: 'origin-documents.pdf'
       },
       stationAdminCtx
     );
     await service.verifyStationTask(
-      { taskId: task.id, expectedVersion: task.version },
+      { taskId: task.id, expectedVersion: started.version },
       stationAdminCtx
     );
 
@@ -415,9 +426,14 @@ describe('Operational Verification and Readiness Assurance', () => {
       },
       stationAdminCtx
     );
+    const started = await service.startStationTask(task.id, task.version, stationAdminCtx);
 
     await service.addStationTaskEvidence(
-      { stationTaskId: task.id, expectedVersion: task.version, fileName: 'signoff-evidence.pdf' },
+      {
+        stationTaskId: task.id,
+        expectedVersion: started.version,
+        fileName: 'signoff-evidence.pdf'
+      },
       stationAdminCtx
     );
 
@@ -427,7 +443,7 @@ describe('Operational Verification and Readiness Assurance', () => {
           taskId: task.id,
           decision: 'APPROVED',
           stage: 'OCC',
-          expectedVersion: task.version
+          expectedVersion: started.version
         },
         { userId: 'occ-user', role: 'OCC', stationCodes: ['ALL'] }
       )
@@ -446,15 +462,20 @@ describe('Operational Verification and Readiness Assurance', () => {
       },
       stationAdminCtx
     );
+    const started = await service.startStationTask(task.id, task.version, demoAdminCtx);
 
     await service.addStationTaskEvidence(
-      { stationTaskId: task.id, expectedVersion: task.version, fileName: 'override-evidence.pdf' },
+      {
+        stationTaskId: task.id,
+        expectedVersion: started.version,
+        fileName: 'override-evidence.pdf'
+      },
       demoAdminCtx
     );
     const overriddenTask = await service.overrideStationTask(
       {
         taskId: task.id,
-        expectedVersion: task.version,
+        expectedVersion: started.version,
         reason: 'Emergency situation requiring immediate departure',
         evidenceIds: []
       },

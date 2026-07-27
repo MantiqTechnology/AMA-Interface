@@ -23,6 +23,11 @@ const filteredTasks = computed(() => {
 
 <template>
   <VCard border>
+    <VAlert class="ma-4 mb-0" type="info" variant="tonal" density="compact">
+      Workflow: Station Admin starts the task, attaches required evidence, confirms handling when
+      applicable, then verifies each task. Verify the station sign-off last; OCC provides the final
+      sign-off approval.
+    </VAlert>
     <div class="flex flex-col gap-4 pa-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <h2 class="text-h6 font-weight-bold">Operational Verification</h2>
@@ -114,18 +119,19 @@ const filteredTasks = computed(() => {
                 @click="verification.runTaskAction(task, 'start')"
               />
               <DsTooltipIconButton
-                v-if="verification.can('station.evidence.add').allowed"
+                v-if="
+                  task.status === 'IN_PROGRESS' && verification.can('station.evidence.add').allowed
+                "
                 icon="mdi-paperclip"
                 tooltip="Add evidence"
                 @click="verification.openEvidence(task)"
               />
               <DsTooltipIconButton
                 v-if="
-                  ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
-                    verification.can('station.task.verify').allowed
+                  task.status === 'IN_PROGRESS' && verification.can('station.task.verify').allowed
                 "
                 icon="mdi-check-circle-outline"
-                tooltip="Verify task"
+                :tooltip="verification.stationTaskBlocker(task) ?? 'Verify task'"
                 :disabled="Boolean(verification.stationTaskBlocker(task))"
                 :loading="verification.loadingId.value === task.id"
                 @click="verification.runTaskAction(task, 'verify')"

@@ -4,7 +4,7 @@ import { useStationOperationsPageData } from '../../../features/station-operatio
 import { money } from '../../../features/station-operations/utils/stationOperationsFormatters';
 import { type StationCostRow } from '../../../features/station-operations/types/stationOperations';
 
-const { pending, dataset, load } = useStationOperationsPageData();
+const { context, pending, dataset, load } = useStationOperationsPageData();
 const costs = useStationCosts(dataset, load);
 const search = ref('');
 const status = ref('ALL');
@@ -62,6 +62,8 @@ const filteredCosts = computed<StationCostRow[]>(() => {
           v-if="costs.can('station.operation.update').allowed"
           color="primary"
           prepend-icon="mdi-plus"
+          :loading="costs.optionsLoading.value || context.stationOptionsPending.value"
+          :disabled="pending || !context.selectedStationId.value"
           @click="costs.openCreateCost"
         >
           Create Cost
@@ -142,14 +144,14 @@ const filteredCosts = computed<StationCostRow[]>(() => {
     </div>
   </VCard>
 
-  <CostCreateStationCostDialog
+  <CostsCreateStationCostDialog
     v-model="costs.showCreateCost.value"
+    v-model:form="costs.costForm.value"
     :creating="costs.creatingCost.value"
     :flights="dataset.flights"
     :categories="costs.categories.value"
     :vendors="costs.vendors.value"
     :currencies="costs.currencies.value"
-    :form="costs.costForm"
     @submit="costs.submitCreateCost"
   />
 </template>

@@ -1122,7 +1122,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       );
     }
 
-    if (currentTask.status !== 'PENDING' && currentTask.status !== 'IN_PROGRESS') {
+    if (currentTask.status !== 'IN_PROGRESS') {
       throw new DomainError(
         'INVALID_TRANSITION',
         `Cannot verify task from status ${currentTask.status}`,
@@ -1566,6 +1566,13 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         'Task has been modified by another user. Please refresh and try again.',
         409,
         { currentVersion: Number(task.version) }
+      );
+    }
+    if (task.status !== 'IN_PROGRESS') {
+      throw new DomainError(
+        'INVALID_TRANSITION',
+        `Cannot add evidence to task from status ${task.status}`,
+        409
       );
     }
 

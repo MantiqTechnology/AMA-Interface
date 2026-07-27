@@ -93,6 +93,7 @@ const canSubmit = computed(() => {
   return (
     Boolean(costCategoryId.value) &&
     Boolean(currencyId.value) &&
+    Boolean(description.value.trim()) &&
     amount.value !== null &&
     amount.value >= 0
   );
@@ -102,7 +103,7 @@ const canSubmit = computed(() => {
 <template>
   <VDialog v-model="dialogOpen" max-width="560">
     <VCard>
-      <VCardTitle>Create Station Cost</VCardTitle>
+      <VCardTitle tag="h2">Create Station Cost</VCardTitle>
 
       <VCardText class="flex flex-col gap-4">
         <VSelect

@@ -25,7 +25,7 @@ function updateNotes(value: string | null) {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <VCard>
-      <VCardTitle>Add Task Evidence</VCardTitle>
+      <VCardTitle tag="h2">Add Task Evidence</VCardTitle>
 
       <VCardText class="flex flex-col gap-4">
         <VFileInput

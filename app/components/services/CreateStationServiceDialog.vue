@@ -72,8 +72,7 @@ const canSubmit = computed(() => {
     Boolean(flightId.value) &&
     Boolean(serviceTypeId.value) &&
     Boolean(serviceSupplierId.value) &&
-    referenceRate.value !== null &&
-    referenceRate.value >= 0
+    (referenceRate.value === null || referenceRate.value >= 0)
   );
 });
 
@@ -92,7 +91,7 @@ function closeDialog() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <VCard>
-      <VCardTitle>Create Station Service</VCardTitle>
+      <VCardTitle tag="h2">Create Station Service</VCardTitle>
 
       <VCardText class="flex flex-col gap-4">
         <VSelect
@@ -124,7 +123,7 @@ function closeDialog() {
 
         <VTextField
           v-model="referenceRate"
-          label="Reference rate"
+          label="Reference rate (optional)"
           type="number"
           min="0"
           variant="outlined"

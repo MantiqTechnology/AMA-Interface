@@ -24,7 +24,7 @@ export function useStationOperationsPageData(): StationOperationsPageData {
   let requestSequence = 0;
 
   const stationTasks = computed<StationTaskRow[]>(() =>
-    flattenStationTasks(context.selectedStationCode.value, workbenchFlights.value)
+    flattenStationTasks(context.selectedStationId.value, workbenchFlights.value)
   );
 
   const workbenchAudit = computed<StationAuditRow[]>(() => flattenAudit(workbenchFlights.value));

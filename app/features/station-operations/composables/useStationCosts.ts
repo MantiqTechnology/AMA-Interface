@@ -7,10 +7,11 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
   const loadingId = ref('');
   const showCreateCost = ref(false);
   const creatingCost = ref(false);
+  const optionsLoading = ref(false);
   const categories = ref<SelectOption[]>([]);
   const vendors = ref<SelectOption[]>([]);
   const currencies = ref<SelectOption[]>([]);
-  const costForm = reactive({
+  const costForm = ref({
     flightId: '',
     costCategoryId: '',
     vendorId: '',
@@ -20,6 +21,7 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
   });
 
   async function loadOptions(): Promise<void> {
+    optionsLoading.value = true;
     try {
       const [categoryOptions, vendorOptions, currencyOptions] = await Promise.all([
         fetchApi<Array<{ id: string; categoryCode: string; categoryName: string }>>(
@@ -50,23 +52,41 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
     } catch (error) {
       context.actionError.value =
         error instanceof Error ? error.message : 'Gagal memuat opsi station cost.';
+    } finally {
+      optionsLoading.value = false;
     }
   }
 
-  function openCreateCost(): void {
-    costForm.flightId = dataset.value.flights[0]?.flightId ?? '';
-    costForm.costCategoryId = categories.value[0]?.id ?? '';
-    costForm.vendorId = vendors.value[0]?.id ?? '';
-    costForm.currencyId =
-      currencies.value.find((item) => item.subtitle === 'IDR')?.id ?? currencies.value[0]?.id ?? '';
-    costForm.description = '';
-    costForm.amount = null;
+  async function openCreateCost(): Promise<void> {
+    if (!categories.value.length || !currencies.value.length) {
+      await loadOptions();
+    }
+    costForm.value = {
+      flightId: dataset.value.flights[0]?.flightId ?? '',
+      costCategoryId: categories.value[0]?.id ?? '',
+      vendorId: vendors.value[0]?.id ?? '',
+      currencyId:
+        currencies.value.find((item) => item.subtitle === 'IDR')?.id ??
+        currencies.value[0]?.id ??
+        '',
+      description: '',
+      amount: null
+    };
     showCreateCost.value = true;
   }
 
   async function submitCreateCost(): Promise<void> {
-    if (!costForm.amount || !costForm.description.trim() || !costForm.costCategoryId) return;
-    const flight = dataset.value.flights.find((item) => item.flightId === costForm.flightId);
+    if (!context.selectedStationId.value) {
+      context.actionError.value = 'Station master data is unavailable. Refresh and try again.';
+      return;
+    }
+    if (
+      costForm.value.amount === null ||
+      !costForm.value.description.trim() ||
+      !costForm.value.costCategoryId
+    )
+      return;
+    const flight = dataset.value.flights.find((item) => item.flightId === costForm.value.flightId);
 
     creatingCost.value = true;
     context.actionError.value = '';
@@ -75,12 +95,12 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
         method: 'POST',
         body: {
           flightId: flight?.flightId ?? null,
-          stationId: `st-${context.selectedStationCode.value.toLowerCase()}`,
-          vendorId: costForm.vendorId || null,
-          costCategoryId: costForm.costCategoryId,
-          amount: costForm.amount,
-          currencyId: costForm.currencyId,
-          description: costForm.description
+          stationId: context.selectedStationId.value,
+          vendorId: costForm.value.vendorId || null,
+          costCategoryId: costForm.value.costCategoryId,
+          amount: costForm.value.amount,
+          currencyId: costForm.value.currencyId,
+          description: costForm.value.description
         }
       });
       showCreateCost.value = false;
@@ -121,6 +141,7 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
     loadingId,
     showCreateCost,
     creatingCost,
+    optionsLoading,
     categories,
     vendors,
     currencies,

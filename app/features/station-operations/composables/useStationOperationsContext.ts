@@ -27,7 +27,11 @@ export function provideStationOperationsContext(): StationOperationsContext {
   const { currentPersona } = useDemoSession();
   const { can } = useAuthorization();
 
-  const { data: masterStationOptions } = useAsyncData(
+  const {
+    data: masterStationOptions,
+    pending: stationOptionsPending,
+    error: stationOptionsError
+  } = useAsyncData(
     'station-operations-station-options-v2',
     () => fetchApi<MasterStationOption[]>('/api/master-data/stations/options'),
     {
@@ -37,6 +41,7 @@ export function provideStationOperationsContext(): StationOperationsContext {
 
   const stationMaster = computed<StationOption[]>(() =>
     masterStationOptions.value.map((station) => ({
+      id: station.id,
       code: station.stationCode,
       name: station.stationName
     }))
@@ -72,6 +77,10 @@ export function provideStationOperationsContext(): StationOperationsContext {
 
     return found ? `${found.code} - ${found.name}` : selectedStationCode.value;
   });
+  const selectedStationId = computed<string>(
+    () =>
+      stationMaster.value.find((station) => station.code === selectedStationCode.value)?.id ?? ''
+  );
   const canReadAssets = computed<boolean>(() => can('asset.read').allowed);
 
   const lastUpdated = ref<Date | null>(null);
@@ -80,6 +89,20 @@ export function provideStationOperationsContext(): StationOperationsContext {
   const actionError = ref<string>('');
   const actionSuccess = ref<string>('');
   const refreshHandler = ref<(() => Promise<void>) | null>(null);
+
+  watch(
+    [stationOptionsPending, stationOptionsError, stationMaster],
+    ([isPending, loadError, stations]) => {
+      if (isPending) return;
+      if (loadError || stations.length === 0) {
+        error.value =
+          loadError instanceof Error
+            ? loadError.message
+            : 'Station master data is unavailable. Refresh before continuing.';
+      }
+    },
+    { immediate: true }
+  );
 
   function registerRefreshHandler(handler: (() => Promise<void>) | null): void {
     refreshHandler.value = handler;
@@ -169,7 +192,9 @@ export function provideStationOperationsContext(): StationOperationsContext {
     operationalDateIso,
     stationMaster,
     stationOptions,
+    stationOptionsPending,
     selectedStationLabel,
+    selectedStationId,
     canChangeStation,
     canReadAssets,
     lastUpdated,

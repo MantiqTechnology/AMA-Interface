@@ -78,10 +78,9 @@ export function deriveReadiness(flight: ApiStationFlight): ReadinessStatus {
 }
 
 export function flattenStationTasks(
-  stationCode: string,
+  stationId: string,
   flights: ApiStationFlight[]
 ): StationTaskRow[] {
-  const stationId = `st-${stationCode.toLowerCase()}`;
   return flights.flatMap((flight) =>
     flight.tasks
       .filter((task) => task.stationId === stationId)

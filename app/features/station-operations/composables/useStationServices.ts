@@ -17,9 +17,10 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
   const loadingId = ref('');
   const showCreateService = ref(false);
   const creatingService = ref(false);
+  const optionsLoading = ref(false);
   const stationServiceTypes = ref<SelectOption[]>([]);
   const suppliers = ref<SelectOption[]>([]);
-  const serviceForm = reactive({
+  const serviceForm = ref({
     flightId: '',
     serviceTypeId: '',
     serviceSupplierId: '',
@@ -27,6 +28,7 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
   });
 
   async function loadOptions(): Promise<void> {
+    optionsLoading.value = true;
     try {
       const [lookups, supplierOptions] = await Promise.all([
         fetchApi<ServiceLookupResponse>('/api/flight-operations/lookups'),
@@ -46,20 +48,33 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
     } catch (error) {
       context.actionError.value =
         error instanceof Error ? error.message : 'Gagal memuat opsi station service.';
+    } finally {
+      optionsLoading.value = false;
     }
   }
 
-  function openCreateService(): void {
-    serviceForm.flightId = dataset.value.flights[0]?.flightId ?? '';
-    serviceForm.serviceTypeId = stationServiceTypes.value[0]?.id ?? '';
-    serviceForm.serviceSupplierId = suppliers.value[0]?.id ?? '';
-    serviceForm.referenceRate = null;
+  async function openCreateService(): Promise<void> {
+    if (!stationServiceTypes.value.length || !suppliers.value.length) {
+      await loadOptions();
+    }
+    serviceForm.value = {
+      flightId: dataset.value.flights[0]?.flightId ?? '',
+      serviceTypeId: stationServiceTypes.value[0]?.id ?? '',
+      serviceSupplierId: suppliers.value[0]?.id ?? '',
+      referenceRate: null
+    };
     showCreateService.value = true;
   }
 
   async function submitCreateService(): Promise<void> {
-    const flight = dataset.value.flights.find((item) => item.flightId === serviceForm.flightId);
-    if (!flight || !serviceForm.serviceTypeId || !serviceForm.serviceSupplierId) return;
+    const flight = dataset.value.flights.find(
+      (item) => item.flightId === serviceForm.value.flightId
+    );
+    if (!context.selectedStationId.value) {
+      context.actionError.value = 'Station master data is unavailable. Refresh and try again.';
+      return;
+    }
+    if (!flight || !serviceForm.value.serviceTypeId || !serviceForm.value.serviceSupplierId) return;
 
     creatingService.value = true;
     context.actionError.value = '';
@@ -72,10 +87,10 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
         method: 'POST',
         body: {
           flightId: flight.flightId,
-          stationId: `st-${context.selectedStationCode.value.toLowerCase()}`,
-          serviceSupplierId: serviceForm.serviceSupplierId,
-          serviceTypeId: serviceForm.serviceTypeId,
-          referenceRate: serviceForm.referenceRate
+          stationId: context.selectedStationId.value,
+          serviceSupplierId: serviceForm.value.serviceSupplierId,
+          serviceTypeId: serviceForm.value.serviceTypeId,
+          referenceRate: serviceForm.value.referenceRate
         }
       });
       showCreateService.value = false;
@@ -114,6 +129,7 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
     loadingId,
     showCreateService,
     creatingService,
+    optionsLoading,
     stationServiceTypes,
     suppliers,
     serviceForm,

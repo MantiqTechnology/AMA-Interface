@@ -24,7 +24,7 @@ function updateReason(value: string | null) {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <VCard>
-      <VCardTitle>Reject Station Task</VCardTitle>
+      <VCardTitle tag="h2">Reject Station Task</VCardTitle>
 
       <VCardText>
         <VTextarea
