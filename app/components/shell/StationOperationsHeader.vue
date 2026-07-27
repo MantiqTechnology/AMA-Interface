@@ -1,141 +1,117 @@
 <script setup lang="ts">
-import type {
-  SelectOption,
-  StationFlightRow
-} from '../../features/station-operations/types/stationOperations';
-
-type StationServiceForm = {
-  flightId: string;
-  serviceTypeId: string;
-  serviceSupplierId: string;
-  referenceRate: number | null;
-};
+import type { StationOption } from '../../features/station-operations/types/stationOperations';
 
 const props = defineProps<{
-  modelValue: boolean;
-  creating: boolean;
-  flights: StationFlightRow[];
-  serviceTypes: SelectOption[];
-  suppliers: SelectOption[];
-  form: StationServiceForm;
+  stationCode: string;
+  operationalDate: Date | null;
+  stationOptions: StationOption[];
+  selectedStationLabel: string;
+  canChangeStation: boolean;
+  canReadAssets: boolean;
+  lastUpdated: Date | null;
+  refreshing: boolean;
 }>();
 
 const emit = defineEmits<{
-  'update:modelValue': [value: boolean];
-  'update:form': [value: StationServiceForm];
-  submit: [];
+  'update:stationCode': [value: string];
+  'update:operationalDate': [value: Date | null];
+  refresh: [];
 }>();
 
-function updateForm<K extends keyof StationServiceForm>(key: K, value: StationServiceForm[K]) {
-  emit('update:form', {
-    ...props.form,
-    [key]: value
-  });
-}
+const stationItems = computed(() =>
+  props.stationOptions.map((station: StationOption) => ({
+    title: `${station.code} - ${station.name}`,
+    value: station.code
+  }))
+);
 
-const flightId = computed({
-  get: () => props.form.flightId,
+const stationCodeModel = computed({
+  get: () => props.stationCode,
   set: (value: string | null) => {
-    updateForm('flightId', value ?? '');
+    if (value) emit('update:stationCode', value);
   }
 });
 
-const serviceTypeId = computed({
-  get: () => props.form.serviceTypeId,
-  set: (value: string | null) => {
-    updateForm('serviceTypeId', value ?? '');
-  }
+const operationalDateModel = computed({
+  get: () => props.operationalDate,
+  set: (value: Date | null) => emit('update:operationalDate', value)
 });
 
-const serviceSupplierId = computed({
-  get: () => props.form.serviceSupplierId,
-  set: (value: string | null) => {
-    updateForm('serviceSupplierId', value ?? '');
-  }
-});
+const updatedLabel = computed(() => {
+  if (!props.lastUpdated) return 'Not refreshed yet';
 
-const referenceRate = computed({
-  get: () => props.form.referenceRate,
-  set: (value: number | string | null) => {
-    if (value === null || value === '') {
-      updateForm('referenceRate', null);
-      return;
-    }
-
-    const parsedValue = Number(value);
-
-    updateForm('referenceRate', Number.isFinite(parsedValue) ? parsedValue : null);
-  }
-});
-
-const canSubmit = computed(() => {
-  return (
-    Boolean(flightId.value) &&
-    Boolean(serviceTypeId.value) &&
-    Boolean(serviceSupplierId.value) &&
-    referenceRate.value !== null &&
-    referenceRate.value >= 0
-  );
+  return `Updated ${new Intl.DateTimeFormat('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).format(props.lastUpdated)}`;
 });
 </script>
 
 <template>
-  <VDialog
-    :model-value="modelValue"
-    max-width="520"
-    @update:model-value="emit('update:modelValue', $event)"
-  >
-    <VCard>
-      <VCardTitle>Create Station Service</VCardTitle>
+  <VCard border class="mb-5">
+    <div class="flex flex-col gap-5 pa-4 lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <div class="mb-1 flex items-center gap-2">
+          <VIcon icon="mdi-airport" color="primary" />
+          <h1 class="text-h5 font-weight-bold">Station Operations</h1>
+        </div>
+        <p class="text-body-2 text-text-secondary">
+          {{ selectedStationLabel }} · Coordinate flights, services, costs, and verification.
+        </p>
+      </div>
 
-      <VCardText class="flex flex-col gap-4">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
         <VSelect
-          v-model="flightId"
-          :items="flights"
-          item-title="flightNumber"
-          item-value="flightId"
-          label="Flight"
+          v-model="stationCodeModel"
+          :items="stationItems"
+          :disabled="!canChangeStation"
+          label="Station"
+          density="compact"
+          hide-details
           variant="outlined"
+          class="station-operations-header__station"
         />
 
-        <VSelect
-          v-model="serviceTypeId"
-          :items="serviceTypes"
-          item-title="title"
-          item-value="id"
-          label="Service type"
+        <VDateInput
+          v-model="operationalDateModel"
+          label="Operational date"
+          density="compact"
+          hide-details
           variant="outlined"
+          class="station-operations-header__date"
         />
 
-        <VSelect
-          v-model="serviceSupplierId"
-          :items="suppliers"
-          item-title="title"
-          item-value="id"
-          label="Supplier"
+        <VBtn
+          v-if="canReadAssets"
+          to="/asset-management/register"
+          prepend-icon="mdi-package-variant-closed"
           variant="outlined"
-        />
-
-        <VTextField
-          v-model="referenceRate"
-          label="Reference rate"
-          type="number"
-          min="0"
-          variant="outlined"
-        />
-      </VCardText>
-
-      <VCardActions>
-        <VSpacer />
-
-        <VBtn variant="text" :disabled="creating" @click="emit('update:modelValue', false)">
-          Cancel
+        >
+          Assets
         </VBtn>
 
-        <VBtn color="primary" :loading="creating" :disabled="!canSubmit" @click="emit('submit')">
-          Create
-        </VBtn>
-      </VCardActions>
-    </VCard>
-  </VDialog>
+        <div class="flex items-center gap-2">
+          <span class="text-caption text-text-secondary">{{ updatedLabel }}</span>
+          <VBtn
+            icon="mdi-refresh"
+            :loading="refreshing"
+            aria-label="Refresh station operations"
+            variant="text"
+            @click="emit('refresh')"
+          />
+        </div>
+      </div>
+    </div>
+  </VCard>
 </template>
+
+<style scoped>
+.station-operations-header__station {
+  min-width: 240px;
+}
+
+.station-operations-header__date {
+  min-width: 190px;
+}
+</style>
