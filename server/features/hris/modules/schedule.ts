@@ -220,13 +220,18 @@ export class ScheduleModule {
 
   assignCrewSchedule(
     input: Partial<CrewScheduleInput> & {
+      employeeId?: string;
       employeeIds?: string[];
       dutyDate?: string;
       scheduleDate?: string;
-      shiftPatternId?: string;
-      shiftId?: string;
-      flightNumber?: string;
-      route?: string;
+      shiftPatternId?: string | null;
+      shiftId?: string | null;
+      stationId?: string | null;
+      flightOperationId?: string | null;
+      flightNumber?: string | null;
+      route?: string | null;
+      rosterType?: string;
+      notes?: string | null;
       status?: string;
     }
   ) {

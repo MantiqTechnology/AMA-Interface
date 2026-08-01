@@ -18,7 +18,12 @@ const { data: departmentsData } = await useAsyncData('active-departments-employe
   fetchApi<any[]>('/api/hris/departments')
 );
 
-const employees = computed(() => empData.value?.items ?? []);
+const employees = computed(() => {
+  if (Array.isArray(empData.value)) return empData.value;
+  if (empData.value && Array.isArray((empData.value as any).items))
+    return (empData.value as any).items;
+  return [];
+});
 const departmentsList = computed(() => departmentsData.value ?? []);
 
 const headers = [

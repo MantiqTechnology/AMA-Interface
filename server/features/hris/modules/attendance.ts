@@ -146,13 +146,17 @@ export class AttendanceModule {
   recordManualAttendance(
     input: Partial<AttendanceManualInput> & {
       employeeId: string;
-      date: string;
-      checkIn?: string;
-      checkOut?: string;
+      date?: string;
+      attendanceDate?: string;
+      checkIn?: string | null;
+      checkOut?: string | null;
       status: string;
-      remarks?: string;
+      remarks?: string | null;
+      checkInNote?: string | null;
+      checkOutNote?: string | null;
     }
   ) {
+    const targetDate = input.attendanceDate || input.date || now().slice(0, 10);
     const emp = this.sqlite
       .prepare('SELECT id FROM employees WHERE id = ?')
       .get(input.employeeId) as Row | undefined;
@@ -160,7 +164,7 @@ export class AttendanceModule {
 
     const existing = this.sqlite
       .prepare('SELECT id FROM hris_attendances WHERE employee_id = ? AND attendance_date = ?')
-      .get(input.employeeId, input.date) as Row | undefined;
+      .get(input.employeeId, targetDate) as Row | undefined;
 
     let workHours = 0;
     if (input.checkIn && input.checkOut) {
@@ -196,7 +200,7 @@ export class AttendanceModule {
         .run(
           id,
           input.employeeId,
-          input.date,
+          targetDate,
           input.checkIn ?? null,
           input.checkOut ?? null,
           input.status,
@@ -207,7 +211,7 @@ export class AttendanceModule {
         );
     }
 
-    return this.listAttendance({ employeeId: input.employeeId, date: input.date })[0];
+    return this.listAttendance({ employeeId: input.employeeId, date: targetDate })[0];
   }
 
   listAttendance(

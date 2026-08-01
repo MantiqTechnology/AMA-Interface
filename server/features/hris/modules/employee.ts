@@ -194,13 +194,14 @@ export class EmployeeModule {
 
   createEmployee(
     input: Partial<EmployeeCreateInput> & {
-      fullName: string;
-      positionTitle: string;
-      baseStationId?: string;
-      stationId?: string;
-      basicSalary?: number;
-      positionAllowance?: number;
-      flightRatePerHour?: number;
+      fullName?: string;
+      positionTitle?: string;
+      departmentId?: string | null;
+      baseStationId?: string | null;
+      stationId?: string | null;
+      basicSalary?: number | null;
+      positionAllowance?: number | null;
+      flightRatePerHour?: number | null;
     }
   ) {
     const timestamp = now();
@@ -216,10 +217,10 @@ export class EmployeeModule {
       .run(
         id,
         empCode,
-        input.fullName,
-        input.positionTitle,
+        input.fullName ?? 'Employee',
+        input.positionTitle ?? 'Staff',
         input.departmentId ?? null,
-        input.baseStationId ?? null,
+        input.baseStationId ?? input.stationId ?? null,
         input.phone ?? null,
         input.email ?? null,
         input.employmentType ?? 'PERMANENT',
@@ -238,11 +239,11 @@ export class EmployeeModule {
     input: Partial<EmployeeExtendedUpdate> & {
       fullName?: string;
       positionTitle?: string;
-      departmentId?: string;
-      baseStationId?: string;
-      basicSalary?: number;
-      positionAllowance?: number;
-      flightRatePerHour?: number;
+      departmentId?: string | null;
+      baseStationId?: string | null;
+      basicSalary?: number | null;
+      positionAllowance?: number | null;
+      flightRatePerHour?: number | null;
     }
   ) {
     const emp = this.sqlite.prepare('SELECT id FROM employees WHERE id = ?').get(id) as

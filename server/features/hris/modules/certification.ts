@@ -65,7 +65,7 @@ export class CertificationModule {
       certificateNumber: string;
       issuingAuthority: string;
       issuedDate: string;
-      documentUrl?: string;
+      documentUrl?: string | null;
     }
   ) {
     try {
@@ -98,7 +98,10 @@ export class CertificationModule {
     return this.listCertifications({ employeeId: input.employeeId }).find((c) => c.id === id)!;
   }
 
-  updateCertification(id: string, input: Partial<CertificationInput> & { documentUrl?: string }) {
+  updateCertification(
+    id: string,
+    input: Partial<CertificationInput> & { documentUrl?: string | null }
+  ) {
     const timestamp = now();
     const existing = this.sqlite
       .prepare('SELECT id FROM employee_certifications WHERE id = ?')

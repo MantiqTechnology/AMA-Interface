@@ -237,7 +237,16 @@ export class PayrollModule {
     return run;
   }
 
-  createPayrollRun(input: PayrollRunCreate & { notes?: string }, createdBy: string = 'usr-admin') {
+  createPayrollRun(
+    input: Partial<PayrollRunCreate> & {
+      periodMonth: number;
+      periodYear: number;
+      runType?: string;
+      notes?: string | null;
+      employeeIds?: string[];
+    },
+    createdBy: string = 'usr-admin'
+  ) {
     try {
       this.sqlite.exec('ALTER TABLE hris_payroll_runs ADD COLUMN created_by TEXT');
     } catch {}
