@@ -22,6 +22,11 @@ const rows = computed(() =>
     ['PENDING_READINESS', 'BLOCKED', 'READY_FOR_APPROVAL'].includes(flight.currentStatus)
   )
 );
+const departureRows = computed(() =>
+  (data.value?.flights ?? []).filter((flight) =>
+    ['CHECK_IN_CLOSED', 'READY_FOR_DEPARTURE'].includes(flight.currentStatus)
+  )
+);
 
 async function runAction(id: string, action: 'evaluate' | 'approve') {
   loadingId.value = `${id}-${action}`;
@@ -47,9 +52,9 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
   <VContainer class="px-3 py-5 md:px-4" fluid>
     <div class="mb-5 flex flex-wrap items-end gap-4">
       <div>
-        <h1 class="text-h4 font-weight-bold text-text-primary">Readiness & Approvals</h1>
+        <h1 class="text-h4 font-weight-bold text-text-primary">Operational Assurance</h1>
         <p class="text-text-muted">
-          Operational gate for aircraft, crew, manifest, fuel, handling, and duty separation.
+          Planning Readiness is separated from the final Departure Assurance gate.
         </p>
       </div>
       <VSpacer />
@@ -74,7 +79,12 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
       </VCardText>
     </VCard>
 
-    <VCard border>
+    <h2 class="text-h6 mb-2">Planning Readiness</h2>
+    <p class="mb-3 text-sm text-text-secondary">
+      Aircraft, route, crew, planning documents and separation of duties. Manifest and origin
+      sign-off do not block flight approval here.
+    </p>
+    <VCard border class="mb-6">
       <VTable density="comfortable" hover>
         <thead>
           <tr>
@@ -147,6 +157,32 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
           </tr>
         </tbody>
       </VTable>
+    </VCard>
+
+    <h2 class="text-h6 mb-2">Departure Assurance</h2>
+    <p class="mb-3 text-sm text-text-secondary">
+      Final manifest lock, DG decision, fuel, origin tasks, documents and dual station sign-off.
+    </p>
+    <VCard border>
+      <VList>
+        <VListItem
+          v-for="flight in departureRows"
+          :key="flight.id"
+          :subtitle="`${flight.originStationCode} → ${flight.destinationStationCode} · ${flight.flightDate}`"
+          :title="flight.flightNumber"
+          :to="`/flights/${flight.id}/manifest`"
+        >
+          <template #append>
+            <FlightsFlightStatusChip :status="flight.currentStatus" />
+            <VIcon class="ml-3" icon="mdi-chevron-right" />
+          </template>
+        </VListItem>
+        <VListItem
+          v-if="!pending && departureRows.length === 0"
+          subtitle="Flights appear here after check-in or load intake is closed."
+          title="No departure assurance item"
+        />
+      </VList>
     </VCard>
   </VContainer>
 </template>

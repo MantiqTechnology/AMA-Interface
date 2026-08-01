@@ -1,11 +1,17 @@
-import { flightOperationIdParamsSchema } from '../../../../../../shared/contracts/flight-operations';
-import { defineApiEventHandler } from '../../../../../utils/api-response';
-import { getDemoActorId, requireDemoPermission } from '../../../../../utils/auth';
-import { getServices } from '../../../../../utils/services';
-import { parseParams } from '../../../../../utils/validation';
+import { flightOperationIdParamsSchema } from '#shared/contracts/flight-operations';
+import { defineApiEventHandler } from '#server/utils/api-response';
+import { getDemoActorId, requireDemoPermission } from '#server/utils/auth';
+import { getServices } from '#server/utils/services';
+import { parseParams } from '#server/utils/validation';
 
-export default defineApiEventHandler((event) => {
-  requireDemoPermission(event, 'flight.closure.create');
+export default defineApiEventHandler(async (event) => {
+  requireDemoPermission(event, 'flight.closure.execute');
   const params = parseParams(event, flightOperationIdParamsSchema);
-  return getServices().flightOperations.closeFlight(params.id, getDemoActorId(event));
+  const services = getServices();
+  const result = services.flightOperations.closeFlightWithRequirements(
+    params.id,
+    getDemoActorId(event)
+  );
+
+  return result;
 });

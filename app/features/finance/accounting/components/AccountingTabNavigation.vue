@@ -87,17 +87,17 @@ function countFor(key?: string) {
   gap: 7px;
 }
 .workbench-tab.v-tab--selected {
-  background: rgba(40, 110, 158, 0.1);
-  color: #0b2d4d;
+  background: rgba(var(--v-theme-info), 0.1);
+  color: rgb(var(--v-theme-primary));
 }
 .tab-rail :deep(.v-tab__slider) {
   height: 3px;
 }
 .tab-count {
   align-items: center;
-  background: rgba(8, 43, 73, 0.1);
+  background: rgba(var(--v-theme-primary), 0.1);
   border-radius: 9px;
-  color: #0b2d4d;
+  color: rgb(var(--v-theme-primary));
   display: inline-flex;
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
@@ -107,7 +107,7 @@ function countFor(key?: string) {
   padding: 0 5px;
 }
 .tab-count--warning {
-  background: rgba(242, 181, 68, 0.25);
-  color: #775000;
+  background: rgba(var(--v-theme-warning), 0.22);
+  color: rgb(var(--v-theme-text-primary));
 }
 </style>

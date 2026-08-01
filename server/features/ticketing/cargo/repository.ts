@@ -58,9 +58,28 @@ type CargoBookingInsert = {
   dgAcceptanceStatus: 'NOT_APPLICABLE' | 'PENDING';
   paymentMethod: string;
   agentId: string | null;
+  agentCodeSnapshot: string | null;
+  agentNameSnapshot: string | null;
+  commissionRuleId: string | null;
+  commissionRuleVersion: number | null;
+  commissionBasisType: string | null;
+  commissionBasisAmount: number | null;
+  commissionAmount: number | null;
+  commissionCurrency: string | null;
   tariffRate: number;
   totalTariff: number;
   rateCardId: string;
+  sourceRateVersion: number | null;
+  rateCodeSnapshot: string | null;
+  currencySnapshot: string | null;
+  baseRateSnapshot: number | null;
+  minimumChargeSnapshot: number | null;
+  rateUnitSnapshot: string | null;
+  priceBasisSnapshot: string | null;
+  taxRuleSnapshot: string | null;
+  pricingScopeSnapshot: string | null;
+  calculationLinesSnapshot: string | null;
+  totalAmountSnapshot: number | null;
   taxCodeId: string | null;
   taxCode: string | null;
   taxRateBasisPoints: number;
@@ -206,9 +225,14 @@ export class CargoBookingRepository {
              id, flight_operation_id, sender_name, receiver_name, description, actual_weight_kg,
              length_cm, width_cm, height_cm, volume_weight_kg, chargeable_weight_kg,
              is_dangerous, dg_category_id, dg_acceptance_status, payment_method, payment_status,
-             agent_id, tariff_rate, total_tariff, rate_card_id, tax_code_id, tax_code,
+             agent_id, agent_code_snapshot, agent_name_snapshot, commission_rule_id,
+             commission_rule_version, commission_basis_type, commission_basis_amount,
+             commission_amount, commission_currency, tariff_rate, total_tariff, rate_card_id, source_rate_version,
+             rate_code_snapshot, currency_snapshot, base_rate_snapshot, minimum_charge_snapshot,
+             rate_unit_snapshot, price_basis_snapshot, tax_rule_snapshot, pricing_scope_snapshot,
+             calculation_lines_snapshot, total_amount_snapshot, tax_code_id, tax_code,
              tax_rate_basis_points, tax_amount, total_amount, currency_code, status, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNPAID', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOOKED', ?, ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNPAID', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOOKED', ?, ?)`
         )
         .run(
           input.id,
@@ -227,9 +251,28 @@ export class CargoBookingRepository {
           input.dgAcceptanceStatus,
           input.paymentMethod,
           input.agentId,
+          input.agentCodeSnapshot,
+          input.agentNameSnapshot,
+          input.commissionRuleId,
+          input.commissionRuleVersion,
+          input.commissionBasisType,
+          input.commissionBasisAmount,
+          input.commissionAmount,
+          input.commissionCurrency,
           input.tariffRate,
           input.totalTariff,
           input.rateCardId,
+          input.sourceRateVersion,
+          input.rateCodeSnapshot,
+          input.currencySnapshot,
+          input.baseRateSnapshot,
+          input.minimumChargeSnapshot,
+          input.rateUnitSnapshot,
+          input.priceBasisSnapshot,
+          input.taxRuleSnapshot,
+          input.pricingScopeSnapshot,
+          input.calculationLinesSnapshot,
+          input.totalAmountSnapshot,
           input.taxCodeId,
           input.taxCode,
           input.taxRateBasisPoints,
@@ -262,7 +305,8 @@ export class CargoBookingRepository {
         .prepare(
           `UPDATE flight_manifests
            SET status_id = 'manifest-status-draft', approved_by_user_id = NULL, approved_at = NULL,
-               updated_at = ?
+               submitted_by_user_id = NULL, submitted_at = NULL, rejection_reason = NULL,
+               version = version + 1, updated_at = ?
            WHERE id = ?`
         )
         .run(input.timestamp, manifestId);

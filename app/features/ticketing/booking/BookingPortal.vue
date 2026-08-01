@@ -147,12 +147,12 @@ function cargoBooked(booking: CargoBookingDto) {
 <style scoped>
 .ticketing-public-shell {
   min-height: 100vh;
-  background: #f4f7f8;
+  background: rgb(var(--v-theme-background));
 }
 .ticketing-public-header {
   height: 72px;
-  border-bottom: 1px solid #dce3e7;
-  background: #ffffff;
+  border-bottom: 1px solid rgb(var(--v-theme-border-default));
+  background: rgb(var(--v-theme-surface));
 }
 .ticketing-assurance-grid {
   display: grid;

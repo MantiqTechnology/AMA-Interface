@@ -51,6 +51,17 @@ type PassengerTicketInsert = {
   baggageWeightKg: number;
   ticketPrice: number;
   rateCardId: string;
+  sourceRateVersion: number | null;
+  rateCodeSnapshot: string | null;
+  currencySnapshot: string | null;
+  baseRateSnapshot: number | null;
+  minimumChargeSnapshot: number | null;
+  rateUnitSnapshot: string | null;
+  priceBasisSnapshot: string | null;
+  taxRuleSnapshot: string | null;
+  pricingScopeSnapshot: string | null;
+  calculationLinesSnapshot: string | null;
+  totalAmountSnapshot: number | null;
   taxCodeId: string | null;
   taxCode: string | null;
   taxRateBasisPoints: number;
@@ -59,6 +70,14 @@ type PassengerTicketInsert = {
   currencyCode: string;
   loyaltyMemberId: string | null;
   agentId: string | null;
+  agentCodeSnapshot: string | null;
+  agentNameSnapshot: string | null;
+  commissionRuleId: string | null;
+  commissionRuleVersion: number | null;
+  commissionBasisType: string | null;
+  commissionBasisAmount: number | null;
+  commissionAmount: number | null;
+  commissionCurrency: string | null;
   timestamp: string;
 };
 
@@ -369,10 +388,15 @@ export class PassengerTicketRepository {
         .prepare(
           `INSERT INTO passenger_tickets (
              id, flight_operation_id, passenger_name, document_type, document_number, seat_number,
-             passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, tax_code_id,
+             passenger_weight_kg, baggage_weight_kg, ticket_price, rate_card_id, source_rate_version,
+             rate_code_snapshot, currency_snapshot, base_rate_snapshot, minimum_charge_snapshot,
+             rate_unit_snapshot, price_basis_snapshot, tax_rule_snapshot, pricing_scope_snapshot,
+             calculation_lines_snapshot, total_amount_snapshot, tax_code_id,
              tax_code, tax_rate_basis_points, tax_amount, total_amount, currency_code, ticket_status, payment_status,
-             check_in_status, loyalty_member_id, agent_id, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'UNPAID', 'PENDING', ?, ?, ?, ?)`
+             check_in_status, loyalty_member_id, agent_id, agent_code_snapshot, agent_name_snapshot,
+             commission_rule_id, commission_rule_version, commission_basis_type, commission_basis_amount,
+             commission_amount, commission_currency, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'UNPAID', 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           input.id,
@@ -385,6 +409,17 @@ export class PassengerTicketRepository {
           input.baggageWeightKg,
           input.ticketPrice,
           input.rateCardId,
+          input.sourceRateVersion,
+          input.rateCodeSnapshot,
+          input.currencySnapshot,
+          input.baseRateSnapshot,
+          input.minimumChargeSnapshot,
+          input.rateUnitSnapshot,
+          input.priceBasisSnapshot,
+          input.taxRuleSnapshot,
+          input.pricingScopeSnapshot,
+          input.calculationLinesSnapshot,
+          input.totalAmountSnapshot,
           input.taxCodeId,
           input.taxCode,
           input.taxRateBasisPoints,
@@ -393,6 +428,14 @@ export class PassengerTicketRepository {
           input.currencyCode,
           input.loyaltyMemberId,
           input.agentId,
+          input.agentCodeSnapshot,
+          input.agentNameSnapshot,
+          input.commissionRuleId,
+          input.commissionRuleVersion,
+          input.commissionBasisType,
+          input.commissionBasisAmount,
+          input.commissionAmount,
+          input.commissionCurrency,
           input.timestamp,
           input.timestamp
         );
@@ -419,7 +462,8 @@ export class PassengerTicketRepository {
         .prepare(
           `UPDATE flight_manifests
            SET status_id = 'manifest-status-draft', approved_by_user_id = NULL, approved_at = NULL,
-               updated_at = ?
+               submitted_by_user_id = NULL, submitted_at = NULL, rejection_reason = NULL,
+               version = version + 1, updated_at = ?
            WHERE id = ?`
         )
         .run(input.timestamp, manifestId);
@@ -475,7 +519,8 @@ export class PassengerTicketRepository {
       .prepare(
         `UPDATE flight_manifests
          SET status_id = 'manifest-status-draft', approved_by_user_id = NULL,
-             approved_at = NULL, updated_at = ?
+             approved_at = NULL, submitted_by_user_id = NULL, submitted_at = NULL,
+             rejection_reason = NULL, version = version + 1, updated_at = ?
          WHERE id = ?`
       )
       .run(timestamp, manifestId);

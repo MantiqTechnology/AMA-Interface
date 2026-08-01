@@ -32,6 +32,128 @@ await setup({
 });
 
 describe('flight request APIs', () => {
+  it('enforces station scope on the persistent Station Operations workbench', async () => {
+    const denied = await $fetch<ApiResponse<unknown>>('/api/flight-operations/station-operations', {
+      headers: { cookie: 'ama_demo_role=Station%20Admin' },
+      query: { stationCode: 'DJJ', operationalDate: '2026-07-17' },
+      ignoreResponseError: true
+    });
+    expect(!denied.ok && denied.error.code).toBe('FLIGHT_STATION_FORBIDDEN');
+
+    const allowed = await $fetch<
+      ApiResponse<
+        Array<{
+          originStationCode: string;
+          destinationStationCode: string;
+          tasks: Array<{ stationCode: string }>;
+          services: Array<{ stationCode: string }>;
+          costs: Array<{ stationCode: string }>;
+        }>
+      >
+    >('/api/flight-operations/station-operations', {
+      headers: { cookie: 'ama_demo_role=Station%20Admin' },
+      query: { stationCode: 'WMX', operationalDate: '2026-07-17' }
+    });
+    expect(allowed.ok).toBe(true);
+    if (!allowed.ok) throw new Error(allowed.error.message);
+    expect(allowed.data.length).toBeGreaterThan(0);
+    expect(
+      allowed.data.every((flight) =>
+        [flight.originStationCode, flight.destinationStationCode].includes('WMX')
+      )
+    ).toBe(true);
+    expect(
+      allowed.data.every((flight) =>
+        [...flight.tasks, ...flight.services, ...flight.costs].every(
+          (record) => record.stationCode === 'WMX'
+        )
+      )
+    ).toBe(true);
+  });
+
+  it('persists evidence and dual approval for station sign-off through public APIs', async () => {
+    const tasks = await $fetch<ApiResponse<Array<Record<string, unknown>>>>(
+      '/api/flight-operations/flights/fop-ticketing-passenger/station-tasks',
+      { headers: { cookie: 'ama_demo_role=Station%20Admin' } }
+    );
+    expect(tasks.ok).toBe(true);
+    if (!tasks.ok) throw new Error(tasks.error.message);
+    expect(tasks.data.every((task) => task.station_code === 'WMX')).toBe(true);
+    const signoff = tasks.data.find((task) => task.task_code === 'DESTINATION_STATION_SIGNOFF');
+    expect(signoff).toBeDefined();
+
+    for (const task of tasks.data.filter(
+      (item) => item.task_code !== 'DESTINATION_STATION_SIGNOFF'
+    )) {
+      const dependencyId = String(task.id);
+      await $fetch(`/api/flight-operations/station-tasks/${dependencyId}/evidence`, {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Station%20Admin' },
+        body: {
+          expectedVersion: task.version,
+          fileName: `${String(task.task_code).toLowerCase()}.pdf`
+        }
+      });
+      await $fetch(`/api/flight-operations/station-tasks/${dependencyId}/actions/verify`, {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Station%20Admin' },
+        body: { expectedVersion: task.version }
+      });
+    }
+
+    const taskId = String(signoff?.id);
+    const evidence = await $fetch<ApiResponse<Record<string, unknown>>>(
+      `/api/flight-operations/station-tasks/${taskId}/evidence`,
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Station%20Admin' },
+        body: {
+          expectedVersion: signoff?.version,
+          fileName: 'destination-signoff.pdf',
+          documentType: 'STATION_SIGNOFF',
+          notes: 'Destination evidence'
+        }
+      }
+    );
+    expect(evidence.ok && evidence.data.station_task_id).toBe(taskId);
+
+    const verified = await $fetch<ApiResponse<Record<string, unknown>>>(
+      `/api/flight-operations/station-tasks/${taskId}/actions/verify`,
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Station%20Admin' },
+        body: { expectedVersion: signoff?.version, reason: 'Station verification completed.' }
+      }
+    );
+    expect(verified.ok && verified.data.status).toBe('VERIFIED');
+
+    const approved = await $fetch<ApiResponse<Record<string, unknown>>>(
+      `/api/flight-operations/station-tasks/${taskId}/actions/approve-occ`,
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=OCC' },
+        body: {
+          decision: 'APPROVED',
+          expectedVersion: verified.ok ? verified.data.version : 0,
+          reason: 'OCC reviewed evidence.'
+        }
+      }
+    );
+    expect(approved.ok && approved.data.status).toBe('VERIFIED');
+
+    const audit = await $fetch<ApiResponse<Array<Record<string, unknown>>>>(
+      '/api/flight-operations/flights/fop-ticketing-passenger/operational-audit',
+      { headers: { cookie: 'ama_demo_role=OCC' } }
+    );
+    expect(audit.ok).toBe(true);
+    expect(
+      audit.ok &&
+        audit.data.some(
+          (entry) => entry.module === 'STATION_TASK_APPROVAL' && entry.action === 'APPROVE'
+        )
+    ).toBe(true);
+  });
+
   it('passes readiness for ON_DUTY crew already assigned to the flight', async () => {
     const response = await $fetch<ApiResponse<FlightOperationDetailDto>>(
       '/api/flight-operations/flights/fop-ticketing-passenger/actions/evaluate',
@@ -112,7 +234,7 @@ describe('flight request APIs', () => {
         ignoreResponseError: true
       }
     );
-    expect(!movementDenied.ok && movementDenied.error.code).toBe('FLIGHT_STATION_FORBIDDEN');
+    expect(!movementDenied.ok && movementDenied.error.code).toBe('FORBIDDEN');
   });
 
   it('returns the nearest upcoming non-terminal assignment for an aircraft', async () => {

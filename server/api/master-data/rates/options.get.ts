@@ -1,3 +1,7 @@
 import { getRateCardService } from '../../../features/commercial/rates';
 import { defineApiEventHandler } from '../../../utils/api-response';
-export default defineApiEventHandler(() => getRateCardService().options());
+import { requireDemoPermission } from '../../../utils/auth';
+export default defineApiEventHandler((event) => {
+  requireDemoPermission(event, 'rate.read');
+  return getRateCardService().options();
+});

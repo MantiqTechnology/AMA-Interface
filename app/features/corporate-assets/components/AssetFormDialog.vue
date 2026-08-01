@@ -28,6 +28,14 @@ const form = reactive({
   conditionStatus: 'SERVICEABLE'
 });
 const { data: stations } = await useFetch<ApiResponse<any[]>>('/api/master-data/stations/options');
+const stationOptions = computed(() =>
+  stations.value?.ok
+    ? stations.value.data.map((station: any) => ({
+        ...station,
+        label: `${station.stationCode} · ${station.stationName}`
+      }))
+    : []
+);
 const { data: departments } = await useFetch<ApiResponse<any[]>>(
   '/api/master-data/departments/options'
 );
@@ -68,7 +76,7 @@ async function save() {
           <VCol cols="12" md="6">
             <VSelect
               v-model="form.stationId"
-              :items="stations?.data ?? []"
+              :items="stationOptions"
               item-title="label"
               item-value="id"
               label="Station"
@@ -86,7 +94,11 @@ async function save() {
             />
           </VCol>
           <VCol cols="12" md="4">
-            <VSelect v-model="form.locationType" :items="assetLocationTypes" label="Location type" />
+            <VSelect
+              v-model="form.locationType"
+              :items="assetLocationTypes"
+              label="Location type"
+            />
           </VCol>
           <VCol cols="12" md="8">
             <VTextField v-model="form.locationDetail" label="Location detail" />

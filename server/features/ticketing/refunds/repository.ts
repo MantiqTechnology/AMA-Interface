@@ -299,7 +299,8 @@ export class TicketRefundRepository {
       .prepare(
         `UPDATE flight_manifests
          SET status_id = 'manifest-status-draft', approved_by_user_id = NULL,
-             approved_at = NULL, updated_at = ?
+             approved_at = NULL, submitted_by_user_id = NULL, submitted_at = NULL,
+             rejection_reason = NULL, version = version + 1, updated_at = ?
          WHERE id = ?`
       )
       .run(timestamp, manifestId);

@@ -10,12 +10,19 @@ const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null
 const submitting = ref(false);
 const serverError = ref('');
 const form = reactive<RateCardInput>({
+  expectedVersion: undefined,
   rateCode: '',
+  rateName: null,
   serviceType: 'CHARTER',
+  lifecycleStatus: 'DRAFT',
   originStationId: '',
   destinationStationId: '',
+  routeId: null,
   customerId: null,
+  agentId: null,
+  contractId: null,
   aircraftType: null,
+  aircraftTypeId: null,
   currencyId: '',
   taxCodeId: null,
   baseRate: 0,
@@ -27,6 +34,8 @@ const form = reactive<RateCardInput>({
   ratePriority: 100,
   minimumCharge: null,
   demoUsageNote: null,
+  publicNote: null,
+  internalPricingNote: null,
   effectiveFrom: '',
   effectiveTo: null
 });
@@ -43,18 +52,29 @@ watch(
     serverError.value = '';
     Object.assign(form, {
       rateCode: props.record ? (props.record.rateCode as RateCardInput['rateCode']) : '',
+      expectedVersion: props.record?.version,
+      rateName: props.record ? (props.record.rateName as RateCardInput['rateName']) : null,
       serviceType: props.record
         ? (props.record.serviceType as RateCardInput['serviceType'])
         : 'CHARTER',
+      lifecycleStatus: props.record
+        ? (props.record.lifecycleStatus as RateCardInput['lifecycleStatus'])
+        : 'DRAFT',
       originStationId: props.record
         ? (props.record.originStationId as RateCardInput['originStationId'])
         : '',
       destinationStationId: props.record
         ? (props.record.destinationStationId as RateCardInput['destinationStationId'])
         : '',
+      routeId: props.record ? (props.record.routeId as RateCardInput['routeId']) : null,
       customerId: props.record ? (props.record.customerId as RateCardInput['customerId']) : null,
+      agentId: props.record ? (props.record.agentId as RateCardInput['agentId']) : null,
+      contractId: props.record ? (props.record.contractId as RateCardInput['contractId']) : null,
       aircraftType: props.record
         ? (props.record.aircraftType as RateCardInput['aircraftType'])
+        : null,
+      aircraftTypeId: props.record
+        ? (props.record.aircraftTypeId as RateCardInput['aircraftTypeId'])
         : null,
       currencyId: props.record ? (props.record.currencyId as RateCardInput['currencyId']) : '',
       taxCodeId: props.record ? (props.record.taxCodeId as RateCardInput['taxCodeId']) : null,
@@ -80,6 +100,10 @@ watch(
         : null,
       demoUsageNote: props.record
         ? (props.record.demoUsageNote as RateCardInput['demoUsageNote'])
+        : null,
+      publicNote: props.record ? (props.record.publicNote as RateCardInput['publicNote']) : null,
+      internalPricingNote: props.record
+        ? (props.record.internalPricingNote as RateCardInput['internalPricingNote'])
         : null,
       effectiveFrom: props.record
         ? (props.record.effectiveFrom as RateCardInput['effectiveFrom'])
@@ -131,6 +155,14 @@ async function submit() {
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VTextField
+                v-model="form.rateName"
+                label="Rate name"
+                type="text"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
               <VSelect
                 v-model="form.serviceType"
                 :items="['CHARTER', 'PASSENGER', 'CARGO']"
@@ -174,7 +206,14 @@ async function submit() {
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.rateUnit"
-                :items="['PER_FLIGHT', 'PER_PASSENGER', 'PER_KG']"
+                :items="[
+                  'PER_FLIGHT',
+                  'PER_PASSENGER',
+                  'PER_KG',
+                  'PER_PIECE',
+                  'PER_SEGMENT',
+                  'FLAT'
+                ]"
                 label="Rate unit"
                 :rules="[required('Rate unit')]"
                 variant="outlined"
@@ -184,10 +223,16 @@ async function submit() {
               <VSelect
                 v-model="form.pricingScope"
                 :items="[
+                  'PUBLIC',
                   'PUBLIC_COUNTER',
+                  'CUSTOMER_CONTRACT',
                   'CORPORATE_CONTRACT',
+                  'AGENT_CONTRACT',
                   'CARGO_CONTRACT',
-                  'CHARTER_CONTRACT'
+                  'CHARTER_CONTRACT',
+                  'ROUTE',
+                  'STATION_PAIR',
+                  'INTERNAL'
                 ]"
                 label="Pricing scope"
                 :rules="[required('Pricing scope')]"
@@ -197,7 +242,16 @@ async function submit() {
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.bookingChannel"
-                :items="['COUNTER', 'AGENT', 'CORPORATE', 'CARGO', 'CHARTER']"
+                :items="[
+                  'COUNTER',
+                  'AGENT',
+                  'CORPORATE',
+                  'CARGO',
+                  'CHARTER',
+                  'WEBSITE',
+                  'INTERNAL_OPERATIONS',
+                  'API_PARTNER'
+                ]"
                 label="Booking channel"
                 :rules="[required('Booking channel')]"
                 variant="outlined"
@@ -214,7 +268,14 @@ async function submit() {
             <VCol v-if="form.serviceType === 'CARGO'" cols="12" md="6">
               <VSelect
                 v-model="form.cargoPriceBasis"
-                :items="['ACTUAL_WEIGHT', 'VOLUME_WEIGHT', 'CHARGEABLE_WEIGHT']"
+                :items="[
+                  'ACTUAL_WEIGHT',
+                  'VOLUME_WEIGHT',
+                  'VOLUMETRIC_WEIGHT',
+                  'CHARGEABLE_WEIGHT',
+                  'PIECE',
+                  'FLAT'
+                ]"
                 label="Cargo price basis"
                 variant="outlined"
               />
@@ -239,7 +300,23 @@ async function submit() {
             <VCol cols="12">
               <VTextarea
                 v-model="form.demoUsageNote"
-                label="Demo usage note"
+                label="Usage note"
+                rows="3"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextarea
+                v-model="form.publicNote"
+                label="Public pricing note"
+                rows="3"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextarea
+                v-model="form.internalPricingNote"
+                label="Internal pricing note"
                 rows="3"
                 variant="outlined"
               />

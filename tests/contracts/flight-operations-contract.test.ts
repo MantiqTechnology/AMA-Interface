@@ -36,6 +36,7 @@ describe('flight operation request contracts', () => {
   it('coerces form numeric strings and blank nullable fields on related POST bodies', () => {
     const cargo = createCargoBodySchema.parse({
       manifestId: 'manifest-1',
+      expectedVersion: 1,
       description: 'Medical cargo',
       senderName: '',
       receiverName: '',

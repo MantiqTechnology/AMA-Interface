@@ -147,6 +147,7 @@ export class PassengerTicketService {
         422
       );
     }
+    let commissionSnapshot = null as ReturnType<AgentRepository['getCommissionSnapshot']> | null;
     if (input.agentId) {
       const agent = await this.agentRepository.getById(input.agentId);
       if (!agent?.isActive) {
@@ -156,10 +157,17 @@ export class PassengerTicketService {
           422
         );
       }
+      commissionSnapshot = this.agentRepository.getCommissionSnapshot(
+        input.agentId,
+        flight.baseRate,
+        flight.currencyCode
+      );
     }
     const timestamp = new Date().toISOString();
     const id = `TKT-${nanoid(8).toUpperCase()}`;
-    const taxAmount = Math.round((flight.baseRate * flight.taxRateBasisPoints) / 10_000);
+    const taxAmount = Number(
+      (BigInt(flight.baseRate) * BigInt(flight.taxRateBasisPoints) + 5000n) / 10_000n
+    );
     try {
       this.repository.createAndSync({
         id,
@@ -172,6 +180,20 @@ export class PassengerTicketService {
         baggageWeightKg: input.baggageWeightKg,
         ticketPrice: flight.baseRate,
         rateCardId: flight.rateCardId,
+        sourceRateVersion: flight.sourceRateVersion,
+        rateCodeSnapshot: flight.rateCodeSnapshot,
+        currencySnapshot: flight.currencyCode,
+        baseRateSnapshot: flight.baseRate,
+        minimumChargeSnapshot: flight.minimumCharge,
+        rateUnitSnapshot: flight.rateUnitSnapshot,
+        priceBasisSnapshot: flight.priceBasisSnapshot,
+        taxRuleSnapshot: flight.taxCode,
+        pricingScopeSnapshot: flight.pricingScopeSnapshot,
+        calculationLinesSnapshot: JSON.stringify([
+          `Passenger fare uses ${flight.rateCodeSnapshot ?? flight.rateCardId}.`,
+          `Tax basis points: ${flight.taxRateBasisPoints}.`
+        ]),
+        totalAmountSnapshot: flight.baseRate + taxAmount,
         taxCodeId: flight.taxCodeId,
         taxCode: flight.taxCode,
         taxRateBasisPoints: flight.taxRateBasisPoints,
@@ -180,6 +202,14 @@ export class PassengerTicketService {
         currencyCode: flight.currencyCode,
         loyaltyMemberId: input.loyaltyMemberId || null,
         agentId: input.agentId || null,
+        agentCodeSnapshot: commissionSnapshot?.agentCodeSnapshot ?? null,
+        agentNameSnapshot: commissionSnapshot?.agentNameSnapshot ?? null,
+        commissionRuleId: commissionSnapshot?.commissionRuleId ?? null,
+        commissionRuleVersion: commissionSnapshot?.commissionRuleVersion ?? null,
+        commissionBasisType: commissionSnapshot?.commissionBasisType ?? null,
+        commissionBasisAmount: commissionSnapshot?.commissionBasisAmount ?? null,
+        commissionAmount: commissionSnapshot?.commissionAmount ?? null,
+        commissionCurrency: commissionSnapshot?.commissionCurrency ?? null,
         timestamp
       });
     } catch (error) {

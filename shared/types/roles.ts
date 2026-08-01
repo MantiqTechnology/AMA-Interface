@@ -44,6 +44,94 @@ export const demoRoleStationScopes: Record<DemoRole, readonly string[]> = {
   Employee: ['ALL']
 };
 
+const personnelReadPermissions = [
+  'personnel.read',
+  'personnel.license.read',
+  'personnel.medical.read',
+  'personnel.qualification.read',
+  'personnel.documents.read',
+  'personnel.history.read'
+] as const;
+
+const personnelManagePermissions = [
+  'personnel.manage',
+  'personnel.assignment.manage',
+  'personnel.license.manage',
+  'personnel.medical.manage',
+  'personnel.qualification.manage',
+  'personnel.documents.manage'
+] as const;
+
+const customerReadPermissions = [
+  'customer.read',
+  'customer.contact.read',
+  'customer.rate.read',
+  'customer.contract.read',
+  'customer.document.read',
+  'customer.activity.read',
+  'customer.note.read',
+  'customer.history.read'
+] as const;
+
+const customerManagePermissions = [
+  'customer.manage',
+  'customer.contact.manage',
+  'customer.document.manage',
+  'customer.note.manage'
+] as const;
+
+const customerFinancePermissions = [
+  'customer.financial.read',
+  'customer.credit.manage',
+  'customer.sensitive.read'
+] as const;
+
+const agentReadPermissions = [
+  'agent.read',
+  'agent.contact.read',
+  'agent.commission.read',
+  'agent.rate.read',
+  'agent.contract.read',
+  'agent.document.read',
+  'agent.activity.read',
+  'agent.note.read',
+  'agent.history.read'
+] as const;
+
+const agentManagePermissions = [
+  'agent.manage',
+  'agent.activate',
+  'agent.suspend',
+  'agent.archive',
+  'agent.contact.manage',
+  'agent.commission.manage',
+  'agent.document.manage',
+  'agent.note.manage'
+] as const;
+
+const agentFinancePermissions = [
+  'agent.commission.financial.read',
+  'agent.sensitive.read'
+] as const;
+
+const rateReadPermissions = [
+  'rate.read',
+  'rate.contract.read',
+  'rate.document.read',
+  'rate.history.read',
+  'rate.preview'
+] as const;
+
+const rateManagePermissions = [
+  'rate.manage',
+  'rate.activate',
+  'rate.archive',
+  'rate.duplicate',
+  'rate.document.manage'
+] as const;
+
+const commercialContractPermissions = ['commercial.contract.read'] as const;
+
 export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
   'Demo Admin': ['*'],
   Director: [
@@ -70,7 +158,18 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'hris.employee.read',
     'hris.org.read',
     'hris.kpi.read',
-    'hris.payroll.read'
+    'hris.payroll.read',
+    ...personnelReadPermissions,
+    ...customerReadPermissions,
+    ...customerFinancePermissions,
+    ...agentReadPermissions,
+    ...agentFinancePermissions,
+    ...rateReadPermissions,
+    ...commercialContractPermissions,
+    'station.task.view',
+    'readiness.view',
+    'flight.manifest.view',
+    'flight.closure.execute'
   ],
   OCC: [
     'platform.dashboard.view',
@@ -89,7 +188,29 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'document.read',
     'document.upload',
     'inventory.read',
-    'master_data.read'
+    'master_data.read',
+    ...personnelReadPermissions,
+    ...personnelManagePermissions,
+    ...customerReadPermissions,
+    ...customerManagePermissions,
+    ...agentReadPermissions,
+    ...agentManagePermissions,
+    ...rateReadPermissions,
+    ...rateManagePermissions,
+    ...commercialContractPermissions,
+    'station.task.view',
+    'station.signoff.approve',
+    'readiness.view',
+    'readiness.attest',
+    'flight.manifest.view',
+    'flight.manifest.sensitive.read',
+    'flight.manifest.review',
+    'flight.manifest.lock',
+    'flight.manifest.unlock',
+    'flight.manifest.dg.decide',
+    'flight.departure.assurance.evaluate',
+    'flight.departure.ready',
+    'flight.departure.execute'
   ],
   'Station Admin': [
     'platform.dashboard.view',
@@ -109,7 +230,32 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'master_data.read',
     'hris.attendance.read',
     'hris.attendance.manage',
-    'hris.schedule.read'
+    'hris.schedule.read',
+    ...personnelReadPermissions,
+    'customer.read',
+    'customer.contact.read',
+    'customer.activity.read',
+    'customer.document.read',
+    ...agentReadPermissions,
+    ...rateReadPermissions,
+    ...commercialContractPermissions,
+    'personnel.assignment.manage',
+    'personnel.documents.manage',
+    'station.task.view',
+    'station.task.assign',
+    'station.task.start',
+    'station.task.verify',
+    'station.task.reject',
+    'station.evidence.add',
+    'station.origin.signoff',
+    'station.destination.signoff',
+    'readiness.view',
+    'readiness.attest',
+    'flight.manifest.view',
+    'flight.manifest.sensitive.read',
+    'flight.manifest.prepare',
+    'flight.manifest.submit',
+    'flight.checkin.close'
   ],
   'Finance Reviewer': [
     'platform.dashboard.view',
@@ -126,7 +272,13 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read',
     'asset.finance.read',
     'inventory.valuation.read',
-    'hris.payroll.read'
+    'hris.payroll.read',
+    ...customerReadPermissions,
+    ...customerFinancePermissions,
+    ...agentReadPermissions,
+    ...agentFinancePermissions,
+    ...rateReadPermissions,
+    ...commercialContractPermissions
   ],
   'Maintenance Manager': [
     'platform.dashboard.view',

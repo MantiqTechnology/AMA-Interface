@@ -10,7 +10,7 @@ export function getPassengerTicketService() {
   return new PassengerTicketService(
     new PassengerTicketRepository(client.sqlite),
     new TicketingSalesRepository(client.sqlite),
-    new AgentRepository(client.db),
+    new AgentRepository(client.db, client.sqlite),
     createAccountingService(client.sqlite)
   );
 }

@@ -15,7 +15,10 @@ const form = reactive<CustomerInput>({
   email: null,
   billingAddress: null,
   paymentTermId: null,
-  creditLimit: null
+  creditLimit: null,
+  defaultCurrencyCode: 'IDR',
+  primaryContactId: null,
+  commercialNote: null
 });
 const required = (label: string) => (value: unknown) =>
   Array.isArray(value)
@@ -45,7 +48,17 @@ watch(
       paymentTermId: props.record
         ? (props.record.paymentTermId as CustomerInput['paymentTermId'])
         : null,
-      creditLimit: props.record ? (props.record.creditLimit as CustomerInput['creditLimit']) : null
+      creditLimit: props.record ? (props.record.creditLimit as CustomerInput['creditLimit']) : null,
+      defaultCurrencyCode: props.record
+        ? (props.record.defaultCurrencyCode as CustomerInput['defaultCurrencyCode'])
+        : 'IDR',
+      primaryContactId: props.record
+        ? (props.record.primaryContactId as CustomerInput['primaryContactId'])
+        : null,
+      commercialNote: props.record
+        ? (props.record.commercialNote as CustomerInput['commercialNote'])
+        : null,
+      expectedVersion: props.record?.version
     });
   }
 );
@@ -84,7 +97,14 @@ async function submit() {
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.accountType"
-                :items="['INDIVIDUAL', 'CORPORATE', 'GOVERNMENT', 'AGENCY']"
+                :items="[
+                  'INDIVIDUAL',
+                  'CORPORATE',
+                  'GOVERNMENT',
+                  'AGENCY',
+                  'CARGO_PARTNER',
+                  'OTHER'
+                ]"
                 label="Account type"
                 :rules="[required('Account type')]"
                 variant="outlined"
@@ -143,6 +163,22 @@ async function submit() {
                 v-model.number="form.creditLimit"
                 label="Credit limit"
                 type="number"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="form.defaultCurrencyCode"
+                label="Default currency"
+                maxlength="3"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VTextarea
+                v-model="form.commercialNote"
+                label="Commercial note"
+                rows="2"
                 variant="outlined"
               />
             </VCol>

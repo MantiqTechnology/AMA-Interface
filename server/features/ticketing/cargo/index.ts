@@ -11,7 +11,7 @@ export function getCargoBookingService() {
   return new CargoBookingService(
     new CargoBookingRepository(client.sqlite),
     new TicketingSalesRepository(client.sqlite),
-    new AgentRepository(client.db),
+    new AgentRepository(client.db, client.sqlite),
     new DgCategoryRepository(client.db),
     createAccountingService(client.sqlite)
   );

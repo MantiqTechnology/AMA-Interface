@@ -57,6 +57,89 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
+  it('treats accepted dangerous goods and locked manifests as passed at departure', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const acceptedStatus = sqlite
+      .prepare("SELECT id FROM dg_acceptance_statuses WHERE code = 'ACCEPTED'")
+      .get() as { id: string };
+    sqlite
+      .prepare(
+        `UPDATE flight_manifest_cargo_items
+         SET dg_acceptance_status_id = ?
+         WHERE id = 'fop-dg-cargo-1'`
+      )
+      .run(acceptedStatus.id);
+    sqlite
+      .prepare(
+        `UPDATE flight_manifests
+         SET status_id = 'manifest-status-locked'
+         WHERE flight_operation_id = 'fop-dg-pending'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-check-in-closed'
+         WHERE id = 'fop-dg-pending'`
+      )
+      .run();
+
+    const evaluated = services.flightOperations.evaluateDepartureAssurance('fop-dg-pending', {
+      userId: occActor,
+      role: 'OCC',
+      stationCodes: ['ALL']
+    });
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'DG_ACCEPTANCE')
+    ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'MANIFEST_APPROVED')
+    ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'MANIFEST_LOCKED')
+    ).toMatchObject({ status: 'PASS', calculationStatus: 'PASS' });
+
+    sqlite.close();
+  });
+
+  it('compares the actual readiness approver with the flight creator', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flight = sqlite
+      .prepare(
+        `SELECT created_by_user_id
+         FROM flight_operations WHERE id = 'fop-ticketing-passenger'`
+      )
+      .get() as { created_by_user_id: string };
+    sqlite
+      .prepare(
+        `UPDATE flight_operation_approvals
+         SET decided_by_user_id = ?
+         WHERE flight_id = 'fop-ticketing-passenger'
+           AND approval_type_id = 'flight-approval-type-readiness-approval'`
+      )
+      .run(flight.created_by_user_id);
+
+    let evaluated = services.flightOperations.evaluate('fop-ticketing-passenger', occActor);
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'SEPARATION_OF_DUTIES')
+    ).toMatchObject({ status: 'FAIL', effectiveStatus: 'BLOCKED' });
+
+    sqlite
+      .prepare(
+        `UPDATE flight_operation_approvals
+         SET decided_by_user_id = ?
+         WHERE flight_id = 'fop-ticketing-passenger'
+           AND approval_type_id = 'flight-approval-type-readiness-approval'`
+      )
+      .run(adminActor);
+    evaluated = services.flightOperations.evaluate('fop-ticketing-passenger', occActor);
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'SEPARATION_OF_DUTIES')
+    ).toMatchObject({ status: 'PASS', effectiveStatus: 'PASSED' });
+
+    sqlite.close();
+  });
+
   it('seeds a complete charter draft that is ready to submit', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
@@ -260,7 +343,7 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
-  it('marks commercial-only readiness checks not applicable for a positioning flight', async () => {
+  it('marks commercial-only planning checks not applicable for a positioning flight', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const created = services.flightOperations.create(
       {
@@ -281,23 +364,73 @@ describe('FlightOperationsService', () => {
     );
 
     const evaluated = services.flightOperations.evaluate(created.id, occActor);
-    for (const code of [
-      'MANIFEST_APPROVED',
-      'DG_ACCEPTANCE',
-      'FUEL_CONFIRMED',
-      'HANDLING_CONFIRMED',
-      'FINANCE_INITIALIZED',
-      'REQUIRED_DOCUMENTS'
-    ]) {
+    for (const code of ['FINANCE_INITIALIZED', 'PLANNING_DOCUMENTS']) {
       expect(evaluated.readinessChecks.find((check) => check.checkCode === code)).toMatchObject({
         status: 'NOT_APPLICABLE'
       });
+    }
+    for (const code of [
+      'MANIFEST_APPROVED',
+      'MANIFEST_LOCKED',
+      'DG_ACCEPTANCE',
+      'FUEL_CONFIRMED',
+      'HANDLING_CONFIRMED',
+      'DEPARTURE_DOCUMENTS',
+      'ORIGIN_OPERATIONAL_TASKS'
+    ]) {
+      expect(evaluated.readinessChecks.some((check) => check.checkCode === code)).toBe(false);
     }
 
     sqlite.close();
   });
 
-  it('moves a valid draft through readiness approval', async () => {
+  it('requires commercial details for direct commercial entry and recalculates after saving them', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const created = services.flightOperations.create(
+      {
+        flightDate: '2026-08-20',
+        flightTypeId: 'flight-type-charter',
+        serviceTypeId: 'flight-service-type-charter-passenger',
+        priorityId: 'flight-priority-normal',
+        routeId: 'route-djj-wmx',
+        customerId: 'cust-papua-logistics',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: '2026-08-20T03:00:00.000Z',
+        scheduledArrivalAt: '2026-08-20T04:00:00.000Z',
+        remarks: 'Direct commercial entry readiness'
+      },
+      occActor
+    );
+
+    expect(
+      services.flightOperations
+        .evaluate(created.id, occActor)
+        .readinessChecks.find((check) => check.checkCode === 'FINANCE_INITIALIZED')
+    ).toMatchObject({
+      status: 'PENDING',
+      resultNote: 'Customer, billing type, or revenue estimate is incomplete.'
+    });
+
+    const updated = services.flightOperations.updateCommercialDetails(
+      created.id,
+      {
+        customerId: 'cust-papua-logistics',
+        billingType: 'CHARTER',
+        estimatedRevenue: 28000000
+      },
+      occActor
+    );
+    expect(updated.currentStatus).toBe('BLOCKED');
+    expect(
+      updated.readinessChecks.find((check) => check.checkCode === 'FINANCE_INITIALIZED')
+    ).toMatchObject({ status: 'PASS' });
+
+    sqlite.close();
+  });
+
+  it('allows a system-ready draft to proceed before departure verification', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
     const created = services.flightOperations.create(
@@ -380,12 +513,11 @@ describe('FlightOperationsService', () => {
     const evaluated = services.flightOperations.evaluate(created.id, occActor);
     expect(evaluated.currentStatus).toBe('READY_FOR_APPROVAL');
     expect(
-      evaluated.readinessChecks.every((check) => ['PASS', 'NOT_APPLICABLE'].includes(check.status))
-    ).toBe(true);
-
-    const approved = services.flightOperations.approve(created.id, {}, adminActor);
-    expect(approved.currentStatus).toBe('APPROVED');
-    expect(approved.approvedByUserId).toBe('USR-ADMIN');
+      evaluated.readinessChecks.find((check) => check.checkCode === 'PLANNING_DOCUMENTS')
+    ).toMatchObject({ effectiveStatus: 'PASSED' });
+    expect(services.flightOperations.approve(created.id, {}, adminActor).currentStatus).toBe(
+      'APPROVED'
+    );
 
     sqlite.close();
   });
@@ -494,6 +626,33 @@ describe('FlightOperationsService', () => {
     expect(location?.status).toBe('FAIL');
     expect(location?.resultNote).toContain('current station unknown');
 
+    sqlite.close();
+  });
+
+  it('does not re-block aircraft location after actual departure', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const created = createReadinessDraft(services);
+
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET actual_departure_at = '2026-08-20T03:05:00.000Z'
+         WHERE id = ?`
+      )
+      .run(created.id);
+    sqlite
+      .prepare(`UPDATE aircraft SET current_station_id = 'st-wmx' WHERE id = 'ac-pk-ama'`)
+      .run();
+
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
+    const location = evaluated.readinessChecks.find(
+      (check) => check.checkCode === 'AIRCRAFT_LOCATION'
+    );
+
+    expect(location).toMatchObject({
+      status: 'PASS',
+      resultNote: 'Aircraft location was validated at departure.'
+    });
     sqlite.close();
   });
 
@@ -694,6 +853,40 @@ describe('FlightOperationsService', () => {
     expect(() => services.flightOperations.closeFlight('fop-dg-pending', adminActor)).toThrow(
       'Flight cannot be closed'
     );
+
+    sqlite.close();
+  });
+
+  it('returns structured verification-aware closure blockers', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    let thrown: unknown;
+    try {
+      services.flightOperations.validateClosureRequirements(
+        'fop-pending-closure',
+        services.flightOperations.detail('fop-pending-closure').serviceTypeCode
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      code: 'CLOSURE_VALIDATION_FAILED',
+      details: {
+        requirements: expect.arrayContaining([
+          expect.objectContaining({
+            code: 'DESTINATION_STATION_SIGNOFF',
+            status: 'BLOCKED',
+            required: true
+          }),
+          expect.objectContaining({
+            code: 'RECONCILIATION',
+            status: 'BLOCKED',
+            required: true
+          })
+        ])
+      }
+    });
 
     sqlite.close();
   });

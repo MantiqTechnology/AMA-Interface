@@ -3,8 +3,9 @@ import { supersedeDocumentBodySchema } from '../../../../shared/contracts/docume
 import { defineApiEventHandler } from '../../../utils/api-response';
 import { getDocument, supersedeDocument } from '../../../utils/local-document-storage';
 import { parseBody, parseParams } from '../../../utils/validation';
-import { requireDemoPermission } from '../../../utils/auth';
+import { getDemoActorId, requireDemoPermission } from '../../../utils/auth';
 import { requireDocumentOwnerAccess } from '../../../utils/document-access';
+import { invalidateFlightDocumentReadiness } from '../../../utils/flight-document-readiness';
 
 export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'document.upload');
@@ -12,5 +13,7 @@ export default defineApiEventHandler(async (event) => {
   const document = await getDocument(id);
   requireDocumentOwnerAccess(event, document.ownerType, document.ownerId);
   const body = await parseBody(event, supersedeDocumentBodySchema);
-  return await supersedeDocument(id, body);
+  const superseded = await supersedeDocument(id, body);
+  invalidateFlightDocumentReadiness(document.ownerType, document.ownerId, getDemoActorId(event));
+  return superseded;
 });

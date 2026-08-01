@@ -1,22 +1,27 @@
 import {
   actualTimeBodySchema,
   flightOperationIdParamsSchema
-} from '../../../../../../shared/contracts/flight-operations';
-import { defineApiEventHandler } from '../../../../../utils/api-response';
-import { getServices } from '../../../../../utils/services';
-import { parseBody, parseParams } from '../../../../../utils/validation';
+} from '#shared/contracts/flight-operations';
+import { defineApiEventHandler } from '#server/utils/api-response';
+import { getServices } from '#server/utils/services';
+import { parseBody, parseParams } from '#server/utils/validation';
 import {
   getDemoActorId,
   requireDemoFlightStationAccess,
   requireDemoPermission
-} from '../../../../../utils/auth';
+} from '#server/utils/auth';
 
 export default defineApiEventHandler(async (event) => {
-  requireDemoPermission(event, 'flight.movement.update');
+  requireDemoPermission(event, 'flight.departure.execute');
   const params = parseParams(event, flightOperationIdParamsSchema);
   const body = await parseBody(event, actualTimeBodySchema);
-  const service = getServices().flightOperations;
-  const flight = service.detail(params.id);
+  const services = getServices();
+  const flight = services.flightOperations.detail(params.id);
   requireDemoFlightStationAccess(event, [flight.originStationCode]);
-  return service.depart(params.id, body, getDemoActorId(event));
+
+  return services.flightOperations.departWithCriticalRevalidation(
+    params.id,
+    body,
+    getDemoActorId(event)
+  );
 });

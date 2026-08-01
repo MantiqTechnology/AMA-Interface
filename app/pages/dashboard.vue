@@ -10,6 +10,7 @@ import type {
 import type { DashboardDto } from '#shared/contracts/operations-monitoring';
 import type { AircraftDto } from '#shared/features/operations/aircraft';
 import type { StationDto } from '#shared/features/operations/stations';
+import { AMA_THEME_HEX } from '../constants/themeColors';
 
 type OperationFilter = 'ALL' | 'SCHEDULED' | 'CHARTER' | 'CARGO' | 'MEDEVAC';
 type DashboardTab = 'operations' | 'management';
@@ -254,7 +255,7 @@ const readinessChartSeries = computed<ApexNonAxisChartSeries>(() => [
 ]);
 const readinessChartOptions = computed<ApexOptions>(() => ({
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#27805B', '#F2B544', '#B9473B', '#286E9E'],
+  colors: [AMA_THEME_HEX.success, AMA_THEME_HEX.warning, AMA_THEME_HEX.danger, AMA_THEME_HEX.info],
   dataLabels: { enabled: true },
   labels: ['Ready', 'Needs review', 'Blocked', 'Completed'],
   legend: { position: 'bottom' },
@@ -339,7 +340,7 @@ const blockerChartSeries = computed<ApexAxisChartSeries>(() => [
 ]);
 const blockerChartOptions = computed<ApexOptions>(() => ({
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#B9473B'],
+  colors: [AMA_THEME_HEX.danger],
   dataLabels: { enabled: true },
   plotOptions: { bar: { borderRadius: 4, horizontal: true, distributed: true } },
   xaxis: { categories: blockerBreakdown.value.map((item) => item.label) }
@@ -393,7 +394,7 @@ const completionTrendSeries = computed<ApexAxisChartSeries>(() => [
 ]);
 const completionTrendOptions = computed<ApexOptions>(() => ({
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#286E9E', '#27805B', '#B9473B'],
+  colors: [AMA_THEME_HEX.info, AMA_THEME_HEX.success, AMA_THEME_HEX.danger],
   dataLabels: { enabled: false },
   stroke: { curve: 'smooth', width: 3 },
   xaxis: { categories: trendDates.value.map(formatShortDate) }
@@ -415,7 +416,7 @@ const onTimeCounts = computed(() => {
 const onTimeSeries = computed<ApexNonAxisChartSeries>(() => onTimeCounts.value);
 const onTimeOptions: ApexOptions = {
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#27805B', '#F2B544', '#B9473B'],
+  colors: [AMA_THEME_HEX.success, AMA_THEME_HEX.warning, AMA_THEME_HEX.danger],
   labels: ['On-time', 'Delayed', 'Cancelled'],
   legend: { position: 'bottom' },
   plotOptions: { pie: { donut: { size: '70%' } } }
@@ -436,7 +437,13 @@ const requestSourceSeries = computed<ApexNonAxisChartSeries>(() =>
 );
 const requestSourceOptions = computed<ApexOptions>(() => ({
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#286E9E', '#0E8C8A', '#F47A1F', '#B9473B', '#F2B544'],
+  colors: [
+    AMA_THEME_HEX.info,
+    AMA_THEME_HEX.secondary,
+    AMA_THEME_HEX.accent,
+    AMA_THEME_HEX.danger,
+    AMA_THEME_HEX.warning
+  ],
   labels: requestSources.value.map((item) => item.label),
   legend: { position: 'bottom' }
 }));
@@ -455,7 +462,7 @@ const delayReasonSeries = computed<ApexAxisChartSeries>(() => [
 ]);
 const delayReasonOptions: ApexOptions = {
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#F47A1F'],
+  colors: [AMA_THEME_HEX.accent],
   dataLabels: { enabled: false },
   plotOptions: { bar: { borderRadius: 4, horizontal: true } },
   xaxis: { categories: delayCategories }
@@ -474,7 +481,7 @@ const utilizationSeries = computed<ApexAxisChartSeries>(() => [
 ]);
 const utilizationOptions = computed<ApexOptions>(() => ({
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#0E8C8A'],
+  colors: [AMA_THEME_HEX.secondary],
   dataLabels: { enabled: false },
   plotOptions: { bar: { borderRadius: 4, columnWidth: '48%' } },
   xaxis: { categories: utilizationRows.value.map((row) => row.registration) }
@@ -497,7 +504,7 @@ const fuelSeries = computed<ApexAxisChartSeries>(() => [
 ]);
 const fuelOptions = computed<ApexOptions>(() => ({
   chart: { toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
-  colors: ['#286E9E', '#27805B'],
+  colors: [AMA_THEME_HEX.info, AMA_THEME_HEX.success],
   dataLabels: { enabled: false },
   plotOptions: { bar: { borderRadius: 4, columnWidth: '48%' } },
   xaxis: { categories: fuelRows.value.map((row) => row.station) }

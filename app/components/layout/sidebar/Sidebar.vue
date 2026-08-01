@@ -35,6 +35,13 @@ const masterDataVisible = computed(() => can('platform.module.manage').allowed);
 const routeMasterDataVisible = computed(
   () => masterDataVisible.value || can('master_data.read').allowed
 );
+const financeVisible = computed(
+  () => can('finance.invoice.read').allowed || can('finance.accounting.read').allowed
+);
+
+const commercialVisible = computed(
+  () => masterDataVisible.value || can('commercial.contract.read').allowed
+);
 
 const navItems = computed<NavItem[]>(() =>
   [
@@ -92,55 +99,55 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'Flight Control',
       icon: 'mdi-airplane',
-      visible: true,
+      visible: can('flight.read').allowed,
       children: [
         {
           label: 'Flights',
           to: '/flights',
           icon: 'mdi-airplane-marker',
-          visible: true
+          visible: can('flight.read').allowed
         },
         {
           label: 'Flight Requests',
           to: '/flights/requests',
           icon: 'mdi-clipboard-plus-outline',
-          visible: true
+          visible: can('flight_request.read').allowed
         },
         {
-          label: 'Readiness',
+          label: 'Planning Readiness',
           to: '/flights/readiness',
           icon: 'mdi-clipboard-pulse-outline',
-          visible: true
+          visible: can('readiness.view').allowed
         },
         {
-          label: 'Manifest',
+          label: 'Manifest Control',
           to: '/flights/manifest',
           icon: 'mdi-account-box-multiple-outline',
-          visible: true
+          visible: can('flight.manifest.view').allowed
         },
         {
           label: 'Fuel Control',
           to: '/flights/fuel',
           icon: 'mdi-fuel',
-          visible: true
+          visible: can('flight.read').allowed && can('flight.fuel.update').allowed
         },
         {
-          label: 'Station Ops',
+          label: 'Station Operations',
           to: '/flights/station-operations',
           icon: 'mdi-airport',
-          visible: true
+          visible: can('station.task.view').allowed
         },
         {
           label: 'Actual & Closure',
           to: '/flights/actual-closure',
           icon: 'mdi-airplane-check',
-          visible: true
+          visible: can('flight.read').allowed
         },
         {
           label: 'Maintenance',
           to: '/flights/maintenance',
           icon: 'mdi-wrench-clock',
-          visible: true
+          visible: can('flight.read').allowed
         },
         {
           label: 'Aircraft',
@@ -153,7 +160,7 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'Commercial',
       icon: 'mdi-handshake-outline',
-      visible: masterDataVisible.value,
+      visible: commercialVisible.value,
       children: [
         {
           label: 'Customers',
@@ -172,6 +179,12 @@ const navItems = computed<NavItem[]>(() =>
           to: '/master-data/rates',
           icon: 'mdi-cash-multiple',
           visible: masterDataVisible.value
+        },
+        {
+          label: 'Contracts & Subsidies',
+          to: '/marketing/contracts-subsidies',
+          icon: 'mdi-file-sign',
+          visible: can('commercial.contract.read').allowed || masterDataVisible.value
         }
       ].filter((child) => child.visible)
     },
@@ -254,10 +267,34 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('asset.read').allowed
         },
         {
+          label: 'Assignments',
+          to: '/asset-management/assignment',
+          icon: 'mdi-account-arrow-right-outline',
+          visible: can('asset.read').allowed
+        },
+        {
+          label: 'Movements',
+          to: '/asset-management/movement',
+          icon: 'mdi-swap-horizontal',
+          visible: can('asset.read').allowed
+        },
+        {
           label: 'Maintenance Queue',
           to: '/asset-management/maintenance',
           icon: 'mdi-wrench-outline',
           visible: can('asset.read').allowed
+        },
+        {
+          label: 'Audits',
+          to: '/asset-management/audit',
+          icon: 'mdi-clipboard-check-outline',
+          visible: can('asset.read').allowed
+        },
+        {
+          label: 'Finance',
+          to: '/asset-management/finance',
+          icon: 'mdi-calculator-variant-outline',
+          visible: can('asset.finance.read').allowed
         }
       ].filter((child) => child.visible)
     },
@@ -267,7 +304,7 @@ const navItems = computed<NavItem[]>(() =>
       visible: true,
       children: [
         {
-          label: 'Passenger Manifest',
+          label: 'Passenger Sales & Check-in',
           to: '/ticketing/passenger',
           icon: 'mdi-account-multiple-outline',
           visible: true
@@ -294,11 +331,17 @@ const navItems = computed<NavItem[]>(() =>
     },
     {
       label: 'Finance',
-      icon: 'mdi-cash-register',
-      visible: true,
+      icon: 'mdi-finance',
+      visible: financeVisible.value,
       children: [
         {
-          label: 'Invoice',
+          label: 'Overview',
+          to: '/finance/dashboard',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: 'Invoices',
           to: '/invoices',
           icon: 'mdi-file-document-outline',
           visible: can('finance.invoice.read').allowed
@@ -309,6 +352,25 @@ const navItems = computed<NavItem[]>(() =>
           icon: 'mdi-book-open-page-variant-outline',
           visible: can('finance.accounting.read').allowed
         },
+        {
+          label: 'Trial Balance',
+          to: '/finance/trial-balance',
+          icon: 'mdi-scale-balance',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: 'HPP & Margin',
+          to: '/finance/hpp',
+          icon: 'mdi-chart-bar-stacked',
+          visible: can('finance.accounting.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'Master Data',
+      icon: 'mdi-database-cog-outline',
+      visible: masterDataVisible.value,
+      children: [
         {
           label: 'Vendors',
           to: '/master-data/vendors',

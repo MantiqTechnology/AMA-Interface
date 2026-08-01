@@ -9,6 +9,8 @@ export const flightOperationStatuses = [
   'APPROVED',
   'SCHEDULED',
   'CHECK_IN_OPEN',
+  'CHECK_IN_CLOSED',
+  'READY_FOR_DEPARTURE',
   'IN_PROGRESS',
   'LANDED',
   'PENDING_CLOSURE',
@@ -69,6 +71,16 @@ export const flightActionTypeSchema = z.enum([
   'APPROVE',
   'SCHEDULE',
   'OPEN_CHECK_IN',
+  'CLOSE_CHECK_IN',
+  'DEPARTURE_ASSURANCE_EVALUATED',
+  'MARK_READY_FOR_DEPARTURE',
+  'MANIFEST_SUBMIT',
+  'MANIFEST_APPROVE',
+  'MANIFEST_REJECT',
+  'MANIFEST_LOCK',
+  'MANIFEST_UNLOCK',
+  'DG_ACCEPT',
+  'DG_REJECT',
   'DEPART',
   'LAND',
   'MARK_PENDING_CLOSURE',
@@ -121,6 +133,8 @@ export const aircraftServiceabilityStatusSchema = z.enum([
   'UNSERVICEABLE'
 ]);
 export const financeHandoffStatusSchema = z.enum(['DRAFT', 'READY', 'POSTED', 'VOID']);
+export const assurancePhaseSchema = z.enum(['PLANNING', 'DEPARTURE']);
+export const dgDecisionSchema = z.enum(['ACCEPTED', 'REJECTED']);
 export const financeHandoffEventTypeSchema = z.enum([
   'FUEL_COST_DRAFT',
   'STATION_COST_DRAFT',
@@ -161,6 +175,48 @@ const nullableNonnegativeNumberSchema = z.preprocess(
   z.coerce.number().nonnegative().nullable().optional()
 );
 
+// Concurrency + manifest command bodies (Manifest Control & Departure Assurance)
+export const flightConcurrencyBodySchema = z.object({
+  expectedUpdatedAt: isoDateTimeSchema,
+  note: z.string().trim().max(500).optional()
+});
+export type FlightConcurrencyBody = z.infer<typeof flightConcurrencyBodySchema>;
+
+export const manifestExpectedVersionSchema = z.object({
+  expectedVersion: z.coerce.number().int().min(1)
+});
+
+export const emptyLoadSubmitBodySchema = manifestExpectedVersionSchema.extend({
+  emptyLoadReason: z.string().trim().min(1).max(500).optional()
+});
+export type EmptyLoadSubmitBody = z.infer<typeof emptyLoadSubmitBodySchema>;
+
+export const manifestRejectBodySchema = manifestExpectedVersionSchema.extend({
+  reason: z.string().trim().min(1).max(500)
+});
+export type ManifestRejectBody = z.infer<typeof manifestRejectBodySchema>;
+
+export const manifestUnlockBodySchema = manifestExpectedVersionSchema.extend({
+  reason: z.string().trim().min(1).max(500)
+});
+export type ManifestUnlockBody = z.infer<typeof manifestUnlockBodySchema>;
+
+export const dgDecisionBodySchema = manifestExpectedVersionSchema.extend({
+  decision: dgDecisionSchema,
+  reason: z.string().trim().min(1).max(500),
+  evidenceIds: z.array(z.string().trim().min(1)).min(1)
+});
+export type DgDecisionBody = z.infer<typeof dgDecisionBodySchema>;
+
+// Contextual display label for CHECK_IN_CLOSED per service type
+export const checkInClosedLabels: Record<FlightServiceType, string> = {
+  SCHEDULED_PASSENGER: 'Check-in Closed',
+  CHARTER_PASSENGER: 'Check-in Closed',
+  CHARTER_CARGO: 'Load Intake Closed',
+  MEDEVAC: 'Patient/Medical Load Finalized',
+  POSITIONING: 'Departure Preparation Finalized'
+};
+
 export type FlightOperationStatus = z.infer<typeof flightOperationStatusSchema>;
 export type FlightRequestStatus = z.infer<typeof flightRequestStatusSchema>;
 export type FlightApprovalType = z.infer<typeof flightApprovalTypeSchema>;
@@ -182,6 +238,9 @@ export type MaintenanceHandoffStatus = z.infer<typeof maintenanceHandoffStatusSc
 export type AircraftServiceabilityStatus = z.infer<typeof aircraftServiceabilityStatusSchema>;
 export type FinanceHandoffEventType = z.infer<typeof financeHandoffEventTypeSchema>;
 export type FinanceHandoffStatus = z.infer<typeof financeHandoffStatusSchema>;
+export type AssurancePhase = z.infer<typeof assurancePhaseSchema>;
+export type DgDecision = z.infer<typeof dgDecisionSchema>;
+export type AssurancePhaseCode = z.infer<typeof assurancePhaseSchema>;
 
 export type FlightOperationLookupOption = {
   value: string;
@@ -292,6 +351,17 @@ export type FlightReadinessCheckDto = {
   ownerRole: string;
   recommendedAction: string;
   actionHref: string | null;
+  classification:
+    'SYSTEM_CHECK' | 'MANUAL_ATTESTATION' | 'ENFORCED' | 'INFORMATIONAL' | 'NOT_IMPLEMENTED';
+  assurancePhase: AssurancePhaseCode | null;
+  calculationStatus: 'PASS' | 'FAIL' | 'NOT_APPLICABLE' | 'UNKNOWN';
+  verificationStatus:
+    'NOT_REQUIRED' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'EXPIRED' | 'MODULE_UNAVAILABLE';
+  effectiveStatus: 'PASSED' | 'BLOCKED' | 'WARNING' | 'NOT_APPLICABLE';
+  calculatedAt: string | null;
+  expiresAt: string | null;
+  invalidationReason: string | null;
+  sourceRecordIds: string[];
 };
 
 export type FlightStatusHistoryDto = {
@@ -319,6 +389,15 @@ export type FlightManifestDto = {
   cargoActualWeightKg: number;
   dgPendingCount: number;
   dgRejectedCount: number;
+  version: number;
+  submittedByUserId: string | null;
+  submittedAt: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
+  lockedByUserId: string | null;
+  lockedAt: string | null;
+  rejectionReason: string | null;
+  emptyLoadReason: string | null;
 };
 
 export type FlightManifestPassengerDto = {
@@ -345,6 +424,10 @@ export type FlightManifestCargoDto = {
   dgCategoryId: string | null;
   dgCategoryLabel: string | null;
   dgAcceptanceStatus: DgAcceptanceStatus;
+  dgDecisionByUserId: string | null;
+  dgDecisionAt: string | null;
+  dgDecisionReason: string | null;
+  dgEvidenceIds: string[];
   remarks: string | null;
 };
 
@@ -377,6 +460,8 @@ export type FlightStationServiceDto = {
   serviceType: StationServiceType;
   status: StationServiceStatus;
   referenceRate: number | null;
+  rejectionNote: string | null;
+  version: number;
 };
 
 export type FlightStationCostDto = {
@@ -394,6 +479,7 @@ export type FlightStationCostDto = {
   currencyCode: string;
   description: string;
   status: StationCostStatus;
+  version: number;
 };
 
 export type FlightMaintenanceHandoffDto = {
@@ -553,6 +639,15 @@ export type FlightOperationDetailDto = FlightOperationRecord & {
   financeHandoffs: FlightFinanceHandoffDto[];
   approvals: FlightApprovalDto[];
   attachments: FlightAttachmentDto[];
+  operationalClosureRequirements?: Array<{
+    code: string;
+    label: string;
+    status: 'PASSED' | 'BLOCKED' | 'NOT_REQUIRED';
+    required: boolean;
+    satisfied: boolean;
+    reason?: string;
+    actionHref?: string;
+  }>;
 };
 
 export type FlightOperationOverviewDto = {
@@ -705,12 +800,24 @@ export const createFlightOperationBodySchema = z.object({
   priorityId: referenceIdSchema,
   routeId: z.string().min(1),
   customerId: nullableIdSchema,
+  billingType: z.string().trim().min(1).max(50).optional(),
+  estimatedRevenue: nullableNonnegativeNumberSchema,
   aircraftId: nullableIdSchema,
   pilotInCommandId: nullableIdSchema,
   coPilotId: nullableIdSchema,
   scheduledDepartureAt: nullableIsoDateTimeSchema,
   scheduledArrivalAt: nullableIsoDateTimeSchema,
   remarks: z.preprocess(blankToNull, z.string().trim().max(1000).nullable().optional())
+});
+
+export const flightOperationCommercialUpdateBodySchema = z.object({
+  customerId: nullableIdSchema,
+  billingType: z.string().trim().min(1).max(50),
+  estimatedRevenue: nullableNonnegativeNumberSchema
+});
+
+export const flightOperationAircraftUpdateBodySchema = z.object({
+  aircraftId: z.string().trim().min(1)
 });
 
 export const createFlightRequestBodySchema = z.object({
@@ -756,6 +863,91 @@ export const flightOperationIdParamsSchema = z.object({
   id: z.string().min(1)
 });
 
+export const stationTaskIdParamsSchema = z.object({
+  id: z.string().min(1)
+});
+
+export const manifestIdParamsSchema = z.object({
+  manifestId: z.string().min(1)
+});
+
+export const cargoItemIdParamsSchema = z.object({
+  cargoItemId: z.string().min(1)
+});
+
+export const startStationTaskBodySchema = z.object({
+  expectedVersion: z.coerce.number().int().positive()
+});
+
+export const verifyStationTaskBodySchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
+  reason: z.string().trim().max(1000).optional()
+});
+
+export const rejectStationTaskBodySchema = z.object({
+  rejectionReason: z.string().trim().min(1).max(1000),
+  expectedVersion: z.coerce.number().int().positive()
+});
+
+export const approveStationTaskBodySchema = z.object({
+  decision: z.enum(['APPROVED', 'REJECTED']),
+  expectedVersion: z.coerce.number().int().positive(),
+  reason: z.string().trim().max(1000).optional()
+});
+
+export const overrideStationTaskBodySchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(1).max(1000),
+  evidenceIds: z.array(z.string().min(1)).optional().default([])
+});
+
+export const addStationTaskEvidenceBodySchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
+  uploadId: z.string().trim().min(1).optional(),
+  documentType: z.string().trim().optional(),
+  fileName: z.string().trim().min(1),
+  notes: z.string().trim().max(1000).optional()
+});
+
+export const createStationTaskBodySchema = z.object({
+  stationId: z.string().trim().min(1),
+  phase: z.enum(['ORIGIN_DEPARTURE', 'DESTINATION_ARRIVAL', 'DESTINATION_CLOSURE']),
+  taskCode: z.string().trim().min(1),
+  taskTitle: z.string().trim().min(1),
+  requiresEvidence: z.literal(true).optional().default(true),
+  notes: z.string().trim().max(1000).optional(),
+  assignedUserId: z.string().trim().min(1).optional(),
+  assignedRole: z.string().trim().min(1).optional(),
+  sourceRecordType: z.string().trim().optional(),
+  sourceRecordId: z.string().trim().optional()
+});
+
+export const reconcileActualsBodySchema = z
+  .object({
+    plannedPassengers: z.coerce.number().int().nonnegative().default(0),
+    actualPassengers: z.coerce.number().int().nonnegative().default(0),
+    plannedCargoKg: z.coerce.number().nonnegative().default(0),
+    actualCargoKg: z.coerce.number().nonnegative().default(0),
+    noShowPassengers: z.coerce.number().int().nonnegative().default(0),
+    offloadedCargoKg: z.coerce.number().nonnegative().default(0),
+    totalDiscrepancyNote: z.string().trim().max(1000).optional(),
+    expectedVersion: z.coerce.number().int().nonnegative()
+  })
+  .superRefine((value, context) => {
+    const differs =
+      value.plannedPassengers !== value.actualPassengers ||
+      value.plannedCargoKg !== value.actualCargoKg ||
+      value.noShowPassengers > 0 ||
+      value.offloadedCargoKg > 0;
+    if (differs && !value.totalDiscrepancyNote) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['totalDiscrepancyNote'],
+        message: 'A discrepancy note is required when planned and actual totals differ.'
+      });
+    }
+  });
+
 export const actionNoteBodySchema = z.object({
   note: z.preprocess(blankToUndefined, z.string().trim().max(1000).optional())
 });
@@ -774,6 +966,7 @@ export const actualTimeBodySchema = z.object({
 
 export const createPassengerBodySchema = z.object({
   manifestId: z.string().min(1),
+  expectedVersion: z.coerce.number().int().positive(),
   fullName: z.string().trim().min(1),
   identityType: nullableTextSchema,
   identityNumber: nullableTextSchema,
@@ -785,6 +978,7 @@ export const createPassengerBodySchema = z.object({
 
 export const createCargoBodySchema = z.object({
   manifestId: z.string().min(1),
+  expectedVersion: z.coerce.number().int().positive(),
   description: z.string().trim().min(1),
   senderName: nullableTextSchema,
   receiverName: nullableTextSchema,
@@ -823,6 +1017,11 @@ export const createStationCostBodySchema = z.object({
   amount: nonnegativeNumberSchema,
   currencyId: z.string().min(1),
   description: z.string().trim().min(1)
+});
+
+export const stationRecordActionBodySchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(1).max(1000).optional()
 });
 
 export const createMaintenanceHandoffBodySchema = z.object({

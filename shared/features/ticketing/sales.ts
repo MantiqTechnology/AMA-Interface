@@ -38,6 +38,11 @@ export type AvailableTicketingFlightDto = {
   minimumCharge: number | null;
   cargoPriceBasis: TicketingCargoPriceBasis | null;
   rateCardId: string;
+  sourceRateVersion: number | null;
+  rateCodeSnapshot: string | null;
+  rateUnitSnapshot: string | null;
+  priceBasisSnapshot: string | null;
+  pricingScopeSnapshot: string | null;
   currencyCode: string;
   taxCodeId: string | null;
   taxCode: string | null;

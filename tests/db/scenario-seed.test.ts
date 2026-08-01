@@ -118,6 +118,31 @@ describe('realistic scenario seed', () => {
     expect(JSON.stringify(documents).toLowerCase()).not.toContain('demo');
   });
 
+  it('grandfathers closed flights and creates verification tasks only for active flights', () => {
+    const sqlite = createDbClient(dbPath).sqlite;
+
+    expect(
+      sqlite
+        .prepare(`SELECT COUNT(*) AS count FROM flight_station_tasks WHERE flight_id = ?`)
+        .get('fop-closed-djj-wmx')
+    ).toEqual({ count: 0 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count FROM flight_operational_audit
+           WHERE flight_id = ? AND action = 'LEGACY_CLOSED_MARKER'`
+        )
+        .get('fop-closed-djj-wmx')
+    ).toEqual({ count: 1 });
+    expect(
+      sqlite
+        .prepare(`SELECT COUNT(*) AS count FROM flight_station_tasks WHERE flight_id = ?`)
+        .get('fop-ticketing-passenger')
+    ).toEqual({ count: 10 });
+
+    sqlite.close();
+  });
+
   it('seeds finance scenarios through the canonical accounting flow', async () => {
     const client = createDbClient(dbPath);
     const { sqlite } = client;

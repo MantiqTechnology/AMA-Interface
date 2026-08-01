@@ -26,6 +26,8 @@ import {
   corporateAssetStatements
 } from './migrations/corporate-assets';
 import { hrisDropStatements, hrisStatements } from './migrations/hris';
+import { migrateVerificationData } from './migrations/operations/verification-migration';
+import { migrateManifestAssuranceData } from './migrations/operations/manifest-assurance-migration';
 
 type FlightOperationLookupSeed = {
   table: string;
@@ -85,6 +87,8 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['APPROVED', 'Approved'],
       ['SCHEDULED', 'Scheduled'],
       ['CHECK_IN_OPEN', 'Check-In Open'],
+      ['CHECK_IN_CLOSED', 'Check-In Closed'],
+      ['READY_FOR_DEPARTURE', 'Ready For Departure'],
       ['IN_PROGRESS', 'In Progress'],
       ['LANDED', 'Landed'],
       ['PENDING_CLOSURE', 'Pending Closure'],
@@ -116,6 +120,16 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['APPROVE', 'Approve'],
       ['SCHEDULE', 'Schedule'],
       ['OPEN_CHECK_IN', 'Open Check-In'],
+      ['CLOSE_CHECK_IN', 'Close Check-In'],
+      ['DEPARTURE_ASSURANCE_EVALUATED', 'Departure Assurance Evaluated'],
+      ['MARK_READY_FOR_DEPARTURE', 'Mark Ready For Departure'],
+      ['MANIFEST_SUBMIT', 'Manifest Submit'],
+      ['MANIFEST_APPROVE', 'Manifest Approve'],
+      ['MANIFEST_REJECT', 'Manifest Reject'],
+      ['MANIFEST_LOCK', 'Manifest Lock'],
+      ['MANIFEST_UNLOCK', 'Manifest Unlock'],
+      ['DG_ACCEPT', 'DG Accept'],
+      ['DG_REJECT', 'DG Reject'],
       ['DEPART', 'Depart'],
       ['LAND', 'Land'],
       ['MARK_PENDING_CLOSURE', 'Mark Pending Closure'],
@@ -713,6 +727,14 @@ const createStatements = [
     evaluated_by_user_id TEXT,
     result_note TEXT,
     source_reference TEXT,
+    classification TEXT,
+    calculation_status TEXT,
+    verification_status TEXT,
+    effective_status TEXT,
+    calculated_at TEXT,
+    expiry_at TEXT,
+    invalidation_reason TEXT,
+    source_record_ids TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (flight_id, check_code)
@@ -797,6 +819,7 @@ const createStatements = [
     confirmed_at TEXT,
     confirmed_by_user_id TEXT,
     rejection_note TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -813,6 +836,7 @@ const createStatements = [
     submitted_by_user_id TEXT,
     approved_by_user_id TEXT,
     approved_at TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK (amount >= 0)
@@ -848,6 +872,106 @@ const createStatements = [
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS flight_station_tasks (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    phase TEXT NOT NULL,
+    task_code TEXT NOT NULL,
+    task_title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    assigned_role TEXT,
+    assigned_user_id TEXT,
+    source_record_type TEXT,
+    source_record_id TEXT,
+    requires_evidence INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    rejection_reason TEXT,
+    verified_by_user_id TEXT,
+    verified_at TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id, station_id, phase, task_code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_station_task_approvals (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES flight_station_tasks(id) ON DELETE CASCADE,
+    approval_stage TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    reason TEXT,
+    approved_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (task_id, approval_stage)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_verification_evidence (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    station_task_id TEXT REFERENCES flight_station_tasks(id) ON DELETE SET NULL,
+    readiness_check_code TEXT,
+    upload_id TEXT,
+    document_type TEXT,
+    file_name TEXT NOT NULL,
+    notes TEXT,
+    uploaded_by_user_id TEXT NOT NULL,
+    uploaded_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_readiness_verifications (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    check_code TEXT NOT NULL,
+    verification_status TEXT NOT NULL,
+    verifier_user_id TEXT,
+    evidence_references TEXT,
+    verified_at TEXT,
+    expired_at TEXT,
+    invalidated_at TEXT,
+    invalidation_reason TEXT,
+    source_snapshot TEXT,
+    source_hash TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id, check_code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_operational_audit (
+    id TEXT PRIMARY KEY,
+    actor_user_id TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    station_id TEXT REFERENCES stations(id),
+    module TEXT NOT NULL,
+    action TEXT NOT NULL,
+    before_status TEXT,
+    after_status TEXT,
+    reason TEXT,
+    evidence_ids TEXT,
+    request_id TEXT,
+    metadata TEXT,
+    timestamp TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_actual_reconciliations (
+    id TEXT PRIMARY KEY,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    planned_passengers INTEGER,
+    actual_passengers INTEGER,
+    planned_cargo_kg REAL,
+    actual_cargo_kg REAL,
+    no_show_passengers INTEGER DEFAULT 0,
+    offloaded_cargo_kg REAL DEFAULT 0,
+    total_discrepancy_note TEXT,
+    reconciled_by_user_id TEXT NOT NULL,
+    reconciled_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id)
+  )`,
   ...ticketingStatements,
   ...inventoryStatements,
   ...corporateAssetStatements,
@@ -863,7 +987,17 @@ const createStatements = [
   `CREATE INDEX IF NOT EXISTS idx_flight_readiness_checks_flight ON flight_readiness_checks(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_manifests_flight_operation ON flight_manifests(flight_operation_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_fuel_requests_flight ON flight_fuel_requests(flight_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_flight_station_costs_flight ON flight_station_costs(flight_id)`
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_costs_flight ON flight_station_costs(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_flight ON flight_station_tasks(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_station ON flight_station_tasks(station_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_phase ON flight_station_tasks(phase)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_station_task_approvals_task ON flight_station_task_approvals(task_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_verification_evidence_flight ON flight_verification_evidence(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_verification_evidence_task ON flight_verification_evidence(station_task_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_readiness_verifications_flight ON flight_readiness_verifications(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_operational_audit_flight ON flight_operational_audit(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_operational_audit_actor ON flight_operational_audit(actor_user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_actual_reconciliations_flight ON flight_actual_reconciliations(flight_id)`
 ];
 
 const dropStatements = [
@@ -883,6 +1017,12 @@ const dropStatements = [
   'DROP TABLE IF EXISTS accounting_periods',
   'DROP TABLE IF EXISTS flight_finance_handoffs',
   'DROP TABLE IF EXISTS flight_maintenance_handoffs',
+  'DROP TABLE IF EXISTS flight_actual_reconciliations',
+  'DROP TABLE IF EXISTS flight_operational_audit',
+  'DROP TABLE IF EXISTS flight_readiness_verifications',
+  'DROP TABLE IF EXISTS flight_verification_evidence',
+  'DROP TABLE IF EXISTS flight_station_task_approvals',
+  'DROP TABLE IF EXISTS flight_station_tasks',
   'DROP TABLE IF EXISTS flight_station_costs',
   'DROP TABLE IF EXISTS flight_station_service_requests',
   'DROP TABLE IF EXISTS flight_fuel_requests',
@@ -1042,6 +1182,30 @@ export function runMigrations(sqlite: Database.Database) {
     for (const statement of createStatements) {
       sqlite.exec(statement);
     }
+    ensureColumn(sqlite, 'customers', 'lifecycle_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");
+    ensureColumn(sqlite, 'customers', 'credit_status', "TEXT NOT NULL DEFAULT 'NORMAL'");
+    ensureColumn(sqlite, 'customers', 'default_currency_code', "TEXT NOT NULL DEFAULT 'IDR'");
+    ensureColumn(sqlite, 'customers', 'primary_contact_id', 'TEXT');
+    ensureColumn(sqlite, 'customers', 'commercial_note', 'TEXT');
+    ensureColumn(sqlite, 'customers', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'agents', 'customer_account_id', 'TEXT REFERENCES customers(id)');
+    ensureColumn(sqlite, 'agents', 'responsible_personnel_id', 'TEXT');
+    ensureColumn(sqlite, 'agents', 'primary_contact_id', 'TEXT');
+    ensureColumn(sqlite, 'agents', 'booking_channel_code', 'TEXT');
+    ensureColumn(sqlite, 'agents', 'default_currency_code', "TEXT NOT NULL DEFAULT 'IDR'");
+    ensureColumn(sqlite, 'agents', 'operational_note', 'TEXT');
+    ensureColumn(sqlite, 'agents', 'lifecycle_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");
+    ensureColumn(sqlite, 'agents', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    for (const table of ['passenger_tickets', 'cargo_bookings']) {
+      ensureColumn(sqlite, table, 'agent_code_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'agent_name_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'commission_rule_id', 'TEXT');
+      ensureColumn(sqlite, table, 'commission_rule_version', 'INTEGER');
+      ensureColumn(sqlite, table, 'commission_basis_type', 'TEXT');
+      ensureColumn(sqlite, table, 'commission_basis_amount', 'INTEGER');
+      ensureColumn(sqlite, table, 'commission_amount', 'INTEGER');
+      ensureColumn(sqlite, table, 'commission_currency', 'TEXT');
+    }
     ensureDepreciationScheduleCancellationStatus(sqlite);
 
     migrateMaintenanceIssueTargets(sqlite);
@@ -1052,6 +1216,23 @@ export function runMigrations(sqlite: Database.Database) {
       'TEXT REFERENCES managed_assets(id)'
     );
     ensureColumn(sqlite, 'asset_maintenance_work_orders', 'completion_evidence_reference', 'TEXT');
+    ensureColumn(sqlite, 'asset_audits', 'station_id_snapshot', 'TEXT REFERENCES stations(id)');
+    ensureColumn(sqlite, 'asset_audits', 'location_snapshot', 'TEXT');
+    ensureColumn(sqlite, 'asset_audits', 'condition_snapshot', 'TEXT');
+    sqlite.exec(`UPDATE asset_audits
+      SET station_id_snapshot = COALESCE(
+            station_id_snapshot,
+            (SELECT station_id FROM managed_assets WHERE managed_assets.id = asset_audits.asset_id)
+          ),
+          location_snapshot = COALESCE(
+            location_snapshot,
+            (SELECT location_detail FROM managed_assets WHERE managed_assets.id = asset_audits.asset_id)
+          ),
+          condition_snapshot = COALESCE(
+            condition_snapshot,
+            (SELECT condition_status FROM managed_assets WHERE managed_assets.id = asset_audits.asset_id)
+          )
+      WHERE station_id_snapshot IS NULL OR location_snapshot IS NULL OR condition_snapshot IS NULL`);
     sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_single_live_maintenance
       ON asset_maintenance_work_orders(asset_id)
       WHERE status IN ('OPEN', 'IN_PROGRESS', 'WAITING_PARTS')`);
@@ -1060,6 +1241,95 @@ export function runMigrations(sqlite: Database.Database) {
     );
     seedFlightOperationLookups(sqlite);
     ensureColumn(sqlite, 'flight_operations', 'order_number', "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(
+      sqlite,
+      'flight_station_service_requests',
+      'version',
+      'INTEGER NOT NULL DEFAULT 1'
+    );
+    ensureColumn(sqlite, 'flight_station_costs', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'classification', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'calculation_status', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'verification_status', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'effective_status', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'calculated_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'expiry_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'invalidation_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'source_record_ids', 'TEXT');
+    ensureColumn(sqlite, 'flight_readiness_checks', 'assurance_phase', 'TEXT');
+    ensureColumn(sqlite, 'flight_operational_audit', 'before_version', 'INTEGER');
+    ensureColumn(sqlite, 'flight_operational_audit', 'after_version', 'INTEGER');
+    ensureColumn(sqlite, 'flight_manifests', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_manifests', 'submitted_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'submitted_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'locked_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'rejection_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'empty_load_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'empty_load_confirmed_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifests', 'empty_load_confirmed_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_decided_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_decided_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_decision_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_manifest_cargo_items', 'dg_evidence_ids', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'flight_schedule_templates',
+      'capacity_profile_id',
+      'TEXT REFERENCES flight_capacity_profiles(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'flight_schedule_templates',
+      'arrival_day_offset',
+      'INTEGER NOT NULL DEFAULT 0'
+    );
+    ensureColumn(
+      sqlite,
+      'flight_schedule_templates',
+      'booking_open_minutes_before',
+      'INTEGER NOT NULL DEFAULT 4320'
+    );
+    sqlite.exec(`UPDATE flight_schedule_templates
+      SET booking_open_minutes_before = booking_open_hours_before * 60
+      WHERE booking_open_minutes_before IS NULL
+         OR booking_open_minutes_before = 4320`);
+    ensureColumn(
+      sqlite,
+      'flight_schedule_templates',
+      'lifecycle_status',
+      "TEXT NOT NULL DEFAULT 'ACTIVE'"
+    );
+    sqlite.exec(`UPDATE flight_schedule_templates
+      SET lifecycle_status = CASE
+        WHEN is_active = 1 THEN 'ACTIVE'
+        ELSE 'INACTIVE'
+      END
+      WHERE lifecycle_status IS NULL OR lifecycle_status = 'DRAFT'`);
+    ensureColumn(sqlite, 'flight_schedule_templates', 'effective_from', 'TEXT');
+    ensureColumn(sqlite, 'flight_schedule_templates', 'effective_until', 'TEXT');
+    ensureColumn(sqlite, 'flight_schedule_templates', 'internal_operational_note', 'TEXT');
+    ensureColumn(sqlite, 'flight_schedule_templates', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS schedule_template_audit_logs (
+      id TEXT PRIMARY KEY,
+      template_id TEXT NOT NULL REFERENCES flight_schedule_templates(id),
+      action TEXT NOT NULL,
+      actor_id TEXT,
+      actor_name TEXT,
+      changed_fields TEXT NOT NULL DEFAULT '[]',
+      metadata TEXT,
+      request_id TEXT,
+      occurred_at TEXT NOT NULL
+    )`);
+    sqlite.exec(
+      'CREATE INDEX IF NOT EXISTS idx_schedule_templates_lifecycle ON flight_schedule_templates(lifecycle_status)'
+    );
+    sqlite.exec(
+      'CREATE INDEX IF NOT EXISTS idx_schedule_templates_effective ON flight_schedule_templates(effective_from, effective_until)'
+    );
+    sqlite.exec(
+      'CREATE INDEX IF NOT EXISTS idx_schedule_template_audit_template_id ON schedule_template_audit_logs(template_id)'
+    );
+    migrateManifestAssuranceData(sqlite);
     ensureColumn(
       sqlite,
       'flight_operations',
@@ -1165,6 +1435,7 @@ export function runMigrations(sqlite: Database.Database) {
       'availability_status',
       "TEXT NOT NULL DEFAULT 'AVAILABLE' CHECK (availability_status IN ('AVAILABLE', 'ON_DUTY', 'ASSIGNED_OTHER_FLIGHT', 'ON_LEAVE', 'UNAVAILABLE'))"
     );
+    ensurePersonnelSchema(sqlite);
     ensureColumn(sqlite, 'crews', 'duty_station_id', 'TEXT REFERENCES stations(id)');
     ensureColumn(sqlite, 'crews', 'readiness_note', 'TEXT');
     ensureColumn(sqlite, 'flight_capacity_profiles', 'profile_name', "TEXT NOT NULL DEFAULT ''");
@@ -1220,10 +1491,158 @@ export function runMigrations(sqlite: Database.Database) {
     );
     ensureColumn(sqlite, 'rate_cards', 'minimum_charge', 'INTEGER');
     ensureColumn(sqlite, 'rate_cards', 'demo_usage_note', 'TEXT');
+    ensureColumn(sqlite, 'rate_cards', 'rate_name', 'TEXT');
+    ensureColumn(sqlite, 'rate_cards', 'lifecycle_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");
+    ensureColumn(sqlite, 'rate_cards', 'route_id', 'TEXT REFERENCES routes(id)');
+    ensureColumn(sqlite, 'rate_cards', 'agent_id', 'TEXT REFERENCES agents(id)');
+    ensureColumn(sqlite, 'rate_cards', 'contract_id', 'TEXT');
+    ensureColumn(sqlite, 'rate_cards', 'aircraft_type_id', 'TEXT REFERENCES aircraft(id)');
+    ensureColumn(sqlite, 'rate_cards', 'public_note', 'TEXT');
+    ensureColumn(sqlite, 'rate_cards', 'internal_pricing_note', 'TEXT');
+    ensureColumn(sqlite, 'rate_cards', 'rate_family_id', 'TEXT');
+    ensureColumn(sqlite, 'rate_cards', 'supersedes_rate_id', 'TEXT');
+    ensureColumn(sqlite, 'rate_cards', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'rate_cards', 'created_by', 'TEXT');
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS rate_booking_channels (
+        id TEXT PRIMARY KEY,
+        rate_card_id TEXT NOT NULL REFERENCES rate_cards(id) ON DELETE CASCADE,
+        booking_channel_code TEXT NOT NULL,
+        effective_from TEXT NOT NULL,
+        effective_until TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(rate_card_id, booking_channel_code, effective_from)
+      )`
+    );
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS rate_contract_links (
+        id TEXT PRIMARY KEY,
+        rate_card_id TEXT NOT NULL REFERENCES rate_cards(id) ON DELETE CASCADE,
+        customer_id TEXT REFERENCES customers(id),
+        contract_number TEXT NOT NULL,
+        contract_name TEXT,
+        effective_from TEXT,
+        effective_until TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        rate_scope TEXT,
+        document_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`
+    );
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS rate_audit_logs (
+        id TEXT PRIMARY KEY,
+        rate_card_id TEXT NOT NULL REFERENCES rate_cards(id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        actor_id TEXT,
+        actor_name TEXT,
+        changed_fields TEXT NOT NULL DEFAULT '[]',
+        metadata TEXT,
+        request_id TEXT,
+        occurred_at TEXT NOT NULL
+      )`
+    );
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS contract_subsidy_programs (
+        id TEXT PRIMARY KEY,
+        program_code TEXT NOT NULL UNIQUE,
+        program_name TEXT NOT NULL,
+        sponsor_name TEXT NOT NULL,
+        service_scope TEXT NOT NULL,
+        route_scope TEXT,
+        customer_id TEXT REFERENCES customers(id),
+        contract_number TEXT,
+        currency_code TEXT NOT NULL DEFAULT 'IDR',
+        allocated_budget_minor INTEGER NOT NULL DEFAULT 0 CHECK (allocated_budget_minor >= 0),
+        effective_from TEXT NOT NULL,
+        effective_until TEXT,
+        lifecycle_status TEXT NOT NULL DEFAULT 'ACTIVE',
+        renewal_status TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (effective_until IS NULL OR effective_until >= effective_from)
+      )`
+    );
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS contract_subsidy_consumptions (
+        id TEXT PRIMARY KEY,
+        program_id TEXT NOT NULL REFERENCES contract_subsidy_programs(id) ON DELETE CASCADE,
+        source_type TEXT NOT NULL,
+        source_id TEXT,
+        description TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_minor >= 0),
+        currency_code TEXT NOT NULL DEFAULT 'IDR',
+        status TEXT NOT NULL DEFAULT 'RECOGNIZED',
+        consumed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`
+    );
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS contract_subsidy_audit_logs (
+        id TEXT PRIMARY KEY,
+        program_id TEXT REFERENCES contract_subsidy_programs(id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        actor_id TEXT,
+        actor_name TEXT,
+        changed_fields TEXT NOT NULL DEFAULT '[]',
+        metadata TEXT,
+        request_id TEXT,
+        occurred_at TEXT NOT NULL
+      )`
+    );
+    sqlite.exec(
+      `UPDATE rate_cards
+       SET lifecycle_status = CASE WHEN is_active = 1 THEN 'ACTIVE' ELSE 'INACTIVE' END
+       WHERE lifecycle_status IS NULL OR lifecycle_status = ''`
+    );
+    sqlite.exec(
+      `UPDATE rate_cards
+       SET rate_family_id = id
+       WHERE rate_family_id IS NULL OR rate_family_id = ''`
+    );
+    sqlite.exec(
+      `INSERT OR IGNORE INTO rate_booking_channels (
+         id, rate_card_id, booking_channel_code, effective_from, effective_until, status, created_at, updated_at
+       )
+       SELECT 'rate-booking-channel-' || id, id, booking_channel, effective_from, effective_to,
+              CASE WHEN is_active = 1 THEN 'ACTIVE' ELSE 'INACTIVE' END, created_at, updated_at
+       FROM rate_cards
+       WHERE booking_channel IS NOT NULL AND trim(booking_channel) <> ''`
+    );
+    for (const table of ['passenger_tickets', 'cargo_bookings']) {
+      ensureColumn(sqlite, table, 'source_rate_version', 'INTEGER');
+      ensureColumn(sqlite, table, 'rate_code_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'currency_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'base_rate_snapshot', 'INTEGER');
+      ensureColumn(sqlite, table, 'minimum_charge_snapshot', 'INTEGER');
+      ensureColumn(sqlite, table, 'rate_unit_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'price_basis_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'tax_rule_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'pricing_scope_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'calculation_lines_snapshot', 'TEXT');
+      ensureColumn(sqlite, table, 'total_amount_snapshot', 'INTEGER');
+    }
     sqlite.exec(
       `UPDATE flight_operations
        SET order_number = 'FO-' || substr(flight_number, 5)
        WHERE order_number IS NULL OR order_number = ''`
+    );
+    // Migrate verification data for existing flights after schema is ready
+    migrateVerificationData(sqlite);
+    sqlite.exec(
+      `DELETE FROM flight_actual_reconciliations
+       WHERE rowid NOT IN (
+         SELECT MAX(rowid) FROM flight_actual_reconciliations GROUP BY flight_id
+       )`
+    );
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_actual_reconciliations_unique_flight
+       ON flight_actual_reconciliations(flight_id)`
     );
     recreateIndexes(sqlite);
     sqlite.exec(
@@ -1415,6 +1834,150 @@ function migrateMaintenanceIssueTargets(sqlite: Database.Database) {
     FROM maintenance_part_issue_lines_legacy`);
   sqlite.exec('DROP TABLE maintenance_part_issue_lines_legacy');
   sqlite.exec('DROP TABLE maintenance_part_issues_legacy');
+}
+
+function ensurePersonnelSchema(sqlite: Database.Database) {
+  ensureColumn(sqlite, 'crews', 'gender', 'TEXT');
+  ensureColumn(sqlite, 'crews', 'date_of_birth', 'TEXT');
+  ensureColumn(sqlite, 'crews', 'nationality_code', 'TEXT');
+  ensureColumn(sqlite, 'crews', 'phone', 'TEXT');
+  ensureColumn(sqlite, 'crews', 'email', 'TEXT');
+  ensureColumn(sqlite, 'crews', 'department_id', 'TEXT REFERENCES departments(id)');
+  ensureColumn(sqlite, 'crews', 'supervisor_personnel_id', 'TEXT REFERENCES crews(id)');
+  ensureColumn(sqlite, 'crews', 'lifecycle_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");
+  ensureColumn(sqlite, 'crews', 'version', 'INTEGER NOT NULL DEFAULT 1');
+  sqlite.exec(`UPDATE crews
+    SET lifecycle_status = CASE WHEN is_active = 1 THEN 'ACTIVE' ELSE 'INACTIVE' END
+    WHERE lifecycle_status IS NULL`);
+
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS personnel_licenses (
+    id TEXT PRIMARY KEY,
+    personnel_id TEXT NOT NULL REFERENCES crews(id),
+    license_type TEXT NOT NULL,
+    license_number TEXT NOT NULL,
+    issuing_authority TEXT,
+    issue_date TEXT,
+    expiry_date TEXT,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'EXPIRED', 'SUSPENDED', 'REVOKED', 'SUPERSEDED')),
+    document_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS personnel_medical_certificates (
+    id TEXT PRIMARY KEY,
+    personnel_id TEXT NOT NULL REFERENCES crews(id),
+    certificate_type TEXT NOT NULL,
+    certificate_number TEXT,
+    issue_date TEXT,
+    expiry_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'EXPIRED', 'SUSPENDED', 'REVOKED', 'SUPERSEDED')),
+    restrictions TEXT,
+    issuing_authority TEXT,
+    document_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS personnel_qualifications (
+    id TEXT PRIMARY KEY,
+    personnel_id TEXT NOT NULL REFERENCES crews(id),
+    qualification_type TEXT NOT NULL,
+    reference_type TEXT,
+    reference_id TEXT,
+    issued_at TEXT,
+    expires_at TEXT,
+    status TEXT NOT NULL DEFAULT 'VALID' CHECK (status IN ('VALID', 'EXPIRING_SOON', 'EXPIRED', 'SUSPENDED')),
+    notes TEXT,
+    document_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS personnel_notes (
+    id TEXT PRIMARY KEY,
+    personnel_id TEXT NOT NULL REFERENCES crews(id),
+    note_type TEXT NOT NULL DEFAULT 'GENERAL' CHECK (note_type IN ('OPERATIONAL', 'HR', 'TRAINING', 'SAFETY', 'GENERAL')),
+    visibility TEXT NOT NULL DEFAULT 'INTERNAL' CHECK (visibility IN ('INTERNAL', 'CONFIDENTIAL', 'RESTRICTED')),
+    note_text TEXT NOT NULL,
+    author_id TEXT,
+    author_name TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS personnel_audit_logs (
+    id TEXT PRIMARY KEY,
+    personnel_id TEXT NOT NULL REFERENCES crews(id),
+    action TEXT NOT NULL,
+    actor_id TEXT,
+    actor_name TEXT,
+    changed_fields TEXT NOT NULL DEFAULT '[]',
+    metadata TEXT,
+    request_id TEXT,
+    occurred_at TEXT NOT NULL
+  )`);
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_crews_base_station ON crews(base_station_id)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_crews_duty_station ON crews(duty_station_id)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_crews_department ON crews(department_id)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_crews_supervisor ON crews(supervisor_personnel_id)');
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_licenses_personnel ON personnel_licenses(personnel_id)'
+  );
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_licenses_expiry ON personnel_licenses(expiry_date)'
+  );
+  sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_personnel_primary_active_license
+    ON personnel_licenses(personnel_id)
+    WHERE is_primary = 1 AND status = 'ACTIVE'`);
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_medical_personnel ON personnel_medical_certificates(personnel_id)'
+  );
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_medical_expiry ON personnel_medical_certificates(expiry_date)'
+  );
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_qualifications_personnel ON personnel_qualifications(personnel_id)'
+  );
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_qualifications_expiry ON personnel_qualifications(expires_at)'
+  );
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_notes_personnel ON personnel_notes(personnel_id)'
+  );
+  sqlite.exec(
+    'CREATE INDEX IF NOT EXISTS idx_personnel_audit_personnel ON personnel_audit_logs(personnel_id)'
+  );
+
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT OR IGNORE INTO personnel_licenses (
+        id, personnel_id, license_type, license_number, expiry_date, is_primary, status,
+        created_at, updated_at
+      )
+      SELECT 'plic-' || id, id, license_type, license_number, license_expiry_date, 1,
+        CASE
+          WHEN license_expiry_date IS NOT NULL AND license_expiry_date < date('now') THEN 'EXPIRED'
+          ELSE 'ACTIVE'
+        END,
+        COALESCE(created_at, @now), COALESCE(updated_at, @now)
+      FROM crews
+      WHERE license_type IS NOT NULL AND license_number IS NOT NULL`
+    )
+    .run({ now });
+  sqlite
+    .prepare(
+      `INSERT OR IGNORE INTO personnel_medical_certificates (
+        id, personnel_id, certificate_type, expiry_date, status, created_at, updated_at
+      )
+      SELECT 'pmed-' || id, id, 'Class 1 Medical', medical_expiry_date,
+        CASE
+          WHEN medical_expiry_date < date('now') THEN 'EXPIRED'
+          ELSE 'ACTIVE'
+        END,
+        COALESCE(created_at, @now), COALESCE(updated_at, @now)
+      FROM crews
+      WHERE medical_expiry_date IS NOT NULL`
+    )
+    .run({ now });
 }
 
 function ensureDepreciationScheduleCancellationStatus(sqlite: Database.Database) {

@@ -9,6 +9,14 @@ const emit = defineEmits<{
 const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null);
 const submitting = ref(false);
 const serverError = ref('');
+const { data: departments } = await useAsyncData(
+  'personnel-form-departments',
+  () =>
+    fetchApi<Array<{ id: string; departmentCode: string; departmentName: string }>>(
+      '/api/master-data/departments'
+    ),
+  { default: () => [] }
+);
 const form = reactive<PersonnelInput>({
   employeeCode: '',
   fullName: '',
@@ -22,6 +30,7 @@ const form = reactive<PersonnelInput>({
   dutyStationId: null,
   readinessNote: null,
   unit: '',
+  departmentId: null,
   employmentStatus: 'PERMANENT'
 });
 const required = (label: string) => (value: unknown) =>
@@ -68,6 +77,9 @@ watch(
         ? (props.record.readinessNote as PersonnelInput['readinessNote'])
         : null,
       unit: props.record ? (props.record.unit as PersonnelInput['unit']) : '',
+      departmentId: props.record
+        ? ((props.record.departmentId ?? null) as PersonnelInput['departmentId'])
+        : null,
       employmentStatus: props.record
         ? (props.record.employmentStatus as PersonnelInput['employmentStatus'])
         : 'PERMANENT'
@@ -80,9 +92,16 @@ async function submit() {
   submitting.value = true;
   serverError.value = '';
   try {
+    const selectedDepartment = departments.value.find((item) => item.id === form.departmentId);
     const record = await fetchApi<PersonnelDto>(
       props.record ? '/api/master-data/personnel/' + props.record.id : '/api/master-data/personnel',
-      { method: props.record ? 'PUT' : 'POST', body: { ...form } }
+      {
+        method: props.record ? 'PUT' : 'POST',
+        body: {
+          ...form,
+          unit: selectedDepartment?.departmentName ?? form.unit
+        }
+      }
     );
     emit('saved', record);
     emit('update:modelValue', false);
@@ -201,11 +220,13 @@ async function submit() {
               />
             </VCol>
             <VCol cols="12" md="6">
-              <VTextField
-                v-model="form.unit"
+              <VSelect
+                v-model="form.departmentId"
+                :items="departments"
+                item-title="departmentName"
+                item-value="id"
                 label="Unit"
                 :rules="[required('Unit')]"
-                type="text"
                 variant="outlined"
               />
             </VCol>

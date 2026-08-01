@@ -53,6 +53,11 @@ export type TicketingRateRecord = {
   taxCodeId: string | null;
   taxCode: string | null;
   taxRateBasisPoints: number;
+  sourceRateVersion: number | null;
+  rateCodeSnapshot: string | null;
+  rateUnitSnapshot: string | null;
+  priceBasisSnapshot: string | null;
+  pricingScopeSnapshot: string | null;
 };
 
 const availableFlightSelect = `
@@ -77,6 +82,11 @@ const availableFlightSelect = `
     rc.minimum_charge AS minimumCharge,
     rc.cargo_price_basis AS cargoPriceBasis,
     rc.id AS rateCardId,
+    rc.version AS sourceRateVersion,
+    rc.rate_code AS rateCodeSnapshot,
+    rc.rate_unit AS rateUnitSnapshot,
+    rc.cargo_price_basis AS priceBasisSnapshot,
+    rc.pricing_scope AS pricingScopeSnapshot,
     currency.currency_code AS currencyCode,
     rc.tax_code_id AS taxCodeId,
     tax.tax_code AS taxCode,
@@ -96,9 +106,18 @@ const availableFlightSelect = `
       AND candidate.destination_station_id = r.destination_station_id
       AND candidate.customer_id IS NULL
       AND candidate.is_active = 1
+      AND candidate.lifecycle_status = 'ACTIVE'
       AND candidate.effective_from <= substr(operation.scheduled_departure_at, 1, 10)
       AND (candidate.effective_to IS NULL OR candidate.effective_to >= substr(operation.scheduled_departure_at, 1, 10))
-    ORDER BY candidate.rate_priority ASC, candidate.effective_from DESC
+    ORDER BY
+      (CASE WHEN candidate.contract_id IS NOT NULL THEN 64 ELSE 0 END +
+       CASE WHEN candidate.customer_id IS NOT NULL THEN 32 ELSE 0 END +
+       CASE WHEN candidate.agent_id IS NOT NULL THEN 16 ELSE 0 END +
+       CASE WHEN candidate.route_id IS NOT NULL THEN 8 ELSE 0 END +
+       4) DESC,
+      candidate.rate_priority ASC,
+      candidate.effective_from DESC,
+      candidate.version DESC
     LIMIT 1
   )
   JOIN currencies currency ON currency.id = rc.currency_id
@@ -162,6 +181,11 @@ export class TicketingSalesRepository {
         .prepare(
           `SELECT rc.id, rc.base_rate AS baseRate, rc.minimum_charge AS minimumCharge,
                   rc.cargo_price_basis AS cargoPriceBasis,
+                  rc.version AS sourceRateVersion,
+                  rc.rate_code AS rateCodeSnapshot,
+                  rc.rate_unit AS rateUnitSnapshot,
+                  rc.cargo_price_basis AS priceBasisSnapshot,
+                  rc.pricing_scope AS pricingScopeSnapshot,
                   currency.currency_code AS currencyCode,
                   rc.tax_code_id AS taxCodeId, tax.tax_code AS taxCode,
                   COALESCE(tax.tax_rate_basis_points, 0) AS taxRateBasisPoints
@@ -174,9 +198,10 @@ export class TicketingSalesRepository {
              AND rc.destination_station_id = r.destination_station_id
              AND rc.customer_id IS NULL
              AND rc.is_active = 1
+             AND rc.lifecycle_status = 'ACTIVE'
              AND rc.effective_from <= substr(?, 1, 10)
              AND (rc.effective_to IS NULL OR rc.effective_to >= substr(?, 1, 10))
-           ORDER BY rc.rate_priority ASC, rc.effective_from DESC
+           ORDER BY rc.rate_priority ASC, rc.effective_from DESC, rc.version DESC
            LIMIT 1`
         )
         .get(routeId, serviceType, scheduledDeparture, scheduledDeparture) as

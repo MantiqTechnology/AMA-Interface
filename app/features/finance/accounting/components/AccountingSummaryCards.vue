@@ -90,7 +90,7 @@ const cards = computed(() => [
 }
 .summary-card:hover {
   border-color: rgba(var(--v-theme-primary), 0.38);
-  box-shadow: 0 4px 14px rgba(8, 43, 73, 0.07);
+  box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.08);
   transform: translateY(-1px);
 }
 .summary-card:focus-visible {
@@ -106,17 +106,17 @@ const cards = computed(() => [
   justify-content: center;
 }
 .summary-card--pending .summary-icon {
-  background: rgba(40, 110, 158, 0.12);
-  color: #0b2d4d;
+  background: rgba(var(--v-theme-info), 0.12);
+  color: rgb(var(--v-theme-primary));
 }
 .summary-card--posted .summary-icon,
 .summary-card--asset .summary-icon {
-  background: rgba(19, 138, 138, 0.12);
-  color: #0d7373;
+  background: rgba(var(--v-theme-secondary), 0.12);
+  color: rgb(var(--v-theme-secondary));
 }
 .summary-card--exception .summary-icon {
-  background: rgba(242, 181, 68, 0.2);
-  color: #8a5a00;
+  background: rgba(var(--v-theme-warning), 0.2);
+  color: rgb(var(--v-theme-text-primary));
 }
 .summary-copy {
   display: flex;

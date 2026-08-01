@@ -2,10 +2,12 @@ import { createStationCostBodySchema } from '../../../../shared/contracts/flight
 import { defineApiEventHandler } from '../../../utils/api-response';
 import { getServices } from '../../../utils/services';
 import { parseBody } from '../../../utils/validation';
-import { getDemoActorId, requireDemoPermission } from '../../../utils/auth';
+import { getDemoActorContext, getDemoActorId, requireDemoPermission } from '../../../utils/auth';
 
 export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'station.operation.update');
   const body = await parseBody(event, createStationCostBodySchema);
-  return getServices().flightOperations.createStationCost(body, getDemoActorId(event));
+  const service = getServices().flightOperations;
+  service.assertActorStationScope(body.stationId, getDemoActorContext(event));
+  return service.createStationCost(body, getDemoActorId(event));
 });

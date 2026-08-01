@@ -121,3 +121,12 @@ export function requireEmployeeAuth(event: H3Event): string {
   }
   return employeeId;
 }
+
+export function getDemoActorContext(event: H3Event) {
+  return {
+    userId: getDemoActorId(event),
+    role: getDemoRole(event),
+    stationCodes: getDemoStationScope(event) as string[],
+    requestId: String(event.context.requestId ?? '')
+  };
+}
