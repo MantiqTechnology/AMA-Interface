@@ -5,6 +5,8 @@ import { seedFinanceMasterData } from './seeds/master-data/finance';
 import { seedOperationsMasterData } from './seeds/master-data/operations';
 import { createDemoSeedContext, type DemoSeedContext } from './seeds/context';
 
+import { seedHrisData } from './seeds/hris';
+
 export async function seedDemoData(
   db: AppDatabase,
   context: DemoSeedContext = createDemoSeedContext()
@@ -13,4 +15,5 @@ export async function seedDemoData(
   await seedFinanceMasterData(db, context);
   await seedCommercialMasterData(db, context);
   await seedCargoMasterData(db, context);
+  await seedHrisData(db, context);
 }

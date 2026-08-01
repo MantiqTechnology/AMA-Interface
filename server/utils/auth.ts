@@ -88,3 +88,36 @@ export function hasDemoPermission(event: H3Event, permissionId: string) {
   const permissions = demoRolePermissions[role];
   return permissions.includes('*') || permissions.includes(permissionId);
 }
+
+const employeeCookieName = 'ama_employee_id';
+
+export function getEmployeeSessionId(event: H3Event): string | null {
+  const id = getCookie(event, employeeCookieName);
+  return id && id.trim().length > 0 ? id : null;
+}
+
+export function setEmployeeSession(event: H3Event, employeeId: string) {
+  setCookie(event, employeeCookieName, employeeId, {
+    httpOnly: false,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 7
+  });
+}
+
+export function clearEmployeeSession(event: H3Event) {
+  setCookie(event, employeeCookieName, '', {
+    httpOnly: false,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0
+  });
+}
+
+export function requireEmployeeAuth(event: H3Event): string {
+  const employeeId = getEmployeeSessionId(event);
+  if (!employeeId) {
+    throw new DomainError('UNAUTHORIZED', 'Employee login required for self-service portal.', 401);
+  }
+  return employeeId;
+}

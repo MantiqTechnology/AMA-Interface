@@ -5,7 +5,11 @@ export const demoRoles = [
   'Station Admin',
   'Finance Reviewer',
   'Maintenance Manager',
-  'Inventory Controller'
+  'Inventory Controller',
+  'HR Staff',
+  'HR Manager',
+  'Chief of Pilot',
+  'Employee'
 ] as const;
 
 export type DemoRole = (typeof demoRoles)[number];
@@ -19,7 +23,11 @@ export const demoRoleActorIds: Record<DemoRole, string> = {
   'Station Admin': 'USR-STATION-ADMIN',
   'Finance Reviewer': 'USR-FINANCE-REVIEWER',
   'Maintenance Manager': 'USR-MAINTENANCE-MANAGER',
-  'Inventory Controller': 'USR-INVENTORY-CONTROLLER'
+  'Inventory Controller': 'USR-INVENTORY-CONTROLLER',
+  'HR Staff': 'USR-HR-STAFF',
+  'HR Manager': 'USR-HR-MANAGER',
+  'Chief of Pilot': 'USR-CHIEF-PILOT',
+  Employee: 'USR-EMPLOYEE'
 };
 
 export const demoRoleStationScopes: Record<DemoRole, readonly string[]> = {
@@ -29,7 +37,11 @@ export const demoRoleStationScopes: Record<DemoRole, readonly string[]> = {
   'Station Admin': ['WMX'],
   'Finance Reviewer': ['ALL'],
   'Maintenance Manager': ['DJJ'],
-  'Inventory Controller': ['ALL']
+  'Inventory Controller': ['ALL'],
+  'HR Staff': ['ALL'],
+  'HR Manager': ['ALL'],
+  'Chief of Pilot': ['ALL'],
+  Employee: ['ALL']
 };
 
 export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
@@ -54,7 +66,11 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.valuation.read',
     'asset.read',
     'asset.finance.read',
-    'master_data.read'
+    'master_data.read',
+    'hris.employee.read',
+    'hris.org.read',
+    'hris.kpi.read',
+    'hris.payroll.read'
   ],
   OCC: [
     'platform.dashboard.view',
@@ -90,7 +106,10 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read',
     'asset.assign',
     'asset.move',
-    'master_data.read'
+    'master_data.read',
+    'hris.attendance.read',
+    'hris.attendance.manage',
+    'hris.schedule.read'
   ],
   'Finance Reviewer': [
     'platform.dashboard.view',
@@ -106,7 +125,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.read',
     'asset.read',
     'asset.finance.read',
-    'inventory.valuation.read'
+    'inventory.valuation.read',
+    'hris.payroll.read'
   ],
   'Maintenance Manager': [
     'platform.dashboard.view',
@@ -137,5 +157,83 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read',
     'document.read',
     'document.upload'
+  ],
+  'HR Staff': [
+    'platform.dashboard.view',
+    'hris.employee.read',
+    'hris.employee.manage',
+    'hris.employee.import',
+    'hris.attendance.read',
+    'hris.attendance.manage',
+    'hris.leave.read',
+    'hris.leave.approve',
+    'hris.overtime.approve',
+    'hris.certification.read',
+    'hris.certification.manage',
+    'hris.schedule.read',
+    'hris.schedule.manage',
+    'hris.payroll.read',
+    'hris.payroll.calculate',
+    'hris.allowance.read',
+    'hris.allowance.manage',
+    'hris.recruitment.manage',
+    'hris.kpi.read',
+    'hris.kpi.manage',
+    'hris.org.read',
+    'hris.self_service.read',
+    'master_data.read'
+  ],
+  'HR Manager': [
+    'platform.dashboard.view',
+    'hris.employee.read',
+    'hris.employee.manage',
+    'hris.employee.import',
+    'hris.attendance.read',
+    'hris.attendance.manage',
+    'hris.leave.read',
+    'hris.leave.approve',
+    'hris.overtime.approve',
+    'hris.certification.read',
+    'hris.certification.manage',
+    'hris.schedule.read',
+    'hris.schedule.manage',
+    'hris.payroll.read',
+    'hris.payroll.calculate',
+    'hris.payroll.approve',
+    'hris.payroll.journal',
+    'hris.allowance.read',
+    'hris.allowance.manage',
+    'hris.recruitment.manage',
+    'hris.kpi.read',
+    'hris.kpi.assess',
+    'hris.kpi.manage',
+    'hris.org.read',
+    'hris.self_service.read',
+    'master_data.read',
+    'finance.accounting.read'
+  ],
+  'Chief of Pilot': [
+    'platform.dashboard.view',
+    'flight.read',
+    'hris.employee.read',
+    'hris.certification.read',
+    'hris.certification.manage',
+    'hris.schedule.read',
+    'hris.schedule.manage',
+    'hris.kpi.read',
+    'hris.kpi.assess',
+    'hris.leave.read',
+    'hris.leave.approve',
+    'hris.overtime.approve',
+    'hris.org.read',
+    'hris.self_service.read',
+    'master_data.read'
+  ],
+  Employee: [
+    'platform.dashboard.view',
+    'hris.self_service.read',
+    'hris.leave.request',
+    'hris.overtime.request',
+    'hris.attendance.checkin'
   ]
 };

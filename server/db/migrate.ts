@@ -25,6 +25,7 @@ import {
   corporateAssetDropStatements,
   corporateAssetStatements
 } from './migrations/corporate-assets';
+import { hrisDropStatements, hrisStatements } from './migrations/hris';
 
 type FlightOperationLookupSeed = {
   table: string;
@@ -850,6 +851,7 @@ const createStatements = [
   ...ticketingStatements,
   ...inventoryStatements,
   ...corporateAssetStatements,
+  ...hrisStatements,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_due_at ON invoices(due_at)`,
@@ -865,6 +867,7 @@ const createStatements = [
 ];
 
 const dropStatements = [
+  ...hrisDropStatements,
   ...corporateAssetDropStatements,
   ...inventoryDropStatements,
   ...ticketingDropStatements,
@@ -1064,6 +1067,17 @@ export function runMigrations(sqlite: Database.Database) {
       'TEXT REFERENCES flight_requests(id)'
     );
     ensureLookupColumns(sqlite);
+    ensureColumn(sqlite, 'hris_shift_patterns', 'roster_type', "TEXT NOT NULL DEFAULT 'SHIFT'");
+    ensureColumn(sqlite, 'hris_shift_patterns', 'color_code', "TEXT DEFAULT '#1976D2'");
+    ensureColumn(sqlite, 'employee_certifications', 'document_url', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'hris_applicants',
+      'interviewer_employee_id',
+      'TEXT REFERENCES employees(id)'
+    );
+    ensureColumn(sqlite, 'hris_applicants', 'interview_scheduled_at', 'TEXT');
+    backfillEmployeeBankAndBpjsAndLeave(sqlite);
     ensureColumn(
       sqlite,
       'flight_operations',
@@ -1224,6 +1238,54 @@ export function runMigrations(sqlite: Database.Database) {
     sqlite.exec(
       'CREATE INDEX IF NOT EXISTS idx_flight_operation_approvals_flight ON flight_operation_approvals(flight_id)'
     );
+
+    // ── HRIS: extend employees table ──────────────────────────────────
+    ensureColumn(sqlite, 'employees', 'date_of_birth', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'gender', "TEXT CHECK (gender IN ('MALE', 'FEMALE'))");
+    ensureColumn(sqlite, 'employees', 'identity_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'phone', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'email', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'address', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'join_date', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'end_date', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'employees',
+      'employment_type',
+      "TEXT DEFAULT 'PERMANENT' CHECK (employment_type IN ('PERMANENT', 'CONTRACT', 'PROBATION'))"
+    );
+    ensureColumn(sqlite, 'employees', 'manager_id', 'TEXT REFERENCES employees(id)');
+    ensureColumn(sqlite, 'employees', 'crew_id', 'TEXT REFERENCES crews(id)');
+    ensureColumn(sqlite, 'employees', 'tax_id_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bank_name', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bank_account_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bank_account_name', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bpjs_kesehatan_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bpjs_tk_number', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'employees',
+      'marital_status',
+      "TEXT DEFAULT 'SINGLE' CHECK (marital_status IN ('SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED'))"
+    );
+    ensureColumn(sqlite, 'employees', 'number_of_dependents', 'INTEGER DEFAULT 0');
+    ensureColumn(sqlite, 'employees', 'ptkp_status', "TEXT DEFAULT 'TK/0'");
+    ensureColumn(sqlite, 'employees', 'pin_hash', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'avatar_url', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'basic_salary', 'INTEGER');
+    ensureColumn(sqlite, 'employees', 'position_allowance', 'INTEGER');
+    ensureColumn(sqlite, 'employees', 'flight_rate_per_hour', 'INTEGER');
+
+    // ── HRIS: extend departments table ────────────────────────────────
+    ensureColumn(sqlite, 'departments', 'parent_department_id', 'TEXT REFERENCES departments(id)');
+    ensureColumn(
+      sqlite,
+      'departments',
+      'department_level',
+      "TEXT DEFAULT 'UNIT' CHECK (department_level IN ('DIRECTORATE', 'DIVISION', 'DEPARTMENT', 'UNIT'))"
+    );
+    ensureColumn(sqlite, 'departments', 'head_employee_id', 'TEXT REFERENCES employees(id)');
+    ensureColumn(sqlite, 'departments', 'sort_order', 'INTEGER DEFAULT 0');
   });
 
   try {
@@ -1709,6 +1771,84 @@ function recreateIndexes(sqlite: Database.Database) {
     if (/^CREATE (UNIQUE )?INDEX/u.test(statement)) {
       sqlite.exec(statement);
     }
+  }
+}
+
+function backfillEmployeeBankAndBpjsAndLeave(sqlite: Database.Database) {
+  try {
+    const employees = sqlite
+      .prepare(
+        'SELECT id, employee_code, full_name, tax_id_number, bank_name, bank_account_number, bpjs_kesehatan_number, bpjs_tk_number FROM employees'
+      )
+      .all() as Array<{
+      id: string;
+      employee_code: string;
+      full_name: string;
+      tax_id_number?: string;
+      bank_name?: string;
+      bank_account_number?: string;
+      bpjs_kesehatan_number?: string;
+      bpjs_tk_number?: string;
+    }>;
+
+    const updateStmt = sqlite.prepare(`
+      UPDATE employees SET
+        bank_name = COALESCE(NULLIF(bank_name, ''), ?),
+        bank_account_number = COALESCE(NULLIF(bank_account_number, ''), ?),
+        bank_account_name = COALESCE(NULLIF(bank_account_name, ''), ?),
+        tax_id_number = COALESCE(NULLIF(tax_id_number, ''), ?),
+        bpjs_kesehatan_number = COALESCE(NULLIF(bpjs_kesehatan_number, ''), ?),
+        bpjs_tk_number = COALESCE(NULLIF(bpjs_tk_number, ''), ?)
+      WHERE id = ?
+    `);
+
+    const banks = ['Bank Mandiri', 'BCA', 'BRI', 'BNI'];
+    const nowStr = new Date().toISOString();
+
+    for (let i = 0; i < employees.length; i++) {
+      const emp = employees[i];
+      const numSeed = String(1000 + (i + 1) * 37).padStart(4, '0');
+      const bankName = emp.bank_name || banks[i % banks.length];
+      const bankAccount = emp.bank_account_number || `13700${numSeed}84${i % 9}`;
+      const bankAccountName = emp.full_name;
+      const npwp = emp.tax_id_number || `09.234.${numSeed.slice(0, 3)}.${numSeed.slice(3)}-012.000`;
+      const bpjsKes = emp.bpjs_kesehatan_number || `00019284${numSeed}${i % 10}`;
+      const bpjsTk = emp.bpjs_tk_number || `2109847${numSeed}${i % 10}`;
+
+      updateStmt.run(bankName, bankAccount, bankAccountName, npwp, bpjsKes, bpjsTk, emp.id);
+
+      // Ensure initial annual leave balance
+      const annualLeave = sqlite
+        .prepare("SELECT id FROM hris_leave_types WHERE leave_code = 'ANNUAL'")
+        .get() as { id: string } | undefined;
+      if (annualLeave) {
+        const year = new Date().getFullYear();
+        const existingBal = sqlite
+          .prepare(
+            'SELECT id FROM hris_leave_balances WHERE employee_id = ? AND leave_type_id = ? AND period_year = ?'
+          )
+          .get(emp.id, annualLeave.id, year);
+
+        if (!existingBal) {
+          sqlite
+            .prepare(
+              `INSERT INTO hris_leave_balances (id, employee_id, leave_type_id, period_year, entitled_days, used_days, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 12, ?, ?, ?)`
+            )
+            .run(
+              `bal-${emp.id.slice(0, 8)}-${year}`,
+              emp.id,
+              annualLeave.id,
+              year,
+              i % 4,
+              nowStr,
+              nowStr
+            );
+        }
+      }
+    }
+  } catch {
+    // Ignore if table not yet ready
   }
 }
 

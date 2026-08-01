@@ -372,6 +372,91 @@ const navItems = computed<NavItem[]>(() =>
         }
       ].filter((child) => child.visible)
     },
+    {
+      label: 'HRIS',
+      icon: 'mdi-account-tie',
+      visible: can('hris.employee.read').allowed || can('hris.self_service.read').allowed,
+      children: [
+        {
+          label: 'Dashboard',
+          to: '/hris',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('hris.employee.read').allowed
+        },
+        {
+          label: 'Employees',
+          to: '/hris/employees',
+          icon: 'mdi-account-group-outline',
+          visible: can('hris.employee.read').allowed
+        },
+        {
+          label: 'Organization',
+          to: '/hris/organization',
+          icon: 'mdi-sitemap-outline',
+          visible: can('hris.org.read').allowed
+        },
+        {
+          label: 'Certifications',
+          to: '/hris/certifications',
+          icon: 'mdi-certificate-outline',
+          visible: can('hris.certification.read').allowed
+        },
+        {
+          label: 'Attendance',
+          to: '/hris/attendance',
+          icon: 'mdi-clock-check-outline',
+          visible: can('hris.attendance.read').allowed
+        },
+        {
+          label: 'Leave',
+          to: '/hris/leave',
+          icon: 'mdi-calendar-account-outline',
+          visible: can('hris.leave.read').allowed
+        },
+        {
+          label: 'Overtime',
+          to: '/hris/overtime',
+          icon: 'mdi-clock-plus-outline',
+          visible: can('hris.leave.read').allowed
+        },
+        {
+          label: 'Schedules & Roster',
+          to: '/hris/schedules',
+          icon: 'mdi-calendar-clock',
+          visible: can('hris.schedule.read').allowed
+        },
+        {
+          label: 'Payroll',
+          to: '/hris/payroll',
+          icon: 'mdi-cash-multiple',
+          visible: can('hris.payroll.read').allowed
+        },
+        {
+          label: 'Recruitment',
+          to: '/hris/recruitment',
+          icon: 'mdi-account-plus-outline',
+          visible: can('hris.recruitment.manage').allowed
+        },
+        {
+          label: 'Career Portal',
+          to: '/careers',
+          icon: 'mdi-briefcase-search-outline',
+          visible: true
+        },
+        {
+          label: 'KPI',
+          to: '/hris/kpi',
+          icon: 'mdi-chart-line',
+          visible: can('hris.kpi.read').allowed
+        },
+        {
+          label: 'Employee Portal',
+          to: '/hris/portal',
+          icon: 'mdi-account-circle-outline',
+          visible: can('hris.self_service.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
     { label: 'Uploads', to: '/uploads', icon: 'mdi-file-upload-outline', visible: true },
     {
       label: 'Access',

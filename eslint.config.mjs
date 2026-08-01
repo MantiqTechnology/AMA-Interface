@@ -3,7 +3,7 @@ import vue from 'eslint-plugin-vue';
 
 export default [
   {
-    ignores: ['.nuxt/**', '.nuxt-*/**', '.output/**', 'node_modules/**', 'data/**']
+    ignores: ['.nuxt/**', '.nuxt-*/**', '.output/**', 'node_modules/**', 'data/**', 'reload/**']
   },
   ...tseslint.configs.recommended,
   ...vue.configs['flat/recommended'],
@@ -18,6 +18,7 @@ export default [
       'vue/multi-word-component-names': 'off',
       'vue/max-attributes-per-line': 'off',
       'vue/singleline-html-element-content-newline': 'off',
+      'vue/valid-v-slot': 'off',
       '@typescript-eslint/no-explicit-any': 'warn'
     }
   }
