@@ -24,6 +24,9 @@ const customerScopes = new Set([
   'CARGO_CONTRACT',
   'CHARTER_CONTRACT'
 ]);
+const BIGINT_2 = BigInt(2);
+const BIGINT_1000 = BigInt(1000);
+const BIGINT_10000 = BigInt(10000);
 const agentScopes = new Set(['AGENT_CONTRACT']);
 
 export class RateCardService {
@@ -253,7 +256,7 @@ export class RateCardService {
       chargeableWeightGrams = input.cargo.chargeableWeightGrams;
       variableCharge = this.roundDivide(
         BigInt(chargeableWeightGrams) * BigInt(rate.baseRate),
-        1000n
+        BIGINT_1000
       );
       trace.push('Cargo charge = chargeable grams x rate per kg / 1000.');
     }
@@ -261,7 +264,10 @@ export class RateCardService {
     const appliedBaseCharge =
       minimum === null || variableCharge > minimum ? variableCharge : minimum;
     const subtotal = appliedBaseCharge;
-    const tax = this.roundDivide(subtotal * BigInt(rate.taxRule?.rateBasisPoints ?? 0), 10_000n);
+    const tax = this.roundDivide(
+      subtotal * BigInt(rate.taxRule?.rateBasisPoints ?? 0),
+      BIGINT_10000
+    );
     const total = subtotal + tax;
     return {
       rateCardId: rate.id,
@@ -521,7 +527,7 @@ export class RateCardService {
   }
 
   private roundDivide(numerator: bigint, denominator: bigint) {
-    return (numerator + denominator / 2n) / denominator;
+    return (numerator + denominator / BIGINT_2) / denominator;
   }
 
   private rethrowWriteError(error: unknown): never {

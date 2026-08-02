@@ -1,8 +1,10 @@
 import { nanoid } from 'nanoid';
+import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type {
-  ActionNoteBody,
+  ApprovalActionBody,
   ActualTimeBody,
+  CompleteStationServiceBody,
   CreateCargoBody,
   CreateFlightOperationBody,
   CreateFlightRequestBody,
@@ -12,6 +14,7 @@ import type {
   CreateStationCostBody,
   CreateStationServiceBody,
   FlightFinanceHandoffDto,
+  FuelActionBody,
   FlightApprovalDecisionBody,
   FlightApprovalDto,
   FlightAttachmentDto,
@@ -24,6 +27,8 @@ import type {
   FlightOperationOverviewDto,
   FlightOperationRecord,
   FlightOperationStatus,
+  FlightOperationalAuditDto,
+  FuelPlanningEstimateDto,
   FlightPlanningContextDto,
   FlightPlanningContextQuery,
   FlightRatePreviewDto,
@@ -37,15 +42,25 @@ import type {
   ListMaintenanceHandoffsQuery,
   FlightStatusHistoryDto,
   ListFlightOperationsQuery,
-  ListFlightRequestsQuery
+  ListFlightRequestsQuery,
+  OperationalAdvisoryDto,
+  UpdateStationCostBody,
+  VoidStationCostBody
 } from '../../shared/contracts/flight-operations';
 import { flightOperationStatuses } from '../../shared/contracts/flight-operations';
 import { getReadinessClassification } from '../../shared/constants/readiness-classifications';
+import {
+  crewQualificationRequirements,
+  normalizeQualificationCode,
+  qualificationTypeMatches
+} from '../../shared/constants/crew-qualifications';
 import { DomainError, notFound } from '../utils/errors';
 import { getApplicationNow } from '../utils/time';
 import { createAccountingService } from '../features/finance/accounting';
 import { createInvoiceService } from '../features/finance/invoices';
 import type { RoutesService } from '../features/operations/routes/service';
+import { AircraftTrackingService } from './aircraft-tracking.service';
+import { demoRoleActorIds } from '../../shared/types/roles';
 
 type SqlValue = string | number | boolean | null;
 type SqlRow = Record<string, SqlValue>;
@@ -62,6 +77,8 @@ type ClosureEvidence = Pick<
   manifests: FlightManifestDto[];
   fuelRequests: FlightFuelRequestDto[];
   stationCosts: FlightStationCostDto[];
+  stationServices: FlightStationServiceDto[];
+  financeHandoffs: FlightFinanceHandoffDto[];
   maintenanceHandoffs: FlightMaintenanceHandoffDto[];
 };
 
@@ -69,12 +86,14 @@ type MaintenanceHandoffQuery = ListMaintenanceHandoffsQuery & { flightId?: strin
 
 const readinessDefinitions = [
   ['ROUTE_AVAILABILITY', 'Route availability'],
+  ['OPERATIONAL_ADVISORY', 'Operational advisory'],
   ['AIRCRAFT_SERVICEABILITY', 'Aircraft serviceability'],
   ['AIRCRAFT_LOCATION', 'Aircraft location'],
   ['AIRCRAFT_SCHEDULE', 'Aircraft schedule availability'],
   ['AIRCRAFT_CAPACITY', 'Aircraft capacity'],
   ['CREW_AVAILABILITY', 'Crew availability'],
   ['CREW_LICENSE_MEDICAL', 'Crew license and medical'],
+  ['CREW_QUALIFICATION', 'Crew operational qualification'],
   ['MANIFEST_APPROVED', 'Manifest approved'],
   ['DG_ACCEPTANCE', 'Dangerous goods acceptance'],
   ['FUEL_CONFIRMED', 'Fuel confirmed'],
@@ -86,11 +105,13 @@ const readinessDefinitions = [
 
 const normalTransitions: Partial<Record<FlightOperationStatus, FlightOperationStatus[]>> = {
   DRAFT: ['PENDING_READINESS'],
-  PENDING_READINESS: ['BLOCKED', 'READY_FOR_APPROVAL'],
-  BLOCKED: ['READY_FOR_APPROVAL'],
+  PENDING_READINESS: ['BLOCKED', 'READY_FOR_OCC_REVIEW'],
+  BLOCKED: ['READY_FOR_OCC_REVIEW'],
+  READY_FOR_OCC_REVIEW: ['READY_FOR_APPROVAL', 'BLOCKED'],
   READY_FOR_APPROVAL: ['APPROVED'],
-  APPROVED: ['SCHEDULED'],
-  SCHEDULED: ['CHECK_IN_OPEN'],
+  APPROVED: ['SCHEDULED', 'REAPPROVAL_REQUIRED'],
+  REAPPROVAL_REQUIRED: ['BLOCKED', 'PENDING_READINESS', 'READY_FOR_OCC_REVIEW'],
+  SCHEDULED: ['CHECK_IN_OPEN', 'REAPPROVAL_REQUIRED'],
   CHECK_IN_OPEN: ['CHECK_IN_CLOSED'],
   CHECK_IN_CLOSED: ['READY_FOR_DEPARTURE'],
   READY_FOR_DEPARTURE: ['IN_PROGRESS'],
@@ -273,10 +294,25 @@ function mapFlight(row: SqlRow): FlightOperationRecord {
     billingType: String(row.billing_type ?? 'CHARTER'),
     estimatedRevenue: nullableNum(row.estimated_revenue),
     currencyCode: String(row.currency_code ?? 'IDR'),
+    flightRules: String(row.flight_rules ?? 'VFR') as FlightOperationRecord['flightRules'],
+    operationRule: String(
+      row.operation_rule ?? 'CASR_135'
+    ) as FlightOperationRecord['operationRule'],
+    departurePeriod: String(
+      row.departure_period ?? 'DAY'
+    ) as FlightOperationRecord['departurePeriod'],
+    alternateStationId: str(row.alternate_station_id),
+    isolatedAerodrome: bool(row.isolated_aerodrome),
+    plannedTaxiMinutes: nullableNum(row.planned_taxi_minutes),
+    plannedTaxiFuelLitre: nullableNum(row.planned_taxi_fuel_litre),
+    additionalFuelLitre: num(row.additional_fuel_litre),
+    discretionaryFuelLitre: num(row.discretionary_fuel_litre),
     isLocked: bool(row.is_locked),
     readinessPercent,
     readinessSummary: `${passed + notApplicable}/${required || readinessDefinitions.length} ready`,
     blockingReason: str(row.blocking_reason),
+    version: num(row.version) || 1,
+    readinessRevision: num(row.readiness_revision) || 1,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -342,6 +378,8 @@ function mapRequest(row: SqlRow): FlightRequestRecord {
     remarks: str(row.remarks),
     convertedFlightId: str(row.converted_flight_id),
     createdByUserId: String(row.created_by_user_id),
+    approvedByUserId: str(row.approved_by_user_id),
+    approvedAt: str(row.approved_at),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -381,6 +419,12 @@ function readinessPresentation(code: string, status: string) {
       recommendedAction: 'Resolve the route restriction before dispatch.',
       actionHref: '/master-data/routes'
     },
+    OPERATIONAL_ADVISORY: {
+      category: 'AIRCRAFT',
+      ownerRole: 'OCC Staff',
+      recommendedAction: 'Review or resolve the active operational advisory.',
+      actionHref: '/flights/readiness'
+    },
     AIRCRAFT_SERVICEABILITY: {
       category: 'AIRCRAFT',
       ownerRole: 'Maintenance Reviewer',
@@ -415,6 +459,12 @@ function readinessPresentation(code: string, status: string) {
       category: 'CREW',
       ownerRole: 'Chief Pilot',
       recommendedAction: 'Assign crew with valid licence and medical documents.',
+      actionHref: null
+    },
+    CREW_QUALIFICATION: {
+      category: 'CREW',
+      ownerRole: 'Chief Pilot',
+      recommendedAction: 'Complete the required fleet and operational qualifications.',
       actionHref: null
     },
     MANIFEST_APPROVED: {
@@ -518,8 +568,10 @@ export class FlightOperationsService {
     const flight = mapFlight(row);
     const manifests = this.listManifests(id);
     const fuelRequests = this.listFuel({ flightId: id });
+    const stationServices = this.listStationServices({ flightId: id });
     const stationCosts = this.listStationCosts({ flightId: id });
     const maintenanceHandoffs = this.listMaintenance({ flightId: id });
+    const financeHandoffs = this.listFinanceHandoffs(id);
 
     return {
       ...flight,
@@ -527,7 +579,9 @@ export class FlightOperationsService {
         ...flight,
         manifests,
         fuelRequests,
+        stationServices,
         stationCosts,
+        financeHandoffs,
         maintenanceHandoffs
       }),
       crewAssignments: (
@@ -681,14 +735,42 @@ export class FlightOperationsService {
         changedAt: String(item.changed_at),
         metadata: parseMetadata(item.metadata_json)
       })),
+      operationalAudit: (
+        this.sqlite
+          .prepare(
+            `SELECT id, actor_user_id, actor_role, flight_id, station_id, module, action,
+                    before_status, after_status, before_version, after_version, reason,
+                    metadata, timestamp
+             FROM flight_operational_audit
+             WHERE flight_id = ?
+             ORDER BY timestamp DESC, created_at DESC`
+          )
+          .all(id) as SqlRow[]
+      ).map((item): FlightOperationalAuditDto => ({
+        id: String(item.id),
+        actorUserId: String(item.actor_user_id),
+        actorRole: String(item.actor_role),
+        flightId: String(item.flight_id),
+        stationId: str(item.station_id),
+        module: String(item.module),
+        action: String(item.action),
+        beforeStatus: str(item.before_status),
+        afterStatus: str(item.after_status),
+        beforeVersion: nullableNum(item.before_version),
+        afterVersion: nullableNum(item.after_version),
+        reason: str(item.reason),
+        metadata: parseMetadata(item.metadata),
+        timestamp: String(item.timestamp)
+      })),
       manifests,
       passengers: this.listPassengers(id),
       cargoItems: this.listCargo(id),
       fuelRequests,
-      stationServices: this.listStationServices({ flightId: id }),
+      fuelPlanningEstimate: this.fuelPlanningEstimate(flight, fuelRequests),
+      stationServices,
       stationCosts,
       maintenanceHandoffs,
-      financeHandoffs: this.listFinanceHandoffs(id),
+      financeHandoffs,
       approvals: this.listFlightApprovals(id),
       attachments: this.listFlightAttachments(id)
     };
@@ -948,17 +1030,42 @@ export class FlightOperationsService {
       const blockers: string[] = [];
       const warnings: string[] = [];
       const crewId = String(row.id);
-      const licenseExpiry = str(row.license_expiry_date);
-      const medicalExpiry = str(row.medical_expiry_date);
       if (String(row.availability_status) !== 'AVAILABLE') {
         blockers.push(`Crew availability is ${String(row.availability_status)}.`);
       }
-      if (!licenseExpiry || licenseExpiry < query.flightDate) {
-        blockers.push('License is missing or expires before the flight date.');
+      const primaryLicense = this.sqlite
+        .prepare(
+          `SELECT id FROM personnel_licenses
+           WHERE personnel_id = ? AND is_primary = 1 AND status = 'ACTIVE'
+             AND (issue_date IS NULL OR issue_date <= ?)
+             AND (expiry_date IS NULL OR expiry_date >= ?)
+           LIMIT 1`
+        )
+        .get(crewId, query.flightDate, query.flightDate);
+      const medicalCertificate = this.sqlite
+        .prepare(
+          `SELECT id FROM personnel_medical_certificates
+           WHERE personnel_id = ? AND status = 'ACTIVE'
+             AND (issue_date IS NULL OR issue_date <= ?)
+             AND expiry_date >= ?
+           LIMIT 1`
+        )
+        .get(crewId, query.flightDate, query.flightDate);
+      if (!primaryLicense) blockers.push('Active primary license is missing for the flight date.');
+      if (!medicalCertificate) {
+        blockers.push('Active medical certificate is missing for the flight date.');
       }
-      if (!medicalExpiry || medicalExpiry < query.flightDate) {
-        blockers.push('Medical certificate is missing or expires before the flight date.');
-      }
+      const fleetQualification = this.sqlite
+        .prepare(
+          `SELECT id FROM personnel_qualifications
+           WHERE personnel_id = ? AND status IN ('VALID', 'EXPIRING_SOON')
+             AND qualification_type IN ('AIRCRAFT_TYPE', 'Aircraft Type Rating')
+             AND (issued_at IS NULL OR issued_at <= ?)
+             AND (expires_at IS NULL OR expires_at >= ?)
+           LIMIT 1`
+        )
+        .get(crewId, query.flightDate, query.flightDate);
+      if (!fleetQualification) warnings.push('No active fleet qualification is recorded.');
       if (
         this.hasCrewScheduleOverlap(crewId, query.scheduledDepartureAt, query.scheduledArrivalAt)
       ) {
@@ -1236,6 +1343,13 @@ export class FlightOperationsService {
 
   decideRequest(id: string, body: FlightApprovalDecisionBody, actorUserId: string) {
     const request = this.requestDetail(id);
+    if (
+      request.status === 'CONVERTED' &&
+      body.decision === 'APPROVE' &&
+      request.convertedFlightId
+    ) {
+      return { request, flight: this.detail(request.convertedFlightId) };
+    }
     if (request.status !== 'SUBMITTED') {
       throw new DomainError(
         'REQUEST_NOT_PENDING',
@@ -1286,7 +1400,7 @@ export class FlightOperationsService {
     return { request: this.requestDetail(id), flight };
   }
 
-  create(input: CreateFlightOperationBody, actorUserId: string) {
+  create(input: CreateFlightOperationBody, actorUserId: string, directCreationReason?: string) {
     const route = this.validateRouteForScheduling(input.routeId);
     this.requireActiveRef('flight_types', input.flightTypeId, 'Flight type');
     this.requireActiveRef('flight_service_types', input.serviceTypeId, 'Service type');
@@ -1343,7 +1457,12 @@ export class FlightOperationsService {
     this.ensureManifests(id);
     this.ensureOperationalVerificationTasks(id);
     this.initializeFlightGovernance(id);
-    this.appendHistory(id, null, 'DRAFT', 'CREATE', actorUserId);
+    this.appendHistory(id, null, 'DRAFT', 'CREATE', actorUserId, {
+      reasonNote: directCreationReason,
+      metadata: directCreationReason
+        ? { source: 'DIRECT_OPERATIONAL_ENTRY', directCreationReason }
+        : undefined
+    });
     this.evaluateReadiness(id, false, actorUserId);
     return this.detail(id);
   }
@@ -1467,8 +1586,25 @@ export class FlightOperationsService {
     return this.detail(id);
   }
 
-  updateAircraftAssignment(id: string, aircraftId: string, actorUserId: string) {
+  updateAircraftAssignment(
+    id: string,
+    aircraftId: string,
+    actorUserId: string,
+    expectedVersion?: number
+  ) {
     const flight = this.requireFlight(id);
+    if (expectedVersion !== undefined && flight.version !== expectedVersion) {
+      throw new DomainError(
+        'FLIGHT_VERSION_CONFLICT',
+        'Flight data changed after the aircraft impact preview.',
+        409,
+        {
+          expectedVersion,
+          actualVersion: flight.version,
+          refreshRequired: true
+        }
+      );
+    }
     if (
       !['DRAFT', 'PENDING_READINESS', 'BLOCKED', 'REOPENED_FOR_CORRECTION'].includes(
         flight.currentStatus
@@ -1485,7 +1621,11 @@ export class FlightOperationsService {
     if (!aircraft)
       throw new DomainError('AIRCRAFT_NOT_FOUND', 'Selected aircraft was not found.', 404);
     this.sqlite
-      .prepare('UPDATE flight_operations SET aircraft_id = ?, updated_at = ? WHERE id = ?')
+      .prepare(
+        `UPDATE flight_operations
+         SET aircraft_id = ?, version = version + 1, updated_at = ?
+         WHERE id = ?`
+      )
       .run(aircraftId, timestamp(), id);
     this.invalidateStationVerification(id, 'Aircraft assignment changed.', actorUserId);
     const shouldUpdateStatus = ['PENDING_READINESS', 'BLOCKED'].includes(flight.currentStatus);
@@ -1525,35 +1665,206 @@ export class FlightOperationsService {
     return this.evaluateReadiness(id, true, actorUserId);
   }
 
-  approve(id: string, body: ActionNoteBody, actorUserId: string) {
-    const flight = this.requireFlight(id);
-    if (flight.currentStatus !== 'READY_FOR_APPROVAL') {
-      throw new DomainError('READINESS_NOT_APPROVABLE', 'Flight must be ready for approval.', 409);
-    }
-    if (flight.createdByUserId === actorUserId) {
-      throw new DomainError(
-        'SELF_APPROVAL_BLOCKED',
-        'Creator cannot approve their own flight.',
-        409
-      );
-    }
+  listOperationalAdvisories(): OperationalAdvisoryDto[] {
+    return (
+      this.sqlite
+        .prepare(
+          `SELECT * FROM operational_advisories
+           ORDER BY CASE status WHEN 'ACTIVE' THEN 1 ELSE 2 END,
+                    CASE severity WHEN 'BLOCKING' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END,
+                    valid_from DESC`
+        )
+        .all() as SqlRow[]
+    ).map((row) => ({
+      id: String(row.id),
+      advisoryType: String(row.advisory_type) as OperationalAdvisoryDto['advisoryType'],
+      severity: String(row.severity) as OperationalAdvisoryDto['severity'],
+      routeId: str(row.route_id),
+      stationId: str(row.station_id),
+      status: String(row.status) as OperationalAdvisoryDto['status'],
+      validFrom: String(row.valid_from),
+      validUntil: String(row.valid_until),
+      summary: String(row.summary),
+      operationalLimitation: str(row.operational_limitation),
+      sourceReference: str(row.source_reference)
+    }));
+  }
 
+  setOperationalAdvisoryStatus(
+    id: string,
+    status: 'ACTIVE' | 'RESOLVED' | 'CANCELLED',
+    reason: string,
+    actorUserId: string
+  ) {
+    const advisory = this.sqlite
+      .prepare('SELECT * FROM operational_advisories WHERE id = ?')
+      .get(id) as SqlRow | undefined;
+    if (!advisory) {
+      throw new DomainError('ADVISORY_NOT_FOUND', 'Operational advisory was not found.', 404);
+    }
     this.sqlite
+      .prepare('UPDATE operational_advisories SET status = ?, updated_at = ? WHERE id = ?')
+      .run(status, timestamp(), id);
+    const flights = this.sqlite
       .prepare(
-        `UPDATE flight_operations
-         SET approved_by_user_id = ?, updated_at = ?
-         WHERE id = ?`
+        `SELECT flight.id
+         FROM flight_operations flight
+         JOIN flight_operation_statuses state ON state.id = flight.current_status_id
+         WHERE state.code NOT IN ('CANCELLED','CLOSED','LANDED','PENDING_CLOSURE','IN_PROGRESS')
+           AND (
+             flight.route_id = ?
+             OR flight.origin_station_id = ?
+             OR flight.destination_station_id = ?
+           )`
       )
-      .run(actorUserId, timestamp(), id);
-    this.sqlite
-      .prepare(
-        `UPDATE flight_operation_approvals
-         SET status_id = 'flight-approval-status-approved', decided_by_user_id = ?, decided_at = ?,
-             reason = ?, updated_at = ?
-         WHERE flight_id = ? AND approval_type_id IN ('flight-approval-type-readiness-approval', 'flight-approval-type-flight-approval')`
-      )
-      .run(actorUserId, timestamp(), body.note ?? null, timestamp(), id);
-    this.transition(id, 'APPROVED', actorUserId, { note: body.note });
+      .all(advisory.route_id, advisory.station_id, advisory.station_id) as Array<{ id: string }>;
+    for (const flight of flights) {
+      this.invalidatePlanningApproval(
+        flight.id,
+        `Operational advisory ${String(advisory.summary)} changed to ${status}: ${reason}`,
+        actorUserId
+      );
+      this.evaluateReadiness(flight.id, true, actorUserId);
+    }
+    return {
+      advisory: this.listOperationalAdvisories().find((item) => item.id === id),
+      affectedFlightIds: flights.map((flight) => flight.id)
+    };
+  }
+
+  acceptReadiness(id: string, body: ApprovalActionBody, actorUserId: string) {
+    this.sqlite.transaction(() => {
+      this.evaluateReadiness(id, true, actorUserId);
+      const flight = this.requireFlight(id);
+      this.assertApprovalVersion(flight, body);
+      if (flight.currentStatus !== 'READY_FOR_OCC_REVIEW') {
+        throw new DomainError(
+          'READINESS_NOT_ACCEPTABLE',
+          'Flight must pass planning readiness before OCC acceptance.',
+          409
+        );
+      }
+      if (flight.createdByUserId === actorUserId) {
+        throw new DomainError(
+          'SELF_APPROVAL_BLOCKED',
+          'Flight creator cannot accept their own readiness.',
+          409
+        );
+      }
+      const now = timestamp();
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operation_approvals
+           SET status_id = 'flight-approval-status-approved', decided_by_user_id = ?,
+               decided_at = ?, reason = ?, readiness_revision = ?, snapshot_hash = ?,
+               snapshot_json = ?, invalidated_at = NULL, invalidation_reason = NULL, updated_at = ?
+           WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-readiness-approval'`
+        )
+        .run(actorUserId, now, body.note, flight.readinessRevision, null, null, now, id);
+      this.evaluateReadiness(id, false, actorUserId);
+      const snapshot = this.readinessSnapshot(id);
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operation_approvals
+           SET snapshot_hash = ?, snapshot_json = ?, updated_at = ?
+           WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-readiness-approval'`
+        )
+        .run(snapshot.hash, snapshot.json, now, id);
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operation_approvals
+           SET status_id = 'flight-approval-status-pending', requested_by_user_id = ?,
+               requested_at = ?, updated_at = ?
+           WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-flight-approval'`
+        )
+        .run(actorUserId, now, now, id);
+      this.applyTransition(flight, 'READY_FOR_APPROVAL', actorUserId, {
+        reasonNote: body.note,
+        metadata: { readinessRevision: flight.readinessRevision, snapshotHash: snapshot.hash }
+      });
+    })();
+    return this.detail(id);
+  }
+
+  approve(id: string, body: ApprovalActionBody, actorUserId: string) {
+    this.sqlite.transaction(() => {
+      this.evaluateReadiness(id, false, actorUserId);
+      const flight = this.requireFlight(id);
+      this.assertApprovalVersion(flight, body);
+      if (flight.currentStatus !== 'READY_FOR_APPROVAL') {
+        throw new DomainError(
+          'READINESS_NOT_APPROVABLE',
+          'Flight must be ready for approval.',
+          409
+        );
+      }
+      const readinessApproval = this.sqlite
+        .prepare(
+          `SELECT decided_by_user_id, readiness_revision, snapshot_hash
+           FROM flight_operation_approvals
+           WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-readiness-approval'
+             AND status_id = 'flight-approval-status-approved'`
+        )
+        .get(id) as SqlRow | undefined;
+      if (
+        !readinessApproval ||
+        num(readinessApproval.readiness_revision) !== flight.readinessRevision
+      ) {
+        throw new DomainError(
+          'READINESS_ACCEPTANCE_STALE',
+          'OCC readiness acceptance is missing or stale.',
+          409
+        );
+      }
+      if (
+        flight.createdByUserId === actorUserId ||
+        str(readinessApproval.decided_by_user_id) === actorUserId
+      ) {
+        throw new DomainError(
+          'SELF_APPROVAL_BLOCKED',
+          'Director approval must be independent from the creator and OCC checker.',
+          409
+        );
+      }
+      const snapshot = this.readinessSnapshot(id);
+      if (snapshot.hash !== str(readinessApproval.snapshot_hash)) {
+        throw new DomainError(
+          'READINESS_SNAPSHOT_CHANGED',
+          'Readiness changed after OCC acceptance. Recalculate and accept it again.',
+          409
+        );
+      }
+      const now = timestamp();
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operations
+           SET approved_by_user_id = ?, version = version + 1, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(actorUserId, now, id);
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operation_approvals
+           SET status_id = 'flight-approval-status-approved', decided_by_user_id = ?, decided_at = ?,
+               reason = ?, readiness_revision = ?, snapshot_hash = ?, snapshot_json = ?,
+               invalidated_at = NULL, invalidation_reason = NULL, updated_at = ?
+           WHERE flight_id = ? AND approval_type_id = 'flight-approval-type-flight-approval'`
+        )
+        .run(
+          actorUserId,
+          now,
+          body.note,
+          flight.readinessRevision,
+          snapshot.hash,
+          snapshot.json,
+          now,
+          id
+        );
+      this.applyTransition(this.requireFlight(id), 'APPROVED', actorUserId, {
+        reasonNote: body.note,
+        metadata: { readinessRevision: flight.readinessRevision, snapshotHash: snapshot.hash }
+      });
+    })();
     return this.detail(id);
   }
 
@@ -1612,10 +1923,25 @@ export class FlightOperationsService {
       missing.push('actual fuel uplift');
     }
     if (
-      evidence.stationCosts.length === 0 ||
-      evidence.stationCosts.some((cost) => cost.status !== 'APPROVED')
+      evidence.stationServices.some(
+        (service) => !['VERIFIED', 'CONFIRMED'].includes(service.status)
+      )
     ) {
-      missing.push('approved station cost');
+      missing.push('verified station service');
+    }
+    if (
+      evidence.stationCosts.some((cost) => {
+        if (['VOIDED', 'VOID'].includes(cost.status)) return false;
+        if (cost.status !== 'APPROVED') return true;
+        return !evidence.financeHandoffs.some(
+          (handoff) =>
+            handoff.sourceType === 'station_cost' &&
+            handoff.sourceId === cost.id &&
+            ['READY', 'POSTED'].includes(handoff.status)
+        );
+      })
+    ) {
+      missing.push('resolved station cost and finance handoff');
     }
     if (
       evidence.maintenanceHandoffs.length === 0 ||
@@ -1664,15 +1990,81 @@ export class FlightOperationsService {
     id: string,
     toStatus: FlightOperationStatus,
     actorUserId: string,
-    options: { note?: string } = {}
+    options: { note?: string; expectedVersion?: number; idempotencyKey?: string } = {}
   ) {
+    const existingCommand = options.idempotencyKey
+      ? (this.sqlite
+          .prepare(
+            `SELECT flight_id, action, actor_user_id, expected_version
+             FROM flight_action_commands WHERE idempotency_key = ?`
+          )
+          .get(options.idempotencyKey) as
+          | {
+              flight_id: string;
+              action: string;
+              actor_user_id: string;
+              expected_version: number;
+            }
+          | undefined)
+      : undefined;
+    if (existingCommand) {
+      if (
+        existingCommand.flight_id !== id ||
+        existingCommand.action !== toStatus ||
+        existingCommand.actor_user_id !== actorUserId ||
+        existingCommand.expected_version !== options.expectedVersion
+      ) {
+        throw new DomainError(
+          'FLIGHT_IDEMPOTENCY_CONFLICT',
+          'This idempotency key was already used for a different flight command.',
+          409,
+          { action: toStatus, stateVersion: this.requireFlight(id).version }
+        );
+      }
+      return this.detail(id);
+    }
     this.sqlite.transaction(() => {
       const flight = this.requireFlight(id);
+      if (options.expectedVersion !== undefined && flight.version !== options.expectedVersion) {
+        throw new DomainError(
+          'FLIGHT_VERSION_CONFLICT',
+          'Flight data changed after this page was opened.',
+          409,
+          {
+            action: toStatus,
+            expectedVersion: options.expectedVersion,
+            actualVersion: flight.version,
+            refreshRequired: true
+          }
+        );
+      }
       this.applyTransition(flight, toStatus, actorUserId, { reasonNote: options.note });
 
       if (toStatus === 'CLOSED') {
         createInvoiceService(this.sqlite).finalizeClosedFlight(id, actorUserId);
         createAccountingService(this.sqlite).fulfillPassengerServicesForFlight(id, actorUserId);
+      }
+      if (options.idempotencyKey) {
+        const resultingVersion = this.requireFlight(id).version;
+        const now = timestamp();
+        this.sqlite
+          .prepare(
+            `INSERT INTO flight_action_commands (
+               id, idempotency_key, flight_id, action, actor_user_id, expected_version,
+               resulting_version, created_at, completed_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            `fcmd-${nanoid(12)}`,
+            options.idempotencyKey,
+            id,
+            toStatus,
+            actorUserId,
+            options.expectedVersion ?? flight.version,
+            resultingVersion,
+            now,
+            now
+          );
       }
     })();
 
@@ -1682,6 +2074,7 @@ export class FlightOperationsService {
   depart(id: string, body: ActualTimeBody, actorUserId: string) {
     this.sqlite.transaction(() => {
       const flight = this.requireFlight(id);
+      this.assertExpectedVersion(flight, body.expectedVersion, 'DEPART');
       this.assertTransition(flight, 'IN_PROGRESS');
       const stationId = body.stationId ?? flight.originStationId;
       if (stationId !== flight.originStationId) {
@@ -1703,13 +2096,24 @@ export class FlightOperationsService {
         reasonNote: body.note,
         metadata: { actualAt, stationId }
       });
+      new AircraftTrackingService(this.sqlite).recordSystemPosition(
+        id,
+        stationId,
+        'AIRBORNE',
+        'SYSTEM_DEPARTURE',
+        actorUserId,
+        actualAt
+      );
     })();
     return this.detail(id);
   }
 
   land(id: string, body: ActualTimeBody, actorUserId: string) {
+    let landedAircraftId: string | null = null;
     this.sqlite.transaction(() => {
       const flight = this.requireFlight(id);
+      this.assertExpectedVersion(flight, body.expectedVersion, 'LAND');
+      landedAircraftId = flight.aircraftId;
       this.assertTransition(flight, 'LANDED');
       const stationId = body.stationId ?? flight.destinationStationId;
       if (stationId !== flight.destinationStationId) {
@@ -1738,15 +2142,46 @@ export class FlightOperationsService {
         )
         .run(departureAt, actualAt, stationId, timestamp(), id);
       if (flight.aircraftId) {
+        const flightHours =
+          (new Date(actualAt).getTime() - new Date(departureAt).getTime()) / (60 * 60 * 1000);
+        const utilization = this.sqlite
+          .prepare(
+            `INSERT OR IGNORE INTO aircraft_utilization_ledger (
+              id, aircraft_id, flight_id, flight_hours, cycles, posted_at
+            ) VALUES (?, ?, ?, ?, 1, ?)`
+          )
+          .run(`autil-${nanoid(12)}`, flight.aircraftId, id, flightHours, timestamp());
         this.sqlite
-          .prepare('UPDATE aircraft SET current_station_id = ?, updated_at = ? WHERE id = ?')
-          .run(stationId, timestamp(), flight.aircraftId);
+          .prepare(
+            `UPDATE aircraft SET current_station_id = ?,
+             airframe_hours = airframe_hours + ?,
+             airframe_cycles = airframe_cycles + ?,
+             version = version + 1, updated_at = ? WHERE id = ?`
+          )
+          .run(
+            stationId,
+            utilization.changes ? flightHours : 0,
+            utilization.changes ? 1 : 0,
+            timestamp(),
+            flight.aircraftId
+          );
       }
       this.applyTransition(flight, 'LANDED', actorUserId, {
         reasonNote: body.note,
         metadata: { actualAt, stationId }
       });
+      new AircraftTrackingService(this.sqlite).recordSystemPosition(
+        id,
+        stationId,
+        'ON_GROUND',
+        'SYSTEM_ARRIVAL',
+        actorUserId,
+        actualAt
+      );
     })();
+    if (landedAircraftId) {
+      this.recalculateAircraftReadiness(landedAircraftId, id, actorUserId);
+    }
     return this.detail(id);
   }
 
@@ -1754,11 +2189,41 @@ export class FlightOperationsService {
     this.validateReason(body);
     this.sqlite.transaction(() => {
       const flight = this.requireFlight(id);
+      this.assertExpectedVersion(flight, body.expectedVersion, 'CANCEL');
+      const cancellableStatuses: FlightOperationStatus[] = [
+        'DRAFT',
+        'PENDING_READINESS',
+        'BLOCKED',
+        'READY_FOR_OCC_REVIEW',
+        'READY_FOR_APPROVAL',
+        'APPROVED',
+        'REAPPROVAL_REQUIRED',
+        'SCHEDULED',
+        'CHECK_IN_OPEN',
+        'CHECK_IN_CLOSED',
+        'READY_FOR_DEPARTURE'
+      ];
       if (flight.currentStatus === 'CLOSED') {
         throw new DomainError(
           'CLOSED_FLIGHT_LOCKED',
           'Closed flight must be reopened before cancellation.',
           409
+        );
+      }
+      if (flight.actualDepartureAt || !cancellableStatuses.includes(flight.currentStatus)) {
+        throw new DomainError(
+          'AIRBORNE_CANCELLATION_FORBIDDEN',
+          'A flight cannot be cancelled after actual departure. Use diversion or complete arrival and closure.',
+          409,
+          {
+            action: 'CANCEL',
+            stateVersion: flight.version,
+            currentStatus: flight.currentStatus,
+            recoveryHref:
+              flight.currentStatus === 'IN_PROGRESS'
+                ? `/flights/${encodeURIComponent(id)}`
+                : `/flights/${encodeURIComponent(id)}?tab=records`
+          }
         );
       }
       this.sqlite
@@ -1791,6 +2256,7 @@ export class FlightOperationsService {
     this.validateReason(body);
     this.sqlite.transaction(() => {
       const flight = this.requireFlight(id);
+      this.assertExpectedVersion(flight, body.expectedVersion, 'DIVERT');
       this.assertTransition(flight, 'DIVERTED');
       this.requireRow(
         'SELECT id FROM stations WHERE id = ? AND is_active = 1',
@@ -1804,10 +2270,28 @@ export class FlightOperationsService {
       this.sqlite
         .prepare(
           `UPDATE flight_operations
-           SET actual_departure_at = ?, actual_arrival_at = ?, actual_arrival_station_id = ?, updated_at = ?
+           SET actual_departure_at = ?, actual_arrival_at = ?, actual_arrival_station_id = ?,
+               updated_at = ?
            WHERE id = ?`
         )
         .run(departureAt, actualAt, body.diversionStationId, timestamp(), id);
+      this.sqlite
+        .prepare(
+          `UPDATE flight_station_tasks
+           SET station_id = ?, status = 'PENDING', verified_by_user_id = NULL, verified_at = NULL,
+               rejection_reason = NULL, version = version + 1, updated_at = ?
+           WHERE flight_id = ? AND phase LIKE 'DESTINATION_%'`
+        )
+        .run(body.diversionStationId, timestamp(), id);
+      this.sqlite
+        .prepare(
+          `DELETE FROM flight_station_task_approvals
+           WHERE task_id IN (
+             SELECT id FROM flight_station_tasks
+             WHERE flight_id = ? AND phase LIKE 'DESTINATION_%'
+           )`
+        )
+        .run(id);
       if (flight.aircraftId) {
         this.sqlite
           .prepare('UPDATE aircraft SET current_station_id = ?, updated_at = ? WHERE id = ?')
@@ -1816,18 +2300,169 @@ export class FlightOperationsService {
       this.applyTransition(flight, 'DIVERTED', actorUserId, {
         reasonId: body.reasonId,
         reasonNote: body.reasonNote,
-        metadata: { diversionStationId: body.diversionStationId, actualAt }
+        metadata: {
+          diversionStationId: body.diversionStationId,
+          plannedDestinationStationId: flight.destinationStationId,
+          destinationResponsibilityChanged: true,
+          actualAt
+        }
       });
+      new AircraftTrackingService(this.sqlite).recordSystemPosition(
+        id,
+        body.diversionStationId!,
+        'ON_GROUND',
+        'SYSTEM_ARRIVAL',
+        actorUserId,
+        actualAt
+      );
     })();
     return this.detail(id);
   }
 
+  private recalculateAircraftReadiness(
+    aircraftId: string,
+    excludedFlightId: string,
+    actorUserId: string
+  ) {
+    const flightIds = this.sqlite
+      .prepare(
+        `SELECT flight.id FROM flight_operations flight
+         JOIN flight_operation_statuses status ON status.id = flight.current_status_id
+         WHERE flight.aircraft_id = ? AND flight.id <> ?
+           AND status.code NOT IN ('CANCELLED', 'CLOSED', 'LANDED', 'PENDING_CLOSURE')`
+      )
+      .all(aircraftId, excludedFlightId) as Array<{ id: string }>;
+    for (const flight of flightIds) {
+      this.invalidatePlanningApproval(
+        flight.id,
+        'Aircraft position or utilization changed.',
+        actorUserId
+      );
+      this.evaluateReadiness(flight.id, true, actorUserId);
+    }
+  }
+
+  recalculatePersonnelReadiness(
+    personnelId: string,
+    actorUserId = 'SYSTEM_PERSONNEL_CREDENTIAL_CHANGE'
+  ) {
+    const flightIds = this.sqlite
+      .prepare(
+        `SELECT DISTINCT flight.id
+         FROM flight_operations flight
+         JOIN flight_operation_statuses status ON status.id = flight.current_status_id
+         JOIN flight_crew_assignments assignment ON assignment.flight_id = flight.id
+         WHERE assignment.crew_id = ?
+           AND status.code NOT IN ('CANCELLED', 'CLOSED', 'LANDED', 'PENDING_CLOSURE')`
+      )
+      .all(personnelId) as Array<{ id: string }>;
+    for (const flight of flightIds) {
+      this.invalidatePlanningApproval(
+        flight.id,
+        'Assigned crew credential or qualification changed.',
+        actorUserId
+      );
+      this.evaluateReadiness(flight.id, true, actorUserId);
+    }
+    return flightIds.map((flight) => flight.id);
+  }
+
+  invalidatePlanningApproval(flightId: string, reason: string, actorUserId = 'SYSTEM') {
+    const flight = this.requireFlight(flightId);
+    if (
+      ['CANCELLED', 'CLOSED', 'LANDED', 'PENDING_CLOSURE', 'IN_PROGRESS', 'DIVERTED'].includes(
+        flight.currentStatus
+      )
+    ) {
+      return this.detail(flightId);
+    }
+    const now = timestamp();
+    this.sqlite.transaction(() => {
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operations
+           SET readiness_revision = readiness_revision + 1, version = version + 1, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(now, flightId);
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operation_approvals
+           SET status_id = 'flight-approval-status-invalidated', invalidated_at = ?,
+               invalidation_reason = ?, updated_at = ?
+           WHERE flight_id = ?
+             AND approval_type_id IN (
+               'flight-approval-type-readiness-approval',
+               'flight-approval-type-flight-approval'
+             )
+             AND status_id = 'flight-approval-status-approved'`
+        )
+        .run(now, reason, now, flightId);
+      const targetStatus: FlightOperationStatus | null = ['APPROVED', 'SCHEDULED'].includes(
+        flight.currentStatus
+      )
+        ? 'REAPPROVAL_REQUIRED'
+        : flight.currentStatus === 'READY_FOR_APPROVAL'
+          ? 'READY_FOR_OCC_REVIEW'
+          : null;
+      if (targetStatus) {
+        this.sqlite
+          .prepare(
+            `UPDATE flight_operations
+             SET current_status_id = ?, approved_by_user_id = NULL, blocking_reason = ?,
+                 version = version + 1, updated_at = ?
+             WHERE id = ?`
+          )
+          .run(
+            this.lookupId('flight_operation_statuses', targetStatus, 'Flight operation status'),
+            reason,
+            now,
+            flightId
+          );
+        this.appendHistory(
+          flightId,
+          flight.currentStatus,
+          targetStatus,
+          'READINESS_EVALUATED',
+          actorUserId,
+          {
+            reasonNote: reason,
+            metadata: { invalidated: true }
+          }
+        );
+      }
+    })();
+    return this.detail(flightId);
+  }
+
   reopen(id: string, body: FlightReasonActionBody, actorUserId: string) {
     const flight = this.requireFlight(id);
+    this.assertExpectedVersion(flight, body.expectedVersion, 'REOPEN');
     if (flight.currentStatus !== 'CLOSED') {
       throw new DomainError('REOPEN_ONLY_CLOSED', 'Only closed flights can be reopened.', 409);
     }
     this.validateReason(body);
+    if (!body.correctionScope) {
+      throw new DomainError(
+        'REOPEN_SCOPE_REQUIRED',
+        'Select whether this correction affects planning, departure, arrival, or closure.',
+        422,
+        {
+          action: 'REOPEN',
+          stateVersion: flight.version,
+          allowedScopes: ['PLANNING', 'DEPARTURE', 'ARRIVAL', 'CLOSURE']
+        }
+      );
+    }
+    const affectedDomains: Record<
+      NonNullable<FlightReasonActionBody['correctionScope']>,
+      string[]
+    > = {
+      PLANNING: ['PLANNING', 'READINESS', 'APPROVAL'],
+      DEPARTURE: ['MANIFEST', 'FUEL', 'STATION', 'MOVEMENT'],
+      ARRIVAL: ['MOVEMENT', 'STATION', 'MAINTENANCE'],
+      CLOSURE: ['MAINTENANCE', 'FINANCE', 'CLOSURE']
+    };
     this.sqlite
       .prepare(
         `UPDATE flight_operations SET current_status_id = 'flight-operation-status-reopened-for-correction', is_locked = 0, updated_at = ? WHERE id = ?`
@@ -1835,7 +2470,14 @@ export class FlightOperationsService {
       .run(timestamp(), id);
     this.appendHistory(id, 'CLOSED', 'REOPENED_FOR_CORRECTION', 'REOPEN', actorUserId, {
       reasonId: body.reasonId,
-      reasonNote: body.reasonNote
+      reasonNote: body.reasonNote,
+      metadata: {
+        correctionScope: body.correctionScope,
+        previousStatus: flight.currentStatus,
+        previousVersion: flight.version,
+        affectedDomains: affectedDomains[body.correctionScope],
+        expectedResultingStatus: 'PENDING_CLOSURE'
+      }
     });
     return this.detail(id);
   }
@@ -1951,6 +2593,17 @@ export class FlightOperationsService {
       body.fuelSupplierId,
       'Fuel supplier'
     );
+    if (String(supplier.station_id) !== flight.originStationId) {
+      throw new DomainError(
+        'FUEL_SUPPLIER_STATION_MISMATCH',
+        'The selected fuel supplier does not serve the flight origin station.',
+        422,
+        {
+          flightOriginStationId: flight.originStationId,
+          supplierStationId: String(supplier.station_id)
+        }
+      );
+    }
     if (
       flight.aircraftServiceability &&
       supplier.fuel_type &&
@@ -1963,20 +2616,29 @@ export class FlightOperationsService {
       .prepare(
         `INSERT INTO flight_fuel_requests (
           id, flight_id, fuel_supplier_id, fuel_type, requested_quantity_litre,
-          approved_quantity_litre, actual_uplift_litre, reference_price_per_litre,
+          fuel_on_board_before_uplift_litre, approved_quantity_litre, actual_uplift_litre,
+          defuel_quantity_litre, measured_fuel_on_board_litre, confirmed_block_fuel_litre,
+          reference_price_per_litre,
           actual_price_per_litre, tax_code_id, tax_amount, total_cost, currency_id, status_id,
           requested_by_user_id, created_at, updated_at
         ) VALUES (@id, @flightId, @fuelSupplierId, @fuelType, @requestedQuantityLitre,
-          NULL, NULL, @referencePricePerLitre, NULL, NULL, NULL, NULL, @currencyId, 'fuel-workflow-status-requested',
+          @fuelOnBoardBeforeUpliftLitre, NULL, NULL, @defuelQuantityLitre, @measuredFuelOnBoardLitre,
+          @confirmedBlockFuelLitre, @referencePricePerLitre, NULL, NULL, NULL, NULL, @currencyId,
+          'fuel-workflow-status-requested',
           @actorUserId, @createdAt, @updatedAt)`
       )
       .run({
+        ...body,
         id,
         actorUserId,
         currencyId: String(supplier.currency_id),
         createdAt: timestamp(),
         updatedAt: timestamp(),
-        ...body
+        fuelOnBoardBeforeUpliftLitre: body.fuelOnBoardBeforeUpliftLitre ?? null,
+        defuelQuantityLitre: body.defuelQuantityLitre ?? null,
+        measuredFuelOnBoardLitre: body.measuredFuelOnBoardLitre ?? null,
+        confirmedBlockFuelLitre: body.confirmedBlockFuelLitre ?? null,
+        referencePricePerLitre: body.referencePricePerLitre ?? null
       });
     this.evaluateReadiness(body.flightId, false, actorUserId);
     return this.detail(body.flightId);
@@ -1985,66 +2647,553 @@ export class FlightOperationsService {
   fuelAction(
     id: string,
     action: 'approve' | 'uplift' | 'post' | 'reject',
-    body: Record<string, unknown>,
+    body: FuelActionBody,
     actorUserId: string
   ) {
-    const request = this.requireRow(
-      `SELECT * FROM flight_fuel_requests WHERE id = ?`,
-      id,
-      'Fuel request'
-    );
-    const now = timestamp();
-    if (action === 'approve') {
-      this.sqlite
-        .prepare(
-          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-approved', approved_quantity_litre = ?, approved_by_user_id = ?, updated_at = ? WHERE id = ?`
-        )
-        .run(
-          Number(body.approvedQuantityLitre ?? request.requested_quantity_litre),
-          actorUserId,
-          now,
-          id
+    const existingCommand = this.sqlite
+      .prepare(
+        `SELECT fuel_request_id, action, actor_user_id, expected_version
+         FROM flight_fuel_action_commands WHERE idempotency_key = ?`
+      )
+      .get(body.idempotencyKey) as
+      | {
+          fuel_request_id: string;
+          action: string;
+          actor_user_id: string;
+          expected_version: number;
+        }
+      | undefined;
+    if (existingCommand) {
+      if (
+        existingCommand.fuel_request_id !== id ||
+        existingCommand.action !== action ||
+        existingCommand.actor_user_id !== actorUserId ||
+        existingCommand.expected_version !== body.expectedVersion
+      ) {
+        throw new DomainError(
+          'FUEL_IDEMPOTENCY_CONFLICT',
+          'This idempotency key was already used for a different fuel command.',
+          409
         );
-    } else if (action === 'uplift') {
-      const actual = Number(body.actualUpliftLitre ?? 0);
-      const price = Number(body.actualPricePerLitre ?? request.reference_price_per_litre ?? 0);
-      const total = Math.round(actual * price);
-      this.sqlite
-        .prepare(
-          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-uplifted', actual_uplift_litre = ?, actual_price_per_litre = ?, total_cost = ?, tax_amount = 0, uplift_recorded_by_user_id = ?, variance_note = ?, updated_at = ? WHERE id = ?`
-        )
-        .run(actual, price, total, actorUserId, String(body.varianceNote ?? ''), now, id);
-    } else if (action === 'post') {
-      this.sqlite
-        .prepare(
-          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-posted', updated_at = ? WHERE id = ?`
-        )
-        .run(now, id);
-      const latest = this.requireRow(
-        `SELECT * FROM flight_fuel_requests WHERE id = ?`,
+      }
+      const repeated = this.requireRow(
+        'SELECT flight_id FROM flight_fuel_requests WHERE id = ?',
         id,
         'Fuel request'
       );
-      this.upsertFinanceHandoff(
-        String(latest.flight_id),
-        'fuel',
-        id,
-        'FUEL_COST_DRAFT',
-        'READY',
-        'Fuel uplift cost posted to finance handoff preview.',
-        nullableNum(latest.total_cost),
-        str(latest.currency_id)
-      );
-    } else {
-      this.sqlite
-        .prepare(
-          `UPDATE flight_fuel_requests SET status_id = 'fuel-workflow-status-rejected', rejection_reason = ?, updated_at = ? WHERE id = ?`
-        )
-        .run(String(body.rejectionReason ?? 'Rejected in demo workflow.'), now, id);
+      return this.detail(String(repeated.flight_id));
     }
-    const flightId = String(request.flight_id);
+
+    const flightId = this.sqlite
+      .transaction(() => {
+        const request = this.requireRow(
+          `SELECT fuel.*, status.code AS status
+           FROM flight_fuel_requests fuel
+           JOIN fuel_workflow_statuses status ON status.id = fuel.status_id
+           WHERE fuel.id = ?`,
+          id,
+          'Fuel request'
+        );
+        if (Number(request.version) !== body.expectedVersion) {
+          throw new DomainError(
+            'FUEL_VERSION_CONFLICT',
+            'Fuel request changed. Refresh before continuing.',
+            409,
+            {
+              expectedVersion: body.expectedVersion,
+              actualVersion: Number(request.version),
+              refreshRequired: true
+            }
+          );
+        }
+
+        const expectedStatus = {
+          approve: ['REQUESTED'],
+          uplift: ['APPROVED'],
+          post: ['UPLIFTED'],
+          reject: ['REQUESTED', 'APPROVED']
+        }[action];
+        if (!expectedStatus.includes(String(request.status))) {
+          throw new DomainError(
+            'INVALID_TRANSITION',
+            `Fuel action ${action} is not valid from ${String(request.status)}.`,
+            409,
+            { action, currentStatus: String(request.status) }
+          );
+        }
+
+        const now = timestamp();
+        let afterStatus: 'APPROVED' | 'UPLIFTED' | 'POSTED' | 'REJECTED';
+        if (action === 'approve') {
+          const approved = body.approvedQuantityLitre;
+          if (approved === undefined) {
+            throw new DomainError(
+              'FUEL_APPROVED_QUANTITY_REQUIRED',
+              'Approved fuel quantity is required.',
+              422
+            );
+          }
+          this.sqlite
+            .prepare(
+              `UPDATE flight_fuel_requests
+               SET status_id = 'fuel-workflow-status-approved',
+                   approved_quantity_litre = ?, approved_by_user_id = ?,
+                   version = version + 1, updated_at = ?
+               WHERE id = ? AND version = ?`
+            )
+            .run(approved, actorUserId, now, id, body.expectedVersion);
+          afterStatus = 'APPROVED';
+        } else if (action === 'uplift') {
+          if (body.actualUpliftLitre === undefined) {
+            throw new DomainError(
+              'FUEL_ACTUAL_UPLIFT_REQUIRED',
+              'Actual uplift quantity is required.',
+              422
+            );
+          }
+          const price = Number(body.actualPricePerLitre ?? request.reference_price_per_litre ?? 0);
+          const total = Math.round(body.actualUpliftLitre * price);
+          this.sqlite
+            .prepare(
+              `UPDATE flight_fuel_requests
+               SET status_id = 'fuel-workflow-status-uplifted',
+                   actual_uplift_litre = ?, actual_price_per_litre = ?, total_cost = ?,
+                   tax_amount = 0, uplift_recorded_by_user_id = ?, variance_note = ?,
+                   version = version + 1, updated_at = ?
+               WHERE id = ? AND version = ?`
+            )
+            .run(
+              body.actualUpliftLitre,
+              price,
+              total,
+              actorUserId,
+              body.varianceNote ?? '',
+              now,
+              id,
+              body.expectedVersion
+            );
+          afterStatus = 'UPLIFTED';
+        } else if (action === 'post') {
+          if (request.actual_uplift_litre === null || request.total_cost === null) {
+            throw new DomainError(
+              'FUEL_UPLIFT_RECORD_REQUIRED',
+              'Actual uplift and cost must be recorded before posting.',
+              422
+            );
+          }
+          this.sqlite
+            .prepare(
+              `UPDATE flight_fuel_requests
+               SET status_id = 'fuel-workflow-status-posted',
+                   version = version + 1, updated_at = ?
+               WHERE id = ? AND version = ?`
+            )
+            .run(now, id, body.expectedVersion);
+          afterStatus = 'POSTED';
+          this.upsertFinanceHandoff(
+            String(request.flight_id),
+            'fuel',
+            id,
+            'FUEL_COST_DRAFT',
+            'READY',
+            'Fuel uplift cost posted to finance handoff preview.',
+            nullableNum(request.total_cost),
+            str(request.currency_id)
+          );
+        } else {
+          if (!body.rejectionReason) {
+            throw new DomainError(
+              'FUEL_REJECTION_REASON_REQUIRED',
+              'A no-uplift or rejection reason is required.',
+              422
+            );
+          }
+          this.sqlite
+            .prepare(
+              `UPDATE flight_fuel_requests
+               SET status_id = 'fuel-workflow-status-rejected', rejection_reason = ?,
+                   version = version + 1, updated_at = ?
+               WHERE id = ? AND version = ?`
+            )
+            .run(body.rejectionReason, now, id, body.expectedVersion);
+          afterStatus = 'REJECTED';
+        }
+
+        const result = this.sqlite
+          .prepare('SELECT version FROM flight_fuel_requests WHERE id = ?')
+          .get(id) as { version: number };
+        if (result.version !== body.expectedVersion + 1) {
+          throw new DomainError(
+            'FUEL_VERSION_CONFLICT',
+            'Fuel request changed while the action was being processed.',
+            409
+          );
+        }
+        this.sqlite
+          .prepare(
+            `INSERT INTO flight_fuel_action_commands (
+               id, idempotency_key, fuel_request_id, action, actor_user_id,
+               expected_version, resulting_version, created_at, completed_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            `fuel-command-${nanoid(10)}`,
+            body.idempotencyKey,
+            id,
+            action,
+            actorUserId,
+            body.expectedVersion,
+            result.version,
+            now,
+            now
+          );
+        this.appendOperationalAudit({
+          actorUserId,
+          flightId: String(request.flight_id),
+          stationId: null,
+          module: 'FUEL',
+          action: `FUEL_${action.toUpperCase()}`,
+          beforeStatus: String(request.status),
+          afterStatus,
+          beforeVersion: body.expectedVersion,
+          afterVersion: result.version,
+          reason: action === 'reject' ? body.rejectionReason : body.varianceNote,
+          metadata: { fuelRequestId: id }
+        });
+        return String(request.flight_id);
+      })
+      .immediate();
+
     this.evaluateReadiness(flightId, false, actorUserId);
     return this.detail(flightId);
+  }
+
+  private fuelPlanningEstimate(
+    flight: FlightOperationRecord,
+    fuelRequests: FlightFuelRequestDto[]
+  ): FuelPlanningEstimateDto {
+    const warnings: string[] = [];
+    const notConfigured = (reason: string): FuelPlanningEstimateDto => ({
+      status: 'NOT_CONFIGURED',
+      assessment: 'INCOMPLETE',
+      regulatoryBasis: 'CASR_135_637',
+      policyVersion: null,
+      policyName: null,
+      availableBlockFuelLitre: null,
+      assessmentBlockFuelLitre: null,
+      takeoffFuelLitre: null,
+      usableFuelCapacityLitre: null,
+      taxiFuelLitre: null,
+      tripFuelLitre: null,
+      contingencyFuelLitre: null,
+      alternateFuelLitre: null,
+      finalReserveFuelLitre: null,
+      additionalFuelLitre: flight.additionalFuelLitre,
+      discretionaryFuelLitre: flight.discretionaryFuelLitre,
+      requiredBlockFuelLitre: null,
+      estimatedFuelAtDestinationLitre: null,
+      operationalMarginLitre: null,
+      operationalMarginMinutes: null,
+      estimatedEnduranceMinutes: null,
+      calculationSources: {
+        fuelQuantitySource: 'NONE',
+        durationSource: 'NONE',
+        burnRateSource: 'NONE',
+        capacitySource: 'NONE'
+      },
+      warnings: [reason],
+      scenario: {
+        canReturnWithoutRefuel: null,
+        needsDestinationRefuelForReturn: null,
+        destinationFuelServiceStatus: 'UNKNOWN',
+        returnRequiredFuelLitre: null
+      }
+    });
+
+    if (!flight.aircraftId) return notConfigured('AIRCRAFT_REQUIRED_FOR_FUEL_PLANNING');
+    const aircraft = this.sqlite
+      .prepare(
+        `SELECT engine_category, usable_fuel_capacity_litre, fuel_capacity_basis,
+                cruise_fuel_burn_litre_per_hour, holding_fuel_burn_litre_per_hour,
+                taxi_fuel_burn_litre_per_hour, fuel_profile_source
+         FROM aircraft WHERE id = ?`
+      )
+      .get(flight.aircraftId) as SqlRow | undefined;
+    if (!aircraft) return notConfigured('AIRCRAFT_FUEL_PROFILE_NOT_FOUND');
+
+    const usableCapacity = nullableNum(aircraft.usable_fuel_capacity_litre);
+    const cruiseBurn = nullableNum(aircraft.cruise_fuel_burn_litre_per_hour);
+    const holdingBurn = nullableNum(aircraft.holding_fuel_burn_litre_per_hour);
+    const taxiBurn = nullableNum(aircraft.taxi_fuel_burn_litre_per_hour);
+    if (!usableCapacity || !cruiseBurn || !holdingBurn) {
+      return notConfigured('AIRCRAFT_FUEL_PROFILE_INCOMPLETE');
+    }
+
+    const policy = this.activeFuelPlanningPolicy(flight.operationRule);
+    if (!policy) return notConfigured('FUEL_POLICY_NOT_CONFIGURED');
+
+    const route = this.sqlite
+      .prepare('SELECT estimated_duration_minutes FROM routes WHERE id = ?')
+      .get(flight.routeId) as SqlRow | undefined;
+    const duration = this.plannedDurationMinutes(flight, route);
+    if (!duration.minutes) return notConfigured('PLANNED_DURATION_NOT_CONFIGURED');
+    if (duration.warning) warnings.push(duration.warning);
+
+    const fuelQuantity = this.availableBlockFuel(fuelRequests[0] ?? null);
+    warnings.push(...fuelQuantity.warnings);
+    if (fuelQuantity.value === null) {
+      const base = notConfigured('BLOCK_FUEL_NOT_RECORDED');
+      return {
+        ...base,
+        policyVersion: Number(policy.version),
+        policyName: String(policy.name),
+        warnings: ['BLOCK_FUEL_NOT_RECORDED', ...warnings]
+      };
+    }
+
+    const availableBlockFuel = this.roundFuel(fuelQuantity.value);
+    const assessmentBlockFuel =
+      availableBlockFuel > usableCapacity ? this.roundFuel(usableCapacity) : availableBlockFuel;
+    if (availableBlockFuel > usableCapacity) {
+      warnings.push('AVAILABLE_BLOCK_FUEL_EXCEEDS_USABLE_CAPACITY');
+    }
+
+    const plannedTaxiMinutes = flight.plannedTaxiMinutes ?? 5;
+    const taxiFuel = this.roundFuel(
+      flight.plannedTaxiFuelLitre ?? (taxiBurn ? (taxiBurn * plannedTaxiMinutes) / 60 : 0)
+    );
+    if (!flight.plannedTaxiFuelLitre && !taxiBurn) warnings.push('TAXI_BURN_RATE_NOT_CONFIGURED');
+
+    const tripFuel = this.roundFuel((cruiseBurn * duration.minutes) / 60);
+    const contingencyFuel = this.roundFuel(
+      Math.max(
+        (tripFuel * Number(policy.contingency_percent)) / 100,
+        (holdingBurn * Number(policy.minimum_contingency_holding_minutes)) / 60
+      )
+    );
+    const finalReserveMinutes =
+      String(aircraft.engine_category) === 'RECIPROCATING'
+        ? Number(policy.reciprocating_final_reserve_minutes)
+        : Number(policy.turbine_final_reserve_minutes);
+    const finalReserveFuel = this.roundFuel((holdingBurn * finalReserveMinutes) / 60);
+    const alternateFuel = this.roundFuel(
+      this.alternateFuel(flight, cruiseBurn, holdingBurn, policy, warnings)
+    );
+    const additionalFuel = this.roundFuel(flight.additionalFuelLitre);
+    const discretionaryFuel = this.roundFuel(flight.discretionaryFuelLitre);
+    const requiredBlockFuel = this.roundFuel(
+      taxiFuel +
+        tripFuel +
+        contingencyFuel +
+        alternateFuel +
+        finalReserveFuel +
+        additionalFuel +
+        discretionaryFuel
+    );
+    const takeoffFuel = this.roundFuel(assessmentBlockFuel - taxiFuel);
+    const estimatedFuelAtDestination = this.roundFuel(takeoffFuel - tripFuel);
+    const margin = this.roundFuel(assessmentBlockFuel - requiredBlockFuel);
+    const marginMinutes = this.roundMinutes((margin / holdingBurn) * 60);
+    const enduranceMinutes = this.roundMinutes((assessmentBlockFuel / cruiseBurn) * 60);
+    const status =
+      margin < 0
+        ? 'INSUFFICIENT'
+        : marginMinutes < Number(policy.low_margin_minutes)
+          ? 'LOW_MARGIN'
+          : 'ENOUGH_FOR_PLANNED_LEG';
+    const returnRequiredFuel = this.returnScenarioFuel(
+      flight,
+      cruiseBurn,
+      holdingBurn,
+      policy,
+      String(aircraft.engine_category),
+      warnings
+    );
+    const canReturnWithoutRefuel =
+      returnRequiredFuel === null ? null : margin >= returnRequiredFuel;
+
+    return {
+      status,
+      assessment: warnings.length ? 'ADVISORY_WITH_FALLBACKS' : 'ADVISORY_COMPLETE',
+      regulatoryBasis: String(policy.regulatory_basis) === 'CASR_91' ? 'CASR_91' : 'CASR_135_637',
+      policyVersion: Number(policy.version),
+      policyName: String(policy.name),
+      availableBlockFuelLitre: availableBlockFuel,
+      assessmentBlockFuelLitre: assessmentBlockFuel,
+      takeoffFuelLitre: takeoffFuel,
+      usableFuelCapacityLitre: this.roundFuel(usableCapacity),
+      taxiFuelLitre: taxiFuel,
+      tripFuelLitre: tripFuel,
+      contingencyFuelLitre: contingencyFuel,
+      alternateFuelLitre: alternateFuel,
+      finalReserveFuelLitre: finalReserveFuel,
+      additionalFuelLitre: additionalFuel,
+      discretionaryFuelLitre: discretionaryFuel,
+      requiredBlockFuelLitre: requiredBlockFuel,
+      estimatedFuelAtDestinationLitre: estimatedFuelAtDestination,
+      operationalMarginLitre: margin,
+      operationalMarginMinutes: marginMinutes,
+      estimatedEnduranceMinutes: enduranceMinutes,
+      calculationSources: {
+        fuelQuantitySource: fuelQuantity.source,
+        durationSource: duration.source,
+        burnRateSource: String(aircraft.fuel_profile_source ?? 'AIRCRAFT_FUEL_PROFILE'),
+        capacitySource: String(aircraft.fuel_capacity_basis ?? 'USABLE')
+      },
+      warnings,
+      scenario: {
+        canReturnWithoutRefuel,
+        needsDestinationRefuelForReturn:
+          canReturnWithoutRefuel === null ? null : !canReturnWithoutRefuel,
+        destinationFuelServiceStatus: this.destinationFuelServiceStatus(
+          flight.destinationStationId
+        ),
+        returnRequiredFuelLitre: returnRequiredFuel
+      }
+    };
+  }
+
+  private activeFuelPlanningPolicy(operationRule: FlightOperationRecord['operationRule']) {
+    const basis = operationRule === 'CASR_91' ? 'CASR_91' : 'CASR_135_637';
+    return this.sqlite
+      .prepare(
+        `SELECT * FROM fuel_planning_policies
+         WHERE active = 1 AND regulatory_basis = ?
+         ORDER BY version DESC, effective_from DESC
+         LIMIT 1`
+      )
+      .get(basis) as SqlRow | undefined;
+  }
+
+  private availableBlockFuel(fuel: FlightFuelRequestDto | null) {
+    if (!fuel) return { value: null, source: 'NONE', warnings: [] as string[] };
+    if (fuel.confirmedBlockFuelLitre !== null) {
+      return {
+        value: fuel.confirmedBlockFuelLitre,
+        source: 'confirmedBlockFuelLitre',
+        warnings: [] as string[]
+      };
+    }
+    if (fuel.measuredFuelOnBoardLitre !== null) {
+      return {
+        value: fuel.measuredFuelOnBoardLitre,
+        source: 'measuredFuelOnBoardLitre',
+        warnings: [] as string[]
+      };
+    }
+    if (fuel.fuelOnBoardBeforeUpliftLitre !== null && fuel.actualUpliftLitre !== null) {
+      return {
+        value:
+          fuel.fuelOnBoardBeforeUpliftLitre +
+          fuel.actualUpliftLitre -
+          (fuel.defuelQuantityLitre ?? 0),
+        source: 'fuelOnBoardBeforeUpliftLitre+actualUpliftLitre-defuelQuantityLitre',
+        warnings: [] as string[]
+      };
+    }
+    return {
+      value: fuel.requestedQuantityLitre,
+      source: 'requestedQuantityLitre',
+      warnings: ['FUEL_QUANTITY_IS_UPLIFT_ONLY']
+    };
+  }
+
+  private plannedDurationMinutes(
+    flight: FlightOperationRecord,
+    route: SqlRow | undefined
+  ): { minutes: number | null; source: string; warning?: string } {
+    if (flight.scheduledDepartureAt && flight.scheduledArrivalAt) {
+      const minutes = Math.round(
+        (new Date(flight.scheduledArrivalAt).getTime() -
+          new Date(flight.scheduledDepartureAt).getTime()) /
+          60_000
+      );
+      if (minutes > 0) return { minutes, source: 'scheduledDepartureAt/scheduledArrivalAt' };
+    }
+    const routeMinutes = nullableNum(route?.estimated_duration_minutes ?? null);
+    return routeMinutes
+      ? {
+          minutes: routeMinutes,
+          source: 'routes.estimated_duration_minutes',
+          warning: 'FALLBACK_ROUTE_DURATION_USED'
+        }
+      : { minutes: null, source: 'NONE' };
+  }
+
+  private alternateFuel(
+    flight: FlightOperationRecord,
+    cruiseBurn: number,
+    holdingBurn: number,
+    policy: SqlRow,
+    warnings: string[]
+  ) {
+    if (!flight.alternateStationId) {
+      return (holdingBurn * Number(policy.no_alternate_holding_minutes ?? 15)) / 60;
+    }
+    const route = this.sqlite
+      .prepare(
+        `SELECT estimated_duration_minutes FROM routes
+         WHERE origin_station_id = ? AND destination_station_id = ? AND is_active = 1`
+      )
+      .get(flight.destinationStationId, flight.alternateStationId) as SqlRow | undefined;
+    const minutes = nullableNum(route?.estimated_duration_minutes ?? null);
+    if (!minutes) {
+      warnings.push('ALTERNATE_ROUTE_DURATION_NOT_CONFIGURED');
+      return 0;
+    }
+    return (cruiseBurn * minutes) / 60;
+  }
+
+  private returnScenarioFuel(
+    flight: FlightOperationRecord,
+    cruiseBurn: number,
+    holdingBurn: number,
+    policy: SqlRow,
+    engineCategory: string,
+    warnings: string[]
+  ) {
+    const reverse = this.sqlite
+      .prepare(
+        `SELECT estimated_duration_minutes FROM routes
+         WHERE origin_station_id = ? AND destination_station_id = ? AND is_active = 1`
+      )
+      .get(flight.destinationStationId, flight.originStationId) as SqlRow | undefined;
+    const outbound = this.sqlite
+      .prepare('SELECT estimated_duration_minutes FROM routes WHERE id = ?')
+      .get(flight.routeId) as SqlRow | undefined;
+    const minutes =
+      nullableNum(reverse?.estimated_duration_minutes ?? null) ??
+      nullableNum(outbound?.estimated_duration_minutes ?? null);
+    if (!minutes) return null;
+    if (!reverse) warnings.push('RETURN_SCENARIO_USES_OUTBOUND_DURATION');
+    const trip = (cruiseBurn * minutes) / 60;
+    const contingency = Math.max(
+      (trip * Number(policy.contingency_percent)) / 100,
+      (holdingBurn * Number(policy.minimum_contingency_holding_minutes)) / 60
+    );
+    const reserveMinutes =
+      engineCategory === 'RECIPROCATING'
+        ? Number(policy.reciprocating_final_reserve_minutes)
+        : Number(policy.turbine_final_reserve_minutes);
+    const reserve = (holdingBurn * reserveMinutes) / 60;
+    const noAlternate = (holdingBurn * Number(policy.no_alternate_holding_minutes ?? 15)) / 60;
+    return this.roundFuel(trip + contingency + reserve + noAlternate);
+  }
+
+  private destinationFuelServiceStatus(stationId: string) {
+    const station = this.sqlite
+      .prepare('SELECT has_fuel_service FROM stations WHERE id = ?')
+      .get(stationId) as SqlRow | undefined;
+    if (!station) return 'UNKNOWN' as const;
+    return bool(station.has_fuel_service) ? ('AVAILABLE' as const) : ('UNAVAILABLE' as const);
+  }
+
+  private roundFuel(value: number) {
+    return Math.round(value * 10) / 10;
+  }
+
+  private roundMinutes(value: number) {
+    return Math.round(value);
   }
 
   private stationServiceVerificationTaskCodes(
@@ -2079,7 +3228,11 @@ export class FlightOperationsService {
     return [];
   }
 
-  createStationService(body: CreateStationServiceBody, actorUserId: string) {
+  createStationService(
+    body: CreateStationServiceBody,
+    actorUserId: string,
+    options: { planningAssignment?: boolean } = {}
+  ) {
     const flight = this.requireFlight(body.flightId);
     if (![flight.originStationId, flight.destinationStationId].includes(body.stationId)) {
       throw new DomainError(
@@ -2088,16 +3241,101 @@ export class FlightOperationsService {
         422
       );
     }
+    if (!options.planningAssignment && !body.creationReason?.trim()) {
+      throw new DomainError(
+        'MANUAL_ADDITIONAL_SERVICE_REASON_REQUIRED',
+        'A reason is required for a manually added station service.',
+        422
+      );
+    }
+    if (!body.serviceSupplierId?.trim()) {
+      throw new DomainError(
+        'STATION_SERVICE_SUPPLIER_REQUIRED',
+        'Select a Station Service supplier before creating the service.',
+        422
+      );
+    }
+    const supplier = this.requireRow(
+      `SELECT station_id, service_type, reference_rate, currency_id
+       FROM station_service_suppliers WHERE id = ? AND is_active = 1`,
+      body.serviceSupplierId,
+      'Station service supplier'
+    );
+    const serviceType = this.requireRow(
+      'SELECT code FROM station_service_types WHERE id = ?',
+      body.serviceTypeId,
+      'Station service type'
+    );
+    if (String(supplier.station_id) !== body.stationId) {
+      throw new DomainError(
+        'STATION_SERVICE_SUPPLIER_SCOPE_MISMATCH',
+        'The selected supplier does not serve this station.',
+        422
+      );
+    }
+    if (!['BOTH', String(serviceType.code)].includes(String(supplier.service_type))) {
+      throw new DomainError(
+        'STATION_SERVICE_SUPPLIER_TYPE_MISMATCH',
+        'The selected supplier does not provide the requested service type.',
+        422
+      );
+    }
+    const existing = this.sqlite
+      .prepare(
+        `SELECT id FROM flight_station_service_requests
+         WHERE flight_id = ? AND station_id = ? AND service_type_id = ?`
+      )
+      .get(body.flightId, body.stationId, body.serviceTypeId) as SqlRow | undefined;
+    if (existing) {
+      return this.listStationServices({ flightId: body.flightId }).find(
+        (record) => record.id === String(existing.id)
+      )!;
+    }
     const id = `station-service-${nanoid(10)}`;
     this.sqlite
       .prepare(
         `INSERT INTO flight_station_service_requests (
           id, flight_id, station_id, service_supplier_id, service_type_id, status_id,
-          reference_rate, created_at, updated_at
-        ) VALUES (@id, @flightId, @stationId, @serviceSupplierId, @serviceTypeId, 'station-service-status-requested',
-          @referenceRate, @createdAt, @updatedAt)`
+          reference_rate, reference_currency_id, creation_source, creation_reason,
+          created_by_user_id, created_at, updated_at
+        ) VALUES (
+          @id, @flightId, @stationId, @serviceSupplierId, @serviceTypeId,
+          'station-service-status-planned', @referenceRate, @referenceCurrencyId,
+          @creationSource, @creationReason, @actorUserId, @createdAt, @updatedAt
+        )`
       )
-      .run({ id, createdAt: timestamp(), updatedAt: timestamp(), ...body });
+      .run({
+        id,
+        ...body,
+        actorUserId,
+        referenceRate: body.referenceRate ?? nullableNum(supplier.reference_rate),
+        referenceCurrencyId: str(supplier.currency_id),
+        creationSource: options.planningAssignment
+          ? 'PLANNING_ASSIGNMENT'
+          : 'MANUAL_ADDITIONAL_SERVICE',
+        creationReason: options.planningAssignment
+          ? 'Generated from an explicit Flight Request planning assignment.'
+          : body.creationReason,
+        createdAt: timestamp(),
+        updatedAt: timestamp()
+      });
+    this.appendOperationalAudit({
+      actorUserId,
+      flightId: body.flightId,
+      stationId: body.stationId,
+      module: 'STATION_SERVICE',
+      action: 'SERVICE_CREATED',
+      afterStatus: 'PLANNED',
+      afterVersion: 1,
+      reason: options.planningAssignment ? 'Explicit planning assignment.' : body.creationReason,
+      metadata: {
+        serviceType: String(serviceType.code),
+        supplierId: body.serviceSupplierId,
+        creationSource: options.planningAssignment
+          ? 'PLANNING_ASSIGNMENT'
+          : 'MANUAL_ADDITIONAL_SERVICE'
+      }
+    });
     this.invalidateStationVerification(
       body.flightId,
       'Station service request changed.',
@@ -2111,46 +3349,82 @@ export class FlightOperationsService {
   }
 
   confirmStationService(id: string, actorUserId: string, expectedVersion?: number) {
-    const row = this.requireRow(
-      `SELECT * FROM flight_station_service_requests WHERE id = ?`,
-      id,
-      'Station service'
-    );
-    if (expectedVersion !== undefined && Number(row.version) !== expectedVersion) {
-      throw new DomainError('STALE_VERSION', 'Station service changed. Refresh and retry.', 409, {
-        currentVersion: Number(row.version)
-      });
-    }
-    if (String(row.status_id) !== 'station-service-status-requested') {
-      throw new DomainError(
-        'INVALID_TRANSITION',
-        'Only a requested station service can be confirmed.',
-        409
-      );
-    }
-    const result = this.sqlite
-      .prepare(
-        `UPDATE flight_station_service_requests
-         SET status_id = 'station-service-status-confirmed', confirmed_at = ?,
-             confirmed_by_user_id = ?, version = version + 1, updated_at = ?
-         WHERE id = ? AND version = ?`
-      )
-      .run(timestamp(), actorUserId, timestamp(), id, Number(row.version));
-    if (!result.changes) {
-      throw new DomainError('STALE_VERSION', 'Station service changed. Refresh and retry.', 409);
-    }
-    this.invalidateStationVerification(
-      String(row.flight_id),
-      'Station service confirmation changed.',
-      actorUserId,
-      this.stationServiceVerificationTaskCodes(
-        String(row.flight_id),
-        String(row.station_id),
-        String(row.service_type_id)
-      )
-    );
-    this.evaluateReadiness(String(row.flight_id), false, actorUserId);
-    return this.detail(String(row.flight_id));
+    return this.sqlite
+      .transaction(() => {
+        const row = this.requireRow(
+          `SELECT * FROM flight_station_service_requests WHERE id = ?`,
+          id,
+          'Station service'
+        );
+        if (String(row.status_id) === 'station-service-status-confirmed') {
+          this.createStationCostDraftForService(row, actorUserId);
+          return this.detail(String(row.flight_id));
+        }
+        if (expectedVersion !== undefined && Number(row.version) !== expectedVersion) {
+          throw new DomainError(
+            'STALE_VERSION',
+            'Station service changed. Refresh and retry.',
+            409,
+            {
+              currentVersion: Number(row.version)
+            }
+          );
+        }
+        if (
+          !['station-service-status-planned', 'station-service-status-requested'].includes(
+            String(row.status_id)
+          )
+        ) {
+          throw new DomainError(
+            'INVALID_TRANSITION',
+            'Only a planned station service can be confirmed.',
+            409
+          );
+        }
+        const result = this.sqlite
+          .prepare(
+            `UPDATE flight_station_service_requests
+             SET status_id = 'station-service-status-confirmed', confirmed_at = ?,
+                 confirmed_by_user_id = ?, version = version + 1, updated_at = ?
+             WHERE id = ? AND version = ?`
+          )
+          .run(timestamp(), actorUserId, timestamp(), id, Number(row.version));
+        if (!result.changes) {
+          throw new DomainError(
+            'STALE_VERSION',
+            'Station service changed. Refresh and retry.',
+            409
+          );
+        }
+        this.appendOperationalAudit({
+          actorUserId,
+          flightId: String(row.flight_id),
+          stationId: String(row.station_id),
+          module: 'STATION_SERVICE',
+          action: 'SERVICE_CONFIRMED',
+          beforeStatus: 'PLANNED',
+          afterStatus: 'CONFIRMED',
+          beforeVersion: Number(row.version),
+          afterVersion: Number(row.version) + 1
+        });
+        this.createStationCostDraftForService(
+          { ...row, status_id: 'station-service-status-confirmed' },
+          actorUserId
+        );
+        this.invalidateStationVerification(
+          String(row.flight_id),
+          'Station service confirmation changed.',
+          actorUserId,
+          this.stationServiceVerificationTaskCodes(
+            String(row.flight_id),
+            String(row.station_id),
+            String(row.service_type_id)
+          )
+        );
+        this.evaluateReadiness(String(row.flight_id), false, actorUserId);
+        return this.detail(String(row.flight_id));
+      })
+      .immediate();
   }
 
   rejectStationService(id: string, reason: string, actorUserId: string, expectedVersion: number) {
@@ -2164,7 +3438,11 @@ export class FlightOperationsService {
         currentVersion: Number(row.version)
       });
     }
-    if (String(row.status_id) !== 'station-service-status-requested') {
+    if (
+      !['station-service-status-planned', 'station-service-status-requested'].includes(
+        String(row.status_id)
+      )
+    ) {
       throw new DomainError(
         'INVALID_TRANSITION',
         'Only a requested station service can be rejected.',
@@ -2196,6 +3474,189 @@ export class FlightOperationsService {
     return this.detail(String(row.flight_id));
   }
 
+  completeStationService(id: string, body: CompleteStationServiceBody, actorUserId: string) {
+    const row = this.requireRow(
+      'SELECT * FROM flight_station_service_requests WHERE id = ?',
+      id,
+      'Station service'
+    );
+    if (String(row.status_id) !== 'station-service-status-confirmed') {
+      throw new DomainError(
+        'INVALID_TRANSITION',
+        'Only a confirmed station service can be completed.',
+        409
+      );
+    }
+    if (Number(row.version) !== body.expectedVersion) {
+      throw new DomainError('STALE_VERSION', 'Station service changed. Refresh and retry.', 409, {
+        currentVersion: Number(row.version)
+      });
+    }
+    const now = timestamp();
+    const result = this.sqlite
+      .prepare(
+        `UPDATE flight_station_service_requests
+         SET status_id = 'station-service-status-completed', completion_record = ?,
+             completion_evidence_reference = ?, completed_at = ?, completed_by_user_id = ?,
+             version = version + 1, updated_at = ?
+         WHERE id = ? AND version = ?`
+      )
+      .run(
+        body.completionRecord,
+        body.evidenceReference,
+        now,
+        actorUserId,
+        now,
+        id,
+        body.expectedVersion
+      );
+    if (!result.changes) {
+      throw new DomainError('STALE_VERSION', 'Station service changed. Refresh and retry.', 409);
+    }
+    this.appendOperationalAudit({
+      actorUserId,
+      flightId: String(row.flight_id),
+      stationId: String(row.station_id),
+      module: 'STATION_SERVICE',
+      action: 'SERVICE_COMPLETED',
+      beforeStatus: 'CONFIRMED',
+      afterStatus: 'COMPLETED',
+      beforeVersion: body.expectedVersion,
+      afterVersion: body.expectedVersion + 1,
+      reason: body.completionRecord,
+      metadata: { evidenceReference: body.evidenceReference }
+    });
+    return this.detail(String(row.flight_id));
+  }
+
+  verifyStationService(id: string, actorUserId: string, expectedVersion: number) {
+    const row = this.requireRow(
+      'SELECT * FROM flight_station_service_requests WHERE id = ?',
+      id,
+      'Station service'
+    );
+    if (String(row.status_id) === 'station-service-status-verified') {
+      return this.detail(String(row.flight_id));
+    }
+    if (String(row.status_id) !== 'station-service-status-completed') {
+      throw new DomainError(
+        'INVALID_TRANSITION',
+        'Only a completed station service can be verified.',
+        409
+      );
+    }
+    if (Number(row.version) !== expectedVersion) {
+      throw new DomainError('STALE_VERSION', 'Station service changed. Refresh and retry.', 409, {
+        currentVersion: Number(row.version)
+      });
+    }
+    const now = timestamp();
+    const result = this.sqlite
+      .prepare(
+        `UPDATE flight_station_service_requests
+         SET status_id = 'station-service-status-verified', verified_at = ?,
+             verified_by_user_id = ?, version = version + 1, updated_at = ?
+         WHERE id = ? AND version = ?`
+      )
+      .run(now, actorUserId, now, id, expectedVersion);
+    if (!result.changes) {
+      throw new DomainError('STALE_VERSION', 'Station service changed. Refresh and retry.', 409);
+    }
+    this.appendOperationalAudit({
+      actorUserId,
+      flightId: String(row.flight_id),
+      stationId: String(row.station_id),
+      module: 'STATION_SERVICE',
+      action: 'SERVICE_VERIFIED',
+      beforeStatus: 'COMPLETED',
+      afterStatus: 'VERIFIED',
+      beforeVersion: expectedVersion,
+      afterVersion: expectedVersion + 1,
+      metadata: {
+        evidenceReference: str(row.completion_evidence_reference)
+      }
+    });
+    return this.detail(String(row.flight_id));
+  }
+
+  private createStationCostDraftForService(service: SqlRow, actorUserId: string) {
+    const existing = this.sqlite
+      .prepare('SELECT id FROM flight_station_costs WHERE source_service_id = ?')
+      .get(service.id) as SqlRow | undefined;
+    if (existing) return String(existing.id);
+    const serviceType = this.requireRow(
+      'SELECT code FROM station_service_types WHERE id = ?',
+      String(service.service_type_id),
+      'Station service type'
+    );
+    const supplier = this.requireRow(
+      `SELECT supplier_name, reference_rate, currency_id
+       FROM station_service_suppliers WHERE id = ?`,
+      String(service.service_supplier_id),
+      'Station service supplier'
+    );
+    const code = String(serviceType.code);
+    const costCategoryId = code === 'PARKING' ? 'cost-parking' : 'cost-handling';
+    const estimate = nullableNum(service.reference_rate) ?? nullableNum(supplier.reference_rate);
+    const currencyId = str(service.reference_currency_id) ?? str(supplier.currency_id);
+    if (!currencyId) {
+      throw new DomainError(
+        'STATION_COST_CURRENCY_UNSUPPORTED',
+        'The selected supplier has no reference currency configured.',
+        422
+      );
+    }
+    const id = `station-cost-${nanoid(10)}`;
+    this.sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO flight_station_costs (
+          id, flight_id, station_id, vendor_id, service_supplier_id, source_service_id,
+          cost_category_id, amount, estimated_amount, actual_amount, currency_id, description,
+          status_id, created_at, updated_at
+        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?,
+          ?, 'station-cost-status-draft', ?, ?)`
+      )
+      .run(
+        id,
+        service.flight_id,
+        service.station_id,
+        service.service_supplier_id,
+        service.id,
+        costCategoryId,
+        estimate ?? 0,
+        estimate,
+        currencyId,
+        `${code === 'PARKING' ? 'Parking' : 'Handling'} Cost - ${
+          estimate === null ? 'REFERENCE ESTIMATE not configured' : 'REFERENCE ESTIMATE'
+        } from ${String(supplier.supplier_name)}`,
+        timestamp(),
+        timestamp()
+      );
+    const costId = (
+      this.sqlite
+        .prepare('SELECT id FROM flight_station_costs WHERE source_service_id = ?')
+        .get(service.id) as { id: string }
+    ).id;
+    this.appendOperationalAudit({
+      actorUserId,
+      flightId: String(service.flight_id),
+      stationId: String(service.station_id),
+      module: 'STATION_COST',
+      action: 'COST_DRAFT_CREATED',
+      afterStatus: 'DRAFT',
+      afterVersion: 1,
+      reason: 'Generated once from confirmed station service.',
+      metadata: {
+        costId,
+        sourceServiceId: String(service.id),
+        estimate,
+        currencyId,
+        estimateLabel: 'REFERENCE ESTIMATE'
+      }
+    });
+    return costId;
+  }
+
   createStationCost(body: CreateStationCostBody, actorUserId: string) {
     if (body.flightId) {
       const flight = this.requireFlight(body.flightId);
@@ -2211,93 +3672,506 @@ export class FlightOperationsService {
     this.sqlite
       .prepare(
         `INSERT INTO flight_station_costs (
-          id, flight_id, station_id, vendor_id, cost_category_id, amount, currency_id,
-          description, status_id, submitted_by_user_id, created_at, updated_at
-        ) VALUES (@id, @flightId, @stationId, @vendorId, @costCategoryId, @amount, @currencyId,
-          @description, 'station-cost-status-draft', @actorUserId, @createdAt, @updatedAt)`
+          id, flight_id, station_id, vendor_id, cost_category_id, amount, estimated_amount,
+          actual_amount, currency_id, description, vendor_reference, evidence_reference,
+          status_id, created_at, updated_at
+        ) VALUES (
+          @id, @flightId, @stationId, @vendorId, @costCategoryId, @amount, NULL,
+          @amount, @currencyId, @description, @vendorReference, @evidenceReference,
+          'station-cost-status-draft', @createdAt, @updatedAt
+        )`
       )
-      .run({ id, actorUserId, createdAt: timestamp(), updatedAt: timestamp(), ...body });
+      .run({ id, createdAt: timestamp(), updatedAt: timestamp(), ...body });
+    if (body.flightId) {
+      this.appendOperationalAudit({
+        actorUserId,
+        flightId: body.flightId,
+        stationId: body.stationId,
+        module: 'STATION_COST',
+        action: 'COST_DRAFT_CREATED',
+        afterStatus: 'DRAFT',
+        afterVersion: 1,
+        reason: 'Manual station cost record.',
+        metadata: { costId: id, actualAmount: body.amount, currencyId: body.currencyId }
+      });
+    }
     return this.listStationCosts().find((record) => record.id === id)!;
   }
 
-  submitStationCost(id: string, actorUserId: string, expectedVersion: number) {
+  updateStationCost(id: string, body: UpdateStationCostBody, actorUserId: string) {
     const row = this.requireRow(
-      `SELECT * FROM flight_station_costs WHERE id = ?`,
+      'SELECT * FROM flight_station_costs WHERE id = ?',
       id,
       'Station cost'
     );
-    if (Number(row.version) !== expectedVersion) {
-      throw new DomainError('STALE_VERSION', 'Station cost changed. Refresh and retry.', 409, {
-        currentVersion: Number(row.version)
-      });
-    }
     if (String(row.status_id) !== 'station-cost-status-draft') {
       throw new DomainError(
-        'INVALID_TRANSITION',
-        'Only a draft station cost can be submitted.',
+        'STATION_COST_NOT_EDITABLE',
+        'Only a draft station cost can be edited.',
         409
+      );
+    }
+    if (Number(row.version) !== body.expectedVersion) {
+      throw new DomainError(
+        'STATION_COST_VERSION_CONFLICT',
+        'Station cost changed. Refresh and retry.',
+        409,
+        { currentVersion: Number(row.version) }
+      );
+    }
+    if (body.actualAmount <= 0) {
+      throw new DomainError(
+        'STATION_COST_ACTUAL_REQUIRED',
+        'A positive actual amount is required.',
+        422
+      );
+    }
+    const currency = this.sqlite
+      .prepare('SELECT id FROM currencies WHERE id = ? AND is_active = 1')
+      .get(body.currencyId);
+    if (!currency) {
+      throw new DomainError(
+        'STATION_COST_CURRENCY_UNSUPPORTED',
+        'An active currency is required for actual cost.',
+        422
       );
     }
     const result = this.sqlite
       .prepare(
         `UPDATE flight_station_costs
-         SET status_id = 'station-cost-status-submitted', submitted_by_user_id = ?,
-             version = version + 1, updated_at = ?
+         SET actual_amount = ?, amount = ?, currency_id = ?, vendor_reference = ?,
+             evidence_reference = ?, description = ?, version = version + 1, updated_at = ?
          WHERE id = ? AND version = ?`
       )
-      .run(actorUserId, timestamp(), id, expectedVersion);
+      .run(
+        body.actualAmount,
+        body.actualAmount,
+        body.currencyId,
+        body.vendorReference,
+        body.evidenceReference,
+        body.description,
+        timestamp(),
+        id,
+        body.expectedVersion
+      );
     if (!result.changes) {
-      throw new DomainError('STALE_VERSION', 'Station cost changed. Refresh and retry.', 409);
+      throw new DomainError(
+        'STATION_COST_VERSION_CONFLICT',
+        'Station cost changed. Refresh and retry.',
+        409
+      );
+    }
+    if (row.flight_id) {
+      this.appendOperationalAudit({
+        actorUserId,
+        flightId: String(row.flight_id),
+        stationId: String(row.station_id),
+        module: 'STATION_COST',
+        action: 'ACTUAL_COST_UPDATED',
+        beforeStatus: 'DRAFT',
+        afterStatus: 'DRAFT',
+        beforeVersion: body.expectedVersion,
+        afterVersion: body.expectedVersion + 1,
+        reason: body.description,
+        metadata: {
+          costId: id,
+          estimatedAmount: nullableNum(row.estimated_amount),
+          actualAmount: body.actualAmount,
+          vendorReference: body.vendorReference,
+          evidenceReference: body.evidenceReference
+        }
+      });
+    }
+    return row.flight_id ? this.detail(String(row.flight_id)) : this.listStationCosts();
+  }
+
+  submitStationCost(id: string, actorUserId: string, expectedVersion: number) {
+    const row = this.requireRow(
+      `SELECT cost.*, currency.is_active AS currency_is_active,
+              service.status_id AS service_status_id
+       FROM flight_station_costs cost
+       LEFT JOIN currencies currency ON currency.id = cost.currency_id
+       LEFT JOIN flight_station_service_requests service ON service.id = cost.source_service_id
+       WHERE cost.id = ?`,
+      id,
+      'Station cost'
+    );
+    if (String(row.status_id) === 'station-cost-status-submitted') {
+      return row.flight_id ? this.detail(String(row.flight_id)) : this.listStationCosts();
+    }
+    if (Number(row.version) !== expectedVersion) {
+      throw new DomainError(
+        'STATION_COST_VERSION_CONFLICT',
+        'Station cost changed. Refresh and retry.',
+        409,
+        { currentVersion: Number(row.version) }
+      );
+    }
+    if (String(row.status_id) !== 'station-cost-status-draft') {
+      throw new DomainError(
+        'STATION_COST_INVALID_STATUS',
+        'Only a draft station cost can be submitted.',
+        409
+      );
+    }
+    if (nullableNum(row.actual_amount) === null || num(row.actual_amount) <= 0) {
+      throw new DomainError(
+        'STATION_COST_ACTUAL_REQUIRED',
+        'A positive actual amount is required before submitting this cost.',
+        422
+      );
+    }
+    if (
+      !row.source_service_id ||
+      !row.service_supplier_id ||
+      ![
+        'station-service-status-confirmed',
+        'station-service-status-completed',
+        'station-service-status-verified'
+      ].includes(String(row.service_status_id))
+    ) {
+      throw new DomainError(
+        'STATION_SERVICE_SUPPLIER_REQUIRED',
+        'A confirmed supplier-bound Station Service is required before submitting this cost.',
+        422
+      );
+    }
+    if (!row.currency_id || row.currency_is_active !== 1) {
+      throw new DomainError(
+        'STATION_COST_CURRENCY_UNSUPPORTED',
+        'An active cost currency is required before submitting this cost.',
+        422
+      );
+    }
+    if (!str(row.evidence_reference)) {
+      throw new DomainError(
+        'STATION_COST_EVIDENCE_REQUIRED',
+        'Cost evidence is required before submitting this cost.',
+        422
+      );
+    }
+    const missing = [
+      !str(row.vendor_reference) ? 'vendor/invoice/receipt reference' : null,
+      !str(row.description) ? 'description' : null
+    ].filter((item): item is string => Boolean(item));
+    if (missing.length) {
+      throw new DomainError(
+        'STATION_COST_SUBMISSION_INCOMPLETE',
+        `Complete ${missing.join(', ')} before submitting this cost.`,
+        422,
+        { missing }
+      );
+    }
+    const now = timestamp();
+    const result = this.sqlite
+      .prepare(
+        `UPDATE flight_station_costs
+         SET status_id = 'station-cost-status-submitted', submitted_by_user_id = ?,
+             submitted_at = ?, version = version + 1, updated_at = ?
+         WHERE id = ? AND version = ?`
+      )
+      .run(actorUserId, now, now, id, expectedVersion);
+    if (!result.changes) {
+      throw new DomainError(
+        'STATION_COST_VERSION_CONFLICT',
+        'Station cost changed. Refresh and retry.',
+        409
+      );
+    }
+    if (row.flight_id) {
+      this.appendOperationalAudit({
+        actorUserId,
+        flightId: String(row.flight_id),
+        stationId: String(row.station_id),
+        module: 'STATION_COST',
+        action: 'COST_SUBMITTED',
+        beforeStatus: 'DRAFT',
+        afterStatus: 'SUBMITTED',
+        beforeVersion: expectedVersion,
+        afterVersion: expectedVersion + 1,
+        metadata: { costId: id, evidenceReference: str(row.evidence_reference) }
+      });
     }
     return row.flight_id ? this.detail(String(row.flight_id)) : this.listStationCosts();
   }
 
   approveStationCost(id: string, actorUserId: string, expectedVersion?: number) {
-    const row = this.requireRow(
-      `SELECT * FROM flight_station_costs WHERE id = ?`,
-      id,
-      'Station cost'
-    );
-    if (expectedVersion !== undefined && Number(row.version) !== expectedVersion) {
-      throw new DomainError('STALE_VERSION', 'Station cost changed. Refresh and retry.', 409, {
-        currentVersion: Number(row.version)
-      });
-    }
-    if (
-      expectedVersion !== undefined &&
-      String(row.status_id) !== 'station-cost-status-submitted'
-    ) {
-      throw new DomainError(
-        'INVALID_TRANSITION',
-        'Only a submitted station cost can be approved.',
-        409
+    const approve = () => {
+      const row = this.requireRow(
+        `SELECT cost.*, currency.currency_code, service.service_type_id,
+                service.status_id AS service_status_id, service.completion_evidence_reference,
+                service.completion_record, service.completed_at,
+                type.code AS service_type, supplier.supplier_name,
+                station.station_code, flight.flight_number
+         FROM flight_station_costs cost
+         LEFT JOIN currencies currency ON currency.id = cost.currency_id
+         LEFT JOIN flight_station_service_requests service ON service.id = cost.source_service_id
+         LEFT JOIN station_service_types type ON type.id = service.service_type_id
+         LEFT JOIN station_service_suppliers supplier ON supplier.id = cost.service_supplier_id
+         LEFT JOIN stations station ON station.id = cost.station_id
+         LEFT JOIN flight_operations flight ON flight.id = cost.flight_id
+         WHERE cost.id = ?`,
+        id,
+        'Station cost'
       );
-    }
-    const result = this.sqlite
-      .prepare(
-        `UPDATE flight_station_costs
-         SET status_id = 'station-cost-status-approved', approved_by_user_id = ?,
-             approved_at = ?, version = version + 1, updated_at = ?
-         WHERE id = ? AND version = ?`
-      )
-      .run(actorUserId, timestamp(), timestamp(), id, Number(row.version));
-    if (!result.changes) {
-      throw new DomainError('STALE_VERSION', 'Station cost changed. Refresh and retry.', 409);
-    }
-    if (row.flight_id) {
-      this.upsertFinanceHandoff(
+      if (String(row.status_id) === 'station-cost-status-approved') {
+        if (!row.flight_id) return row;
+        createAccountingService(this.sqlite).processApprovedStationCost(id);
+        return this.detail(String(row.flight_id));
+      }
+      if (expectedVersion !== undefined && Number(row.version) !== expectedVersion) {
+        throw new DomainError(
+          'STATION_COST_VERSION_CONFLICT',
+          'Station cost changed. Refresh and retry.',
+          409,
+          { currentVersion: Number(row.version) }
+        );
+      }
+      if (String(row.status_id) !== 'station-cost-status-submitted') {
+        throw new DomainError(
+          'STATION_COST_INVALID_STATUS',
+          'Only a submitted station cost can be approved.',
+          409
+        );
+      }
+      if (str(row.submitted_by_user_id) === actorUserId) {
+        throw new DomainError(
+          'STATION_COST_SELF_APPROVAL_FORBIDDEN',
+          'The submitter cannot approve the same station cost.',
+          403
+        );
+      }
+      if (
+        !row.flight_id ||
+        !row.source_service_id ||
+        !row.service_supplier_id ||
+        !row.supplier_name
+      ) {
+        throw new DomainError(
+          'STATION_SERVICE_SUPPLIER_REQUIRED',
+          'A valid supplier-bound Station Service is required before approval.',
+          422
+        );
+      }
+      if (
+        ![
+          'station-service-status-confirmed',
+          'station-service-status-completed',
+          'station-service-status-verified'
+        ].includes(String(row.service_status_id))
+      ) {
+        throw new DomainError(
+          'STATION_COST_INVALID_STATUS',
+          'The source Station Service is no longer valid for Finance approval.',
+          409
+        );
+      }
+      if (nullableNum(row.actual_amount) === null || num(row.actual_amount) <= 0) {
+        throw new DomainError(
+          'STATION_COST_ACTUAL_REQUIRED',
+          'A positive actual amount is required before approval.',
+          422
+        );
+      }
+      if (!row.currency_id || !row.currency_code) {
+        throw new DomainError(
+          'STATION_COST_CURRENCY_UNSUPPORTED',
+          'A valid cost currency is required before approval.',
+          422
+        );
+      }
+      if (!row.evidence_reference || !row.vendor_reference) {
+        throw new DomainError(
+          'STATION_COST_EVIDENCE_REQUIRED',
+          'Invoice/reference and cost evidence are required before approval.',
+          422
+        );
+      }
+      const approvedAt = timestamp();
+      const approvedAmount = num(row.actual_amount);
+      const approvalSnapshot = {
+        sourceType: 'STATION_COST',
+        sourceId: id,
+        flightId: String(row.flight_id),
+        flightNumber: str(row.flight_number),
+        stationId: String(row.station_id),
+        stationCode: str(row.station_code),
+        sourceServiceId: String(row.source_service_id),
+        serviceType: String(row.service_type),
+        supplierId: String(row.service_supplier_id),
+        supplierName: String(row.supplier_name),
+        referenceEstimateAmount: nullableNum(row.estimated_amount),
+        actualAmount: approvedAmount,
+        approvedAmount,
+        currencyId: String(row.currency_id),
+        currencyCode: String(row.currency_code),
+        vendorReference: String(row.vendor_reference),
+        evidenceReferences: [String(row.evidence_reference)],
+        serviceCompletionReference: str(row.completion_evidence_reference),
+        serviceCompletionRecord: str(row.completion_record),
+        submittedBy: str(row.submitted_by_user_id),
+        submittedAt: str(row.submitted_at),
+        approvedBy: actorUserId,
+        approvedAt
+      };
+      const result = this.sqlite
+        .prepare(
+          `UPDATE flight_station_costs
+           SET status_id = 'station-cost-status-approved', approved_amount = ?,
+               approved_currency_id = ?, approved_by_user_id = ?, approved_at = ?,
+               approval_snapshot_json = ?, version = version + 1, updated_at = ?
+           WHERE id = ? AND version = ? AND status_id = 'station-cost-status-submitted'`
+        )
+        .run(
+          approvedAmount,
+          row.currency_id,
+          actorUserId,
+          approvedAt,
+          JSON.stringify(approvalSnapshot),
+          approvedAt,
+          id,
+          Number(row.version)
+        );
+      if (!result.changes) {
+        throw new DomainError(
+          'STATION_COST_VERSION_CONFLICT',
+          'Station cost changed. Refresh and retry.',
+          409
+        );
+      }
+      const handoffId = this.upsertFinanceHandoff(
         String(row.flight_id),
         'station_cost',
         id,
         'STATION_COST_DRAFT',
         'READY',
-        'Approved station cost ready for finance handoff.',
-        nullableNum(row.amount),
-        str(row.currency_id)
+        'Finance-approved station cost ready for accounting.',
+        approvedAmount,
+        String(row.currency_id),
+        {
+          snapshot: approvalSnapshot,
+          processedByUserId: actorUserId,
+          processedAt: approvedAt
+        }
       );
+      this.appendOperationalAudit({
+        actorUserId,
+        flightId: String(row.flight_id),
+        stationId: String(row.station_id),
+        module: 'STATION_COST',
+        action: 'COST_APPROVED',
+        beforeStatus: 'SUBMITTED',
+        afterStatus: 'APPROVED',
+        beforeVersion: Number(row.version),
+        afterVersion: Number(row.version) + 1,
+        metadata: { costId: id, handoffId, approvedAmount, currencyCode: row.currency_code }
+      });
+      this.appendOperationalAudit({
+        actorUserId: 'SYSTEM-FINANCE-HANDOFF',
+        flightId: String(row.flight_id),
+        stationId: String(row.station_id),
+        module: 'FINANCE_HANDOFF',
+        action: 'FINANCE_HANDOFF_CREATED',
+        afterStatus: 'READY',
+        metadata: { costId: id, handoffId }
+      });
+      const accounting = createAccountingService(this.sqlite).processApprovedStationCost(id);
+      if (accounting.eventCreated) {
+        this.appendOperationalAudit({
+          actorUserId: 'SYSTEM-STATION-COST-ACCOUNTING',
+          flightId: String(row.flight_id),
+          stationId: String(row.station_id),
+          module: 'ACCOUNTING',
+          action: 'ACCOUNTING_EVENT_CREATED',
+          afterStatus: accounting.exceptionCreated ? 'EXCEPTION' : 'DRAFT',
+          metadata: {
+            costId: id,
+            handoffId,
+            accountingEventId: accounting.accountingEventId
+          }
+        });
+      }
+      this.appendOperationalAudit({
+        actorUserId: 'SYSTEM-STATION-COST-ACCOUNTING',
+        flightId: String(row.flight_id),
+        stationId: String(row.station_id),
+        module: 'ACCOUNTING',
+        action: accounting.exceptionCreated ? 'ACCOUNTING_EVENT_FAILED' : 'JOURNAL_DRAFT_CREATED',
+        afterStatus: accounting.journalStatus ?? 'EXCEPTION',
+        metadata: {
+          costId: id,
+          handoffId,
+          accountingEventId: accounting.accountingEventId,
+          journalEntryId: accounting.journalEntryId
+        }
+      });
       return this.detail(String(row.flight_id));
+    };
+    return this.sqlite.inTransaction ? approve() : this.sqlite.transaction(approve).immediate();
+  }
+
+  voidStationCost(id: string, body: VoidStationCostBody, actorUserId: string) {
+    const row = this.requireRow(
+      'SELECT * FROM flight_station_costs WHERE id = ?',
+      id,
+      'Station cost'
+    );
+    if (
+      ['station-cost-status-voided', 'station-cost-status-void'].includes(String(row.status_id))
+    ) {
+      return row.flight_id ? this.detail(String(row.flight_id)) : this.listStationCosts();
     }
-    return row;
+    if (
+      !['station-cost-status-draft', 'station-cost-status-submitted'].includes(
+        String(row.status_id)
+      )
+    ) {
+      throw new DomainError(
+        'STATION_COST_INVALID_STATUS',
+        'Only a draft or submitted station cost can be voided.',
+        409
+      );
+    }
+    if (Number(row.version) !== body.expectedVersion) {
+      throw new DomainError(
+        'STATION_COST_VERSION_CONFLICT',
+        'Station cost changed. Refresh and retry.',
+        409,
+        { currentVersion: Number(row.version) }
+      );
+    }
+    const now = timestamp();
+    const result = this.sqlite
+      .prepare(
+        `UPDATE flight_station_costs
+         SET status_id = 'station-cost-status-voided', void_reason = ?, voided_by_user_id = ?,
+             voided_at = ?, version = version + 1, updated_at = ?
+         WHERE id = ? AND version = ?`
+      )
+      .run(body.reason, actorUserId, now, now, id, body.expectedVersion);
+    if (!result.changes) {
+      throw new DomainError(
+        'STATION_COST_VERSION_CONFLICT',
+        'Station cost changed. Refresh and retry.',
+        409
+      );
+    }
+    if (row.flight_id) {
+      this.appendOperationalAudit({
+        actorUserId,
+        flightId: String(row.flight_id),
+        stationId: String(row.station_id),
+        module: 'STATION_COST',
+        action: 'COST_VOIDED',
+        beforeStatus: String(row.status_id).endsWith('submitted') ? 'SUBMITTED' : 'DRAFT',
+        afterStatus: 'VOIDED',
+        beforeVersion: body.expectedVersion,
+        afterVersion: body.expectedVersion + 1,
+        reason: body.reason,
+        metadata: { costId: id }
+      });
+    }
+    return row.flight_id ? this.detail(String(row.flight_id)) : this.listStationCosts();
   }
 
   createMaintenance(body: CreateMaintenanceHandoffBody, actorUserId: string) {
@@ -2386,10 +4260,12 @@ export class FlightOperationsService {
     return (
       this.sqlite
         .prepare(
-          `SELECT r.*, status.code as status, f.flight_number, s.supplier_name
+          `SELECT r.*, status.code as status, f.flight_number, s.supplier_name,
+              station.id AS station_id, station.station_code
        FROM flight_fuel_requests r
        JOIN flight_operations f ON f.id = r.flight_id
        JOIN fuel_suppliers s ON s.id = r.fuel_supplier_id
+       JOIN stations station ON station.id = s.station_id
        JOIN fuel_workflow_statuses status ON status.id = r.status_id
        ${where}
        ORDER BY r.updated_at DESC`
@@ -2399,18 +4275,25 @@ export class FlightOperationsService {
       id: String(row.id),
       flightId: String(row.flight_id),
       flightNumber: String(row.flight_number),
+      stationId: String(row.station_id),
+      stationCode: String(row.station_code),
       fuelSupplierId: String(row.fuel_supplier_id),
       supplierName: String(row.supplier_name),
       fuelType: String(row.fuel_type),
       requestedQuantityLitre: num(row.requested_quantity_litre),
+      fuelOnBoardBeforeUpliftLitre: nullableNum(row.fuel_on_board_before_uplift_litre),
       approvedQuantityLitre: nullableNum(row.approved_quantity_litre),
       actualUpliftLitre: nullableNum(row.actual_uplift_litre),
+      defuelQuantityLitre: nullableNum(row.defuel_quantity_litre),
+      measuredFuelOnBoardLitre: nullableNum(row.measured_fuel_on_board_litre),
+      confirmedBlockFuelLitre: nullableNum(row.confirmed_block_fuel_litre),
       referencePricePerLitre: nullableNum(row.reference_price_per_litre),
       actualPricePerLitre: nullableNum(row.actual_price_per_litre),
       taxAmount: nullableNum(row.tax_amount),
       totalCost: nullableNum(row.total_cost),
       status: String(row.status) as FlightFuelRequestDto['status'],
-      varianceNote: str(row.variance_note)
+      varianceNote: str(row.variance_note),
+      version: num(row.version)
     }));
   }
 
@@ -2420,11 +4303,13 @@ export class FlightOperationsService {
       this.sqlite
         .prepare(
           `SELECT r.*, service_type.code as service_type, status.code as status,
-              f.flight_number, s.station_code, p.supplier_name
+              f.flight_number, s.station_code, p.supplier_name,
+              currency.currency_code AS reference_currency_code
        FROM flight_station_service_requests r
        JOIN flight_operations f ON f.id = r.flight_id
        JOIN stations s ON s.id = r.station_id
        JOIN station_service_suppliers p ON p.id = r.service_supplier_id
+       LEFT JOIN currencies currency ON currency.id = r.reference_currency_id
        JOIN station_service_types service_type ON service_type.id = r.service_type_id
        JOIN station_service_statuses status ON status.id = r.status_id
        ${where}
@@ -2442,6 +4327,17 @@ export class FlightOperationsService {
       serviceType: String(row.service_type) as FlightStationServiceDto['serviceType'],
       status: String(row.status) as FlightStationServiceDto['status'],
       referenceRate: nullableNum(row.reference_rate),
+      referenceCurrencyId: str(row.reference_currency_id),
+      referenceCurrencyCode: str(row.reference_currency_code),
+      creationSource: String(
+        row.creation_source ?? 'MANUAL_ADDITIONAL_SERVICE'
+      ) as FlightStationServiceDto['creationSource'],
+      creationReason: str(row.creation_reason),
+      confirmedAt: str(row.confirmed_at),
+      completedAt: str(row.completed_at),
+      verifiedAt: str(row.verified_at),
+      completionRecord: str(row.completion_record),
+      completionEvidenceReference: str(row.completion_evidence_reference),
       rejectionNote: str(row.rejection_note),
       version: num(row.version)
     }));
@@ -2453,35 +4349,105 @@ export class FlightOperationsService {
       this.sqlite
         .prepare(
           `SELECT c.*, status.code as status, f.flight_number, s.station_code, v.vendor_name,
-              cc.category_name, cur.currency_code
+              supplier.supplier_name, cc.category_name, cur.currency_code,
+              approved_currency.currency_code AS approved_currency_code,
+              handoff.id AS finance_handoff_id, handoff_status.code AS finance_handoff_status,
+              event.id AS accounting_event_id, event.posting_status AS accounting_event_status,
+              event.amount_minor AS accounting_event_amount,
+              event.currency_code AS accounting_event_currency,
+              journal.id AS journal_entry_id, journal.status AS journal_status
        FROM flight_station_costs c
        LEFT JOIN flight_operations f ON f.id = c.flight_id
        JOIN stations s ON s.id = c.station_id
        LEFT JOIN vendors v ON v.id = c.vendor_id
+       LEFT JOIN station_service_suppliers supplier ON supplier.id = c.service_supplier_id
        JOIN cost_categories cc ON cc.id = c.cost_category_id
        JOIN currencies cur ON cur.id = c.currency_id
+       LEFT JOIN currencies approved_currency ON approved_currency.id = c.approved_currency_id
        JOIN station_cost_statuses status ON status.id = c.status_id
+       LEFT JOIN flight_finance_handoffs handoff
+         ON handoff.source_type = 'station_cost' AND handoff.source_id = c.id
+       LEFT JOIN finance_handoff_statuses handoff_status ON handoff_status.id = handoff.status_id
+       LEFT JOIN accounting_events event
+         ON event.source_type = 'STATION_COST' AND event.source_id = c.id
+       LEFT JOIN journal_entries journal ON journal.accounting_event_id = event.id
        ${where}
        ORDER BY c.updated_at DESC`
         )
         .all(params) as SqlRow[]
-    ).map((row) => ({
-      id: String(row.id),
-      flightId: str(row.flight_id),
-      flightNumber: str(row.flight_number),
-      stationId: String(row.station_id),
-      stationCode: String(row.station_code),
-      vendorId: str(row.vendor_id),
-      vendorName: str(row.vendor_name),
-      costCategoryId: String(row.cost_category_id),
-      costCategoryName: String(row.category_name),
-      amount: num(row.amount),
-      currencyId: String(row.currency_id),
-      currencyCode: String(row.currency_code),
-      description: String(row.description),
-      status: String(row.status) as FlightStationCostDto['status'],
-      version: num(row.version)
-    }));
+    ).map((row) => {
+      const approvedAmount = nullableNum(row.approved_amount);
+      const journalStatus = str(row.journal_status);
+      const accountingMatches =
+        journalStatus === 'POSTED' &&
+        approvedAmount !== null &&
+        nullableNum(row.accounting_event_amount) === approvedAmount &&
+        str(row.accounting_event_currency) === str(row.approved_currency_code);
+      const status = String(row.status) as FlightStationCostDto['status'];
+      const financialBasis: FlightStationCostDto['financialBasis'] =
+        journalStatus === 'POSTED'
+          ? 'POSTED_LEDGER'
+          : journalStatus === 'DRAFT' ||
+              journalStatus === 'PENDING_APPROVAL' ||
+              journalStatus === 'APPROVED'
+            ? 'ACCOUNTING_DRAFT'
+            : status === 'APPROVED'
+              ? 'FINANCE_APPROVED'
+              : status === 'SUBMITTED'
+                ? 'FINANCE_SUBMITTED'
+                : 'OPERATIONAL_ESTIMATE';
+      return {
+        id: String(row.id),
+        flightId: str(row.flight_id),
+        flightNumber: str(row.flight_number),
+        stationId: String(row.station_id),
+        stationCode: String(row.station_code),
+        vendorId: str(row.vendor_id),
+        vendorName: str(row.vendor_name),
+        serviceSupplierId: str(row.service_supplier_id),
+        supplierName: str(row.supplier_name),
+        sourceServiceId: str(row.source_service_id),
+        costCategoryId: String(row.cost_category_id),
+        costCategoryName: String(row.category_name),
+        amount: num(row.amount),
+        estimatedAmount: nullableNum(row.estimated_amount),
+        actualAmount: nullableNum(row.actual_amount),
+        approvedAmount,
+        currencyId: String(row.currency_id),
+        currencyCode: String(row.currency_code),
+        approvedCurrencyId: str(row.approved_currency_id),
+        approvedCurrencyCode: str(row.approved_currency_code),
+        description: String(row.description),
+        vendorReference: str(row.vendor_reference),
+        evidenceReference: str(row.evidence_reference),
+        submittedByUserId: str(row.submitted_by_user_id),
+        submittedAt: str(row.submitted_at),
+        approvedByUserId: str(row.approved_by_user_id),
+        approvedAt: str(row.approved_at),
+        voidedByUserId: str(row.voided_by_user_id),
+        voidedAt: str(row.voided_at),
+        voidReason: str(row.void_reason),
+        approvalSnapshot: parseMetadata(row.approval_snapshot_json),
+        financeHandoffId: str(row.finance_handoff_id),
+        financeHandoffStatus: str(
+          row.finance_handoff_status
+        ) as FlightStationCostDto['financeHandoffStatus'],
+        accountingEventId: str(row.accounting_event_id),
+        accountingEventStatus: str(row.accounting_event_status),
+        journalEntryId: str(row.journal_entry_id),
+        journalStatus,
+        postedLedgerAmount:
+          journalStatus === 'POSTED' ? nullableNum(row.accounting_event_amount) : null,
+        financialBasis,
+        reconciliationStatus: accountingMatches
+          ? 'RECONCILED'
+          : row.accounting_event_id
+            ? 'NOT_RECONCILED'
+            : 'NOT_ACCOUNTING_READY',
+        status,
+        version: num(row.version)
+      };
+    });
   }
 
   listMaintenance(params: MaintenanceHandoffQuery = {}): FlightMaintenanceHandoffDto[] {
@@ -3051,17 +5017,63 @@ export class FlightOperationsService {
           422
         );
       }
-      const licenseExpiry = str(crew.license_expiry_date);
-      const medicalExpiry = str(crew.medical_expiry_date);
-      if (
-        !licenseExpiry ||
-        licenseExpiry < request.flightDate ||
-        !medicalExpiry ||
-        medicalExpiry < request.flightDate
-      ) {
+      const primaryLicense = this.sqlite
+        .prepare(
+          `SELECT * FROM personnel_licenses
+           WHERE personnel_id = ? AND is_primary = 1 AND status = 'ACTIVE'
+             AND (issue_date IS NULL OR issue_date <= ?)
+             AND (expiry_date IS NULL OR expiry_date >= ?)
+           LIMIT 1`
+        )
+        .get(crewId, request.flightDate, request.flightDate) as SqlRow | undefined;
+      const medical = this.sqlite
+        .prepare(
+          `SELECT * FROM personnel_medical_certificates
+           WHERE personnel_id = ? AND status = 'ACTIVE'
+             AND (issue_date IS NULL OR issue_date <= ?)
+             AND expiry_date >= ?
+           ORDER BY expiry_date DESC LIMIT 1`
+        )
+        .get(crewId, request.flightDate, request.flightDate) as SqlRow | undefined;
+      if (!primaryLicense || !medical) {
         throw new DomainError(
           'CREW_DOCUMENT_EXPIRED',
-          `${label} license or medical is not valid on the flight date.`,
+          `${label} has no active primary licence or medical certificate valid on the flight date.`,
+          422
+        );
+      }
+      const qualificationRows = this.sqlite
+        .prepare(
+          `SELECT * FROM personnel_qualifications
+           WHERE personnel_id = ? AND status IN ('VALID', 'EXPIRING_SOON')
+             AND (issued_at IS NULL OR issued_at <= ?)
+             AND (expires_at IS NULL OR expires_at >= ?)`
+        )
+        .all(crewId, request.flightDate, request.flightDate) as SqlRow[];
+      const missingQualification = crewQualificationRequirements({
+        aircraftType: String(aircraft.aircraft_type),
+        serviceTypeCode: request.serviceTypeCode,
+        hasDangerousGoods: false
+      }).find(
+        (requirement) =>
+          !qualificationRows.some(
+            (qualification) =>
+              qualificationTypeMatches(
+                String(qualification.qualification_type),
+                requirement.qualificationType
+              ) &&
+              (!requirement.referenceType ||
+                normalizeQualificationCode(String(qualification.reference_type ?? '')) ===
+                  normalizeQualificationCode(requirement.referenceType)) &&
+              (!requirement.referenceId ||
+                normalizeQualificationCode(String(qualification.reference_id ?? '')) ===
+                  normalizeQualificationCode(requirement.referenceId))
+          )
+      );
+      if (missingQualification) {
+        throw new DomainError(
+          'CREW_QUALIFICATION_MISSING',
+          `${label} is missing ${missingQualification.label}.`,
           422
         );
       }
@@ -3179,8 +5191,32 @@ export class FlightOperationsService {
           serviceTypeId: 'station-service-type-handling',
           referenceRate: null
         },
-        approvedByUserId
+        approvedByUserId,
+        { planningAssignment: true }
       );
+      const handlingSupplier = this.sqlite
+        .prepare(
+          `SELECT service_type FROM station_service_suppliers
+           WHERE id = ? AND station_id = ? AND is_active = 1`
+        )
+        .get(request.handlingSupplierId, String(route.origin_station_id)) as SqlRow | undefined;
+      if (
+        request.parkingRequired &&
+        handlingSupplier &&
+        ['PARKING', 'BOTH'].includes(String(handlingSupplier.service_type))
+      ) {
+        this.createStationService(
+          {
+            flightId: id,
+            stationId: String(route.origin_station_id),
+            serviceSupplierId: request.handlingSupplierId,
+            serviceTypeId: 'station-service-type-parking',
+            referenceRate: null
+          },
+          approvedByUserId,
+          { planningAssignment: true }
+        );
+      }
     }
     this.evaluateReadiness(id, false, approvedByUserId);
     return this.detail(id);
@@ -3189,8 +5225,8 @@ export class FlightOperationsService {
   private initializeFlightGovernance(flightId: string) {
     const now = timestamp();
     const approvals = [
-      ['READINESS_APPROVAL', 'PENDING', 'Operation Manager'],
-      ['FLIGHT_APPROVAL', 'NOT_STARTED', 'Chief Pilot'],
+      ['READINESS_APPROVAL', 'PENDING', 'OCC Checker'],
+      ['FLIGHT_APPROVAL', 'NOT_STARTED', 'Director'],
       ['CLOSURE_APPROVAL', 'NOT_STARTED', 'Operation Manager / Finance Reviewer']
     ] as const;
     for (const [approvalType, status, assignedRole] of approvals) {
@@ -3494,6 +5530,50 @@ export class FlightOperationsService {
     }
   }
 
+  protected appendOperationalAudit(input: {
+    actorUserId: string;
+    flightId: string;
+    stationId?: string | null;
+    module: string;
+    action: string;
+    beforeStatus?: string | null;
+    afterStatus?: string | null;
+    beforeVersion?: number | null;
+    afterVersion?: number | null;
+    reason?: string | null;
+    metadata?: Record<string, unknown>;
+  }) {
+    const actorRole =
+      Object.entries(demoRoleActorIds).find(([, actorId]) => actorId === input.actorUserId)?.[0] ??
+      'System Actor';
+    const now = timestamp();
+    this.sqlite
+      .prepare(
+        `INSERT INTO flight_operational_audit (
+           id, actor_user_id, actor_role, flight_id, station_id, module, action,
+           before_status, after_status, before_version, after_version, reason,
+           metadata, timestamp, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        `audit-${nanoid(10)}`,
+        input.actorUserId,
+        actorRole,
+        input.flightId,
+        input.stationId ?? null,
+        input.module,
+        input.action,
+        input.beforeStatus ?? null,
+        input.afterStatus ?? null,
+        input.beforeVersion ?? null,
+        input.afterVersion ?? null,
+        input.reason ?? null,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        now,
+        now
+      );
+  }
+
   private appendHistory(
     flightId: string,
     fromStatus: FlightOperationStatus | null,
@@ -3541,6 +5621,62 @@ export class FlightOperationsService {
     }
   }
 
+  private assertApprovalVersion(flight: FlightOperationRecord, body: ApprovalActionBody) {
+    if (
+      flight.version !== body.expectedVersion ||
+      flight.readinessRevision !== body.readinessRevision
+    ) {
+      throw new DomainError(
+        'STALE_VERSION',
+        'Flight readiness changed. Refresh before deciding.',
+        409,
+        {
+          expectedVersion: body.expectedVersion,
+          actualVersion: flight.version,
+          expectedReadinessRevision: body.readinessRevision,
+          actualReadinessRevision: flight.readinessRevision
+        }
+      );
+    }
+  }
+
+  private assertExpectedVersion(
+    flight: FlightOperationRecord,
+    expectedVersion: number | undefined,
+    action: string
+  ) {
+    if (expectedVersion !== undefined && flight.version !== expectedVersion) {
+      throw new DomainError(
+        'FLIGHT_VERSION_CONFLICT',
+        'Flight data changed after this page was opened.',
+        409,
+        {
+          action,
+          expectedVersion,
+          actualVersion: flight.version,
+          refreshRequired: true
+        }
+      );
+    }
+  }
+
+  private readinessSnapshot(flightId: string) {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT check_code, status_id, is_required, result_note, source_reference,
+                calculation_status, verification_status, effective_status, source_record_ids
+         FROM flight_readiness_checks
+         WHERE flight_id = ? AND COALESCE(assurance_phase, 'PLANNING') = 'PLANNING'
+         ORDER BY check_code`
+      )
+      .all(flightId);
+    const json = JSON.stringify(rows);
+    return {
+      json,
+      hash: createHash('sha256').update(json).digest('hex')
+    };
+  }
+
   private applyTransition(
     flight: FlightOperationRecord,
     toStatus: FlightOperationStatus,
@@ -3555,7 +5691,7 @@ export class FlightOperationsService {
     this.sqlite
       .prepare(
         `UPDATE flight_operations
-         SET current_status_id = ?, is_locked = ?, updated_at = ?
+         SET current_status_id = ?, is_locked = ?, version = version + 1, updated_at = ?
          WHERE id = ?`
       )
       .run(
@@ -3612,12 +5748,14 @@ export class FlightOperationsService {
     };
     const planningCodes = new Set([
       'ROUTE_AVAILABILITY',
+      'OPERATIONAL_ADVISORY',
       'AIRCRAFT_SERVICEABILITY',
       'AIRCRAFT_LOCATION',
       'AIRCRAFT_SCHEDULE',
       'AIRCRAFT_CAPACITY',
       'CREW_AVAILABILITY',
       'CREW_LICENSE_MEDICAL',
+      'CREW_QUALIFICATION',
       'REQUIRED_DOCUMENTS',
       'FINANCE_INITIALIZED',
       'SEPARATION_OF_DUTIES'
@@ -3789,22 +5927,40 @@ export class FlightOperationsService {
     const fail = results.find((result) => result.isRequired && result.status === 'FAIL');
     const pending = results.find((result) => result.isRequired && result.status === 'PENDING');
     const nextStatus: FlightOperationStatus = fail
-      ? 'BLOCKED'
+      ? flight.currentStatus === 'REAPPROVAL_REQUIRED'
+        ? 'REAPPROVAL_REQUIRED'
+        : 'BLOCKED'
       : pending
-        ? 'PENDING_READINESS'
-        : 'READY_FOR_APPROVAL';
+        ? flight.currentStatus === 'REAPPROVAL_REQUIRED'
+          ? 'REAPPROVAL_REQUIRED'
+          : 'PENDING_READINESS'
+        : flight.currentStatus === 'READY_FOR_APPROVAL'
+          ? 'READY_FOR_APPROVAL'
+          : 'READY_FOR_OCC_REVIEW';
 
     if (
       updateStatus &&
-      ['PENDING_READINESS', 'BLOCKED', 'READY_FOR_APPROVAL', 'DRAFT'].includes(flight.currentStatus)
+      [
+        'PENDING_READINESS',
+        'BLOCKED',
+        'READY_FOR_OCC_REVIEW',
+        'READY_FOR_APPROVAL',
+        'DRAFT',
+        'REAPPROVAL_REQUIRED'
+      ].includes(flight.currentStatus)
     ) {
       this.sqlite
         .prepare(
-          `UPDATE flight_operations SET current_status_id = ?, blocking_reason = ?, updated_at = ? WHERE id = ?`
+          `UPDATE flight_operations
+           SET current_status_id = ?, blocking_reason = ?,
+               version = CASE WHEN current_status_id <> ? THEN version + 1 ELSE version END,
+               updated_at = ?
+           WHERE id = ?`
         )
         .run(
           this.lookupId('flight_operation_statuses', nextStatus, 'Flight operation status'),
           fail?.resultNote ?? null,
+          this.lookupId('flight_operation_statuses', nextStatus, 'Flight operation status'),
           now,
           id
         );
@@ -3881,6 +6037,32 @@ export class FlightOperationsService {
           `SELECT c.* FROM flight_crew_assignments a JOIN crews c ON c.id = a.crew_id WHERE a.flight_id = ?`
         )
         .all(id) as SqlRow[],
+      crewLicenses: this.sqlite
+        .prepare(
+          `SELECT assignment.crew_id, license.*
+           FROM flight_crew_assignments assignment
+           JOIN personnel_licenses license ON license.personnel_id = assignment.crew_id
+           WHERE assignment.flight_id = ?`
+        )
+        .all(id) as SqlRow[],
+      crewMedicalCertificates: this.sqlite
+        .prepare(
+          `SELECT assignment.crew_id, medical.*
+           FROM flight_crew_assignments assignment
+           JOIN personnel_medical_certificates medical
+             ON medical.personnel_id = assignment.crew_id
+           WHERE assignment.flight_id = ?`
+        )
+        .all(id) as SqlRow[],
+      crewQualifications: this.sqlite
+        .prepare(
+          `SELECT assignment.crew_id, qualification.*
+           FROM flight_crew_assignments assignment
+           JOIN personnel_qualifications qualification
+             ON qualification.personnel_id = assignment.crew_id
+           WHERE assignment.flight_id = ?`
+        )
+        .all(id) as SqlRow[],
       aircraft: flight.aircraftId
         ? (this.sqlite
             .prepare(
@@ -3891,6 +6073,48 @@ export class FlightOperationsService {
                LEFT JOIN stations base_station ON base_station.id = a.base_station_id
                LEFT JOIN stations current_station ON current_station.id = a.current_station_id
                WHERE a.id = ?`
+            )
+            .get(flight.aircraftId) as SqlRow | undefined)
+        : undefined,
+      aircraftOpenDefects: flight.aircraftId
+        ? (this.sqlite
+            .prepare(
+              `SELECT COUNT(*) AS count FROM aircraft_defects
+               WHERE aircraft_id = ? AND status = 'OPEN'`
+            )
+            .get(flight.aircraftId) as SqlRow)
+        : ({ count: 0 } as SqlRow),
+      aircraftDueRequirements: flight.aircraftId
+        ? (this.sqlite
+            .prepare(
+              `SELECT requirement_code, title FROM aircraft_maintenance_requirements
+               WHERE aircraft_id = ? AND status = 'ACTIVE'
+                 AND ((due_at IS NOT NULL AND due_at <= ?)
+                   OR (due_airframe_hours IS NOT NULL AND due_airframe_hours <=
+                     (SELECT airframe_hours FROM aircraft WHERE id = ?))
+                   OR (due_airframe_cycles IS NOT NULL AND due_airframe_cycles <=
+                     (SELECT airframe_cycles FROM aircraft WHERE id = ?)))`
+            )
+            .all(
+              flight.aircraftId,
+              readinessDate,
+              flight.aircraftId,
+              flight.aircraftId
+            ) as SqlRow[])
+        : [],
+      aircraftDeferments: flight.aircraftId
+        ? (this.sqlite
+            .prepare(
+              `SELECT * FROM aircraft_deferments
+               WHERE aircraft_id = ? AND status = 'ACTIVE'`
+            )
+            .all(flight.aircraftId) as SqlRow[])
+        : [],
+      aircraftRelease: flight.aircraftId
+        ? (this.sqlite
+            .prepare(
+              `SELECT id FROM aircraft_maintenance_releases
+               WHERE aircraft_id = ? ORDER BY released_at DESC LIMIT 1`
             )
             .get(flight.aircraftId) as SqlRow | undefined)
         : undefined,
@@ -3941,6 +6165,24 @@ export class FlightOperationsService {
       route: this.sqlite
         .prepare('SELECT restriction_level, restriction_note FROM routes WHERE id = ?')
         .get(flight.routeId) as SqlRow,
+      operationalAdvisories: this.sqlite
+        .prepare(
+          `SELECT * FROM operational_advisories
+           WHERE status = 'ACTIVE'
+             AND valid_from <= ? AND valid_until >= ?
+             AND (
+               route_id = ?
+               OR station_id IN (?, ?)
+             )
+           ORDER BY CASE severity WHEN 'BLOCKING' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END`
+        )
+        .all(
+          flight.scheduledDepartureAt ?? `${readinessDate}T00:00:00.000Z`,
+          flight.scheduledDepartureAt ?? `${readinessDate}T00:00:00.000Z`,
+          flight.routeId,
+          flight.originStationId,
+          flight.destinationStationId
+        ) as SqlRow[],
       sourceRequest: flight.flightRequestId
         ? (this.sqlite
             .prepare(
@@ -3961,8 +6203,35 @@ export class FlightOperationsService {
     };
 
     const nextMaintenanceDueAt = str(rows.aircraft?.next_maintenance_due_at ?? null);
-    const maintenanceDue = Boolean(nextMaintenanceDueAt && nextMaintenanceDueAt <= readinessDate);
-    const aircraftPass = flight.aircraftServiceability === 'SERVICEABLE' && !maintenanceDue;
+    const blockingAdvisory = rows.operationalAdvisories.find(
+      (advisory) => advisory.severity === 'BLOCKING'
+    );
+    const warningAdvisory = rows.operationalAdvisories.find(
+      (advisory) => advisory.severity === 'WARNING'
+    );
+    const legacyMaintenanceDue = Boolean(
+      nextMaintenanceDueAt && nextMaintenanceDueAt <= readinessDate
+    );
+    const maintenanceDue = legacyMaintenanceDue || rows.aircraftDueRequirements.length > 0;
+    const scheduledArrival = flight.scheduledArrivalAt ?? `${readinessDate}T23:59:59.999Z`;
+    const restrictionMismatch = rows.aircraftDeferments.find((deferment) => {
+      const routeIds = stringArray(deferment.applicable_route_ids);
+      const serviceTypes = stringArray(deferment.applicable_service_type_codes);
+      return (
+        String(deferment.expires_at) <= scheduledArrival ||
+        (routeIds.length > 0 && !routeIds.includes(flight.routeId)) ||
+        (serviceTypes.length > 0 && !serviceTypes.includes(flight.serviceTypeCode))
+      );
+    });
+    const restricted = flight.aircraftServiceability === 'SERVICEABLE_WITH_RESTRICTIONS';
+    const restrictedPass = restricted && rows.aircraftDeferments.length > 0 && !restrictionMismatch;
+    const aircraftPass =
+      Boolean(rows.aircraft) &&
+      String(rows.aircraft?.operational_status) === 'ACTIVE' &&
+      Boolean(rows.aircraftRelease) &&
+      num(rows.aircraftOpenDefects.count) === 0 &&
+      !maintenanceDue &&
+      (flight.aircraftServiceability === 'SERVICEABLE' || restrictedPass);
     const aircraftCurrentStationCode = str(rows.aircraft?.current_station_code ?? null);
     const aircraftLocationPass =
       Boolean(rows.aircraft) &&
@@ -3972,11 +6241,42 @@ export class FlightOperationsService {
       Boolean(rows.aircraft) &&
       num(rows.passengerCount.count) <= num(rows.aircraft?.passenger_capacity ?? 0) &&
       num(rows.cargoWeight.weight) <= num(rows.aircraft?.cargo_capacity_kg ?? 0);
-    const crewExpiry = rows.crew.find((crew) => {
-      const licence = str(crew.license_expiry_date);
-      const medical = str(crew.medical_expiry_date);
-      return !licence || !medical || licence < readinessDate || medical < readinessDate;
-    });
+    const validOnFlightDate = (row: SqlRow, expiryField: string, validStatuses: string[]) => {
+      const status = String(row.status);
+      const issuedAt = str(row.issue_date ?? row.issued_at ?? null);
+      const expiryAt = str(row[expiryField] ?? null);
+      return (
+        validStatuses.includes(status) &&
+        (!issuedAt || issuedAt <= readinessDate) &&
+        (!expiryAt || expiryAt >= readinessDate)
+      );
+    };
+    const crewCredentialIssue = rows.crew
+      .map((crew) => {
+        const crewId = String(crew.id);
+        const primaryLicense = rows.crewLicenses.find(
+          (item) =>
+            String(item.crew_id) === crewId &&
+            Boolean(item.is_primary) &&
+            validOnFlightDate(item, 'expiry_date', ['ACTIVE'])
+        );
+        if (!primaryLicense) {
+          return `${String(crew.full_name)} has no active primary licence valid on the flight date.`;
+        }
+        const medical = rows.crewMedicalCertificates.find(
+          (item) =>
+            String(item.crew_id) === crewId && validOnFlightDate(item, 'expiry_date', ['ACTIVE'])
+        );
+        if (!medical) {
+          return `${String(crew.full_name)} has no active medical certificate valid on the flight date.`;
+        }
+        const restrictions = str(medical.restrictions);
+        if (restrictions && normalizeQualificationCode(restrictions) !== 'NONE') {
+          return `${String(crew.full_name)} has medical restrictions requiring Chief Pilot review: ${restrictions}`;
+        }
+        return null;
+      })
+      .find(Boolean);
     const unavailableCrew = rows.crew.find((crew) => {
       const availability = str(crew.availability_status) ?? 'AVAILABLE';
       return crewUnavailableForExistingAssignment(availability);
@@ -3993,6 +6293,56 @@ export class FlightOperationsService {
       (!cargoManifestRequired ||
         ['APPROVED', 'LOCKED'].includes(String(rows.cargoManifest?.status)));
     const hasDangerousGoods = Number(rows.dgTotal.count) > 0;
+    const qualificationRequirements = rows.aircraft
+      ? crewQualificationRequirements({
+          aircraftType: String(rows.aircraft.aircraft_type),
+          serviceTypeCode: flight.serviceTypeCode,
+          hasDangerousGoods
+        })
+      : [];
+    const crewQualificationIssue = rows.crew
+      .map((crew) => {
+        const crewId = String(crew.id);
+        const expectedRole =
+          crewId === flight.pilotInCommandId
+            ? 'PILOT_IN_COMMAND'
+            : crewId === flight.coPilotId
+              ? 'CO_PILOT'
+              : null;
+        if (!expectedRole || String(crew.crew_role) !== expectedRole) {
+          return `${String(crew.full_name)} is not assigned in a role matching the personnel record.`;
+        }
+        if (
+          !Boolean(crew.is_active) ||
+          String(crew.lifecycle_status) !== 'ACTIVE' ||
+          String(crew.employment_status) === 'INACTIVE'
+        ) {
+          return `${String(crew.full_name)} is not active personnel.`;
+        }
+        const qualifications = rows.crewQualifications.filter(
+          (item) =>
+            String(item.crew_id) === crewId &&
+            validOnFlightDate(item, 'expires_at', ['VALID', 'EXPIRING_SOON'])
+        );
+        const missing = qualificationRequirements.find(
+          (requirement) =>
+            !qualifications.some(
+              (qualification) =>
+                qualificationTypeMatches(
+                  String(qualification.qualification_type),
+                  requirement.qualificationType
+                ) &&
+                (!requirement.referenceType ||
+                  normalizeQualificationCode(String(qualification.reference_type ?? '')) ===
+                    normalizeQualificationCode(requirement.referenceType)) &&
+                (!requirement.referenceId ||
+                  normalizeQualificationCode(String(qualification.reference_id ?? '')) ===
+                    normalizeQualificationCode(requirement.referenceId))
+            )
+        );
+        return missing ? `${String(crew.full_name)} is missing ${missing.label}.` : null;
+      })
+      .find(Boolean);
     const dgAccepted = hasDangerousGoods && Number(rows.dgPending.count) === 0;
     const fuelRequired =
       flight.serviceTypeCode !== 'POSITIONING' ||
@@ -4005,6 +6355,9 @@ export class FlightOperationsService {
     ].includes(flight.serviceTypeCode);
     const handlingRequired = commercialService;
     const handlingConfirmed = Number(rows.handlingConfirmed.count) > 0;
+    const handlingSupplierMissing = Boolean(
+      handlingRequired && rows.sourceRequest && !str(rows.sourceRequest.handling_supplier_id)
+    );
     const crewConflict = num(rows.crewConflicts.count) > 0;
     const crewAvailabilityFailed = crewConflict || Boolean(unavailableCrew);
     const financeRequired =
@@ -4042,15 +6395,40 @@ export class FlightOperationsService {
         sourceReference: 'routes.restriction_level'
       },
       {
+        checkCode: 'OPERATIONAL_ADVISORY',
+        checkName: 'Operational advisory',
+        status: blockingAdvisory ? 'FAIL' : 'PASS',
+        resultNote: blockingAdvisory
+          ? `${String(blockingAdvisory.summary)} ${str(blockingAdvisory.operational_limitation) ?? ''}`.trim()
+          : warningAdvisory
+            ? `Warning acknowledged for review: ${String(warningAdvisory.summary)}`
+            : 'No active blocking operational advisory applies to this flight.',
+        sourceReference: blockingAdvisory
+          ? `operational_advisories:${String(blockingAdvisory.id)}`
+          : 'operational_advisories'
+      },
+      {
         checkCode: 'AIRCRAFT_SERVICEABILITY',
         checkName: 'Aircraft serviceability',
         status: aircraftPass ? 'PASS' : 'FAIL',
         resultNote: aircraftPass
-          ? 'Aircraft is serviceable and maintenance is not due.'
+          ? restricted
+            ? 'Aircraft restrictions are valid for this route, service, and scheduled arrival.'
+            : 'Aircraft is active, released to service, and maintenance is not due.'
           : maintenanceDue
-            ? `Aircraft maintenance is due on ${nextMaintenanceDueAt}.`
-            : 'Aircraft is not serviceable.',
-        sourceReference: flight.aircraftRegistration ?? 'aircraft'
+            ? rows.aircraftDueRequirements.length
+              ? `Maintenance requirement ${String(rows.aircraftDueRequirements[0]?.requirement_code)} is due.`
+              : `Aircraft maintenance is due on ${nextMaintenanceDueAt}.`
+            : !rows.aircraftRelease
+              ? 'Aircraft has no recorded maintenance release.'
+              : num(rows.aircraftOpenDefects.count) > 0
+                ? 'Aircraft has an open, non-deferred defect.'
+                : restrictionMismatch
+                  ? 'MEL/CDL restriction is expired or not applicable to this flight.'
+                  : String(rows.aircraft?.operational_status) !== 'ACTIVE'
+                    ? 'Aircraft is not operationally active.'
+                    : 'Aircraft is not serviceable.',
+        sourceReference: 'aircraft_airworthiness'
       },
       {
         checkCode: 'AIRCRAFT_LOCATION',
@@ -4099,11 +6477,18 @@ export class FlightOperationsService {
       {
         checkCode: 'CREW_LICENSE_MEDICAL',
         checkName: 'Crew license and medical',
-        status: crewExpiry ? 'FAIL' : rows.crew.length > 0 ? 'PASS' : 'PENDING',
-        resultNote: crewExpiry
-          ? `${String(crewExpiry.full_name)} has expired licence or medical document.`
-          : 'Crew licence and medical dates are valid.',
-        sourceReference: 'crews'
+        status: crewCredentialIssue ? 'FAIL' : rows.crew.length > 0 ? 'PASS' : 'PENDING',
+        resultNote: crewCredentialIssue ?? 'Assigned crew have active licence and medical records.',
+        sourceReference: 'personnel_licenses,personnel_medical_certificates'
+      },
+      {
+        checkCode: 'CREW_QUALIFICATION',
+        checkName: 'Crew operational qualification',
+        status: crewQualificationIssue ? 'FAIL' : rows.crew.length > 0 ? 'PASS' : 'PENDING',
+        resultNote:
+          crewQualificationIssue ??
+          'Assigned crew meet role, CRM, fleet, and operation qualification requirements.',
+        sourceReference: 'personnel_qualifications'
       },
       {
         checkCode: 'MANIFEST_APPROVED',
@@ -4146,7 +6531,9 @@ export class FlightOperationsService {
           ? 'Commercial station handling is not required for this service type.'
           : handlingConfirmed
             ? 'Station service confirmed.'
-            : 'Handling or parking confirmation pending.',
+            : handlingSupplierMissing
+              ? `STATION_SERVICE_SUPPLIER_REQUIRED: Select a handling supplier for ${flight.originStationCode}.`
+              : 'Handling or parking confirmation pending.',
         sourceReference: 'flight_station_service_requests'
       },
       {
@@ -4348,7 +6735,15 @@ export class FlightOperationsService {
       decidedAt: str(row.decided_at),
       reason: str(row.reason),
       affectedSection: str(row.affected_section),
-      requiredCorrection: str(row.required_correction)
+      requiredCorrection: str(row.required_correction),
+      readinessRevision:
+        row.readiness_revision === null || row.readiness_revision === undefined
+          ? null
+          : num(row.readiness_revision),
+      snapshotHash: str(row.snapshot_hash),
+      snapshotJson: str(row.snapshot_json),
+      invalidatedAt: str(row.invalidated_at),
+      invalidationReason: str(row.invalidation_reason)
     }));
   }
 
@@ -4380,7 +6775,12 @@ export class FlightOperationsService {
     status: string,
     summary: string,
     amount: number | null,
-    currencyId: string | null
+    currencyId: string | null,
+    processing?: {
+      snapshot: Record<string, unknown>;
+      processedByUserId: string;
+      processedAt: string;
+    }
   ) {
     const existing = this.sqlite
       .prepare(
@@ -4396,24 +6796,32 @@ export class FlightOperationsService {
     if (existing) {
       this.sqlite
         .prepare(
-          `UPDATE flight_finance_handoffs SET status_id = ?, summary = ?, amount = ?, currency_id = ?, updated_at = ? WHERE id = ?`
+          `UPDATE flight_finance_handoffs
+           SET status_id = ?, summary = ?, amount = ?, currency_id = ?,
+               snapshot_json = COALESCE(snapshot_json, ?),
+               processed_by_user_id = COALESCE(processed_by_user_id, ?),
+               processed_at = COALESCE(processed_at, ?), updated_at = ?
+           WHERE id = ?`
         )
         .run(
           this.lookupId('finance_handoff_statuses', status, 'Finance handoff status'),
           summary,
           amount,
           currencyId,
+          processing ? JSON.stringify(processing.snapshot) : null,
+          processing?.processedByUserId ?? null,
+          processing?.processedAt ?? null,
           timestamp(),
           existing.id
         );
-      return;
+      return String(existing.id);
     }
     this.sqlite
       .prepare(
         `INSERT INTO flight_finance_handoffs (
           id, flight_id, source_type, source_id, event_type_id, status_id, summary, amount,
-          currency_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          currency_id, snapshot_json, processed_by_user_id, processed_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         `handoff-${nanoid(10)}`,
@@ -4425,8 +6833,25 @@ export class FlightOperationsService {
         summary,
         amount,
         currencyId,
+        processing ? JSON.stringify(processing.snapshot) : null,
+        processing?.processedByUserId ?? null,
+        processing?.processedAt ?? null,
         timestamp(),
         timestamp()
       );
+    return String(
+      (
+        this.sqlite
+          .prepare(
+            `SELECT id FROM flight_finance_handoffs
+             WHERE source_type = ? AND source_id IS ? AND event_type_id = ?`
+          )
+          .get(
+            sourceType,
+            sourceId,
+            this.lookupId('finance_event_types', eventType, 'Finance event type')
+          ) as { id: string }
+      ).id
+    );
   }
 }

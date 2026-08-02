@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import type {
   FlightOperationDetailDto,
-  FlightOperationOverviewDto
+  FlightOperationOverviewDto,
+  OperationalAdvisoryDto
 } from '#shared/contracts/flight-operations';
 
 const search = ref('');
 const loadingId = ref('');
 const actionError = ref('');
+const advisoryLoadingId = ref('');
+const { can } = useAuthorization();
 
 const { data, pending, error, refresh } = await useAsyncData(
   'flight-readiness-worklist',
@@ -16,10 +19,46 @@ const { data, pending, error, refresh } = await useAsyncData(
     }),
   { watch: [search] }
 );
+const { data: advisories, refresh: refreshAdvisories } = await useAsyncData(
+  'operational-advisories',
+  () => fetchApi<OperationalAdvisoryDto[]>('/api/flight-operations/advisories'),
+  { default: () => [] }
+);
+
+async function changeAdvisoryStatus(
+  advisory: OperationalAdvisoryDto,
+  status: 'ACTIVE' | 'RESOLVED'
+) {
+  advisoryLoadingId.value = advisory.id;
+  actionError.value = '';
+  try {
+    await fetchApi(`/api/flight-operations/advisories/${advisory.id}/status`, {
+      method: 'PATCH',
+      body: {
+        status,
+        reason:
+          status === 'ACTIVE'
+            ? 'Demo operational condition activated by OCC.'
+            : 'OCC confirmed the operational condition is resolved.'
+      }
+    });
+    await Promise.all([refresh(), refreshAdvisories()]);
+  } catch (errorValue) {
+    actionError.value = errorValue instanceof Error ? errorValue.message : 'Advisory update failed';
+  } finally {
+    advisoryLoadingId.value = '';
+  }
+}
 
 const rows = computed(() =>
   (data.value?.flights ?? []).filter((flight) =>
-    ['PENDING_READINESS', 'BLOCKED', 'READY_FOR_APPROVAL'].includes(flight.currentStatus)
+    [
+      'PENDING_READINESS',
+      'BLOCKED',
+      'READY_FOR_OCC_REVIEW',
+      'READY_FOR_APPROVAL',
+      'REAPPROVAL_REQUIRED'
+    ].includes(flight.currentStatus)
   )
 );
 const departureRows = computed(() =>
@@ -66,6 +105,55 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
     </VAlert>
     <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">{{ actionError }}</VAlert>
 
+    <VCard border class="mb-6">
+      <VCardTitle class="d-flex align-center">
+        <VIcon class="mr-2" icon="mdi-alert-decagram-outline" />
+        Operational Advisories
+      </VCardTitle>
+      <VCardText class="pt-0">
+        <VList lines="three">
+          <VListItem
+            v-for="advisory in advisories"
+            :key="advisory.id"
+            :subtitle="advisory.operationalLimitation ?? advisory.sourceReference ?? undefined"
+            :title="advisory.summary"
+          >
+            <template #prepend>
+              <VChip
+                class="mr-3"
+                :color="advisory.severity === 'BLOCKING' ? 'error' : 'warning'"
+                size="small"
+              >
+                {{ advisory.advisoryType }}
+              </VChip>
+            </template>
+            <template #append>
+              <VChip class="mr-3" :color="advisory.status === 'ACTIVE' ? 'error' : 'success'">
+                {{ advisory.status }}
+              </VChip>
+              <VBtn
+                v-if="can('flight.advisory.manage').allowed"
+                :color="advisory.status === 'ACTIVE' ? 'success' : 'error'"
+                :loading="advisoryLoadingId === advisory.id"
+                :prepend-icon="
+                  advisory.status === 'ACTIVE' ? 'mdi-check-circle-outline' : 'mdi-alert-outline'
+                "
+                variant="tonal"
+                @click="
+                  changeAdvisoryStatus(
+                    advisory,
+                    advisory.status === 'ACTIVE' ? 'RESOLVED' : 'ACTIVE'
+                  )
+                "
+              >
+                {{ advisory.status === 'ACTIVE' ? 'Resolve' : 'Activate demo condition' }}
+              </VBtn>
+            </template>
+          </VListItem>
+        </VList>
+      </VCardText>
+    </VCard>
+
     <VCard border class="mb-4">
       <VCardText>
         <VTextField
@@ -81,8 +169,8 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
 
     <h2 class="text-h6 mb-2">Planning Readiness</h2>
     <p class="mb-3 text-sm text-text-secondary">
-      Aircraft, route, crew, planning documents and separation of duties. Manifest and origin
-      sign-off do not block flight approval here.
+      System checks recalculate when aircraft, route, crew, or planning evidence changes. Refresh is
+      available for diagnostic retry; approval always performs a final synchronous evaluation.
     </p>
     <VCard border class="mb-6">
       <VTable density="comfortable" hover>
@@ -143,15 +231,6 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
                 :loading="loadingId === `${flight.id}-evaluate`"
                 variant="tonal"
                 @click="runAction(flight.id, 'evaluate')"
-              />
-              <VBtn
-                v-if="flight.currentStatus === 'READY_FOR_APPROVAL'"
-                color="success"
-                density="comfortable"
-                icon="mdi-check-decagram-outline"
-                :loading="loadingId === `${flight.id}-approve`"
-                variant="flat"
-                @click="runAction(flight.id, 'approve')"
               />
             </td>
           </tr>

@@ -5,6 +5,7 @@ import type {
   PersonnelLicenseInput,
   PersonnelListQuery,
   PersonnelMedicalCertificateInput,
+  PersonnelQualificationInput,
   PersonnelUpdateInput
 } from '../../../../shared/features/operations/personnel';
 import { DomainError, notFound } from '../../../utils/errors';
@@ -25,7 +26,8 @@ function daysUntil(date: string, nowIso = getApplicationNow()) {
 export class PersonnelService {
   constructor(
     private readonly repository: PersonnelRepository,
-    private readonly stationsRepository: StationsRepository
+    private readonly stationsRepository: StationsRepository,
+    private readonly onReadinessRelevantChange: (personnelId: string) => void = () => {}
   ) {}
   list(query: PersonnelListQuery) {
     return this.repository.list(query);
@@ -108,6 +110,7 @@ export class PersonnelService {
       }
       if (!row) throw notFound('Personnel', id);
       await this.audit(id, 'PERSONNEL_UPDATED', Object.keys(values), timestamp);
+      this.onReadinessRelevantChange(id);
       return row;
     } catch (error) {
       this.rethrowWriteError(error);
@@ -124,6 +127,7 @@ export class PersonnelService {
       ['isActive'],
       timestamp
     );
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
@@ -133,6 +137,7 @@ export class PersonnelService {
     const row = await this.repository.archive(id, timestamp);
     if (!row) throw notFound('Personnel', id);
     await this.audit(id, 'PERSONNEL_ARCHIVED', ['lifecycleStatus', 'isActive'], timestamp);
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
@@ -163,6 +168,7 @@ export class PersonnelService {
     const timestamp = getApplicationNow();
     const row = await this.repository.addLicense('plic-' + randomUUID(), id, input, timestamp);
     await this.audit(id, 'LICENSE_ADDED', Object.keys(input), timestamp);
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
@@ -173,6 +179,7 @@ export class PersonnelService {
     const row = await this.repository.updateLicense(licenseId, id, input, timestamp);
     if (!row) throw notFound('Personnel license', licenseId);
     await this.audit(id, 'LICENSE_UPDATED', Object.keys(input), timestamp);
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
@@ -190,6 +197,7 @@ export class PersonnelService {
     const row = await this.repository.setPrimaryLicense(licenseId, id, timestamp);
     if (!row) throw notFound('Personnel license', licenseId);
     await this.audit(id, 'LICENSE_SET_PRIMARY', ['isPrimary'], timestamp);
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
@@ -199,6 +207,7 @@ export class PersonnelService {
     const row = await this.repository.setLicenseStatus(licenseId, id, status, timestamp);
     if (!row) throw notFound('Personnel license', licenseId);
     await this.audit(id, `LICENSE_${status}`, ['status'], timestamp);
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
@@ -217,6 +226,7 @@ export class PersonnelService {
       timestamp
     );
     await this.audit(id, 'MEDICAL_CERTIFICATE_ADDED', Object.keys(input), timestamp);
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
@@ -230,12 +240,41 @@ export class PersonnelService {
     const row = await this.repository.updateMedicalCertificate(certificateId, id, input, timestamp);
     if (!row) throw notFound('Medical certificate', certificateId);
     await this.audit(id, 'MEDICAL_CERTIFICATE_UPDATED', Object.keys(input), timestamp);
+    this.onReadinessRelevantChange(id);
     return row;
   }
 
   async qualifications(id: string) {
     await this.get(id);
     return this.repository.listQualifications(id);
+  }
+
+  async addQualification(id: string, input: PersonnelQualificationInput) {
+    await this.get(id);
+    const timestamp = getApplicationNow();
+    const row = await this.repository.addQualification(
+      'pqual-' + randomUUID(),
+      id,
+      input,
+      timestamp
+    );
+    await this.audit(id, 'QUALIFICATION_ADDED', Object.keys(input), timestamp);
+    this.onReadinessRelevantChange(id);
+    return row;
+  }
+
+  async updateQualification(
+    id: string,
+    qualificationId: string,
+    input: PersonnelQualificationInput
+  ) {
+    await this.get(id);
+    const timestamp = getApplicationNow();
+    const row = await this.repository.updateQualification(qualificationId, id, input, timestamp);
+    if (!row) throw notFound('Personnel qualification', qualificationId);
+    await this.audit(id, 'QUALIFICATION_UPDATED', Object.keys(input), timestamp);
+    this.onReadinessRelevantChange(id);
+    return row;
   }
 
   async notes(id: string, includeRestricted = false) {
@@ -280,7 +319,7 @@ export class PersonnelService {
       supervisorPersonnelId?: string | null;
       email?: string | null;
     };
-    if (anyInput.supervisorPersonnelId === id) {
+    if (id && anyInput.supervisorPersonnelId === id) {
       throw new DomainError(
         'PERSONNEL_SELF_SUPERVISOR_INVALID',
         'Personnel cannot supervise themselves.',

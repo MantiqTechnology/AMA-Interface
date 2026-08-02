@@ -12,6 +12,9 @@ import type { AgentRepository } from '../../commercial/agents/repository';
 import type { TicketingSalesRepository } from '../sales/repository';
 import { PassengerTicketRepository } from './repository';
 
+const BIGINT_5000 = BigInt(5000);
+const BIGINT_10000 = BigInt(10000);
+
 export class PassengerTicketService {
   constructor(
     private readonly repository: PassengerTicketRepository,
@@ -166,7 +169,7 @@ export class PassengerTicketService {
     const timestamp = new Date().toISOString();
     const id = `TKT-${nanoid(8).toUpperCase()}`;
     const taxAmount = Number(
-      (BigInt(flight.baseRate) * BigInt(flight.taxRateBasisPoints) + 5000n) / 10_000n
+      (BigInt(flight.baseRate) * BigInt(flight.taxRateBasisPoints) + BIGINT_5000) / BIGINT_10000
     );
     try {
       this.repository.createAndSync({

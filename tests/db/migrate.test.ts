@@ -168,6 +168,12 @@ describe('database migrations', () => {
     expect(tables).toEqual(
       expect.arrayContaining([
         'aircraft',
+        'aircraft_defects',
+        'aircraft_deferments',
+        'aircraft_maintenance_requirements',
+        'aircraft_maintenance_releases',
+        'aircraft_status_history',
+        'aircraft_utilization_ledger',
         'stations',
         'routes',
         'customers',
@@ -198,6 +204,44 @@ describe('database migrations', () => {
     ).map((column) => column.name);
     expect(routeColumns).toEqual(
       expect.arrayContaining(['operational_notes', 'restriction_level', 'restriction_note'])
+    );
+    const aircraftColumns = (
+      sqlite.prepare('PRAGMA table_info(aircraft)').all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(aircraftColumns).toEqual(
+      expect.arrayContaining(['airframe_hours', 'airframe_cycles', 'version'])
+    );
+    const stationCostColumns = (
+      sqlite.prepare('PRAGMA table_info(flight_station_costs)').all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(stationCostColumns).toEqual(
+      expect.arrayContaining([
+        'estimated_amount',
+        'actual_amount',
+        'approved_amount',
+        'approved_currency_id',
+        'approval_snapshot_json',
+        'version'
+      ])
+    );
+    const handoffColumns = (
+      sqlite.prepare('PRAGMA table_info(flight_finance_handoffs)').all() as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name);
+    expect(handoffColumns).toEqual(
+      expect.arrayContaining(['snapshot_json', 'processed_by_user_id', 'processed_at'])
+    );
+    const stationCostIndexes = sqlite
+      .prepare('PRAGMA index_list(flight_station_costs)')
+      .all() as Array<{
+      name: string;
+      unique: number;
+    }>;
+    expect(stationCostIndexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'idx_station_cost_source_service', unique: 1 })
+      ])
     );
     expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
 
@@ -454,7 +498,42 @@ describe('database migrations', () => {
     const fuelColumns = sqlite.prepare("PRAGMA table_info('flight_fuel_requests')").all() as Array<{
       name: string;
     }>;
-    expect(fuelColumns.map((column) => column.name)).toContain('currency_id');
+    expect(fuelColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        'currency_id',
+        'fuel_on_board_before_uplift_litre',
+        'defuel_quantity_litre',
+        'measured_fuel_on_board_litre',
+        'confirmed_block_fuel_litre'
+      ])
+    );
+    const aircraftFuelColumns = sqlite.prepare("PRAGMA table_info('aircraft')").all() as Array<{
+      name: string;
+    }>;
+    expect(aircraftFuelColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        'engine_category',
+        'usable_fuel_capacity_litre',
+        'fuel_capacity_basis',
+        'cruise_fuel_burn_litre_per_hour',
+        'holding_fuel_burn_litre_per_hour'
+      ])
+    );
+    const policy = sqlite
+      .prepare(
+        `SELECT regulatory_basis, contingency_percent, turbine_final_reserve_minutes
+         FROM fuel_planning_policies WHERE active = 1`
+      )
+      .get() as {
+      regulatory_basis: string;
+      contingency_percent: number;
+      turbine_final_reserve_minutes: number;
+    };
+    expect(policy).toMatchObject({
+      regulatory_basis: 'CASR_135_637',
+      contingency_percent: 5,
+      turbine_final_reserve_minutes: 30
+    });
 
     expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     sqlite.close();

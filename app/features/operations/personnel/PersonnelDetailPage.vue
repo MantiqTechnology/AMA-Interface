@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MasterDocumentDto } from '#shared/contracts/documents';
+import type { MaintenanceCompanyAuthorizationDto } from '#shared/features/maintenance';
 import type {
   PersonnelDetailDto,
   PersonnelDto,
@@ -9,12 +10,20 @@ import type {
   PersonnelLicenseDto,
   PersonnelMedicalCertificateInput,
   PersonnelMedicalCertificateDto,
+  PersonnelQualificationInput,
   PersonnelQualificationDto
 } from '#shared/features/operations/personnel';
 import PersonnelFormDialog from './PersonnelFormDialog.vue';
 
 type TabKey =
-  'overview' | 'licenses' | 'medical' | 'qualifications' | 'documents' | 'notes' | 'history';
+  | 'overview'
+  | 'licenses'
+  | 'medical'
+  | 'qualifications'
+  | 'authorizations'
+  | 'documents'
+  | 'notes'
+  | 'history';
 type ExpiryState = 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'NO_EXPIRY';
 
 const LICENSE_EXPIRY_WARNING_DAYS = 60;
@@ -29,12 +38,14 @@ const personnelId = computed(() => String(route.params.id));
 const canManage = computed(() => can('personnel.manage').allowed);
 const canManageLicense = computed(() => can('personnel.license.manage').allowed);
 const canManageMedical = computed(() => can('personnel.medical.manage').allowed);
+const canManageQualification = computed(() => can('personnel.qualification.manage').allowed);
 
 const tabs: Array<{ value: TabKey; label: string }> = [
   { value: 'overview', label: 'Overview' },
   { value: 'licenses', label: 'Licenses' },
   { value: 'medical', label: 'Medical' },
   { value: 'qualifications', label: 'Qualifications' },
+  { value: 'authorizations', label: 'Authorizations' },
   { value: 'documents', label: 'Documents' },
   { value: 'notes', label: 'Notes' },
   { value: 'history', label: 'History' }
@@ -64,6 +75,7 @@ const {
 const licenses = ref<PersonnelLicenseDto[] | null>(null);
 const medical = ref<PersonnelMedicalCertificateDto[] | null>(null);
 const qualifications = ref<PersonnelQualificationDto[] | null>(null);
+const authorizations = ref<MaintenanceCompanyAuthorizationDto[] | null>(null);
 const documents = ref<MasterDocumentDto[] | null>(null);
 const notes = ref<Array<Record<string, unknown>> | null>(null);
 const history = ref<PersonnelHistoryItemDto[] | null>(null);
@@ -74,12 +86,16 @@ const editDialog = ref(false);
 const archiving = ref(false);
 const licenseDialog = ref(false);
 const medicalDialog = ref(false);
+const qualificationDialog = ref(false);
 const editingLicense = ref<PersonnelLicenseDto | null>(null);
 const editingMedical = ref<PersonnelMedicalCertificateDto | null>(null);
+const editingQualification = ref<PersonnelQualificationDto | null>(null);
 const licenseSubmitting = ref(false);
 const medicalSubmitting = ref(false);
+const qualificationSubmitting = ref(false);
 const licenseError = ref('');
 const medicalError = ref('');
+const qualificationError = ref('');
 const licenseForm = reactive<PersonnelLicenseInput>({
   licenseType: '',
   licenseNumber: '',
@@ -100,6 +116,16 @@ const medicalForm = reactive<PersonnelMedicalCertificateInput>({
   issuingAuthority: null,
   documentId: null
 });
+const qualificationForm = reactive<PersonnelQualificationInput>({
+  qualificationType: 'CRM',
+  referenceType: 'TRAINING',
+  referenceId: null,
+  issuedAt: null,
+  expiresAt: null,
+  status: 'VALID',
+  notes: null,
+  documentId: null
+});
 
 watch(activeTab, (tab) => loadTab(tab), { immediate: true });
 
@@ -109,6 +135,7 @@ async function loadTab(tab: TabKey) {
     (tab === 'licenses' && licenses.value) ||
     (tab === 'medical' && medical.value) ||
     (tab === 'qualifications' && qualifications.value) ||
+    (tab === 'authorizations' && authorizations.value) ||
     (tab === 'documents' && documents.value) ||
     (tab === 'notes' && notes.value) ||
     (tab === 'history' && history.value);
@@ -126,6 +153,10 @@ async function loadTab(tab: TabKey) {
     } else if (tab === 'qualifications') {
       qualifications.value = await fetchApi(
         `/api/master-data/personnel/${personnelId.value}/qualifications`
+      );
+    } else if (tab === 'authorizations') {
+      authorizations.value = await fetchApi(
+        `/api/maintenance/authorizations?personnelId=${encodeURIComponent(personnelId.value)}`
       );
     } else if (tab === 'documents') {
       documents.value = await fetchApi(`/api/master-data/personnel/${personnelId.value}/documents`);
@@ -278,6 +309,53 @@ async function saveMedical() {
     medicalError.value = err instanceof Error ? err.message : 'Unable to save medical certificate.';
   } finally {
     medicalSubmitting.value = false;
+  }
+}
+
+function resetQualificationForm(record: PersonnelQualificationDto | null = null) {
+  editingQualification.value = record;
+  Object.assign(qualificationForm, {
+    qualificationType: record?.qualificationType ?? 'CRM',
+    referenceType: record?.referenceType ?? 'TRAINING',
+    referenceId: record?.referenceId ?? null,
+    issuedAt: record?.issuedAt ?? null,
+    expiresAt: record?.expiresAt ?? null,
+    status: record?.status ?? 'VALID',
+    notes: record?.notes ?? null,
+    documentId: record?.documentId ?? null
+  });
+  qualificationError.value = '';
+}
+
+function openQualificationDialog(record: PersonnelQualificationDto | null = null) {
+  resetQualificationForm(record);
+  qualificationDialog.value = true;
+}
+
+async function saveQualification() {
+  qualificationSubmitting.value = true;
+  qualificationError.value = '';
+  try {
+    await fetchApi(
+      editingQualification.value
+        ? `/api/master-data/personnel/${personnelId.value}/qualifications/${editingQualification.value.id}`
+        : `/api/master-data/personnel/${personnelId.value}/qualifications`,
+      {
+        method: editingQualification.value ? 'PUT' : 'POST',
+        body: { ...qualificationForm }
+      }
+    );
+    qualifications.value = null;
+    await Promise.all([loadTab('qualifications'), refresh()]);
+    pushToast({
+      type: 'success',
+      title: editingQualification.value ? 'Qualification updated' : 'Qualification added'
+    });
+    qualificationDialog.value = false;
+  } catch (err) {
+    qualificationError.value = err instanceof Error ? err.message : 'Unable to save qualification.';
+  } finally {
+    qualificationSubmitting.value = false;
   }
 }
 
@@ -831,35 +909,117 @@ const summaryRows = computed(() => {
             </VTable>
           </template>
 
-          <VTable v-else-if="activeTab === 'qualifications'">
-            <thead>
-              <tr>
-                <th>Qualification</th>
-                <th>Reference</th>
-                <th>Issued</th>
-                <th>Expires</th>
-                <th>Status</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="qualification in qualifications ?? []" :key="qualification.id">
-                <td>{{ qualification.qualificationType }}</td>
-                <td>{{ empty(qualification.referenceId ?? qualification.referenceType) }}</td>
-                <td>{{ formatDate(qualification.issuedAt) }}</td>
-                <td>{{ formatDate(qualification.expiresAt) }}</td>
-                <td>
-                  <VChip :color="chipColor(qualification.status)" size="small" variant="tonal">
-                    {{ titleCaseEnum(qualification.status) }}
-                  </VChip>
-                </td>
-                <td>{{ empty(qualification.notes) }}</td>
-              </tr>
-              <tr v-if="qualifications?.length === 0">
-                <td colspan="6">No qualifications recorded.</td>
-              </tr>
-            </tbody>
-          </VTable>
+          <template v-else-if="activeTab === 'qualifications'">
+            <div class="mb-3 d-flex justify-end">
+              <VBtn
+                v-if="canManageQualification"
+                color="primary"
+                prepend-icon="mdi-certificate-outline"
+                @click="openQualificationDialog()"
+              >
+                Add Qualification
+              </VBtn>
+            </div>
+            <VTable>
+              <thead>
+                <tr>
+                  <th>Qualification</th>
+                  <th>Reference</th>
+                  <th>Issued</th>
+                  <th>Expires</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th v-if="canManageQualification" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="qualification in qualifications ?? []" :key="qualification.id">
+                  <td>{{ titleCaseEnum(qualification.qualificationType) }}</td>
+                  <td>
+                    {{ empty(qualification.referenceId ?? qualification.referenceType) }}
+                  </td>
+                  <td>{{ formatDate(qualification.issuedAt) }}</td>
+                  <td>{{ formatDate(qualification.expiresAt) }}</td>
+                  <td>
+                    <VChip :color="chipColor(qualification.status)" size="small" variant="tonal">
+                      {{ titleCaseEnum(qualification.status) }}
+                    </VChip>
+                  </td>
+                  <td>{{ empty(qualification.notes) }}</td>
+                  <td v-if="canManageQualification" class="text-right">
+                    <DsTooltipIconButton
+                      icon="mdi-pencil-outline"
+                      tooltip="Edit qualification"
+                      variant="text"
+                      @click="openQualificationDialog(qualification)"
+                    />
+                  </td>
+                </tr>
+                <tr v-if="qualifications?.length === 0">
+                  <td :colspan="canManageQualification ? 7 : 6">No qualifications recorded.</td>
+                </tr>
+              </tbody>
+            </VTable>
+          </template>
+
+          <template v-else-if="activeTab === 'authorizations'">
+            <VAlert type="info" variant="tonal" density="compact" class="mb-3">
+              PT AMA company authorization is separate from the personnel licence and is checked
+              again by the MRO backend for every controlled maintenance action.
+            </VAlert>
+            <div class="table-scroll">
+              <VTable>
+                <thead>
+                  <tr>
+                    <th>Authorization</th>
+                    <th>Person</th>
+                    <th>Linked Licence</th>
+                    <th>Permitted Actions</th>
+                    <th>Aircraft Scope</th>
+                    <th>Validity</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="authorization in authorizations ?? []" :key="authorization.id">
+                    <td>
+                      <strong>{{ authorization.authorizationNumber }}</strong>
+                      <div class="text-caption text-text-secondary">
+                        {{ empty(authorization.notes) }}
+                      </div>
+                    </td>
+                    <td>{{ authorization.personnelName }}</td>
+                    <td>
+                      {{ authorization.licenseNumber }}
+                      <div class="text-caption text-text-secondary">
+                        {{ authorization.licenseType }}
+                      </div>
+                    </td>
+                    <td>{{ authorization.permittedActions.map(titleCaseEnum).join(', ') }}</td>
+                    <td>
+                      {{
+                        authorization.aircraftRegistrationScope.length
+                          ? authorization.aircraftRegistrationScope.join(', ')
+                          : authorization.aircraftTypeScope.join(', ')
+                      }}
+                    </td>
+                    <td>
+                      {{ formatDate(authorization.validFrom) }} -
+                      {{ formatDate(authorization.validUntil) }}
+                    </td>
+                    <td>
+                      <VChip :color="chipColor(authorization.status)" size="small" variant="tonal">
+                        {{ titleCaseEnum(authorization.status) }}
+                      </VChip>
+                    </td>
+                  </tr>
+                  <tr v-if="authorizations?.length === 0">
+                    <td colspan="7">No PT AMA company authorizations recorded.</td>
+                  </tr>
+                </tbody>
+              </VTable>
+            </div>
+          </template>
 
           <VTable v-else-if="activeTab === 'documents'">
             <thead>
@@ -967,18 +1127,20 @@ const summaryRows = computed(() => {
                 />
               </VCol>
               <VCol cols="12" md="6">
-                <VTextField
+                <VDateInput
                   v-model="licenseForm.issueDate"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
                   label="Issue Date"
-                  type="date"
                   variant="outlined"
                 />
               </VCol>
               <VCol cols="12" md="6">
-                <VTextField
+                <VDateInput
                   v-model="licenseForm.expiryDate"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
                   label="Expiry Date"
-                  type="date"
                   variant="outlined"
                 />
               </VCol>
@@ -1039,18 +1201,20 @@ const summaryRows = computed(() => {
                 />
               </VCol>
               <VCol cols="12" md="6">
-                <VTextField
+                <VDateInput
                   v-model="medicalForm.issueDate"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
                   label="Issue Date"
-                  type="date"
                   variant="outlined"
                 />
               </VCol>
               <VCol cols="12" md="6">
-                <VTextField
+                <VDateInput
                   v-model="medicalForm.expiryDate"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
                   label="Expiry Date"
-                  type="date"
                   variant="outlined"
                 />
               </VCol>
@@ -1070,6 +1234,90 @@ const summaryRows = computed(() => {
             <VBtn variant="text" @click="medicalDialog = false">Cancel</VBtn>
             <VBtn color="primary" :loading="medicalSubmitting" @click="saveMedical">
               Save Medical Certificate
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
+
+      <VDialog v-model="qualificationDialog" max-width="720">
+        <VCard>
+          <VCardTitle>
+            {{ editingQualification ? 'Edit Qualification' : 'Add Qualification' }}
+          </VCardTitle>
+          <VDivider />
+          <VCardText>
+            <VAlert v-if="qualificationError" class="mb-4" color="error" variant="tonal">
+              {{ qualificationError }}
+            </VAlert>
+            <VRow>
+              <VCol cols="12" md="6">
+                <VSelect
+                  v-model="qualificationForm.qualificationType"
+                  :items="['CRM', 'AIRCRAFT_TYPE', 'DANGEROUS_GOODS', 'MEDEVAC']"
+                  label="Qualification Type"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSelect
+                  v-model="qualificationForm.status"
+                  :items="['VALID', 'EXPIRING_SOON', 'EXPIRED', 'SUSPENDED']"
+                  label="Status"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSelect
+                  v-model="qualificationForm.referenceType"
+                  :items="['TRAINING', 'AIRCRAFT_TYPE', 'OPERATION', 'ROUTE']"
+                  clearable
+                  label="Reference Type"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VTextField
+                  v-model="qualificationForm.referenceId"
+                  hint="Fleet codes: PC6, C208B, or PAC750XL"
+                  label="Reference Code"
+                  persistent-hint
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VDateInput
+                  v-model="qualificationForm.issuedAt"
+                  label="Issued Date"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VDateInput
+                  v-model="qualificationForm.expiresAt"
+                  label="Expiry Date"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12">
+                <VTextarea
+                  v-model="qualificationForm.notes"
+                  label="Qualification Notes"
+                  rows="3"
+                  variant="outlined"
+                />
+              </VCol>
+            </VRow>
+          </VCardText>
+          <VDivider />
+          <VCardActions>
+            <VSpacer />
+            <VBtn variant="text" @click="qualificationDialog = false">Cancel</VBtn>
+            <VBtn color="primary" :loading="qualificationSubmitting" @click="saveQualification">
+              Save Qualification
             </VBtn>
           </VCardActions>
         </VCard>

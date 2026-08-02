@@ -24,7 +24,15 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
     flightId: '',
     serviceTypeId: '',
     serviceSupplierId: '',
-    referenceRate: null as number | null
+    referenceRate: null as number | null,
+    creationReason: ''
+  });
+  const showCompleteService = ref(false);
+  const completionForm = ref({
+    serviceId: '',
+    expectedVersion: 1,
+    completionRecord: '',
+    evidenceReference: ''
   });
 
   async function loadOptions(): Promise<void> {
@@ -60,8 +68,9 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
     serviceForm.value = {
       flightId: dataset.value.flights[0]?.flightId ?? '',
       serviceTypeId: stationServiceTypes.value[0]?.id ?? '',
-      serviceSupplierId: suppliers.value[0]?.id ?? '',
-      referenceRate: null
+      serviceSupplierId: '',
+      referenceRate: null,
+      creationReason: ''
     };
     showCreateService.value = true;
   }
@@ -90,7 +99,8 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
           stationId: context.selectedStationId.value,
           serviceSupplierId: serviceForm.value.serviceSupplierId,
           serviceTypeId: serviceForm.value.serviceTypeId,
-          referenceRate: serviceForm.value.referenceRate
+          referenceRate: serviceForm.value.referenceRate,
+          creationReason: serviceForm.value.creationReason
         }
       });
       showCreateService.value = false;
@@ -122,6 +132,59 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
     }
   }
 
+  function openCompleteService(row: StationServiceRow): void {
+    completionForm.value = {
+      serviceId: row.id,
+      expectedVersion: row.version,
+      completionRecord: '',
+      evidenceReference: ''
+    };
+    showCompleteService.value = true;
+  }
+
+  async function completeService(): Promise<void> {
+    const form = completionForm.value;
+    if (!form.completionRecord.trim() || !form.evidenceReference.trim()) return;
+    loadingId.value = form.serviceId;
+    context.actionError.value = '';
+    try {
+      await fetchApi(`/api/flight-operations/station-services/${form.serviceId}/actions/complete`, {
+        method: 'POST',
+        body: {
+          expectedVersion: form.expectedVersion,
+          completionRecord: form.completionRecord,
+          evidenceReference: form.evidenceReference
+        }
+      });
+      showCompleteService.value = false;
+      await reload();
+      context.actionSuccess.value = 'Station service completion recorded.';
+    } catch (error) {
+      context.actionError.value =
+        error instanceof Error ? error.message : 'Gagal mencatat completion station service.';
+    } finally {
+      loadingId.value = '';
+    }
+  }
+
+  async function verifyService(row: StationServiceRow): Promise<void> {
+    loadingId.value = row.id;
+    context.actionError.value = '';
+    try {
+      await fetchApi(`/api/flight-operations/station-services/${row.id}/actions/verify`, {
+        method: 'POST',
+        body: { expectedVersion: row.version }
+      });
+      await reload();
+      context.actionSuccess.value = 'Station service verified.';
+    } catch (error) {
+      context.actionError.value =
+        error instanceof Error ? error.message : 'Gagal memverifikasi station service.';
+    } finally {
+      loadingId.value = '';
+    }
+  }
+
   onMounted(loadOptions);
 
   return {
@@ -133,8 +196,13 @@ export function useStationServices(dataset: Ref<StationDataset>, reload: () => P
     stationServiceTypes,
     suppliers,
     serviceForm,
+    showCompleteService,
+    completionForm,
     openCreateService,
     submitCreateService,
-    confirmService
+    confirmService,
+    openCompleteService,
+    completeService,
+    verifyService
   };
 }

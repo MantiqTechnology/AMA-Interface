@@ -22,8 +22,13 @@ export async function fetchApi<T>(
   request: Parameters<typeof $fetch>[0],
   options?: Parameters<typeof $fetch>[1]
 ) {
+  const { locale } = useAppLocale();
   const response = await $fetch.raw<ApiResponse<T>>(request, {
     ...options,
+    headers: {
+      'Accept-Language': locale.value,
+      ...(options?.headers ?? {})
+    },
     // API endpoints return a typed failure envelope. Let this function read it
     // before turning it into an Error that UI components can display.
     ignoreResponseError: true
@@ -34,7 +39,8 @@ export async function fetchApi<T>(
     throw new ApiClientError(
       {
         code: 'EMPTY_API_RESPONSE',
-        message: 'The server returned an empty response.'
+        message: 'The server returned an empty response.',
+        messageKey: 'errors.emptyApiResponse'
       },
       response.status
     );

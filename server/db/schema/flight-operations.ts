@@ -41,8 +41,19 @@ export const flightOperations = sqliteTable('flight_operations', {
   billingType: text('billing_type').notNull().default('CHARTER'),
   estimatedRevenue: integer('estimated_revenue'),
   currencyCode: text('currency_code').notNull().default('IDR'),
+  flightRules: text('flight_rules').notNull().default('VFR'),
+  operationRule: text('operation_rule').notNull().default('CASR_135'),
+  departurePeriod: text('departure_period').notNull().default('DAY'),
+  alternateStationId: text('alternate_station_id').references(() => stations.id),
+  isolatedAerodrome: integer('isolated_aerodrome', { mode: 'boolean' }).notNull().default(false),
+  plannedTaxiMinutes: integer('planned_taxi_minutes'),
+  plannedTaxiFuelLitre: real('planned_taxi_fuel_litre'),
+  additionalFuelLitre: real('additional_fuel_litre').notNull().default(0),
+  discretionaryFuelLitre: real('discretionary_fuel_litre').notNull().default(0),
   isLocked: integer('is_locked', { mode: 'boolean' }).notNull().default(false),
   blockingReason: text('blocking_reason'),
+  version: integer('version').notNull().default(1),
+  readinessRevision: integer('readiness_revision').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
 });
@@ -82,6 +93,22 @@ export const flightReadinessChecks = sqliteTable('flight_readiness_checks', {
 });
 
 export type FlightReadinessCheckRecord = typeof flightReadinessChecks.$inferSelect;
+
+export const operationalAdvisories = sqliteTable('operational_advisories', {
+  id: text('id').primaryKey(),
+  advisoryType: text('advisory_type').notNull(),
+  severity: text('severity').notNull(),
+  routeId: text('route_id').references(() => routes.id),
+  stationId: text('station_id').references(() => stations.id),
+  status: text('status').notNull().default('ACTIVE'),
+  validFrom: text('valid_from').notNull(),
+  validUntil: text('valid_until').notNull(),
+  summary: text('summary').notNull(),
+  operationalLimitation: text('operational_limitation'),
+  sourceReference: text('source_reference'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
 
 // Station tasks table for operational verification
 export const flightStationTasks = sqliteTable('flight_station_tasks', {

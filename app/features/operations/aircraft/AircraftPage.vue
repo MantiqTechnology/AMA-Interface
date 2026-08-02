@@ -34,13 +34,6 @@ function edit(record: AircraftDto) {
   editing.value = record;
   dialog.value = true;
 }
-async function toggle(record: AircraftDto) {
-  await fetchApi<AircraftDto>('/api/master-data/aircraft/' + record.id + '/status', {
-    method: 'PATCH',
-    body: { isActive: !record.isActive }
-  });
-  await refresh();
-}
 </script>
 <template>
   <VContainer class="px-3 py-5" fluid>
@@ -84,7 +77,8 @@ async function toggle(record: AircraftDto) {
                 <th>Manufacturer</th>
                 <th>Model</th>
                 <th>Fleet code</th>
-                <th>Status</th>
+                <th>Operational</th>
+                <th>Technical</th>
                 <th />
               </tr>
             </thead>
@@ -97,8 +91,27 @@ async function toggle(record: AircraftDto) {
                 <td>{{ display(record.model) }}</td>
                 <td>{{ display(record.fleetCode) }}</td>
                 <td>
-                  <VChip :color="record.isActive ? 'success' : 'default'" size="small">
-                    {{ record.isActive ? 'Active' : 'Inactive' }}
+                  <VChip
+                    :color="record.operationalStatus === 'ACTIVE' ? 'success' : 'warning'"
+                    size="small"
+                    variant="tonal"
+                  >
+                    {{ record.operationalStatus }}
+                  </VChip>
+                </td>
+                <td>
+                  <VChip
+                    :color="
+                      record.serviceabilityStatus === 'SERVICEABLE'
+                        ? 'success'
+                        : record.serviceabilityStatus === 'SERVICEABLE_WITH_RESTRICTIONS'
+                          ? 'warning'
+                          : 'error'
+                    "
+                    size="small"
+                    variant="tonal"
+                  >
+                    {{ record.serviceabilityStatus.replaceAll('_', ' ') }}
                   </VChip>
                 </td>
                 <td class="text-right">
@@ -113,29 +126,6 @@ async function toggle(record: AircraftDto) {
                     tooltip="Edit"
                     variant="text"
                     @click="edit(record)"
-                  />
-                  <DsConfirmIconButton
-                    :action="() => toggle(record)"
-                    :confirm-icon="
-                      record.isActive
-                        ? 'mdi-toggle-switch-off-outline'
-                        : 'mdi-toggle-switch-outline'
-                    "
-                    :confirm-text="record.isActive ? 'Deactivate' : 'Activate'"
-                    :icon="
-                      record.isActive
-                        ? 'mdi-toggle-switch-off-outline'
-                        : 'mdi-toggle-switch-outline'
-                    "
-                    :message="
-                      record.isActive
-                        ? 'This record will be hidden from active lists.'
-                        : 'This record will become available in active lists.'
-                    "
-                    :title="record.isActive ? 'Deactivate record?' : 'Activate record?'"
-                    :tone="record.isActive ? 'warning' : 'success'"
-                    :tooltip="record.isActive ? 'Deactivate' : 'Activate'"
-                    variant="text"
                   />
                 </td>
               </tr>

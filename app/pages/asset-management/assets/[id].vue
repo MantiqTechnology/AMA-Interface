@@ -565,11 +565,17 @@ async function showQr() {
               v-model.number="form.premiumMinor"
               type="number"
               label="Premium (minor unit)"
-            /><VTextField
+            /><VDateInput
               v-model="form.effectiveDate"
-              type="date"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
               label="Effective date"
-            /><VTextField v-model="form.expiryDate" type="date" label="Expiry date" />
+            /><VDateInput
+              v-model="form.expiryDate"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
+              label="Expiry date"
+            />
           </template>
           <template v-else-if="dialog === 'complete'">
             <VTextarea v-model="form.completionResult" label="Completion result" /><VTextField

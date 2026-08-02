@@ -57,7 +57,9 @@ export function apiFail(
   statusCode: number,
   code: string,
   message: string,
-  details?: unknown
+  details?: unknown,
+  messageKey?: string,
+  messageParams?: Record<string, string | number | boolean | null>
 ): ApiFailure {
   setResponseStatus(event, statusCode);
   return {
@@ -65,6 +67,8 @@ export function apiFail(
     error: {
       code,
       message,
+      ...(messageKey ? { messageKey } : {}),
+      ...(messageParams ? { messageParams } : {}),
       details
     },
     meta: {
@@ -93,7 +97,8 @@ export function defineApiEventHandler<T>(handler: (event: H3Event) => Promise<T>
           422,
           'VALIDATION_ERROR',
           'Request validation failed',
-          error.flatten()
+          error.flatten(),
+          'validation.requestValidationFailed'
         );
       }
 
@@ -101,8 +106,14 @@ export function defineApiEventHandler<T>(handler: (event: H3Event) => Promise<T>
         return apiFail(event, error.statusCode, error.code, error.message, error.details);
       }
 
-      const message = error instanceof Error ? error.message : 'Unexpected server error';
-      return apiFail(event, 500, 'INTERNAL_SERVER_ERROR', message);
+      return apiFail(
+        event,
+        500,
+        'INTERNAL_SERVER_ERROR',
+        'Unexpected server error',
+        { requestId: event.context.requestId },
+        'errors.internalServerError'
+      );
     }
   });
 }

@@ -3,7 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { setup, $fetch } from '@nuxt/test-utils/e2e';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ApiResponse } from '../../shared/contracts/api';
-import type { AircraftDto, AircraftOption } from '../../shared/features/operations/aircraft';
+import type {
+  AircraftAirworthinessDto,
+  AircraftDto,
+  AircraftOption
+} from '../../shared/features/operations/aircraft';
 import type { FlightCapacityProfileOption } from '../../shared/features/operations/flight-capacity-profiles';
 import type {
   FlightScheduleTemplateDetailDto,
@@ -11,7 +15,11 @@ import type {
   FlightScheduleTemplateOption,
   ScheduleTemplateHistoryItemDto
 } from '../../shared/features/operations/flight-schedule-templates';
-import type { PersonnelOption } from '../../shared/features/operations/personnel';
+import type {
+  PersonnelOption,
+  PersonnelQualificationDto
+} from '../../shared/features/operations/personnel';
+import type { FlightOperationDetailDto } from '../../shared/contracts/flight-operations';
 import type {
   RouteDto,
   RouteOperationalProfileDto,
@@ -48,6 +56,94 @@ await setup({
 });
 
 describe('operations master data APIs', () => {
+  it('recalculates existing flight readiness when a crew qualification changes', async () => {
+    const headers = { cookie: 'ama_demo_role=OCC' };
+    const qualifications = await $fetch<ApiResponse<PersonnelQualificationDto[]>>(
+      '/api/master-data/personnel/crew-pic-valid/qualifications',
+      { headers }
+    );
+    expect(qualifications.ok).toBe(true);
+    if (!qualifications.ok) throw new Error(qualifications.error.message);
+    const crm = qualifications.data.find((item) => item.qualificationType === 'CRM');
+    expect(crm).toBeDefined();
+    if (!crm) throw new Error('CRM qualification fixture is missing.');
+
+    const update = async (status: PersonnelQualificationDto['status']) =>
+      $fetch<ApiResponse<PersonnelQualificationDto>>(
+        `/api/master-data/personnel/crew-pic-valid/qualifications/${crm.id}`,
+        {
+          method: 'PUT',
+          headers,
+          body: {
+            qualificationType: crm.qualificationType,
+            referenceType: crm.referenceType,
+            referenceId: crm.referenceId,
+            issuedAt: crm.issuedAt,
+            expiresAt: crm.expiresAt,
+            status,
+            notes: crm.notes,
+            documentId: crm.documentId
+          }
+        }
+      );
+
+    const suspended = await update('SUSPENDED');
+    expect(suspended.ok).toBe(true);
+    const blocked = await $fetch<ApiResponse<FlightOperationDetailDto>>(
+      '/api/flight-operations/flights/fop-ready-approval',
+      { headers }
+    );
+    expect(blocked.ok).toBe(true);
+    if (!blocked.ok) throw new Error(blocked.error.message);
+    expect(
+      blocked.data.readinessChecks.find((item) => item.checkCode === 'CREW_QUALIFICATION')
+    ).toMatchObject({ status: 'FAIL', effectiveStatus: 'BLOCKED' });
+
+    const restored = await update('VALID');
+    expect(restored.ok).toBe(true);
+    const ready = await $fetch<ApiResponse<FlightOperationDetailDto>>(
+      '/api/flight-operations/flights/fop-ready-approval',
+      { headers }
+    );
+    expect(ready.ok).toBe(true);
+    if (!ready.ok) throw new Error(ready.error.message);
+    expect(
+      ready.data.readinessChecks.find((item) => item.checkCode === 'CREW_QUALIFICATION')
+    ).toMatchObject({ status: 'PASS', effectiveStatus: 'PASSED' });
+  });
+
+  it('separates maintenance management from certifying-staff release authority', async () => {
+    const detail = await $fetch<ApiResponse<AircraftAirworthinessDto>>(
+      '/api/master-data/aircraft/ac-pk-ama/airworthiness',
+      { headers: { cookie: 'ama_demo_role=Certifying%20Staff' } }
+    );
+    expect(detail.ok).toBe(true);
+    if (!detail.ok) throw new Error(detail.error.message);
+    expect(detail.data.releases[0]?.releaseNumber).toBe('RTS-BASE-AMA-001');
+
+    const maintenanceRelease = await $fetch<ApiResponse<unknown>>(
+      '/api/master-data/aircraft/ac-pk-ama/releases',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!maintenanceRelease.ok && maintenanceRelease.error.code).toBe('FORBIDDEN');
+
+    const certifierDeferment = await $fetch<ApiResponse<unknown>>(
+      '/api/master-data/aircraft/ac-pk-ama/deferments',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Certifying%20Staff' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!certifierDeferment.ok && certifierDeferment.error.code).toBe('FORBIDDEN');
+  });
+
   it('owns the station list and options response', async () => {
     const list = await $fetch<ApiResponse<StationDto[]>>('/api/master-data/stations');
     expect(list.ok).toBe(true);
@@ -114,7 +210,15 @@ describe('operations master data APIs', () => {
         originStationId: 'st-oks',
         destinationStationId: 'st-nbx',
         originStationCode: 'OKS',
-        destinationStationCode: 'NBX'
+        destinationStationCode: 'NBX',
+        originStationName: 'Oksibil Airstrip',
+        destinationStationName: 'Nabire Station',
+        originCity: 'Oksibil',
+        destinationCity: 'Nabire',
+        estimatedDurationMinutes: 80,
+        distanceKm: 390,
+        restrictionLevel: 'NONE',
+        restrictionNote: null
       })
     );
 
@@ -161,6 +265,11 @@ describe('operations master data APIs', () => {
       expect.objectContaining({
         id: 'schedule-djj-wmx-mwf',
         routeId: 'route-djj-wmx',
+        routeCode: 'DJJ-WMX',
+        originStationCode: 'DJJ',
+        destinationStationCode: 'WMX',
+        serviceTypeLabel: 'Scheduled Passenger',
+        defaultAircraftRegistration: 'PK-AMA',
         operatingDays: expect.any(Array),
         departureTimeLocal: expect.any(String)
       })

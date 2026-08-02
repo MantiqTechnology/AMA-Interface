@@ -57,7 +57,16 @@ const filteredServices = computed<StationServiceRow[]>(() => {
         />
         <VSelect
           v-model="status"
-          :items="['ALL', 'REQUESTED', 'CONFIRMED', 'COMPLETED', 'REJECTED', 'CANCELLED']"
+          :items="[
+            'ALL',
+            'PLANNED',
+            'REQUESTED',
+            'CONFIRMED',
+            'COMPLETED',
+            'VERIFIED',
+            'REJECTED',
+            'CANCELLED'
+          ]"
           label="Status"
           density="compact"
           hide-details
@@ -109,7 +118,8 @@ const filteredServices = computed<StationServiceRow[]>(() => {
             <td class="text-right">
               <DsConfirmIconButton
                 v-if="
-                  row.status === 'REQUESTED' && services.can('station.operation.update').allowed
+                  ['PLANNED', 'REQUESTED'].includes(row.status) &&
+                    services.can('station.operation.update').allowed
                 "
                 :action="() => services.confirmService(row)"
                 color="success"
@@ -121,6 +131,34 @@ const filteredServices = computed<StationServiceRow[]>(() => {
                 title="Confirm station service?"
                 tone="success"
                 tooltip="Confirm service"
+                variant="flat"
+                size="small"
+              />
+              <VBtn
+                v-else-if="
+                  row.status === 'CONFIRMED' && services.can('station.operation.update').allowed
+                "
+                prepend-icon="mdi-clipboard-check-outline"
+                size="small"
+                variant="tonal"
+                @click="services.openCompleteService(row)"
+              >
+                Complete
+              </VBtn>
+              <DsConfirmIconButton
+                v-else-if="
+                  row.status === 'COMPLETED' && services.can('station.task.verify').allowed
+                "
+                :action="() => services.verifyService(row)"
+                color="success"
+                confirm-icon="mdi-check-decagram"
+                confirm-text="Verify"
+                icon="mdi-check-decagram-outline"
+                :loading="services.loadingId.value === row.id"
+                :message="`Verify completion evidence for ${row.flightNumber}.`"
+                title="Verify station service?"
+                tone="success"
+                tooltip="Verify service"
                 variant="flat"
                 size="small"
               />
@@ -147,4 +185,42 @@ const filteredServices = computed<StationServiceRow[]>(() => {
     :suppliers="services.suppliers.value"
     @submit="services.submitCreateService"
   />
+
+  <VDialog v-model="services.showCompleteService.value" max-width="560">
+    <VCard>
+      <VCardTitle tag="h2">Record Service Completion</VCardTitle>
+      <VCardText class="flex flex-col gap-4">
+        <VTextarea
+          v-model="services.completionForm.value.completionRecord"
+          label="Structured completion record"
+          hint="Record what was delivered, when, and any operational exception."
+          persistent-hint
+          rows="3"
+          variant="outlined"
+        />
+        <VTextField
+          v-model="services.completionForm.value.evidenceReference"
+          label="Evidence or checklist reference"
+          hint="A document, photo, checklist, or external reference."
+          persistent-hint
+          variant="outlined"
+        />
+      </VCardText>
+      <VCardActions>
+        <VSpacer />
+        <VBtn variant="text" @click="services.showCompleteService.value = false">Cancel</VBtn>
+        <VBtn
+          color="primary"
+          :loading="Boolean(services.loadingId.value)"
+          :disabled="
+            services.completionForm.value.completionRecord.trim().length < 5 ||
+              services.completionForm.value.evidenceReference.trim().length < 3
+          "
+          @click="services.completeService"
+        >
+          Record completion
+        </VBtn>
+      </VCardActions>
+    </VCard>
+  </VDialog>
 </template>

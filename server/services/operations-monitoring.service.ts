@@ -19,7 +19,26 @@ type FlightRow = Omit<
   requiredChecks: number;
   completedChecks: number;
   actualArrivalStationCode: string | null;
+  positionLatitude: number | null;
+  positionLongitude: number | null;
+  positionStatus: string | null;
+  positionAltitudeFt: number | null;
+  positionGroundSpeedKt: number | null;
+  positionHeadingDeg: number | null;
+  positionSource: string | null;
+  positionRecordedAt: string | null;
+  positionVersion: number | null;
 };
+
+function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const radians = (value: number) => (value * Math.PI) / 180;
+  const dLat = radians(bLat - aLat);
+  const dLng = radians(bLng - aLng);
+  const haversine =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(radians(aLat)) * Math.cos(radians(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
 
 function nextAction(status: string) {
   const actions: Record<string, string> = {
@@ -86,6 +105,9 @@ export class OperationsMonitoringService {
            origin.station_code AS originCode,
            flight.destination_station_id AS destinationStationId,
            destination.station_code AS destinationCode,
+           origin.latitude AS originLatitude, origin.longitude AS originLongitude,
+           destination.latitude AS destinationLatitude, destination.longitude AS destinationLongitude,
+           aircraft.id AS aircraftId,
            aircraft.registration_number AS aircraftRegistration,
            crew.full_name AS pilotInCommandName,
            flight.scheduled_departure_at AS scheduledDepartureAt,
@@ -94,6 +116,15 @@ export class OperationsMonitoringService {
            flight.actual_arrival_at AS actualArrivalAt,
            actual_arrival_station.station_code AS actualArrivalStationCode,
            flight.blocking_reason AS blockingReason,
+           current_position.latitude AS positionLatitude,
+           current_position.longitude AS positionLongitude,
+           current_position.position_status AS positionStatus,
+           current_position.altitude_ft AS positionAltitudeFt,
+           current_position.ground_speed_kt AS positionGroundSpeedKt,
+           current_position.heading_deg AS positionHeadingDeg,
+           current_position.source AS positionSource,
+           current_position.recorded_at AS positionRecordedAt,
+           current_position.version AS positionVersion,
            (SELECT COUNT(*) FROM flight_readiness_checks check_row
              WHERE check_row.flight_id = flight.id AND check_row.is_required = 1) AS requiredChecks,
            (SELECT COUNT(*) FROM flight_readiness_checks check_row
@@ -106,38 +137,110 @@ export class OperationsMonitoringService {
          JOIN stations destination ON destination.id = flight.destination_station_id
          LEFT JOIN stations actual_arrival_station ON actual_arrival_station.id = flight.actual_arrival_station_id
          LEFT JOIN aircraft aircraft ON aircraft.id = flight.aircraft_id
+         LEFT JOIN aircraft_current_positions current_position
+           ON current_position.aircraft_id = aircraft.id
+          AND (current_position.flight_id = flight.id OR current_position.flight_id IS NULL)
          LEFT JOIN crews crew ON crew.id = flight.pilot_in_command_id
          ${where}
          ORDER BY COALESCE(flight.scheduled_departure_at, flight.flight_date) ASC`
       )
       .all(parameters) as FlightRow[];
-    return rows.map(({ requiredChecks, completedChecks, ...row }) => {
-      const readinessPercent =
-        requiredChecks > 0 ? Math.round((completedChecks / requiredChecks) * 100) : 0;
-      const delayMinutes = row.actualArrivalAt
-        ? minutesBetween(row.actualArrivalAt, row.scheduledArrivalAt)
-        : row.actualDepartureAt
-          ? minutesBetween(row.actualDepartureAt, row.scheduledDepartureAt)
-          : ['SCHEDULED', 'CHECK_IN_OPEN'].includes(row.currentStatus)
-            ? minutesBetween(new Date().toISOString(), row.scheduledDepartureAt)
+    return rows.map(
+      ({
+        requiredChecks,
+        completedChecks,
+        positionLatitude,
+        positionLongitude,
+        positionStatus,
+        positionAltitudeFt,
+        positionGroundSpeedKt,
+        positionHeadingDeg,
+        positionSource,
+        positionRecordedAt,
+        positionVersion,
+        ...row
+      }) => {
+        const readinessPercent =
+          requiredChecks > 0 ? Math.round((completedChecks / requiredChecks) * 100) : 0;
+        const delayMinutes = row.actualArrivalAt
+          ? minutesBetween(row.actualArrivalAt, row.scheduledArrivalAt)
+          : row.actualDepartureAt
+            ? minutesBetween(row.actualDepartureAt, row.scheduledDepartureAt)
+            : ['SCHEDULED', 'CHECK_IN_OPEN'].includes(row.currentStatus)
+              ? minutesBetween(new Date().toISOString(), row.scheduledDepartureAt)
+              : 0;
+        const urgency =
+          row.currentStatus === 'BLOCKED' || delayMinutes >= 30
+            ? 'critical'
+            : delayMinutes > 0 || readinessPercent < 100
+              ? 'warning'
+              : 'normal';
+        const routeDistance =
+          row.originLatitude !== null &&
+          row.originLongitude !== null &&
+          row.destinationLatitude !== null &&
+          row.destinationLongitude !== null
+            ? distanceKm(
+                row.originLatitude,
+                row.originLongitude,
+                row.destinationLatitude,
+                row.destinationLongitude
+              )
             : 0;
-      const urgency =
-        row.currentStatus === 'BLOCKED' || delayMinutes >= 30
-          ? 'critical'
-          : delayMinutes > 0 || readinessPercent < 100
-            ? 'warning'
-            : 'normal';
-      return {
-        ...row,
-        readinessPercent,
-        delayMinutes,
-        urgency,
-        nextAction: nextAction(row.currentStatus),
-        plannedDestinationCode: row.destinationCode,
-        actualArrivalStationCode: row.actualArrivalStationCode,
-        stationScopeMatch: true
-      };
-    });
+        const remainingDistance =
+          routeDistance &&
+          positionLatitude !== null &&
+          positionLongitude !== null &&
+          row.destinationLatitude !== null &&
+          row.destinationLongitude !== null
+            ? distanceKm(
+                positionLatitude,
+                positionLongitude,
+                row.destinationLatitude,
+                row.destinationLongitude
+              )
+            : routeDistance;
+        const position =
+          positionLatitude !== null &&
+          positionLongitude !== null &&
+          positionStatus &&
+          positionSource &&
+          positionRecordedAt
+            ? {
+                latitude: positionLatitude,
+                longitude: positionLongitude,
+                positionStatus: positionStatus as 'ON_GROUND' | 'AIRBORNE' | 'UNKNOWN',
+                altitudeFt: positionAltitudeFt,
+                groundSpeedKt: positionGroundSpeedKt,
+                headingDeg: positionHeadingDeg,
+                source: positionSource as
+                  'MANUAL' | 'DEMO_SIMULATION' | 'SYSTEM_DEPARTURE' | 'SYSTEM_ARRIVAL',
+                recordedAt: positionRecordedAt,
+                version: positionVersion ?? 1,
+                progressPercent: routeDistance
+                  ? Math.round(
+                      Math.min(
+                        100,
+                        Math.max(0, ((routeDistance - remainingDistance) / routeDistance) * 100)
+                      )
+                    )
+                  : null,
+                isStale: Date.now() - new Date(positionRecordedAt).getTime() > 15 * 60_000
+              }
+            : null;
+        return {
+          ...row,
+          position,
+          readinessPercent,
+          delayMinutes,
+          urgency,
+          nextAction: nextAction(row.currentStatus),
+          plannedDestinationCode: row.destinationCode,
+          actualArrivalStationCode: row.actualArrivalStationCode,
+          stationScopeMatch: true
+        };
+      }
+    );
   }
 
   operationsOverview(query: OperationsMonitoringQuery): OperationsOverviewDto {

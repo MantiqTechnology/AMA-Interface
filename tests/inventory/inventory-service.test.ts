@@ -8,6 +8,14 @@ import { InventoryService } from '../../server/features/inventory/service';
 import { createSeededTestServices } from '../helpers/demo-db';
 
 type SqlRow = Record<string, unknown>;
+const millisPerDay = 86_400_000;
+
+function daysUntilDate(dateOnly: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  return Math.ceil(
+    (Date.parse(`${dateOnly}T00:00:00.000Z`) - Date.parse(`${today}T00:00:00.000Z`)) / millisPerDay
+  );
+}
 
 describe('inventory service', () => {
   let sqlite: Database.Database;
@@ -60,6 +68,19 @@ describe('inventory service', () => {
     sqlite.close();
     rmSync(documentDirectory, { recursive: true, force: true });
     delete process.env.AMA_DOCUMENT_MANIFEST;
+  });
+
+  it('returns part expiry dates and countdown from active lot stock', () => {
+    const parts = inventory.listParts({ limit: 250, offset: 0 });
+    const filter = parts.find((part) => part.id === 'inv-part-filter-pc6');
+
+    expect(filter?.expiryProfile).toMatchObject({
+      lotNumber: 'LOT-PC6-260701',
+      expiresAt: '2028-06-19',
+      daysUntilExpiry: daysUntilDate('2028-06-19'),
+      shelfLifeElapsedDays: Math.max(730 - daysUntilDate('2028-06-19'), 0),
+      quantityOnNearestExpiry: 11
+    });
   });
 
   it('picks physical stock by FEFO while valuing the issue by FIFO', async () => {

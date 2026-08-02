@@ -12,6 +12,11 @@ import type { AccountingService } from '../../finance/accounting/service';
 import type { TicketingSalesRepository } from '../sales/repository';
 import { CargoBookingRepository, CargoCapacityExceededError } from './repository';
 
+const BIGINT_500 = BigInt(500);
+const BIGINT_1000 = BigInt(1000);
+const BIGINT_5000 = BigInt(5000);
+const BIGINT_10000 = BigInt(10000);
+
 export class CargoBookingService {
   constructor(
     private readonly repository: CargoBookingRepository,
@@ -69,7 +74,7 @@ export class CargoBookingService {
           : chargeableWeightKg;
     const pricingWeightGrams = Math.round(pricingWeightKg * 1000);
     const variableTariff = Number(
-      (BigInt(pricingWeightGrams) * BigInt(flight.baseRate) + 500n) / 1000n
+      (BigInt(pricingWeightGrams) * BigInt(flight.baseRate) + BIGINT_500) / BIGINT_1000
     );
     const totalTariff = Math.max(variableTariff, flight.minimumCharge ?? 0);
     if (input.agentId) {
@@ -80,7 +85,7 @@ export class CargoBookingService {
       );
     }
     const taxAmount = Number(
-      (BigInt(totalTariff) * BigInt(flight.taxRateBasisPoints) + 5000n) / 10_000n
+      (BigInt(totalTariff) * BigInt(flight.taxRateBasisPoints) + BIGINT_5000) / BIGINT_10000
     );
     const id = `AWB-${nanoid(8).toUpperCase()}`;
     const timestamp = new Date().toISOString();

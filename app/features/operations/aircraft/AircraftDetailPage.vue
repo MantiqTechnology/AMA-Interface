@@ -9,6 +9,7 @@ import type { AircraftDto } from '#shared/features/operations/aircraft';
 import type { FlightCapacityProfileDto } from '#shared/features/operations/flight-capacity-profiles';
 import type { StationDto } from '#shared/features/operations/stations';
 import type { InventorySerializedPartDto } from '#shared/features/inventory';
+import AircraftAirworthinessPanel from './AircraftAirworthinessPanel.vue';
 import AircraftFormDialog from './AircraftFormDialog.vue';
 
 type ReadinessState = 'pass' | 'warning' | 'fail';
@@ -24,6 +25,7 @@ type ProfileData = {
 };
 
 const pageRoute = useRoute();
+const nuxtApp = useNuxtApp();
 const session = useDemoSession();
 const { can } = useAuthorization();
 const editOpen = ref(false);
@@ -31,6 +33,13 @@ const imageAvailable = ref(true);
 const aircraftId = computed(() => String(pageRoute.params.id));
 
 await session.load();
+
+function fetchProfileApi<T>(
+  request: Parameters<typeof $fetch>[0],
+  options?: Parameters<typeof $fetch>[1]
+) {
+  return nuxtApp.runWithContext(() => fetchApi<T>(request, options));
+}
 
 const currentDate = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Jayapura',
@@ -47,13 +56,15 @@ const {
 } = await useAsyncData(
   `aircraft-operational-profile-${aircraftId.value}`,
   async () => {
-    const aircraft = await fetchApi<AircraftDto>(`/api/master-data/aircraft/${aircraftId.value}`);
+    const aircraft = await fetchProfileApi<AircraftDto>(
+      `/api/master-data/aircraft/${aircraftId.value}`
+    );
     const [stations, operations, maintenanceHandoffs, capacityProfiles, serializedComponents] =
       await Promise.all([
-        fetchApi<StationDto[]>('/api/master-data/stations', {
+        fetchProfileApi<StationDto[]>('/api/master-data/stations', {
           query: { active: 'all' }
         }),
-        fetchApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
+        fetchProfileApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
           query: {
             aircraftId: aircraft.id,
             scheduledFrom: new Date().toISOString(),
@@ -62,19 +73,19 @@ const {
             limit: 1
           }
         }),
-        fetchApi<FlightMaintenanceHandoffDto[]>('/api/flight-operations/maintenance', {
+        fetchProfileApi<FlightMaintenanceHandoffDto[]>('/api/flight-operations/maintenance', {
           query: { search: aircraft.registrationNumber }
         }),
-        fetchApi<FlightCapacityProfileDto[]>('/api/master-data/flight-capacity-profiles', {
+        fetchProfileApi<FlightCapacityProfileDto[]>('/api/master-data/flight-capacity-profiles', {
           query: { active: 'active' }
         }),
-        fetchApi<InventorySerializedPartDto[]>('/api/inventory/repairables')
+        fetchProfileApi<InventorySerializedPartDto[]>('/api/inventory/repairables')
       ]);
 
     const upcomingFlight = operations.flights[0];
 
     const upcomingFlightDetail = upcomingFlight
-      ? await fetchApi<FlightOperationDetailDto>(
+      ? await fetchProfileApi<FlightOperationDetailDto>(
           `/api/flight-operations/flights/${upcomingFlight.id}`
         )
       : null;
@@ -533,6 +544,8 @@ function readinessItemColor(state: ReadinessState) {
       >
         {{ record.serviceabilityNote }}
       </VAlert>
+
+      <AircraftAirworthinessPanel :aircraft-id="record.id" @changed="refresh" />
 
       <VRow align="stretch">
         <VCol cols="12" lg="8">

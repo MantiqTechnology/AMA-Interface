@@ -14,6 +14,9 @@ export const licenseIdParamsSchema = crewIdParamsSchema.extend({
 export const medicalCertificateIdParamsSchema = crewIdParamsSchema.extend({
   certificateId: z.string().min(1)
 });
+export const qualificationIdParamsSchema = crewIdParamsSchema.extend({
+  qualificationId: z.string().min(1)
+});
 export const crewStatusSchema = z.object({ isActive: z.boolean() });
 export const personnelAvailabilityChangeSchema = z.object({
   availabilityStatus: z.enum([
@@ -151,6 +154,40 @@ export const personnelMedicalCertificateInputSchema = z
     path: ['issueDate']
   });
 
+export const personnelQualificationInputSchema = z
+  .object({
+    qualificationType: z.string().trim().min(1),
+    referenceType: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
+    referenceId: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
+    issuedAt: z
+      .preprocess(
+        emptyToNull,
+        z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/u, 'Expected YYYY-MM-DD')
+          .nullable()
+      )
+      .optional()
+      .default(null),
+    expiresAt: z
+      .preprocess(
+        emptyToNull,
+        z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/u, 'Expected YYYY-MM-DD')
+          .nullable()
+      )
+      .optional()
+      .default(null),
+    status: z.enum(['VALID', 'EXPIRING_SOON', 'EXPIRED', 'SUSPENDED']).optional().default('VALID'),
+    notes: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
+    documentId: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null)
+  })
+  .refine((value) => !value.issuedAt || !value.expiresAt || value.issuedAt <= value.expiresAt, {
+    message: 'Issue date cannot be after expiry date.',
+    path: ['issuedAt']
+  });
+
 export type PersonnelListQuery = z.infer<typeof crewListQuerySchema>;
 export type PersonnelInput = z.infer<typeof crewInputSchema>;
 export type PersonnelDto = {
@@ -193,6 +230,7 @@ export type PersonnelLicenseInput = z.infer<typeof personnelLicenseInputSchema>;
 export type PersonnelMedicalCertificateInput = z.infer<
   typeof personnelMedicalCertificateInputSchema
 >;
+export type PersonnelQualificationInput = z.infer<typeof personnelQualificationInputSchema>;
 export type PersonnelAvailabilityChange = z.infer<typeof personnelAvailabilityChangeSchema>;
 
 export type PersonnelRelationSummary = {

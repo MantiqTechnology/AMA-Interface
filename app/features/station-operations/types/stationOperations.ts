@@ -21,8 +21,9 @@ export type FlightStatus =
   'SCHEDULED' | 'ARRIVING' | 'LANDED' | 'DELAYED' | 'DEPARTED' | 'BOARDING';
 export type ReadinessStatus = 'READY' | 'CHECK' | 'NOT_READY';
 export type ServiceType = 'HANDLING' | 'PARKING';
-export type ServiceStatus = 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
-export type CostStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'VOID';
+export type ServiceStatus =
+  'PLANNED' | 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'VERIFIED' | 'REJECTED' | 'CANCELLED';
+export type CostStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'VOID' | 'VOIDED';
 
 export interface StationOption {
   id: string;
@@ -63,6 +64,9 @@ export interface StationServiceRow {
   supplierName: string;
   status: ServiceStatus;
   referenceRate?: number;
+  creationSource: 'PLANNING_ASSIGNMENT' | 'MANUAL_ADDITIONAL_SERVICE';
+  completionRecord: string | null;
+  completionEvidenceReference: string | null;
   version: number;
 }
 
@@ -72,10 +76,30 @@ export interface StationCostRow {
   flightNumber: string | null;
   stationCode: string;
   vendorName: string | null;
+  supplierName: string | null;
   costCategoryName: string;
   description: string;
   amount: number;
+  estimatedAmount: number | null;
+  actualAmount: number | null;
+  approvedAmount: number | null;
+  approvedCurrencyCode: string | null;
+  vendorReference: string | null;
+  evidenceReference: string | null;
   currencyCode: string;
+  submittedByUserId: string | null;
+  submittedAt: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
+  financeHandoffId: string | null;
+  financeHandoffStatus: string | null;
+  accountingEventId: string | null;
+  accountingEventStatus: string | null;
+  journalEntryId: string | null;
+  journalStatus: string | null;
+  postedLedgerAmount: number | null;
+  financialBasis: ApiStationCost['financialBasis'];
+  reconciliationStatus: ApiStationCost['reconciliationStatus'];
   status: CostStatus;
   version: number;
 }
@@ -148,8 +172,12 @@ export interface ApiStationService {
   serviceSupplierId: string;
   supplierName: string;
   serviceType: 'HANDLING' | 'PARKING';
-  status: 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+  status: ServiceStatus;
   referenceRate: number | null;
+  creationSource: 'PLANNING_ASSIGNMENT' | 'MANUAL_ADDITIONAL_SERVICE';
+  creationReason: string | null;
+  completionRecord: string | null;
+  completionEvidenceReference: string | null;
   rejectionNote: string | null;
   version: number;
 }
@@ -162,12 +190,40 @@ export interface ApiStationCost {
   stationCode: string;
   vendorId: string | null;
   vendorName: string | null;
+  serviceSupplierId: string | null;
+  supplierName: string | null;
+  sourceServiceId: string | null;
   costCategoryId: string;
   costCategoryName: string;
   amount: number;
+  estimatedAmount: number | null;
+  actualAmount: number | null;
+  approvedAmount: number | null;
+  approvedCurrencyId: string | null;
+  approvedCurrencyCode: string | null;
   currencyId: string;
   currencyCode: string;
   description: string;
+  vendorReference: string | null;
+  evidenceReference: string | null;
+  submittedByUserId: string | null;
+  submittedAt: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
+  financeHandoffId: string | null;
+  financeHandoffStatus: string | null;
+  accountingEventId: string | null;
+  accountingEventStatus: string | null;
+  journalEntryId: string | null;
+  journalStatus: string | null;
+  postedLedgerAmount: number | null;
+  financialBasis:
+    | 'OPERATIONAL_ESTIMATE'
+    | 'FINANCE_SUBMITTED'
+    | 'FINANCE_APPROVED'
+    | 'ACCOUNTING_DRAFT'
+    | 'POSTED_LEDGER';
+  reconciliationStatus: 'NOT_ACCOUNTING_READY' | 'NOT_RECONCILED' | 'RECONCILED';
   status: CostStatus;
   version: number;
 }

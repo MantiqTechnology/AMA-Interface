@@ -26,16 +26,29 @@ async function fuelAction(
   try {
     const body =
       action === 'approve'
-        ? { approvedQuantityLitre: row.requestedQuantityLitre }
+        ? {
+            expectedVersion: row.version,
+            idempotencyKey: `${row.id}:approve:${row.version}:${crypto.randomUUID()}`,
+            approvedQuantityLitre: row.requestedQuantityLitre
+          }
         : action === 'uplift'
           ? {
+              expectedVersion: row.version,
+              idempotencyKey: `${row.id}:uplift:${row.version}:${crypto.randomUUID()}`,
               actualUpliftLitre: row.approvedQuantityLitre ?? row.requestedQuantityLitre,
               actualPricePerLitre: row.referencePricePerLitre ?? 0,
               varianceNote: 'Recorded from fuel control worklist.'
             }
           : action === 'reject'
-            ? { rejectionReason: 'Rejected from fuel control worklist.' }
-            : {};
+            ? {
+                expectedVersion: row.version,
+                idempotencyKey: `${row.id}:reject:${row.version}:${crypto.randomUUID()}`,
+                rejectionReason: 'Rejected from fuel control worklist.'
+              }
+            : {
+                expectedVersion: row.version,
+                idempotencyKey: `${row.id}:post:${row.version}:${crypto.randomUUID()}`
+              };
     await fetchApi(`/api/flight-operations/fuel/${row.id}/actions/${action}`, {
       method: 'POST',
       body

@@ -4,8 +4,11 @@ import StationSelect from '../../../features/operations/stations/StationSelect.v
 import ActualTimeDialog from '../../../features/operations/flight-operations/ActualTimeDialog.vue';
 import CustomerSelect from '../../../features/commercial/customers/CustomerSelect.vue';
 import type { AircraftOption } from '#shared/features/operations/aircraft';
+import type { RouteOption } from '#shared/features/operations/routes';
 import type { StationOption } from '#shared/features/operations/stations';
+import type { HandlingParkingSupplierDto } from '#shared/features/finance/handling-parking-suppliers';
 import type {
+  FlightChangeImpactDto,
   FlightOperationDetailDto,
   FlightReadinessCheckDto,
   FlightStatusHistoryDto
@@ -22,11 +25,15 @@ const activeTab = ref(
 const actionError = ref('');
 const actionSuccess = ref('');
 const actionLoading = ref(false);
+const approvalDialog = ref(false);
+const approvalAction = ref<'accept-readiness' | 'approve'>('accept-readiness');
+const approvalNote = ref('');
 const reasonDialog = ref(false);
 const reasonAction = ref<'cancel' | 'divert' | 'reopen'>('cancel');
 const reasonId = ref('');
 const reasonNote = ref('');
 const diversionStationId = ref('');
+const correctionScope = ref<'PLANNING' | 'DEPARTURE' | 'ARRIVAL' | 'CLOSURE' | null>(null);
 const issueDrawer = ref(false);
 const selectedIssue = ref<FlightReadinessCheckDto | null>(null);
 const historyFilter = ref('ALL');
@@ -34,9 +41,17 @@ const actualTimeDialog = ref(false);
 const actualTimeAction = ref<'depart' | 'land'>('depart');
 const commercialDialog = ref(false);
 const aircraftDialog = ref(false);
+const routeDialog = ref(false);
+const impactDialog = ref(false);
+const impactMode = ref<'AIRCRAFT' | 'ROUTE'>('AIRCRAFT');
+const impactPreview = ref<FlightChangeImpactDto | null>(null);
 const aircraftSaving = ref(false);
 const aircraftError = ref('');
 const selectedAircraftId = ref<string | null>(null);
+const routeSaving = ref(false);
+const routeError = ref('');
+const selectedRouteId = ref<string | null>(null);
+const selectedDestinationSupplierId = ref<string | null>(null);
 const commercialSaving = ref(false);
 const commercialError = ref('');
 const commercialForm = reactive({
@@ -60,6 +75,21 @@ const canEditCommercialDetails = computed(
     ) &&
     can('flight.create.direct').allowed
 );
+const canChangeRoute = computed(
+  () =>
+    Boolean(flight.value) &&
+    [
+      'DRAFT',
+      'PENDING_READINESS',
+      'BLOCKED',
+      'READY_FOR_OCC_REVIEW',
+      'READY_FOR_APPROVAL',
+      'APPROVED',
+      'REAPPROVAL_REQUIRED',
+      'SCHEDULED'
+    ].includes(flight.value?.currentStatus ?? '') &&
+    can('flight.create.direct').allowed
+);
 
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
@@ -76,6 +106,19 @@ const { data: stationOptions } = await useAsyncData(
   () => fetchApi<StationOption[]>('/api/master-data/stations/options'),
   { default: () => [] }
 );
+const { data: routeOptions } = await useAsyncData(
+  'route-options-flight-command-center',
+  () => fetchApi<RouteOption[]>('/api/master-data/routes/options'),
+  { default: () => [] }
+);
+const { data: stationSuppliers } = await useAsyncData(
+  'station-suppliers-flight-command-center',
+  () =>
+    fetchApi<HandlingParkingSupplierDto[]>(
+      '/api/master-data/handling-parking-suppliers?active=active'
+    ),
+  { default: () => [] }
+);
 const {
   data: flight,
   pending,
@@ -86,19 +129,20 @@ const {
 );
 
 const lifecycle = [
-  'DRAFT',
-  'PENDING_READINESS',
-  'READY_FOR_APPROVAL',
-  'APPROVED',
+  'PLANNING',
+  'READINESS',
+  'APPROVAL',
   'SCHEDULED',
-  'CHECK_IN_OPEN',
-  'CHECK_IN_CLOSED',
-  'READY_FOR_DEPARTURE',
-  'IN_PROGRESS',
-  'LANDED',
-  'PENDING_CLOSURE',
-  'CLOSED'
+  'DEPARTURE',
+  'IN_FLIGHT',
+  'ARRIVAL',
+  'CLOSURE',
+  'FINAL'
 ] as const;
+const currentLifecycleIndex = computed(() => {
+  const phase = flight.value?.commandCenter?.lifecycle.currentPhase;
+  return phase ? lifecycle.indexOf(phase as (typeof lifecycle)[number]) : -1;
+});
 const closureAllowed = computed(() => {
   const current = flight.value;
   if (!current) return false;
@@ -109,98 +153,72 @@ const closureAllowed = computed(() => {
   }
   return current.closureReadiness.allowed;
 });
+const approvalInvalidationReason = computed(
+  () =>
+    flight.value?.approvals.find((approval) => approval.invalidationReason)?.invalidationReason ??
+    null
+);
+
+const actionPresentation: Record<string, { icon: string; color?: string }> = {
+  submit: { icon: 'mdi-send-outline', color: 'secondary' },
+  evaluate: { icon: 'mdi-refresh' },
+  'accept-readiness': { icon: 'mdi-shield-check-outline', color: 'secondary' },
+  approve: { icon: 'mdi-check-decagram-outline', color: 'success' },
+  schedule: { icon: 'mdi-calendar-check-outline' },
+  'open-check-in': { icon: 'mdi-account-check-outline' },
+  'close-check-in': { icon: 'mdi-account-lock-outline' },
+  'evaluate-departure-assurance': { icon: 'mdi-shield-airplane-outline' },
+  'mark-ready-for-departure': { icon: 'mdi-airplane-check', color: 'success' },
+  depart: { icon: 'mdi-airplane-takeoff' },
+  land: { icon: 'mdi-airplane-landing', color: 'success' },
+  'pending-closure': { icon: 'mdi-clipboard-check-outline' },
+  close: { icon: 'mdi-lock-check-outline', color: 'success' },
+  cancel: { icon: 'mdi-cancel', color: 'error' },
+  divert: { icon: 'mdi-map-marker-alert-outline', color: 'warning' },
+  reopen: { icon: 'mdi-lock-open-outline', color: 'warning' }
+};
 
 const validActions = computed(() => {
-  const status = flight.value?.currentStatus;
-  if (!status) return [];
-  const actions: Array<{
-    label: string;
-    icon: string;
-    action: string;
-    color?: string;
-    disabled?: boolean;
-  }> = [];
-  if (status === 'DRAFT' || status === 'REOPENED_FOR_CORRECTION') {
-    actions.push({
-      label: 'Submit Order',
-      icon: 'mdi-send-outline',
-      action: 'submit',
-      color: 'secondary'
-    });
-  }
-  if (status === 'PENDING_READINESS' || status === 'BLOCKED') {
-    actions.push({ label: 'Run Readiness Check', icon: 'mdi-playlist-check', action: 'evaluate' });
-  }
-  if (status === 'READY_FOR_APPROVAL') {
-    actions.push({
-      label: 'Approve Flight',
-      icon: 'mdi-check-decagram-outline',
-      action: 'approve',
-      color: 'success'
-    });
-  }
-  if (status === 'APPROVED') {
-    actions.push({ label: 'Schedule', icon: 'mdi-calendar-check-outline', action: 'schedule' });
-  }
-  if (status === 'SCHEDULED') {
-    actions.push({
-      label: 'Open Check-in',
-      icon: 'mdi-account-check-outline',
-      action: 'open-check-in'
-    });
-  }
-  if (status === 'CHECK_IN_OPEN' && can('flight.checkin.close').allowed) {
-    actions.push({
-      label: 'Close Check-in / Load Intake',
-      icon: 'mdi-account-lock-outline',
-      action: 'close-check-in'
-    });
-  }
-  if (status === 'CHECK_IN_CLOSED' && can('flight.departure.assurance.evaluate').allowed) {
-    actions.push({
-      label: 'Evaluate Departure Assurance',
-      icon: 'mdi-shield-airplane-outline',
-      action: 'evaluate-departure-assurance'
-    });
-    actions.push({
-      label: 'Mark Ready for Departure',
-      icon: 'mdi-airplane-check',
-      action: 'mark-ready-for-departure',
-      color: 'success'
-    });
-  }
-  if (status === 'READY_FOR_DEPARTURE' && can('flight.departure.execute').allowed) {
-    actions.push({ label: 'Record Departure', icon: 'mdi-airplane-takeoff', action: 'depart' });
-  }
-  if (status === 'IN_PROGRESS') {
-    actions.push({
-      label: 'Record Landing',
-      icon: 'mdi-airplane-landing',
-      action: 'land',
-      color: 'success'
-    });
-  }
-  if (status === 'LANDED') {
-    actions.push({
-      label: 'Start Closure',
-      icon: 'mdi-clipboard-check-outline',
-      action: 'pending-closure'
-    });
-  }
-  if (status === 'PENDING_CLOSURE' && can('flight.closure.execute').allowed) {
-    actions.push({
-      label: 'Close Flight',
-      icon: 'mdi-lock-check-outline',
-      action: 'close',
-      color: 'success',
-      disabled: !closureAllowed.value
-    });
-  }
-  return actions;
+  return (flight.value?.commandCenter?.capabilities ?? [])
+    .filter(
+      (capability) =>
+        capability.visible && !['cancel', 'divert', 'reopen'].includes(capability.action)
+    )
+    .map((capability) => ({
+      ...capability,
+      icon: actionPresentation[capability.action]?.icon ?? 'mdi-play-circle-outline',
+      color: actionPresentation[capability.action]?.color,
+      disabled: !capability.allowed,
+      tooltip:
+        capability.blockedReasons[0]?.message ??
+        capability.description ??
+        `${capability.ownerRoleCodes.join(' or ')} owns this action.`
+    }));
 });
+const capabilityByAction = (action: string) =>
+  flight.value?.commandCenter?.capabilities.find(
+    (capability) => capability.action === action && capability.visible
+  );
 
 const aircraft = computed(() =>
   aircraftOptions.value.find((item) => item.id === flight.value?.aircraftId)
+);
+const destinationRouteOptions = computed(() =>
+  routeOptions.value.filter(
+    (item) =>
+      item.originStationId === flight.value?.originStationId &&
+      item.destinationStationId !== flight.value?.destinationStationId
+  )
+);
+const selectedRoute = computed(() =>
+  routeOptions.value.find((item) => item.id === selectedRouteId.value)
+);
+const destinationSupplierOptions = computed(() =>
+  stationSuppliers.value.filter(
+    (supplier) =>
+      supplier.stationId === selectedRoute.value?.destinationStationId &&
+      ['HANDLING', 'BOTH'].includes(supplier.serviceType)
+  )
 );
 function aircraftStationCode(item: AircraftOption | undefined) {
   const stationId = item?.currentStationId ?? item?.baseStationId;
@@ -213,9 +231,24 @@ const cargoManifest = computed(() =>
   flight.value?.manifests.find((item) => item.manifestType === 'CARGO')
 );
 const fuel = computed(() => flight.value?.fuelRequests[0]);
+const fuelPlanning = computed(() => flight.value?.fuelPlanningEstimate);
+const fuelPlanningComponents = computed(() => {
+  const estimate = fuelPlanning.value;
+  if (!estimate) return [];
+  return [
+    ['Taxi fuel', estimate.taxiFuelLitre],
+    ['Trip fuel', estimate.tripFuelLitre],
+    ['Contingency fuel', estimate.contingencyFuelLitre],
+    ['Alternate/no-alternate fuel', estimate.alternateFuelLitre],
+    ['Final reserve fuel', estimate.finalReserveFuelLitre],
+    ['Additional fuel', estimate.additionalFuelLitre],
+    ['Discretionary fuel', estimate.discretionaryFuelLitre]
+  ] as Array<[string, number | null]>;
+});
 const blockingIssues = computed(() =>
   (flight.value?.readinessChecks ?? []).filter((item) => item.blocking)
 );
+const activeOperationalBlockers = computed(() => flight.value?.commandCenter?.activeBlockers ?? []);
 const warningIssues = computed(() =>
   (flight.value?.crewAssignments ?? []).filter((item) => item.availabilityStatus === 'WARNING')
 );
@@ -228,7 +261,7 @@ const handlingConfirmedCount = computed(
 const currentApprovalOwner = computed(
   () =>
     flight.value?.approvals.find((item) => item.status === 'PENDING')?.assignedRole ??
-    'Operation Manager'
+    (flight.value?.currentStatus === 'READY_FOR_APPROVAL' ? 'Director' : 'OCC Checker')
 );
 const readinessCompleted = computed(
   () =>
@@ -236,6 +269,13 @@ const readinessCompleted = computed(
       ['PASS', 'NOT_APPLICABLE'].includes(item.status)
     ).length
 );
+const readinessCalculatedAt = computed(() => {
+  const values = (flight.value?.readinessChecks ?? [])
+    .map((item) => item.calculatedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  return values.at(-1) ?? null;
+});
 const readinessGroups = computed(() => {
   const groups = [
     'AIRCRAFT',
@@ -251,28 +291,57 @@ const readinessGroups = computed(() => {
     items: (flight.value?.readinessChecks ?? []).filter((item) => item.category === category)
   }));
 });
-const operationalCost = computed(() => {
-  if (!flight.value) return 0;
-  return (
-    flight.value.fuelRequests.reduce((sum, item) => sum + (item.totalCost ?? 0), 0) +
-    flight.value.stationCosts.reduce((sum, item) => sum + item.amount, 0) +
-    flight.value.maintenanceHandoffs.reduce((sum, item) => sum + item.maintenanceCost, 0)
-  );
-});
 const fuelCost = computed(
   () => flight.value?.fuelRequests.reduce((sum, item) => sum + (item.totalCost ?? 0), 0) ?? 0
-);
-const stationCostTotal = computed(
-  () => flight.value?.stationCosts.reduce((sum, item) => sum + item.amount, 0) ?? 0
 );
 const maintenanceCost = computed(
   () => flight.value?.maintenanceHandoffs.reduce((sum, item) => sum + item.maintenanceCost, 0) ?? 0
 );
-const stationEstimate = computed(
-  () => flight.value?.stationServices.reduce((sum, item) => sum + (item.referenceRate ?? 0), 0) ?? 0
+const stationEstimate = computed(() => {
+  if (!flight.value) return 0;
+  if (flight.value.stationCosts.length > 0) {
+    return flight.value.stationCosts.reduce((sum, item) => sum + (item.estimatedAmount ?? 0), 0);
+  }
+  return flight.value.stationServices.reduce((sum, item) => sum + (item.referenceRate ?? 0), 0);
+});
+const stationSubmitted = computed(
+  () =>
+    flight.value?.stationCosts
+      .filter((item) => ['SUBMITTED', 'APPROVED'].includes(item.status))
+      .reduce((sum, item) => sum + (item.actualAmount ?? 0), 0) ?? 0
+);
+const stationApproved = computed(
+  () => flight.value?.stationCosts.reduce((sum, item) => sum + (item.approvedAmount ?? 0), 0) ?? 0
+);
+const stationPosted = computed(
+  () =>
+    flight.value?.stationCosts.reduce((sum, item) => sum + (item.postedLedgerAmount ?? 0), 0) ?? 0
+);
+const unresolvedStationCosts = computed(
+  () =>
+    flight.value?.stationCosts.filter((item) => ['DRAFT', 'SUBMITTED'].includes(item.status))
+      .length ?? 0
+);
+const stationCostBreakdown = computed(() => {
+  const costs = flight.value?.stationCosts ?? [];
+  const summarize = (keyword: 'HANDLING' | 'PARKING') => {
+    const matching = costs.filter((cost) => cost.costCategoryName.toUpperCase().includes(keyword));
+    return {
+      estimate: matching.reduce((sum, cost) => sum + (cost.estimatedAmount ?? 0), 0),
+      approved: matching.reduce((sum, cost) => sum + (cost.approvedAmount ?? 0), 0),
+      posted: matching.reduce((sum, cost) => sum + (cost.postedLedgerAmount ?? 0), 0)
+    };
+  };
+  return {
+    handling: summarize('HANDLING'),
+    parking: summarize('PARKING')
+  };
+});
+const operationalEstimate = computed(
+  () => fuelCost.value + stationEstimate.value + maintenanceCost.value
 );
 const estimatedMargin = computed(
-  () => (flight.value?.estimatedRevenue ?? 0) - operationalCost.value
+  () => (flight.value?.estimatedRevenue ?? 0) - operationalEstimate.value
 );
 const closureItems = computed(() => {
   const item = flight.value;
@@ -352,11 +421,45 @@ function money(value: number | null, currency = 'IDR') {
   }).format(value);
 }
 
+function litre(value: number | null | undefined) {
+  if (value === null || value === undefined) return '-';
+  return `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(value)} L`;
+}
+
+function minutesLabel(value: number | null | undefined) {
+  if (value === null || value === undefined) return '-';
+  const absolute = Math.abs(value);
+  const hours = Math.floor(absolute / 60);
+  const minutes = absolute % 60;
+  const sign = value < 0 ? '-' : '';
+  return hours > 0 ? `${sign}${hours}h ${minutes}m` : `${sign}${minutes}m`;
+}
+
 function statusColor(status: string) {
   if (['PASS', 'APPROVED', 'CONFIRMED', 'AVAILABLE', 'CLOSED'].includes(status)) return 'success';
   if (['FAIL', 'BLOCKED', 'REJECTED', 'CANCELLED'].includes(status)) return 'error';
   if (['PENDING', 'DRAFT', 'REQUESTED', 'WARNING'].includes(status)) return 'warning';
   return 'info';
+}
+
+function approvalCheckpointLabel(type: string) {
+  if (type === 'READINESS_APPROVAL') return 'Terima Kesiapan OCC';
+  if (type === 'FLIGHT_APPROVAL') return 'Setujui Penerbangan';
+  if (type === 'CLOSURE_APPROVAL') return 'Persetujuan Penutupan';
+  return type.replaceAll('_', ' ');
+}
+
+function approvalCheckpointDescription(type: string) {
+  if (type === 'READINESS_APPROVAL') {
+    return 'OCC Checker memastikan evidence operasional lengkap dan konsisten.';
+  }
+  if (type === 'FLIGHT_APPROVAL') {
+    return 'Director memberikan persetujuan final sebelum scheduling dan departure.';
+  }
+  if (type === 'CLOSURE_APPROVAL') {
+    return 'OCC memastikan dependency arrival, maintenance, dan finance telah selesai.';
+  }
+  return 'Checkpoint operasional sesuai lifecycle flight.';
 }
 
 function readinessIcon(category: FlightReadinessCheckDto['category']) {
@@ -376,6 +479,13 @@ function openIssue(item: FlightReadinessCheckDto) {
   issueDrawer.value = true;
 }
 
+function canOpenBlocker(domain: string) {
+  if (domain === 'STATION') return can('station.task.view').allowed;
+  if (domain === 'MAINTENANCE') return can('flight.read').allowed;
+  if (domain === 'FINANCE') return can('flight.read').allowed;
+  return can('flight.read').allowed;
+}
+
 function openCommercialDetails() {
   if (!flight.value) return;
   commercialForm.customerId = flight.value.customerId;
@@ -392,17 +502,51 @@ function openAircraftAssignment() {
   aircraftDialog.value = true;
 }
 
-async function saveAircraftAssignment() {
+function openRouteAssignment() {
+  selectedRouteId.value = null;
+  selectedDestinationSupplierId.value = null;
+  routeError.value = '';
+  routeDialog.value = true;
+}
+
+watch(selectedRouteId, () => {
+  selectedDestinationSupplierId.value = null;
+});
+
+async function saveAircraftAssignment(confirmed = false) {
   if (!flight.value || !selectedAircraftId.value || aircraftSaving.value) return;
   aircraftSaving.value = true;
   aircraftError.value = '';
   try {
+    if (!confirmed && selectedAircraftId.value !== flight.value.aircraftId) {
+      impactPreview.value = await fetchApi<FlightChangeImpactDto>(
+        `/api/flight-operations/flights/${flight.value.id}/actions/preview-change`,
+        {
+          method: 'POST',
+          body: {
+            changeType: 'AIRCRAFT_ASSIGNMENT',
+            changes: { aircraftId: selectedAircraftId.value },
+            expectedVersion: flight.value.commandCenter?.stateVersion ?? flight.value.version
+          }
+        }
+      );
+      if (impactPreview.value.requiresConfirmation) {
+        impactMode.value = 'AIRCRAFT';
+        impactDialog.value = true;
+        return;
+      }
+    }
     await fetchApi(`/api/flight-operations/flights/${flight.value.id}/aircraft`, {
       method: 'PATCH',
-      body: { aircraftId: selectedAircraftId.value }
+      body: {
+        aircraftId: selectedAircraftId.value,
+        expectedVersion: flight.value.commandCenter?.stateVersion ?? flight.value.version
+      }
     });
     await refresh();
     aircraftDialog.value = false;
+    impactDialog.value = false;
+    impactPreview.value = null;
     actionSuccess.value = 'Aircraft assignment updated and readiness recalculated.';
   } catch (errorValue) {
     aircraftError.value =
@@ -410,6 +554,74 @@ async function saveAircraftAssignment() {
   } finally {
     aircraftSaving.value = false;
   }
+}
+
+async function saveRouteAssignment(confirmed = false) {
+  if (
+    !flight.value ||
+    !selectedRouteId.value ||
+    !selectedDestinationSupplierId.value ||
+    routeSaving.value
+  ) {
+    return;
+  }
+  routeSaving.value = true;
+  routeError.value = '';
+  try {
+    const expectedVersion = flight.value.commandCenter?.stateVersion ?? flight.value.version;
+    if (!confirmed) {
+      impactPreview.value = await fetchApi<FlightChangeImpactDto>(
+        `/api/flight-operations/flights/${flight.value.id}/actions/preview-change`,
+        {
+          method: 'POST',
+          body: {
+            changeType: 'ROUTE_STATION',
+            changes: {
+              routeId: selectedRouteId.value,
+              destinationHandlingSupplierId: selectedDestinationSupplierId.value
+            },
+            expectedVersion
+          }
+        }
+      );
+      if (impactPreview.value.requiresConfirmation) {
+        impactMode.value = 'ROUTE';
+        impactDialog.value = true;
+        return;
+      }
+    }
+    await fetchApi<FlightOperationDetailDto>(
+      `/api/flight-operations/flights/${flight.value.id}/route`,
+      {
+        method: 'PATCH',
+        body: {
+          routeId: selectedRouteId.value,
+          destinationHandlingSupplierId: selectedDestinationSupplierId.value,
+          expectedVersion,
+          idempotencyKey: `${flight.value.id}:route:${crypto.randomUUID()}`
+        }
+      }
+    );
+    await refresh();
+    routeDialog.value = false;
+    impactDialog.value = false;
+    impactPreview.value = null;
+    actionSuccess.value =
+      'Destination updated. Destination-only records were invalidated and reapproval is required.';
+  } catch (errorValue) {
+    routeError.value =
+      errorValue instanceof Error ? errorValue.message : 'Destination could not be updated.';
+  } finally {
+    routeSaving.value = false;
+  }
+}
+
+function confirmImpactChange() {
+  if (impactMode.value === 'ROUTE') {
+    void saveRouteAssignment(true);
+    return;
+  }
+  void saveAircraftAssignment(true);
 }
 
 async function saveCommercialDetails() {
@@ -446,22 +658,62 @@ async function runAction(action: string) {
   }
   if (['cancel', 'divert', 'reopen'].includes(action)) {
     reasonAction.value = action as typeof reasonAction.value;
+    correctionScope.value = null;
     reasonDialog.value = true;
+    return;
+  }
+  if (action === 'accept-readiness' || action === 'approve') {
+    approvalAction.value = action;
+    approvalNote.value = '';
+    approvalDialog.value = true;
     return;
   }
   actionLoading.value = true;
   try {
     const concurrencyActions = ['close-check-in', 'mark-ready-for-departure'];
+    const versionedCommandActions = ['schedule', 'open-check-in', 'pending-closure'];
+    const commandBody = versionedCommandActions.includes(action)
+      ? {
+          expectedVersion: flight.value?.commandCenter?.stateVersion ?? flight.value?.version,
+          idempotencyKey: `${id.value}:${action}:${crypto.randomUUID()}`
+        }
+      : {};
     await fetchApi<FlightOperationDetailDto>(actionUrl(action), {
       method: 'POST',
       body: concurrencyActions.includes(action)
         ? { expectedUpdatedAt: flight.value?.updatedAt }
-        : {}
+        : commandBody
     });
     await refresh();
     actionSuccess.value = `${action.replaceAll('-', ' ')} completed successfully.`;
   } catch (errorValue) {
     actionError.value = errorValue instanceof Error ? errorValue.message : 'Action failed';
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function confirmApproval() {
+  if (!flight.value || approvalNote.value.trim().length < 3) return;
+  actionLoading.value = true;
+  actionError.value = '';
+  try {
+    await fetchApi<FlightOperationDetailDto>(actionUrl(approvalAction.value), {
+      method: 'POST',
+      body: {
+        expectedVersion: flight.value.version,
+        readinessRevision: flight.value.readinessRevision,
+        note: approvalNote.value.trim()
+      }
+    });
+    await refresh();
+    approvalDialog.value = false;
+    actionSuccess.value =
+      approvalAction.value === 'accept-readiness'
+        ? 'Planning readiness accepted by OCC Checker.'
+        : 'Flight approved by Director.';
+  } catch (errorValue) {
+    actionError.value = errorValue instanceof Error ? errorValue.message : 'Approval failed';
   } finally {
     actionLoading.value = false;
   }
@@ -474,7 +726,11 @@ async function submitActualTime(body: { actualAt: string; stationId: string; not
   try {
     await fetchApi<FlightOperationDetailDto>(actionUrl(actualTimeAction.value), {
       method: 'POST',
-      body
+      body: {
+        ...body,
+        expectedVersion: flight.value?.commandCenter?.stateVersion ?? flight.value?.version,
+        idempotencyKey: `${id.value}:${actualTimeAction.value}:${crypto.randomUUID()}`
+      }
     });
     actualTimeDialog.value = false;
     await refresh();
@@ -497,13 +753,17 @@ async function submitReasonAction() {
       body: {
         reasonId: reasonId.value,
         reasonNote: reasonNote.value,
-        diversionStationId: diversionStationId.value || undefined
+        diversionStationId: diversionStationId.value || undefined,
+        correctionScope: reasonAction.value === 'reopen' ? correctionScope.value : undefined,
+        expectedVersion: flight.value?.commandCenter?.stateVersion ?? flight.value?.version,
+        idempotencyKey: `${id.value}:${reasonAction.value}:${crypto.randomUUID()}`
       }
     });
     reasonDialog.value = false;
     reasonId.value = '';
     reasonNote.value = '';
     diversionStationId.value = '';
+    correctionScope.value = null;
     await refresh();
     actionSuccess.value = `${reasonAction.value.replaceAll('-', ' ')} completed successfully.`;
   } catch (errorValue) {
@@ -538,6 +798,28 @@ function historyActor(item: FlightStatusHistoryDto) {
       {{ actionError }}
     </VAlert>
     <VAlert
+      v-if="flight?.currentStatus === 'REAPPROVAL_REQUIRED'"
+      class="mb-4"
+      icon="mdi-shield-alert-outline"
+      type="warning"
+      variant="tonal"
+    >
+      <div class="font-weight-bold">
+        Reapproval required for revision {{ flight.readinessRevision }}
+      </div>
+      <div>
+        {{
+          approvalInvalidationReason ??
+            flight.blockingReason ??
+            'A critical readiness source changed after approval.'
+        }}
+      </div>
+      <div class="mt-1 text-caption">
+        Previous approvals remain in the audit history. Resolve blockers, then complete OCC and
+        Director approval again.
+      </div>
+    </VAlert>
+    <VAlert
       v-if="flight?.currentStatus === 'PENDING_CLOSURE' && !closureAllowed"
       class="mb-4"
       type="warning"
@@ -567,6 +849,7 @@ function historyActor(item: FlightStatusHistoryDto) {
             <div class="flex flex-wrap items-center gap-2">
               <h1 class="text-h5 font-weight-bold text-text-primary">{{ flight.flightNumber }}</h1>
               <FlightsFlightStatusChip :status="flight.currentStatus" />
+              <VChip color="warning" size="small" variant="tonal">DEMO ENVIRONMENT</VChip>
               <VChip color="neutral" size="small" variant="outlined">
                 {{ flight.orderNumber }}
               </VChip>
@@ -612,7 +895,7 @@ function historyActor(item: FlightStatusHistoryDto) {
 
           <VSpacer />
           <div class="flex flex-wrap gap-2">
-            <VTooltip v-for="action in validActions" :key="action.action" :text="action.label">
+            <VTooltip v-for="action in validActions" :key="action.action" :text="action.tooltip">
               <template #activator="{ props: tooltipProps }">
                 <VBtn
                   v-bind="tooltipProps"
@@ -644,18 +927,22 @@ function historyActor(item: FlightStatusHistoryDto) {
               </template>
               <VList density="compact">
                 <VListItem
+                  v-if="capabilityByAction('cancel')"
+                  :disabled="!capabilityByAction('cancel')?.allowed"
                   prepend-icon="mdi-cancel"
                   title="Cancel flight"
                   @click="runAction('cancel')"
                 />
                 <VListItem
-                  v-if="flight.currentStatus === 'IN_PROGRESS'"
+                  v-if="capabilityByAction('divert')"
+                  :disabled="!capabilityByAction('divert')?.allowed"
                   prepend-icon="mdi-map-marker-alert-outline"
                   title="Divert flight"
                   @click="runAction('divert')"
                 />
                 <VListItem
-                  v-if="flight.currentStatus === 'CLOSED'"
+                  v-if="capabilityByAction('reopen')"
+                  :disabled="!capabilityByAction('reopen')?.allowed"
                   prepend-icon="mdi-lock-open-outline"
                   title="Reopen for correction"
                   @click="runAction('reopen')"
@@ -688,6 +975,81 @@ function historyActor(item: FlightStatusHistoryDto) {
               :value="flight.currentStatus === 'CLOSED' ? 'BILLABLE' : 'NOT_YET_BILLABLE'"
             />
           </div>
+        </div>
+      </section>
+
+      <section v-if="flight.commandCenter" class="command-strip mb-3">
+        <div>
+          <span>Current phase</span>
+          <strong>{{ flight.commandCenter.lifecycle.phaseLabel }}</strong>
+          <small>{{ flight.currentStatusLabel }}</small>
+        </div>
+        <div>
+          <span>Next action</span>
+          <strong>{{
+            flight.commandCenter.nextRequiredActions[0]?.title ?? 'No pending action'
+          }}</strong>
+          <small>{{
+            flight.commandCenter.nextRequiredActions[0]?.description ??
+              'The Flight Order has no unresolved action.'
+          }}</small>
+        </div>
+        <div>
+          <span>Owner</span>
+          <strong>{{
+            flight.commandCenter.nextRequiredActions[0]?.ownerRoleCodes.join(', ') || 'System'
+          }}</strong>
+          <small>{{
+            flight.commandCenter.nextRequiredActions[0]?.ownerStationCode ??
+              'All-station responsibility'
+          }}</small>
+        </div>
+        <div>
+          <span>Blocking issues</span>
+          <strong>{{ activeOperationalBlockers.length }}</strong>
+          <small>{{
+            activeOperationalBlockers[0]?.message ?? 'No active operational blocker'
+          }}</small>
+        </div>
+        <VBtn
+          v-if="flight.commandCenter.nextRequiredActions[0]?.href"
+          append-icon="mdi-arrow-right"
+          :to="flight.commandCenter.nextRequiredActions[0].href"
+          variant="tonal"
+        >
+          Open workspace
+        </VBtn>
+      </section>
+
+      <section v-if="activeOperationalBlockers.length" class="blocker-list mb-3">
+        <div
+          v-for="blocker in activeOperationalBlockers.slice(0, 4)"
+          :key="`${blocker.code}-${blocker.ownerStationCode ?? 'all'}`"
+          class="blocker-row"
+        >
+          <VIcon color="warning" icon="mdi-alert-octagon-outline" />
+          <div>
+            <strong>{{ blocker.message }}</strong>
+            <small>
+              {{ blocker.code }} | Owner: {{ blocker.ownerRoleCode ?? 'Operational owner' }}
+              <template v-if="blocker.ownerStationCode">
+                | Station {{ blocker.ownerStationCode }}
+              </template>
+            </small>
+            <small v-if="blocker.evidenceReference">
+              System record: {{ blocker.evidenceReference }}
+            </small>
+          </div>
+          <VBtn
+            v-if="blocker.recoveryHref && canOpenBlocker(blocker.domain)"
+            append-icon="mdi-arrow-right"
+            :to="blocker.recoveryHref"
+            size="small"
+            variant="text"
+          >
+            Resolve
+          </VBtn>
+          <VChip v-else size="small" variant="outlined">Handoff required</VChip>
         </div>
       </section>
 
@@ -735,6 +1097,16 @@ function historyActor(item: FlightStatusHistoryDto) {
                 <div class="panel-title">
                   <VIcon icon="mdi-airplane-settings" />
                   <h2>Flight Information</h2>
+                  <VSpacer />
+                  <VBtn
+                    v-if="canChangeRoute"
+                    prepend-icon="mdi-map-marker-path"
+                    size="small"
+                    variant="tonal"
+                    @click="openRouteAssignment"
+                  >
+                    Change destination
+                  </VBtn>
                 </div>
                 <div class="detail-grid">
                   <div>
@@ -822,6 +1194,62 @@ function historyActor(item: FlightStatusHistoryDto) {
                   <div v-for="member in flight.crewAssignments" :key="member.id">
                     <span>{{ member.assignmentRole.replaceAll('_', ' ') }}</span>
                     <strong>{{ member.crewName }}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section class="workspace-panel">
+                <div class="panel-title">
+                  <VIcon icon="mdi-fuel" />
+                  <h2>Fuel Planning Advisory</h2>
+                  <FlightsFlightStatusChip :status="fuelPlanning?.status ?? 'NOT_CONFIGURED'" />
+                </div>
+                <div v-if="fuelPlanning" class="fuel-advisory">
+                  <div class="fuel-advisory__summary">
+                    <div>
+                      <span>Available block fuel</span>
+                      <strong>{{ litre(fuelPlanning.availableBlockFuelLitre) }}</strong>
+                    </div>
+                    <div>
+                      <span>Required block fuel</span>
+                      <strong>{{ litre(fuelPlanning.requiredBlockFuelLitre) }}</strong>
+                    </div>
+                    <div>
+                      <span>Operational margin</span>
+                      <strong>{{ litre(fuelPlanning.operationalMarginLitre) }}</strong>
+                    </div>
+                    <div>
+                      <span>Margin endurance</span>
+                      <strong>{{ minutesLabel(fuelPlanning.operationalMarginMinutes) }}</strong>
+                    </div>
+                  </div>
+                  <div class="fuel-advisory__components">
+                    <div
+                      v-for="[label, value] in fuelPlanningComponents"
+                      :key="label"
+                      class="fuel-advisory__component"
+                    >
+                      <span>{{ label }}</span>
+                      <strong>{{ litre(value) }}</strong>
+                    </div>
+                  </div>
+                  <div class="fuel-advisory__meta">
+                    <span>{{ fuelPlanning.regulatoryBasis }} · Policy v{{
+                      fuelPlanning.policyVersion ?? '-'
+                    }}</span>
+                    <span>Fuel source: {{ fuelPlanning.calculationSources.fuelQuantitySource }}</span>
+                    <span>Duration: {{ fuelPlanning.calculationSources.durationSource }}</span>
+                  </div>
+                  <div v-if="fuelPlanning.warnings.length" class="mt-3 flex flex-wrap gap-2">
+                    <VChip
+                      v-for="warning in fuelPlanning.warnings"
+                      :key="warning"
+                      color="warning"
+                      size="small"
+                      variant="tonal"
+                    >
+                      {{ warning.replaceAll('_', ' ') }}
+                    </VChip>
                   </div>
                 </div>
               </section>
@@ -921,17 +1349,15 @@ function historyActor(item: FlightStatusHistoryDto) {
                 </div>
                 <div class="lifecycle-mini">
                   <div
-                    v-for="(status, index) in lifecycle"
-                    :key="status"
+                    v-for="(phase, index) in lifecycle"
+                    :key="phase"
                     :class="{
-                      active: status === flight.currentStatus,
-                      complete:
-                        lifecycle.indexOf(flight.currentStatus as (typeof lifecycle)[number]) >
-                        index
+                      active: phase === flight.commandCenter?.lifecycle.currentPhase,
+                      complete: currentLifecycleIndex > index
                     }"
                   >
                     <span />
-                    <small>{{ status.replaceAll('_', ' ') }}</small>
+                    <small>{{ phase.replaceAll('_', ' ') }}</small>
                   </div>
                 </div>
               </section>
@@ -957,9 +1383,13 @@ function historyActor(item: FlightStatusHistoryDto) {
               <span>Warnings</span>
               <strong class="text-warning">{{ warningIssues.length }}</strong>
             </div>
+            <div>
+              <span>Calculated</span>
+              <strong>{{ formatDate(readinessCalculatedAt) }}</strong>
+            </div>
             <VSpacer />
-            <VBtn prepend-icon="mdi-playlist-check" variant="tonal" @click="runAction('evaluate')">
-              Run Readiness Check
+            <VBtn prepend-icon="mdi-refresh" variant="tonal" @click="runAction('evaluate')">
+              Refresh calculation
             </VBtn>
             <VAlert v-if="blockingIssues.length" density="compact" type="warning" variant="tonal">
               Resolve blockers before approval.
@@ -1159,17 +1589,15 @@ function historyActor(item: FlightStatusHistoryDto) {
                 </div>
                 <div class="lifecycle-full">
                   <div
-                    v-for="(status, index) in lifecycle"
-                    :key="status"
+                    v-for="(phase, index) in lifecycle"
+                    :key="phase"
                     :class="{
-                      active: status === flight.currentStatus,
-                      complete:
-                        lifecycle.indexOf(flight.currentStatus as (typeof lifecycle)[number]) >
-                        index
+                      active: phase === flight.commandCenter?.lifecycle.currentPhase,
+                      complete: currentLifecycleIndex > index
                     }"
                   >
                     <span>{{ Number(index) + 1 }}</span>
-                    <strong>{{ status.replaceAll('_', ' ') }}</strong>
+                    <strong>{{ phase.replaceAll('_', ' ') }}</strong>
                   </div>
                 </div>
               </section>
@@ -1179,14 +1607,37 @@ function historyActor(item: FlightStatusHistoryDto) {
                   <VIcon icon="mdi-shield-check-outline" />
                   <h2>Approval Stages</h2>
                 </div>
+                <div v-if="flight.flightRequestId" class="approval-row">
+                  <span class="approval-index">1</span>
+                  <div>
+                    <strong>Setujui Permintaan</strong>
+                    <small>Business approval atas kebutuhan penerbangan.</small>
+                    <VBtn
+                      class="mt-1 px-0"
+                      size="x-small"
+                      :to="`/flights/requests/${flight.flightRequestId}`"
+                      variant="text"
+                    >
+                      Buka Flight Request
+                    </VBtn>
+                  </div>
+                  <div>
+                    <span>Source</span>
+                    <strong>{{ flight.requestNumber ?? 'Flight Request' }}</strong>
+                  </div>
+                  <FlightsFlightStatusChip status="APPROVED" />
+                </div>
                 <div
                   v-for="(approval, index) in flight.approvals"
                   :key="approval.id"
                   class="approval-row"
                 >
-                  <span class="approval-index">{{ Number(index) + 1 }}</span>
+                  <span class="approval-index">{{
+                    Number(index) + (flight.flightRequestId ? 2 : 1)
+                  }}</span>
                   <div>
-                    <strong>{{ approval.approvalType.replaceAll('_', ' ') }}</strong>
+                    <strong>{{ approvalCheckpointLabel(approval.approvalType) }}</strong>
+                    <small>{{ approvalCheckpointDescription(approval.approvalType) }}</small>
                     <small>Approver: {{ approval.assignedRole }}</small>
                   </div>
                   <div>
@@ -1207,8 +1658,16 @@ function historyActor(item: FlightStatusHistoryDto) {
                 <div class="detail-stack">
                   <span>Current state</span>
                   <FlightsFlightStatusChip :status="flight.currentStatus" />
+                  <span>Lifecycle phase</span>
+                  <strong>{{ flight.commandCenter?.lifecycle.phaseLabel ?? '-' }}</strong>
                   <span>Next allowed action</span>
-                  <strong>{{ validActions[0]?.label ?? 'No forward action' }}</strong>
+                  <strong>{{
+                    flight.commandCenter?.nextRequiredActions[0]?.title ?? 'No forward action'
+                  }}</strong>
+                  <span>Responsible owner</span>
+                  <strong>{{
+                    flight.commandCenter?.nextRequiredActions[0]?.ownerRoleCodes.join(', ') ?? '-'
+                  }}</strong>
                   <span>Blocking reason</span>
                   <strong>{{
                     flight.blockingReason ?? (blockingIssues[0]?.resultNote || 'None')
@@ -1314,6 +1773,10 @@ function historyActor(item: FlightStatusHistoryDto) {
                 <dd>{{ fuel?.approvedQuantityLitre ?? 'Pending' }}</dd>
                 <dt>Estimated cost</dt>
                 <dd>{{ money(fuel?.totalCost ?? null) }}</dd>
+                <dt>Required block fuel</dt>
+                <dd>{{ litre(fuelPlanning?.requiredBlockFuelLitre) }}</dd>
+                <dt>Fuel margin</dt>
+                <dd>{{ litre(fuelPlanning?.operationalMarginLitre) }}</dd>
               </dl>
               <VBtn append-icon="mdi-open-in-new" size="small" to="/flights/fuel" variant="text">
                 Open Fuel Request
@@ -1390,18 +1853,46 @@ function historyActor(item: FlightStatusHistoryDto) {
             <section class="record-panel">
               <div class="record-head">
                 <VIcon icon="mdi-calculator-variant-outline" />
-                <h2>Cost Summary</h2>
+                <h2>Financial Impact</h2>
               </div>
               <dl>
-                <dt>Fuel cost</dt>
+                <dt>Fuel operational record</dt>
                 <dd>{{ money(fuelCost) }}</dd>
-                <dt>Station cost</dt>
-                <dd>{{ money(stationCostTotal) }}</dd>
-                <dt>Maintenance</dt>
+                <dt>Station · Operational Estimate</dt>
+                <dd>{{ money(stationEstimate) }}</dd>
+                <dt>Station · Finance Submitted</dt>
+                <dd>{{ money(stationSubmitted) }}</dd>
+                <dt>Station · Finance Approved</dt>
+                <dd>{{ money(stationApproved) }}</dd>
+                <dt>Station · Posted Ledger</dt>
+                <dd class="font-weight-bold">{{ money(stationPosted) }}</dd>
+                <dt>Unresolved Station Costs</dt>
+                <dd>{{ unresolvedStationCosts }}</dd>
+                <dt>Handling (estimate / approved / posted)</dt>
+                <dd>
+                  {{ money(stationCostBreakdown.handling.estimate) }} /
+                  {{ money(stationCostBreakdown.handling.approved) }} /
+                  {{ money(stationCostBreakdown.handling.posted) }}
+                </dd>
+                <dt>Parking (estimate / approved / posted)</dt>
+                <dd>
+                  {{ money(stationCostBreakdown.parking.estimate) }} /
+                  {{ money(stationCostBreakdown.parking.approved) }} /
+                  {{ money(stationCostBreakdown.parking.posted) }}
+                </dd>
+                <dt>Maintenance coordination record</dt>
                 <dd>{{ money(maintenanceCost) }}</dd>
-                <dt>Total operational cost</dt>
-                <dd class="font-weight-bold">{{ money(operationalCost) }}</dd>
+                <dt>Operational Estimate Total</dt>
+                <dd>{{ money(operationalEstimate) }}</dd>
               </dl>
+              <div class="d-flex flex-wrap ga-2 mt-3">
+                <VBtn size="small" to="/flights/station-operations/costs" variant="tonal">
+                  Review Station Cost
+                </VBtn>
+                <VBtn size="small" to="/finance/accounting?tab=posting-queue" variant="text">
+                  Open Accounting Workbench
+                </VBtn>
+              </div>
             </section>
             <section class="record-panel">
               <div class="record-head">
@@ -1474,6 +1965,42 @@ function historyActor(item: FlightStatusHistoryDto) {
                 <VBtn value="READINESS">Readiness</VBtn>
                 <VBtn value="APPROVAL">Approval</VBtn>
               </VBtnToggle>
+            </div>
+            <VTable density="comfortable" hover>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Actor / Role</th>
+                  <th>Domain</th>
+                  <th>Action</th>
+                  <th>Before</th>
+                  <th>After</th>
+                  <th>Reason / Evidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="flight.operationalAudit.length === 0">
+                  <td colspan="7" class="py-6 text-center text-text-secondary">
+                    No cross-domain operational event recorded.
+                  </td>
+                </tr>
+                <tr v-for="item in flight.operationalAudit" v-else :key="item.id">
+                  <td>{{ formatDate(item.timestamp) }}</td>
+                  <td>
+                    <strong>{{ item.actorRole }}</strong>
+                    <div class="text-caption text-text-secondary">{{ item.actorUserId }}</div>
+                  </td>
+                  <td>{{ item.module.replaceAll('_', ' ') }}</td>
+                  <td>{{ item.action.replaceAll('_', ' ') }}</td>
+                  <td>{{ item.beforeStatus?.replaceAll('_', ' ') ?? '-' }}</td>
+                  <td>{{ item.afterStatus?.replaceAll('_', ' ') ?? '-' }}</td>
+                  <td>{{ item.reason ?? '-' }}</td>
+                </tr>
+              </tbody>
+            </VTable>
+            <VDivider class="my-4" />
+            <div class="mb-2 text-caption font-weight-bold text-text-secondary">
+              FLIGHT ORDER LIFECYCLE HISTORY
             </div>
             <VTable density="comfortable" hover>
               <thead>
@@ -1626,9 +2153,7 @@ function historyActor(item: FlightStatusHistoryDto) {
           <VCardTitle>Change aircraft assignment</VCardTitle>
           <VCardText>
             <VAlert v-if="aircraftError" class="mb-4" color="error" variant="tonal">
-              {{
-                aircraftError
-              }}
+              {{ aircraftError }}
             </VAlert>
             <VSelect
               v-model="selectedAircraftId"
@@ -1658,6 +2183,59 @@ function historyActor(item: FlightStatusHistoryDto) {
         </VCard>
       </VDialog>
 
+      <VDialog v-model="routeDialog" max-width="600">
+        <VCard>
+          <VCardTitle>Change flight destination</VCardTitle>
+          <VCardText>
+            <VAlert v-if="routeError" class="mb-4" color="error" variant="tonal">
+              {{ routeError }}
+            </VAlert>
+            <VSelect
+              v-model="selectedRouteId"
+              :items="destinationRouteOptions"
+              item-title="routeCode"
+              item-value="id"
+              label="New route and destination"
+              variant="outlined"
+            >
+              <template #item="{ props: itemProps, item }">
+                <VListItem
+                  v-bind="itemProps"
+                  :subtitle="`${item.raw.originStationCode} → ${item.raw.destinationStationCode}`"
+                />
+              </template>
+            </VSelect>
+            <VSelect
+              v-model="selectedDestinationSupplierId"
+              class="mt-3"
+              :disabled="!selectedRouteId"
+              :items="destinationSupplierOptions"
+              item-title="supplierName"
+              item-value="id"
+              label="Destination handling supplier"
+              no-data-text="No active handling supplier serves this destination"
+              variant="outlined"
+            />
+            <VAlert class="mt-3" icon="mdi-information-outline" type="info" variant="tonal">
+              Origin records are preserved. Destination preparation, related service/cost drafts,
+              and affected approvals are selectively invalidated after confirmation.
+            </VAlert>
+          </VCardText>
+          <VCardActions>
+            <VSpacer />
+            <VBtn variant="text" @click="routeDialog = false">Cancel</VBtn>
+            <VBtn
+              color="primary"
+              :disabled="!selectedRouteId || !selectedDestinationSupplierId"
+              :loading="routeSaving"
+              @click="saveRouteAssignment"
+            >
+              Preview impact
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
+
       <ActualTimeDialog
         v-if="flight"
         v-model="actualTimeDialog"
@@ -1672,6 +2250,52 @@ function historyActor(item: FlightStatusHistoryDto) {
         "
         @submit="submitActualTime"
       />
+
+      <VDialog v-model="impactDialog" max-width="620">
+        <VCard>
+          <VCardTitle>
+            {{ impactMode === 'ROUTE' ? 'Destination change impact' : 'Aircraft change impact' }}
+          </VCardTitle>
+          <VCardText>
+            <VAlert class="mb-4" type="warning" variant="tonal">
+              This change moves the flight to
+              <strong>{{ impactPreview?.resultingStatus.replaceAll('_', ' ') }}</strong> and
+              requires the affected checks to be completed again.
+            </VAlert>
+            <VList density="compact" lines="two">
+              <VListItem
+                v-for="item in impactPreview?.invalidatedItems ?? []"
+                :key="item.code"
+                prepend-icon="mdi-alert-circle-outline"
+                :subtitle="item.reason"
+                :title="item.label"
+              />
+              <VListItem
+                v-for="approval in impactPreview?.invalidatedApprovals ?? []"
+                :key="approval.checkpoint"
+                prepend-icon="mdi-shield-alert-outline"
+                :subtitle="approval.reason"
+                :title="approval.checkpoint.replaceAll('_', ' ')"
+              />
+            </VList>
+          </VCardText>
+          <VCardActions>
+            <VSpacer />
+            <VBtn variant="text" @click="impactDialog = false">
+              {{ impactMode === 'ROUTE' ? 'Keep current destination' : 'Keep current aircraft' }}
+            </VBtn>
+            <VBtn
+              color="warning"
+              :loading="impactMode === 'ROUTE' ? routeSaving : aircraftSaving"
+              @click="confirmImpactChange"
+            >
+              {{
+                impactMode === 'ROUTE' ? 'Confirm destination change' : 'Confirm aircraft change'
+              }}
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
 
       <VDialog v-model="reasonDialog" max-width="540">
         <VCard>
@@ -1689,6 +2313,20 @@ function historyActor(item: FlightStatusHistoryDto) {
               :allow-create="true"
               label="New destination"
             />
+            <VSelect
+              v-if="reasonAction === 'reopen'"
+              v-model="correctionScope"
+              :items="[
+                { title: 'Planning / readiness records', value: 'PLANNING' },
+                { title: 'Departure records', value: 'DEPARTURE' },
+                { title: 'Arrival records', value: 'ARRIVAL' },
+                { title: 'Closure records', value: 'CLOSURE' }
+              ]"
+              label="Correction scope"
+              persistent-hint
+              hint="The scope determines which records and approvals must be checked again."
+              variant="outlined"
+            />
             <VTextarea v-model="reasonNote" label="Operational note" rows="3" variant="outlined" />
           </VCardText>
           <VCardActions>
@@ -1696,11 +2334,50 @@ function historyActor(item: FlightStatusHistoryDto) {
             <VBtn variant="text" @click="reasonDialog = false">Back</VBtn>
             <VBtn
               color="error"
-              :disabled="!reasonId"
+              :disabled="!reasonId || (reasonAction === 'reopen' && !correctionScope)"
               :loading="actionLoading"
               @click="submitReasonAction"
             >
               Confirm action
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
+      <VDialog v-model="approvalDialog" max-width="560">
+        <VCard>
+          <VCardTitle>
+            {{
+              approvalAction === 'accept-readiness'
+                ? 'OCC Readiness Acceptance'
+                : 'Director Approval'
+            }}
+          </VCardTitle>
+          <VCardText>
+            <VAlert class="mb-4" type="info" variant="tonal">
+              Revision {{ flight?.readinessRevision }} will be signed as an immutable readiness
+              snapshot. A critical source change will require approval again.
+            </VAlert>
+            <VTextarea
+              v-model="approvalNote"
+              autofocus
+              label="Decision note"
+              persistent-hint
+              hint="Required for the operational audit trail."
+              rows="3"
+              variant="outlined"
+            />
+          </VCardText>
+          <VCardActions>
+            <VSpacer />
+            <VBtn variant="text" @click="approvalDialog = false">Cancel</VBtn>
+            <VBtn
+              color="success"
+              :disabled="approvalNote.trim().length < 3"
+              :loading="actionLoading"
+              prepend-icon="mdi-check-decagram-outline"
+              @click="confirmApproval"
+            >
+              Confirm decision
             </VBtn>
           </VCardActions>
         </VCard>
@@ -1818,6 +2495,36 @@ function historyActor(item: FlightStatusHistoryDto) {
   grid-column: 2;
   font-size: 14px;
 }
+.fuel-advisory {
+  display: grid;
+  gap: 16px;
+}
+.fuel-advisory__summary,
+.fuel-advisory__components {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.fuel-advisory__summary > div,
+.fuel-advisory__component {
+  border: 1px solid rgb(var(--v-theme-border));
+  border-radius: 6px;
+  padding: 12px;
+}
+.fuel-advisory span,
+.fuel-advisory__meta {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: 11px;
+}
+.fuel-advisory strong {
+  display: block;
+  font-size: 14px;
+}
+.fuel-advisory__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .alert-row,
 .check-row {
   display: grid;
@@ -1916,6 +2623,64 @@ function historyActor(item: FlightStatusHistoryDto) {
 }
 .readiness-summary strong {
   font-size: 18px;
+}
+.command-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  align-items: stretch;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--v-theme-border));
+  border-radius: 6px;
+  background: rgb(var(--v-theme-border));
+}
+.command-strip > div {
+  display: flex;
+  min-height: 88px;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+  background: rgb(var(--v-theme-surface));
+  padding: 12px 14px;
+}
+.command-strip > div > span,
+.command-strip small,
+.blocker-row small {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: 11px;
+}
+.command-strip strong {
+  font-size: 14px;
+  line-height: 1.3;
+}
+.command-strip > .v-btn {
+  align-self: center;
+  margin: 12px;
+}
+.blocker-list {
+  overflow: hidden;
+  border: 1px solid rgb(var(--v-theme-warning));
+  border-radius: 6px;
+  background: rgb(var(--v-theme-surface));
+}
+.blocker-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+}
+.blocker-row + .blocker-row {
+  border-top: 1px solid rgb(var(--v-theme-border));
+}
+.blocker-row > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.blocker-row strong {
+  font-size: 12px;
 }
 .assignment-hero {
   display: grid;
@@ -2082,6 +2847,13 @@ function historyActor(item: FlightStatusHistoryDto) {
   color: rgb(var(--v-theme-text-secondary));
 }
 @media (max-width: 1200px) {
+  .command-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .command-strip > .v-btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
   .snapshot-grid,
   .records-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

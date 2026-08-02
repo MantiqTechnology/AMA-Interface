@@ -62,7 +62,7 @@ export const rateCardsInputSchema = z.object({
     .transform((value) => value.toUpperCase()),
   rateName: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
   serviceType: z.enum(['CHARTER', 'PASSENGER', 'CARGO']),
-  lifecycleStatus: rateLifecycleStatusSchema.optional(),
+  lifecycleStatus: rateLifecycleStatusSchema.optional().default('ACTIVE'),
   originStationId: z.preprocess(emptyToNull, z.string().trim().nullable()).optional().default(null),
   destinationStationId: z
     .preprocess(emptyToNull, z.string().trim().nullable())

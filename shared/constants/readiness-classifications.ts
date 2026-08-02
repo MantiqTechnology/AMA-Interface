@@ -41,6 +41,18 @@ export const READINESS_CLASSIFICATIONS: ReadinessClassification[] = [
     revalidateBeforeDeparture: true
   },
   {
+    check: 'OPERATIONAL_ADVISORY',
+    classification: 'SYSTEM_CHECK',
+    gate: true,
+    verificationRequired: false,
+    evidenceRequired: false,
+    sourceModule: 'operations',
+    ownerRole: 'OCC Staff',
+    approvalStages: [],
+    assurancePhase: 'PLANNING',
+    revalidateBeforeDeparture: true
+  },
+  {
     check: 'AIRCRAFT_SERVICEABILITY',
     classification: 'SYSTEM_CHECK',
     gate: true,
@@ -101,6 +113,18 @@ export const READINESS_CLASSIFICATIONS: ReadinessClassification[] = [
   },
   {
     check: 'CREW_LICENSE_MEDICAL',
+    classification: 'SYSTEM_CHECK',
+    gate: true,
+    verificationRequired: false,
+    evidenceRequired: false,
+    sourceModule: 'operations',
+    ownerRole: 'Chief Pilot',
+    approvalStages: [],
+    assurancePhase: 'PLANNING',
+    revalidateBeforeDeparture: true
+  },
+  {
+    check: 'CREW_QUALIFICATION',
     classification: 'SYSTEM_CHECK',
     gate: true,
     verificationRequired: false,

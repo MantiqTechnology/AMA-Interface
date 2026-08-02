@@ -3,7 +3,14 @@ import vue from 'eslint-plugin-vue';
 
 export default [
   {
-    ignores: ['.nuxt/**', '.nuxt-*/**', '.output/**', 'node_modules/**', 'data/**']
+    ignores: [
+      '.nuxt/**',
+      '.nuxt-*/**',
+      '.output/**',
+      'node_modules/**',
+      'data/**',
+      '--port/**'
+    ]
   },
   ...tseslint.configs.recommended,
   ...vue.configs['flat/recommended'],

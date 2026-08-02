@@ -4,6 +4,7 @@ import type {
   FlightFuelRequestDto,
   FlightOperationOverviewDto,
   FlightOperationRecord,
+  NeedsMyActionItemDto,
   FlightRequestOverviewDto,
   FlightRequestRecord
 } from '#shared/contracts/flight-operations';
@@ -58,19 +59,21 @@ const {
   pending,
   refresh
 } = await useAsyncData('aviation-dashboard', async () => {
-  const [dashboard, operations, requests, aircraft, stations, fuelRequests] = await Promise.all([
-    fetchApi<DashboardDto>('/api/dashboard'),
-    fetchApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
-      query: { limit: 100 }
-    }),
-    fetchApi<FlightRequestOverviewDto>('/api/flight-operations/requests', {
-      query: { limit: 100 }
-    }),
-    fetchApi<AircraftDto[]>('/api/master-data/aircraft', { query: { active: 'all' } }),
-    fetchApi<StationDto[]>('/api/master-data/stations', { query: { active: 'all' } }),
-    fetchApi<FlightFuelRequestDto[]>('/api/flight-operations/fuel')
-  ]);
-  return { dashboard, operations, requests, aircraft, stations, fuelRequests };
+  const [dashboard, operations, requests, aircraft, stations, fuelRequests, needsMyAction] =
+    await Promise.all([
+      fetchApi<DashboardDto>('/api/dashboard'),
+      fetchApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
+        query: { limit: 100 }
+      }),
+      fetchApi<FlightRequestOverviewDto>('/api/flight-operations/requests', {
+        query: { limit: 100 }
+      }),
+      fetchApi<AircraftDto[]>('/api/master-data/aircraft', { query: { active: 'all' } }),
+      fetchApi<StationDto[]>('/api/master-data/stations', { query: { active: 'all' } }),
+      fetchApi<FlightFuelRequestDto[]>('/api/flight-operations/fuel'),
+      fetchApi<NeedsMyActionItemDto[]>('/api/flight-operations/needs-my-action')
+    ]);
+  return { dashboard, operations, requests, aircraft, stations, fuelRequests, needsMyAction };
 });
 
 const selectedOperationDate = ref<Date | string | null>(null);
@@ -223,16 +226,16 @@ const kpis = computed(() => {
 
 const urgentActions = computed<ActionItem[]>(() => {
   const visibleIds = new Set(filteredFlights.value.map((flight) => flight.id));
-  return (source.value?.dashboard.alerts ?? [])
-    .filter((alert) => visibleIds.has(alert.flightOperationId))
-    .slice(0, 3)
-    .map((alert) => ({
-      id: alert.id,
-      severity: alert.severity === 'critical' ? 'CRITICAL' : 'WARNING',
-      title: alert.title,
-      issue: alert.message,
-      owner: alert.severity === 'critical' ? 'OCC Duty Manager' : 'Flight Operations',
-      to: `/flights/${alert.flightOperationId}`
+  return (source.value?.needsMyAction ?? [])
+    .filter((item) => visibleIds.has(item.flightId))
+    .slice(0, 6)
+    .map((item) => ({
+      id: item.id,
+      severity: item.severity === 'BLOCKING' ? 'CRITICAL' : 'WARNING',
+      title: `${item.flightNumber} | ${item.action}`,
+      issue: item.reason,
+      owner: `${item.responsibleRole}${item.responsibleStationCode ? ` | ${item.responsibleStationCode}` : ''}`,
+      to: item.href
     }));
 });
 
@@ -765,8 +768,8 @@ function resetSections() {
 
             <VCard v-if="sections.actions" border class="mb-4 priority-panel">
               <VCardTitle class="d-flex flex-wrap align-center ga-3 text-text-primary">
-                ACTION REQUIRED
-                <VChip color="danger" size="small" variant="tonal">OCC Priority</VChip>
+                NEEDS MY ACTION
+                <VChip color="danger" size="small" variant="tonal">Active demo persona</VChip>
               </VCardTitle>
               <VCardText>
                 <VRow v-if="urgentActions.length">

@@ -84,6 +84,12 @@ function seedReadiness(
     ['AIRCRAFT_CAPACITY', 'Aircraft capacity', 'PASS', 'Manifest load is within capacity'],
     ['CREW_AVAILABILITY', 'Crew availability', 'PASS', 'No conflicting crew assignment detected'],
     ['CREW_LICENSE_MEDICAL', 'Crew license and medical', 'PASS', 'Crew licences are valid'],
+    [
+      'CREW_QUALIFICATION',
+      'Crew operational qualification',
+      'PASS',
+      'Crew qualifications are valid'
+    ],
     ['MANIFEST_APPROVED', 'Manifest approved', 'PASS', 'Passenger and cargo manifests approved'],
     ['DG_ACCEPTANCE', 'Dangerous goods acceptance', 'NOT_APPLICABLE', 'No DG cargo'],
     ['FUEL_CONFIRMED', 'Fuel confirmed', 'PASS', 'Fuel uplift confirmed'],
@@ -173,6 +179,28 @@ function seedFinance(
   });
 }
 
+function seedApprovedStationCostHandoff(
+  sqlite: Database.Database,
+  context: DemoSeedContext,
+  flightId: string,
+  costId: string,
+  amount: number
+) {
+  insertIgnore(sqlite, 'flight_finance_handoffs', {
+    id: `${costId}-handoff`,
+    flightId,
+    sourceType: 'station_cost',
+    sourceId: costId,
+    eventTypeId: 'finance-event-type-station-cost-draft',
+    statusId: 'finance-handoff-status-ready',
+    summary: 'Approved Station Cost is ready for Finance Handoff.',
+    amount,
+    currencyId: 'cur-idr',
+    createdAt: context.now,
+    updatedAt: context.now
+  });
+}
+
 function seedGovernance(
   sqlite: Database.Database,
   context: DemoSeedContext,
@@ -183,14 +211,14 @@ function seedGovernance(
     {
       type: 'READINESS_APPROVAL',
       status: currentStatus === 'BLOCKED' ? 'PENDING' : 'APPROVED',
-      role: 'Operation Manager'
+      role: 'OCC Checker'
     },
     {
       type: 'FLIGHT_APPROVAL',
       status: ['DRAFT', 'PENDING_READINESS', 'BLOCKED'].includes(currentStatus)
         ? 'NOT_STARTED'
         : 'APPROVED',
-      role: 'Chief Pilot'
+      role: 'Director'
     },
     {
       type: 'CLOSURE_APPROVAL',
@@ -206,7 +234,14 @@ function seedGovernance(
       statusId: lookupId('flight-approval-status', approval.status),
       requestedByUserId: 'USR-001',
       assignedRole: approval.role,
-      decidedByUserId: approval.status === 'APPROVED' ? 'USR-ADMIN' : null,
+      decidedByUserId:
+        approval.status === 'APPROVED'
+          ? approval.type === 'READINESS_APPROVAL'
+            ? 'USR-OCC-CHECKER'
+            : approval.type === 'FLIGHT_APPROVAL'
+              ? 'USR-DIRECTOR'
+              : 'USR-ADMIN'
+          : null,
       requestedAt: context.now,
       decidedAt: approval.status === 'APPROVED' ? context.now : null,
       reason: null,
@@ -251,6 +286,22 @@ export function seedFlightOperationsData(
 ) {
   const seedNow = context.now;
   const transaction = sqlite.transaction(() => {
+    insertIgnore(sqlite, 'operational_advisories', {
+      id: 'advisory-djj-wmx-runway-condition',
+      advisoryType: 'RUNWAY',
+      severity: 'BLOCKING',
+      routeId: 'route-djj-wmx',
+      stationId: null,
+      status: 'RESOLVED',
+      validFrom: context.at(-1, '00:00'),
+      validUntil: context.at(30, '23:59'),
+      summary: 'WMX runway condition requires operational confirmation',
+      operationalLimitation:
+        'Dispatch is prohibited until OCC confirms the runway condition report.',
+      sourceReference: 'OPS-NOTAM-WMX-01',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
     insertIgnore(sqlite, 'flight_requests', {
       id: 'fr-2026-00124',
       requestNumber: `FR-${context.compactDate(0)}-001`,
@@ -302,7 +353,7 @@ export function seedFlightOperationsData(
         id: 'fr-government-submitted',
         sequence: '003',
         status: 'submitted',
-        dateOffset: 3,
+        dateOffset: 6,
         source: 'Government Liaison Desk',
         remarks: 'Medical transport request submitted for director approval.'
       },
@@ -399,8 +450,8 @@ export function seedFlightOperationsData(
         originStationId: 'st-djj',
         destinationStationId: 'st-wmx',
         customerId: 'cust-individual-1',
-        aircraftId: 'ac-pk-amd',
-        pilotInCommandId: 'crew-pic-expired',
+        aircraftId: 'ac-pk-amc',
+        pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid',
         scheduledDepartureAt: context.at(0, '11:00'),
         scheduledArrivalAt: context.at(0, '11:55'),
@@ -409,9 +460,10 @@ export function seedFlightOperationsData(
         currentStatus: 'BLOCKED',
         createdByUserId: 'USR-001',
         approvedByUserId: null,
-        remarks: 'Blocked by expired pilot licence/medical.',
+        remarks: 'Blocked by an unserviceable aircraft requiring certifying staff action.',
         isLocked: 0,
-        blockingReason: 'PIC licence or medical has expired; aircraft maintenance is overdue.'
+        blockingReason:
+          'Assigned aircraft is unserviceable and requires an electronic maintenance release.'
       },
       {
         id: 'fop-cancelled-fuel',
@@ -517,8 +569,8 @@ export function seedFlightOperationsData(
         aircraftId: 'ac-pk-amb',
         pilotInCommandId: 'crew-pic-valid',
         coPilotId: 'crew-cop-valid',
-        scheduledDepartureAt: context.at(2, '09:30'),
-        scheduledArrivalAt: context.at(2, '10:25'),
+        scheduledDepartureAt: context.at(2, '11:30'),
+        scheduledArrivalAt: context.at(2, '12:25'),
         actualDepartureAt: null,
         actualArrivalAt: null,
         currentStatus: 'SCHEDULED',
@@ -685,9 +737,55 @@ export function seedFlightOperationsData(
         currentStatus: 'PENDING_CLOSURE',
         createdByUserId: 'USR-001',
         approvedByUserId: 'USR-ADMIN',
-        remarks: 'Operational records complete; maintenance approval remains outstanding.',
+        remarks: 'Operational and maintenance records complete; Station Cost remains in draft.',
         isLocked: 0,
-        blockingReason: 'Approved maintenance handoff is missing.'
+        blockingReason: 'Existing Station Cost requires approval plus Finance Handoff, or voiding.'
+      },
+      {
+        id: 'fop-closed-pax-revenue',
+        flightNumber: `AMA-${context.compactDate(-7)}-016`,
+        flightDate: context.date(-7),
+        flightType: 'PASSENGER',
+        routeId: 'route-djj-wmx',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-wmx',
+        customerId: 'cust-individual-1',
+        aircraftId: 'ac-pk-amb',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid-2',
+        scheduledDepartureAt: context.at(-7, '07:30'),
+        scheduledArrivalAt: context.at(-7, '08:25'),
+        actualDepartureAt: context.at(-7, '07:34'),
+        actualArrivalAt: context.at(-7, '08:28'),
+        currentStatus: 'CLOSED',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Closed scheduled passenger service with ticket revenue.',
+        isLocked: 1,
+        blockingReason: null
+      },
+      {
+        id: 'fop-closed-cargo-revenue',
+        flightNumber: `AMA-${context.compactDate(-3)}-017`,
+        flightDate: context.date(-3),
+        flightType: 'CARGO',
+        routeId: 'route-djj-tim',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-tim',
+        customerId: 'cust-cargo-partner',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: context.at(-3, '10:00'),
+        scheduledArrivalAt: context.at(-3, '11:35'),
+        actualDepartureAt: context.at(-3, '10:06'),
+        actualArrivalAt: context.at(-3, '11:40'),
+        currentStatus: 'CLOSED',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Closed cargo charter with cargo booking revenue.',
+        isLocked: 1,
+        blockingReason: null
       },
       {
         id: 'fop-reopened-correction',
@@ -766,6 +864,53 @@ export function seedFlightOperationsData(
         changedAt: seedNow
       });
     }
+    const demoPositions = [
+      {
+        id: 'apos-in-progress-01',
+        latitude: -4.245,
+        longitude: 139.132,
+        altitudeFt: 10_500,
+        groundSpeedKt: 148,
+        headingDeg: 146,
+        recordedAt: context.at(0, '09:42')
+      },
+      {
+        id: 'apos-in-progress-02',
+        latitude: -4.435,
+        longitude: 139.355,
+        altitudeFt: 11_500,
+        groundSpeedKt: 154,
+        headingDeg: 146,
+        recordedAt: context.now
+      }
+    ];
+    for (const position of demoPositions) {
+      insertIgnore(sqlite, 'aircraft_position_reports', {
+        ...position,
+        aircraftId: 'ac-pk-amb',
+        flightId: 'fop-in-progress',
+        positionStatus: 'AIRBORNE',
+        source: 'MANUAL',
+        reportedByUserId: 'USR-ADMIN',
+        createdAt: seedNow
+      });
+    }
+    insertIgnore(sqlite, 'aircraft_current_positions', {
+      aircraftId: 'ac-pk-amb',
+      reportId: 'apos-in-progress-02',
+      flightId: 'fop-in-progress',
+      latitude: -4.435,
+      longitude: 139.355,
+      positionStatus: 'AIRBORNE',
+      altitudeFt: 11_500,
+      groundSpeedKt: 154,
+      headingDeg: 146,
+      source: 'MANUAL',
+      recordedAt: context.now,
+      version: 2,
+      updatedAt: seedNow
+    });
+    sqlite.prepare("UPDATE aircraft SET current_station_id = NULL WHERE id = 'ac-pk-amb'").run();
     sqlite
       .prepare(
         `UPDATE flight_operations SET
@@ -800,11 +945,8 @@ export function seedFlightOperationsData(
     seedReadiness(sqlite, context, 'fop-blocked-crew-expired', {
       AIRCRAFT_SERVICEABILITY: {
         status: 'FAIL',
-        note: `Aircraft PK-AMD maintenance was due on ${context.date(-11)}.`
-      },
-      CREW_LICENSE_MEDICAL: { status: 'FAIL', note: 'PIC licence or medical is expired.' },
-      FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel request not confirmed.' },
-      HANDLING_CONFIRMED: { status: 'PENDING', note: 'Handling not confirmed.' }
+        note: 'Aircraft PK-AMC is unserviceable and requires a certifying staff release.'
+      }
     });
     seedReadiness(sqlite, context, 'fop-cancelled-fuel', {
       AIRCRAFT_SERVICEABILITY: {
@@ -850,13 +992,7 @@ export function seedFlightOperationsData(
         .run(lookupId('readiness-status', status), note, seedNow, checkCode);
     }
     seedReadiness(sqlite, context, 'fop-in-progress');
-    seedReadiness(sqlite, context, 'fop-ticketing-passenger-later', {
-      FUEL_CONFIRMED: { status: 'PENDING', note: 'Fuel confirmation has not been recorded.' },
-      HANDLING_CONFIRMED: {
-        status: 'PENDING',
-        note: 'Departure and destination handling confirmations are pending.'
-      }
-    });
+    seedReadiness(sqlite, context, 'fop-ticketing-passenger-later');
     for (const flightId of [
       'fop-ready-approval',
       'fop-checkin-open',
@@ -953,6 +1089,124 @@ export function seedFlightOperationsData(
       createdAt: seedNow,
       updatedAt: seedNow
     });
+    insertIgnore(sqlite, 'flight_fuel_requests', {
+      id: 'fop-ticketing-passenger-later-fuel',
+      flightId: 'fop-ticketing-passenger-later',
+      fuelSupplierId: 'fuel-pertamina-djj',
+      fuelType: 'AVTUR',
+      requestedQuantityLitre: 600,
+      approvedQuantityLitre: 600,
+      actualUpliftLitre: 600,
+      referencePricePerLitre: 18500,
+      actualPricePerLitre: 18500,
+      taxCodeId: 'tax-non-tax',
+      taxAmount: 0,
+      totalCost: 11100000,
+      currencyId: 'cur-idr',
+      statusId: 'fuel-workflow-status-posted',
+      rejectionReason: null,
+      varianceNote: 'Prepared destination-change scenario.',
+      requestedByUserId: 'USR-001',
+      approvedByUserId: 'USR-STATION-ADMIN-ORIGIN',
+      upliftRecordedByUserId: 'USR-STATION-ADMIN-ORIGIN',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    for (const preparedService of [
+      {
+        id: 'fop-ticketing-passenger-later-origin-handling',
+        stationId: 'st-djj',
+        serviceSupplierId: 'hp-angkasa-djj',
+        statusId: 'station-service-status-verified'
+      },
+      {
+        id: 'fop-ticketing-passenger-later-destination-handling',
+        stationId: 'st-wmx',
+        serviceSupplierId: 'hp-wmx-ground-services',
+        statusId: 'station-service-status-confirmed'
+      }
+    ]) {
+      const verified = preparedService.statusId === 'station-service-status-verified';
+      insertIgnore(sqlite, 'flight_station_service_requests', {
+        ...preparedService,
+        flightId: 'fop-ticketing-passenger-later',
+        serviceTypeId: 'station-service-type-handling',
+        referenceRate: preparedService.stationId === 'st-djj' ? 2750000 : 1500000,
+        referenceCurrencyId: 'cur-idr',
+        creationSource: 'PLANNING_ASSIGNMENT',
+        creationReason: 'Explicit supplier selected for destination-change preparation.',
+        createdByUserId: 'USR-001',
+        confirmedAt: seedNow,
+        confirmedByUserId: 'USR-STATION-ADMIN-ORIGIN',
+        completionRecord: verified ? 'Origin handling completed before route change review.' : null,
+        completionEvidenceReference: verified ? 'SYS-PREPARED-ORIGIN-HANDLING' : null,
+        completedAt: verified ? seedNow : null,
+        completedByUserId: verified ? 'USR-STATION-ADMIN-ORIGIN' : null,
+        verifiedAt: verified ? seedNow : null,
+        verifiedByUserId: verified ? 'USR-STATION-ADMIN-ORIGIN' : null,
+        rejectionNote: null,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+    for (const preparedCost of [
+      {
+        id: 'fop-ticketing-passenger-later-origin-cost',
+        stationId: 'st-djj',
+        supplierId: 'hp-angkasa-djj',
+        sourceServiceId: 'fop-ticketing-passenger-later-origin-handling',
+        amount: 2750000,
+        statusId: 'station-cost-status-approved'
+      },
+      {
+        id: 'fop-ticketing-passenger-later-destination-cost',
+        stationId: 'st-wmx',
+        supplierId: 'hp-wmx-ground-services',
+        sourceServiceId: 'fop-ticketing-passenger-later-destination-handling',
+        amount: 1500000,
+        statusId: 'station-cost-status-draft'
+      }
+    ]) {
+      const approved = preparedCost.statusId === 'station-cost-status-approved';
+      insertIgnore(sqlite, 'flight_station_costs', {
+        id: preparedCost.id,
+        flightId: 'fop-ticketing-passenger-later',
+        stationId: preparedCost.stationId,
+        serviceSupplierId: preparedCost.supplierId,
+        sourceServiceId: preparedCost.sourceServiceId,
+        vendorId: preparedCost.stationId === 'st-wmx' ? 'vendor-transport-wmx' : null,
+        costCategoryId: 'cost-handling',
+        amount: preparedCost.amount,
+        estimatedAmount: preparedCost.amount,
+        actualAmount: approved ? preparedCost.amount : null,
+        currencyId: 'cur-idr',
+        description: approved
+          ? 'Prepared origin handling actual cost.'
+          : 'REFERENCE ESTIMATE for destination handling before route change.',
+        vendorReference: approved ? 'INV-PREPARED-DJJ' : null,
+        evidenceReference: approved ? 'RECEIPT-PREPARED-DJJ' : null,
+        submittedByUserId: approved ? 'USR-STATION-ADMIN-ORIGIN' : null,
+        submittedAt: approved ? seedNow : null,
+        approvedByUserId: approved ? 'USR-FINANCE-REVIEWER' : null,
+        approvedAt: approved ? seedNow : null,
+        statusId: preparedCost.statusId,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+    insertIgnore(sqlite, 'flight_finance_handoffs', {
+      id: 'fop-ticketing-passenger-later-origin-cost-handoff',
+      flightId: 'fop-ticketing-passenger-later',
+      sourceType: 'station_cost',
+      sourceId: 'fop-ticketing-passenger-later-origin-cost',
+      eventTypeId: 'finance-event-type-station-cost-draft',
+      statusId: 'finance-handoff-status-ready',
+      summary: 'Prepared origin handling cost ready for finance.',
+      amount: 2750000,
+      currencyId: 'cur-idr',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
     for (const service of [
       {
         id: 'fop-dg-departure-handling',
@@ -976,12 +1230,43 @@ export function seedFlightOperationsData(
       insertIgnore(sqlite, 'flight_station_service_requests', {
         ...service,
         flightId: 'fop-dg-pending',
-        serviceSupplierId: 'hp-angkasa-djj',
+        serviceSupplierId:
+          service.stationId === 'st-wmx' ? 'hp-wmx-ground-services' : 'hp-angkasa-djj',
         referenceRate: 2500000,
         confirmedAt: service.statusId === 'station-service-status-confirmed' ? seedNow : null,
         confirmedByUserId:
           service.statusId === 'station-service-status-confirmed' ? 'USR-STATION-ADMIN' : null,
         rejectionNote: null,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+    for (const service of [
+      {
+        id: 'fop-dg-departure-handling',
+        categoryId: 'cost-handling',
+        amount: 2500000
+      },
+      {
+        id: 'fop-dg-departure-parking',
+        categoryId: 'cost-parking',
+        amount: 2500000
+      }
+    ]) {
+      insertIgnore(sqlite, 'flight_station_costs', {
+        id: `${service.id}-cost`,
+        flightId: 'fop-dg-pending',
+        stationId: 'st-djj',
+        vendorId: null,
+        serviceSupplierId: 'hp-angkasa-djj',
+        sourceServiceId: service.id,
+        costCategoryId: service.categoryId,
+        amount: service.amount,
+        estimatedAmount: service.amount,
+        actualAmount: null,
+        currencyId: 'cur-idr',
+        description: 'REFERENCE ESTIMATE generated from confirmed Station Service.',
+        statusId: 'station-cost-status-draft',
         createdAt: seedNow,
         updatedAt: seedNow
       });
@@ -993,7 +1278,15 @@ export function seedFlightOperationsData(
       )
       .run(seedNow);
 
-    for (const flightId of ['fop-closed-djj-wmx', 'fop-cancelled-fuel', 'fop-in-progress']) {
+    for (const flightId of [
+      'fop-closed-djj-wmx',
+      'fop-cancelled-fuel',
+      'fop-in-progress',
+      'fop-blocked-crew-expired',
+      'fop-ready-approval',
+      'fop-checkin-open',
+      'fop-reopened-correction'
+    ]) {
       insertIgnore(sqlite, 'flight_fuel_requests', {
         id: `${flightId}-fuel`,
         flightId,
@@ -1028,7 +1321,8 @@ export function seedFlightOperationsData(
         id: `${flightId}-handling`,
         flightId,
         stationId: flightId === 'fop-in-progress' ? 'st-wmx' : 'st-djj',
-        serviceSupplierId: flightId === 'fop-in-progress' ? 'hp-angkasa-tim' : 'hp-angkasa-djj',
+        serviceSupplierId:
+          flightId === 'fop-in-progress' ? 'hp-wmx-ground-services' : 'hp-angkasa-djj',
         serviceTypeId: 'station-service-type-handling',
         statusId: 'station-service-status-confirmed',
         referenceRate: 2750000,
@@ -1042,18 +1336,31 @@ export function seedFlightOperationsData(
         id: `${flightId}-station-cost`,
         flightId,
         stationId: flightId === 'fop-in-progress' ? 'st-wmx' : 'st-djj',
-        vendorId: 'vendor-transport-wmx',
+        vendorId: flightId === 'fop-in-progress' ? 'vendor-transport-wmx' : null,
+        serviceSupplierId:
+          flightId === 'fop-in-progress' ? 'hp-wmx-ground-services' : 'hp-angkasa-djj',
+        sourceServiceId: `${flightId}-handling`,
         costCategoryId: 'cost-handling',
         amount: 2750000,
         currencyId: 'cur-idr',
         description: 'Mock handling cost generated from confirmed station service.',
         statusId: 'station-cost-status-approved',
-        submittedByUserId: 'USR-ADMIN',
+        submittedByUserId: 'USR-STATION-ADMIN',
+        submittedAt: seedNow,
         approvedByUserId: 'USR-ADMIN',
         approvedAt: seedNow,
         createdAt: seedNow,
         updatedAt: seedNow
       });
+      if (flightId === 'fop-in-progress') {
+        seedApprovedStationCostHandoff(
+          sqlite,
+          context,
+          flightId,
+          `${flightId}-station-cost`,
+          2750000
+        );
+      }
     }
 
     for (const operation of [
@@ -1066,7 +1373,7 @@ export function seedFlightOperationsData(
       {
         flightId: 'fop-landed-maintenance',
         stationId: 'st-wmx',
-        supplierId: null,
+        supplierId: 'hp-wmx-ground-services',
         amount: 1800000
       },
       {
@@ -1080,7 +1387,11 @@ export function seedFlightOperationsData(
         id: `${operation.flightId}-fuel`,
         flightId: operation.flightId,
         fuelSupplierId:
-          operation.stationId === 'st-djj' ? 'fuel-pertamina-djj' : 'fuel-pertamina-wmx',
+          operation.flightId === 'fop-diverted-weather'
+            ? 'fuel-pertamina-tim'
+            : operation.stationId === 'st-djj'
+              ? 'fuel-pertamina-djj'
+              : 'fuel-pertamina-wmx',
         fuelType: 'AVTUR',
         requestedQuantityLitre: 500,
         approvedQuantityLitre: 500,
@@ -1106,10 +1417,25 @@ export function seedFlightOperationsData(
         stationId: operation.stationId,
         serviceSupplierId: operation.supplierId,
         serviceTypeId: 'station-service-type-handling',
-        statusId: 'station-service-status-confirmed',
-        referenceRate: operation.amount,
+        statusId:
+          operation.flightId === 'fop-pending-closure'
+            ? 'station-service-status-verified'
+            : 'station-service-status-confirmed',
+        referenceRate:
+          operation.flightId === 'fop-landed-maintenance' ? 8_000_000 : operation.amount,
         confirmedAt: seedNow,
         confirmedByUserId: 'USR-STATION-ADMIN',
+        completionRecord:
+          operation.flightId === 'fop-pending-closure'
+            ? 'Destination handling checklist completed.'
+            : null,
+        completionEvidenceReference:
+          operation.flightId === 'fop-pending-closure' ? 'SYS-PENDING-CLOSURE-HANDLING' : null,
+        completedAt: operation.flightId === 'fop-pending-closure' ? seedNow : null,
+        completedByUserId:
+          operation.flightId === 'fop-pending-closure' ? 'USR-STATION-ADMIN' : null,
+        verifiedAt: operation.flightId === 'fop-pending-closure' ? seedNow : null,
+        verifiedByUserId: operation.flightId === 'fop-pending-closure' ? 'USR-STATION-ADMIN' : null,
         rejectionNote: null,
         createdAt: seedNow,
         updatedAt: seedNow
@@ -1118,18 +1444,58 @@ export function seedFlightOperationsData(
         id: `${operation.flightId}-station-cost`,
         flightId: operation.flightId,
         stationId: operation.stationId,
-        vendorId: 'vendor-transport-wmx',
+        vendorId: operation.stationId === 'st-wmx' ? 'vendor-transport-wmx' : null,
+        serviceSupplierId: operation.supplierId,
+        sourceServiceId: `${operation.flightId}-handling`,
         costCategoryId: 'cost-handling',
-        amount: operation.amount,
+        amount: operation.flightId === 'fop-landed-maintenance' ? 8_750_000 : operation.amount,
+        estimatedAmount:
+          operation.flightId === 'fop-landed-maintenance' ? 8_000_000 : operation.amount,
+        actualAmount:
+          operation.flightId === 'fop-pending-closure'
+            ? null
+            : operation.flightId === 'fop-landed-maintenance'
+              ? 8_750_000
+              : operation.amount,
         currencyId: 'cur-idr',
-        description: 'Confirmed handling and station support cost.',
-        statusId: 'station-cost-status-approved',
-        submittedByUserId: 'USR-STATION-ADMIN',
-        approvedByUserId: 'USR-ADMIN',
-        approvedAt: seedNow,
+        description:
+          operation.flightId === 'fop-pending-closure'
+            ? 'REFERENCE ESTIMATE pending actual amount and invoice evidence.'
+            : operation.flightId === 'fop-landed-maintenance'
+              ? 'Wamena handling actual awaiting Finance review.'
+              : 'Confirmed handling and station support cost.',
+        vendorReference: operation.flightId === 'fop-landed-maintenance' ? 'INV-WMX-8750000' : null,
+        evidenceReference:
+          operation.flightId === 'fop-landed-maintenance' ? 'RECEIPT-WMX-001' : null,
+        statusId:
+          operation.flightId === 'fop-pending-closure'
+            ? 'station-cost-status-draft'
+            : operation.flightId === 'fop-landed-maintenance'
+              ? 'station-cost-status-submitted'
+              : 'station-cost-status-approved',
+        submittedByUserId:
+          operation.flightId === 'fop-pending-closure' ? null : 'USR-STATION-ADMIN',
+        submittedAt: operation.flightId === 'fop-pending-closure' ? null : seedNow,
+        approvedByUserId: ['fop-pending-closure', 'fop-landed-maintenance'].includes(
+          operation.flightId
+        )
+          ? null
+          : 'USR-ADMIN',
+        approvedAt: ['fop-pending-closure', 'fop-landed-maintenance'].includes(operation.flightId)
+          ? null
+          : seedNow,
         createdAt: seedNow,
         updatedAt: seedNow
       });
+      if (!['fop-pending-closure', 'fop-landed-maintenance'].includes(operation.flightId)) {
+        seedApprovedStationCostHandoff(
+          sqlite,
+          context,
+          operation.flightId,
+          `${operation.flightId}-station-cost`,
+          operation.amount
+        );
+      }
     }
 
     insertIgnore(sqlite, 'flight_maintenance_handoffs', {
@@ -1169,17 +1535,17 @@ export function seedFlightOperationsData(
     insertIgnore(sqlite, 'flight_maintenance_handoffs', {
       id: 'fop-blocked-maintenance-due',
       flightId: 'fop-blocked-crew-expired',
-      aircraftId: 'ac-pk-amd',
-      serviceabilityStatusId: 'aircraft-serviceability-status-maintenance-due',
+      aircraftId: 'ac-pk-amc',
+      serviceabilityStatusId: 'aircraft-serviceability-status-unserviceable',
       workOrderReference: 'WO-AMA-0707-002',
-      maintenanceNote: 'Maintenance due before departure; readiness must remain blocked.',
+      maintenanceNote: 'Aircraft is unserviceable; readiness must remain blocked.',
       sparePartReference: 'SP-PC6-FLT-1001',
       maintenanceCost: 950000,
       currencyId: 'cur-idr',
-      statusId: 'maintenance-handoff-status-submitted',
+      statusId: 'maintenance-handoff-status-approved',
       recordedByUserId: 'USR-MAINTENANCE-MANAGER',
-      approvedByUserId: null,
-      approvedAt: null,
+      approvedByUserId: 'USR-CERTIFYING-STAFF',
+      approvedAt: seedNow,
       createdAt: seedNow,
       updatedAt: seedNow
     });
@@ -1240,14 +1606,14 @@ export function seedFlightOperationsData(
       aircraftId: 'ac-pk-amb',
       serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
       workOrderReference: `WO-AMA-${context.compactDate(-1)}-005`,
-      maintenanceNote: 'Transit inspection submitted and awaiting maintenance manager approval.',
+      maintenanceNote: 'Post-flight inspection approved for closure handoff.',
       sparePartReference: null,
       maintenanceCost: 750000,
       currencyId: 'cur-idr',
-      statusId: 'maintenance-handoff-status-submitted',
+      statusId: 'maintenance-handoff-status-approved',
       recordedByUserId: 'USR-MAINTENANCE-MANAGER',
-      approvedByUserId: null,
-      approvedAt: null,
+      approvedByUserId: 'USR-CERTIFYING-STAFF',
+      approvedAt: seedNow,
       createdAt: seedNow,
       updatedAt: seedNow
     });
@@ -1352,6 +1718,250 @@ export function seedFlightOperationsData(
          WHERE id = 'fop-closed-djj-wmx-handoff-invoice'`
       )
       .run(seedNow);
+    // === New CLOSED flights: readiness, fuel, station, maintenance, then finance ===
+    seedReadiness(sqlite, context, 'fop-closed-pax-revenue');
+    seedReadiness(sqlite, context, 'fop-closed-cargo-revenue');
+
+    for (const closedId of ['fop-closed-pax-revenue', 'fop-closed-cargo-revenue']) {
+      insertIgnore(sqlite, 'flight_finance_handoffs', {
+        id: `${closedId}-handoff-invoice`,
+        flightId: closedId,
+        sourceType: 'flight',
+        sourceId: closedId,
+        eventTypeId: 'finance-event-type-flight-closed-eligible-for-invoice',
+        statusId: 'finance-handoff-status-posted',
+        summary: 'Closed flight is eligible for invoice generation in finance module.',
+        amount: null,
+        currencyId: null,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+
+    // Fuel and station services for new closed flights
+    for (const [flightId, stationId, supplierId] of [
+      ['fop-closed-pax-revenue', 'st-djj', 'hp-angkasa-djj'],
+      ['fop-closed-cargo-revenue', 'st-djj', 'hp-angkasa-djj']
+    ] as const) {
+      insertIgnore(sqlite, 'flight_fuel_requests', {
+        id: `${flightId}-fuel`,
+        flightId,
+        fuelSupplierId: 'fuel-pertamina-djj',
+        fuelType: 'AVTUR',
+        requestedQuantityLitre: 500,
+        approvedQuantityLitre: 500,
+        actualUpliftLitre: 500,
+        referencePricePerLitre: 18500,
+        actualPricePerLitre: 18500,
+        taxCodeId: 'tax-non-tax',
+        taxAmount: 0,
+        totalCost: 9250000,
+        currencyId: 'cur-idr',
+        statusId: 'fuel-workflow-status-posted',
+        rejectionReason: null,
+        varianceNote: null,
+        requestedByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        upliftRecordedByUserId: 'USR-ADMIN',
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+      insertIgnore(sqlite, 'flight_station_service_requests', {
+        id: `${flightId}-handling`,
+        flightId,
+        stationId,
+        serviceSupplierId: supplierId,
+        serviceTypeId: 'station-service-type-handling',
+        statusId: 'station-service-status-confirmed',
+        referenceRate: 2750000,
+        confirmedAt: seedNow,
+        confirmedByUserId: 'USR-ADMIN',
+        rejectionNote: null,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+      insertIgnore(sqlite, 'flight_station_costs', {
+        id: `${flightId}-station-cost`,
+        flightId,
+        stationId,
+        vendorId: null,
+        serviceSupplierId: supplierId,
+        sourceServiceId: `${flightId}-handling`,
+        costCategoryId: 'cost-handling',
+        amount: 2750000,
+        estimatedAmount: 2750000,
+        actualAmount: 2750000,
+        currencyId: 'cur-idr',
+        description: 'Confirmed handling and station support cost.',
+        vendorReference: `INV-${flightId.toUpperCase()}`,
+        evidenceReference: `RECEIPT-${flightId.toUpperCase()}`,
+        statusId: 'station-cost-status-approved',
+        submittedByUserId: 'USR-STATION-ADMIN',
+        submittedAt: seedNow,
+        approvedByUserId: 'USR-FINANCE-REVIEWER',
+        approvedAt: seedNow,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+
+    // Maintenance handoffs for new closed flights
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'fop-closed-pax-maintenance',
+      flightId: 'fop-closed-pax-revenue',
+      aircraftId: 'ac-pk-amb',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+      workOrderReference: `WO-AMA-${context.compactDate(-7)}-007`,
+      maintenanceNote: 'Post-flight inspection clear for passenger service.',
+      sparePartReference: null,
+      maintenanceCost: 450000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-approved',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedAt: seedNow,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'fop-closed-cargo-maintenance',
+      flightId: 'fop-closed-cargo-revenue',
+      aircraftId: 'ac-pk-ama',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+      workOrderReference: `WO-AMA-${context.compactDate(-3)}-008`,
+      maintenanceNote: 'Post-flight inspection clear for cargo service.',
+      sparePartReference: null,
+      maintenanceCost: 800000,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-approved',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedAt: seedNow,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
+    // Now seed finance handoffs (fuel and station records exist at this point)
+    seedFinance(sqlite, context, 'fop-closed-pax-revenue', 'READY');
+    seedFinance(sqlite, context, 'fop-closed-cargo-revenue', 'READY');
+
+    // Passenger flight invoice & snapshot
+    insertIgnore(sqlite, 'invoices', {
+      id: 'inv-closed-pax-revenue',
+      customerId: 'cust-individual-1',
+      flightOperationId: 'fop-closed-pax-revenue',
+      invoiceNumber: `AMA-INV-${context.compactDate(-7)}-002`,
+      status: 'paid',
+      subtotal: 15400000,
+      tax: 1694000,
+      total: 17094000,
+      currency: 'IDR',
+      createdByUserId: 'USR-001',
+      approvedByUserId: 'USR-FINANCE-REVIEWER',
+      approvedAt: context.at(-7, '10:00'),
+      issuedAt: context.at(-7, '10:00'),
+      dueAt: context.at(-3, '23:59'),
+      createdAt: seedNow,
+      updatedAt: context.at(-5, '09:00')
+    });
+    insertIgnore(sqlite, 'invoice_line_items', {
+      id: 'invoice-line-closed-pax-ticket',
+      invoiceId: 'inv-closed-pax-revenue',
+      sourceType: 'PASSENGER_TICKET',
+      sourceId: 'fop-closed-pax-revenue',
+      description: `Passenger tickets AMA-${context.compactDate(-7)}-016 DJJ -> WMX`,
+      quantity: 4,
+      unitPrice: 3850000,
+      subtotal: 15400000,
+      rateCardId: 'rate-passenger-djj-wmx',
+      taxCodeId: 'tax-ppn',
+      taxCode: 'PPN_11',
+      taxRateBasisPoints: 1100,
+      taxAmount: 1694000,
+      total: 17094000
+    });
+    insertIgnore(sqlite, 'invoice_finance_snapshots', {
+      id: 'invoice-snapshot-closed-pax-revenue',
+      invoiceId: 'inv-closed-pax-revenue',
+      flightOperationId: 'fop-closed-pax-revenue',
+      ticketRevenue: 15400000,
+      cargoRevenue: 0,
+      charterRevenue: 0,
+      totalRevenue: 15400000,
+      fuelCost: 9250000,
+      stationCost: 2750000,
+      maintenanceCost: 450000,
+      totalOperationalCost: 12450000,
+      taxAmount: 1694000,
+      invoiceTotal: 17094000,
+      grossMargin: 2950000,
+      currencyCode: 'IDR',
+      capturedAt: context.at(-7, '10:00')
+    });
+    insertIgnore(sqlite, 'payments', {
+      id: 'pay-closed-pax-revenue',
+      invoiceId: 'inv-closed-pax-revenue',
+      amount: 17094000,
+      currency: 'IDR',
+      paidAt: context.at(-5, '09:00'),
+      method: 'bank_transfer',
+      reference: `BPD-TRF-${context.compactDate(-5)}-002`
+    });
+
+    // Cargo flight invoice & snapshot
+    insertIgnore(sqlite, 'invoices', {
+      id: 'inv-closed-cargo-revenue',
+      customerId: 'cust-cargo-partner',
+      flightOperationId: 'fop-closed-cargo-revenue',
+      invoiceNumber: `AMA-INV-${context.compactDate(-3)}-003`,
+      status: 'issued',
+      subtotal: 22000000,
+      tax: 2420000,
+      total: 24420000,
+      currency: 'IDR',
+      createdByUserId: 'USR-001',
+      approvedByUserId: 'USR-FINANCE-REVIEWER',
+      approvedAt: context.at(-3, '14:00'),
+      issuedAt: context.at(-3, '14:00'),
+      dueAt: context.at(4, '23:59'),
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'invoice_line_items', {
+      id: 'invoice-line-closed-cargo-booking',
+      invoiceId: 'inv-closed-cargo-revenue',
+      sourceType: 'CARGO_BOOKING',
+      sourceId: 'fop-closed-cargo-revenue',
+      description: `Cargo bookings AMA-${context.compactDate(-3)}-017 DJJ -> TIM`,
+      quantity: 1,
+      unitPrice: 22000000,
+      subtotal: 22000000,
+      rateCardId: 'rate-cargo-djj-tim',
+      taxCodeId: 'tax-ppn',
+      taxCode: 'PPN_11',
+      taxRateBasisPoints: 1100,
+      taxAmount: 2420000,
+      total: 24420000
+    });
+    insertIgnore(sqlite, 'invoice_finance_snapshots', {
+      id: 'invoice-snapshot-closed-cargo-revenue',
+      invoiceId: 'inv-closed-cargo-revenue',
+      flightOperationId: 'fop-closed-cargo-revenue',
+      ticketRevenue: 0,
+      cargoRevenue: 22000000,
+      charterRevenue: 0,
+      totalRevenue: 22000000,
+      fuelCost: 9250000,
+      stationCost: 3200000,
+      maintenanceCost: 800000,
+      totalOperationalCost: 13250000,
+      taxAmount: 2420000,
+      invoiceTotal: 24420000,
+      grossMargin: 8750000,
+      currencyCode: 'IDR',
+      capturedAt: context.at(-3, '14:00')
+    });
+
     seedFinance(sqlite, context, 'fop-cancelled-fuel', 'VOID');
     insertIgnore(sqlite, 'flight_finance_handoffs', {
       id: 'fop-cancelled-fuel-void',
@@ -1366,6 +1976,22 @@ export function seedFlightOperationsData(
       createdAt: seedNow,
       updatedAt: seedNow
     });
+    sqlite.exec(`UPDATE flight_station_costs
+      SET approved_amount = COALESCE(approved_amount, actual_amount, amount),
+          approved_currency_id = COALESCE(approved_currency_id, currency_id),
+          approval_snapshot_json = COALESCE(
+            approval_snapshot_json,
+            json_object(
+              'sourceType', 'STATION_COST',
+              'sourceId', id,
+              'snapshotSource', 'SCENARIO_SEED_BACKFILL',
+              'approvedAmount', COALESCE(actual_amount, amount),
+              'currencyId', currency_id,
+              'approvedBy', approved_by_user_id,
+              'approvedAt', approved_at
+            )
+          )
+      WHERE status_id = 'station-cost-status-approved'`);
   });
 
   transaction();

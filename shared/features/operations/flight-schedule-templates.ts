@@ -192,8 +192,13 @@ export type FlightScheduleTemplateOption = {
   id: string;
   templateCode: string;
   routeId: string;
+  routeCode: string;
+  originStationCode: string;
+  destinationStationCode: string;
   serviceTypeId: string;
+  serviceTypeLabel: string;
   defaultAircraftId: string | null;
+  defaultAircraftRegistration: string | null;
   capacityProfileId: string | null;
   operatingDays: ScheduleOperatingDay[];
   departureTimeLocal: string;

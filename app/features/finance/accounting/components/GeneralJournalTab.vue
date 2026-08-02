@@ -107,20 +107,22 @@ function canReverse(item: JournalEntryDto) {
         label="Journal type"
         variant="outlined"
       />
-      <VTextField
+      <VDateInput
         v-model="dateFrom"
+        prepend-icon=""
+        prepend-inner-icon="mdi-calendar"
         density="compact"
         hide-details
         label="Date from"
-        type="date"
         variant="outlined"
       />
-      <VTextField
+      <VDateInput
         v-model="dateTo"
+        prepend-icon=""
+        prepend-inner-icon="mdi-calendar"
         density="compact"
         hide-details
         label="Date to"
-        type="date"
         variant="outlined"
       />
       <VTextField

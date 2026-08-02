@@ -21,6 +21,15 @@ type SqlRow = Record<string, unknown>;
 const bool = (value: unknown) => Boolean(Number(value));
 const num = (value: unknown) => Number(value ?? 0);
 const str = (value: unknown) => (value === null || value === undefined ? null : String(value));
+const millisPerDay = 86_400_000;
+
+function daysUntilDate(dateOnly: string | null, today: string) {
+  if (!dateOnly) return null;
+  const target = Date.parse(`${dateOnly}T00:00:00.000Z`);
+  const reference = Date.parse(`${today}T00:00:00.000Z`);
+  if (Number.isNaN(target) || Number.isNaN(reference)) return null;
+  return Math.ceil((target - reference) / millisPerDay);
+}
 
 function searchCondition(query: InventoryListQuery, columns: string[]) {
   if (!query.search) return { sql: '', params: [] as unknown[] };
@@ -52,28 +61,71 @@ export class InventoryRepository {
     const applications = this.sqlite.prepare(
       `SELECT aircraft_type, model, note FROM inventory_part_applicabilities WHERE part_id = ? ORDER BY aircraft_type, model`
     );
-    return rows.map((row) => ({
-      id: String(row.id),
-      partNumber: String(row.part_number),
-      partName: String(row.part_name),
-      description: str(row.description),
-      manufacturer: String(row.manufacturer),
-      manufacturerPartNumber: str(row.manufacturer_part_number),
-      unitOfMeasure: String(row.unit_of_measure) as InventoryPartDto['unitOfMeasure'],
-      lifecycleType: String(row.lifecycle_type) as InventoryPartDto['lifecycleType'],
-      trackingType: String(row.tracking_type) as InventoryPartDto['trackingType'],
-      criticality: String(row.criticality) as InventoryPartDto['criticality'],
-      certificateRequired: bool(row.certificate_required),
-      shelfLifeDays: row.shelf_life_days === null ? null : num(row.shelf_life_days),
-      aircraftApplicability: (applications.all(row.id) as SqlRow[]).map((item) => ({
-        aircraftType: String(item.aircraft_type),
-        model: str(item.model),
-        note: str(item.note)
-      })),
-      isActive: bool(row.is_active),
-      createdAt: String(row.created_at),
-      updatedAt: String(row.updated_at)
-    }));
+    const expiryRows = this.sqlite
+      .prepare(
+        `SELECT balance.part_id, lot.lot_number, lot.expires_at,
+                SUM(balance.on_hand_quantity) quantity_on_nearest_expiry
+         FROM inventory_stock_balances balance
+         JOIN inventory_lots lot ON lot.id = balance.lot_id
+         WHERE lot.expires_at IS NOT NULL AND balance.on_hand_quantity > 0
+         GROUP BY balance.part_id, lot.id
+         ORDER BY lot.expires_at ASC, lot.lot_number ASC`
+      )
+      .all() as SqlRow[];
+    const nearestExpiryByPart = new Map<string, SqlRow>();
+    for (const expiryRow of expiryRows) {
+      const partId = String(expiryRow.part_id);
+      if (!nearestExpiryByPart.has(partId)) nearestExpiryByPart.set(partId, expiryRow);
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    return rows.map((row) => {
+      const shelfLifeDays = row.shelf_life_days === null ? null : num(row.shelf_life_days);
+      const expiry = nearestExpiryByPart.get(String(row.id));
+      const expiresAt = expiry ? String(expiry.expires_at) : null;
+      const daysUntilExpiry = daysUntilDate(expiresAt, today);
+      const shelfLifeElapsedDays =
+        shelfLifeDays === null || daysUntilExpiry === null
+          ? null
+          : Math.max(shelfLifeDays - daysUntilExpiry, 0);
+      const status: InventoryPartDto['expiryProfile']['status'] =
+        daysUntilExpiry === null
+          ? 'NO_EXPIRY'
+          : daysUntilExpiry < 0
+            ? 'EXPIRED'
+            : daysUntilExpiry <= 30
+              ? 'EXPIRING_SOON'
+              : 'VALID';
+      return {
+        id: String(row.id),
+        partNumber: String(row.part_number),
+        partName: String(row.part_name),
+        description: str(row.description),
+        manufacturer: String(row.manufacturer),
+        manufacturerPartNumber: str(row.manufacturer_part_number),
+        unitOfMeasure: String(row.unit_of_measure) as InventoryPartDto['unitOfMeasure'],
+        lifecycleType: String(row.lifecycle_type) as InventoryPartDto['lifecycleType'],
+        trackingType: String(row.tracking_type) as InventoryPartDto['trackingType'],
+        criticality: String(row.criticality) as InventoryPartDto['criticality'],
+        certificateRequired: bool(row.certificate_required),
+        shelfLifeDays,
+        expiryProfile: {
+          lotNumber: expiry ? str(expiry.lot_number) : null,
+          expiresAt,
+          daysUntilExpiry,
+          shelfLifeElapsedDays,
+          quantityOnNearestExpiry: expiry ? num(expiry.quantity_on_nearest_expiry) : 0,
+          status
+        },
+        aircraftApplicability: (applications.all(row.id) as SqlRow[]).map((item) => ({
+          aircraftType: String(item.aircraft_type),
+          model: str(item.model),
+          note: str(item.note)
+        })),
+        isActive: bool(row.is_active),
+        createdAt: String(row.created_at),
+        updatedAt: String(row.updated_at)
+      };
+    });
   }
 
   getPart(id: string) {

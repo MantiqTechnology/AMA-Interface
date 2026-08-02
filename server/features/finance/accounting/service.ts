@@ -79,6 +79,12 @@ type JournalCreateResult = {
   duplicate?: boolean;
 };
 
+export type StationCostAccountingResult = JournalCreateResult & {
+  accountingEventId: string | null;
+  journalEntryId: string | null;
+  journalStatus: string | null;
+};
+
 type SourceEvent = {
   eventType: string;
   sourceType: string;
@@ -313,6 +319,105 @@ export class AccountingService {
     return summary;
   }
 
+  processApprovedStationCost(stationCostId: string): StationCostAccountingResult {
+    const row = this.sqlite
+      .prepare(
+        `SELECT cost.id, cost.flight_id, cost.station_id, cost.source_service_id,
+                cost.approved_amount, cost.approved_at, cost.approval_snapshot_json,
+                approved_currency.currency_code,
+                service_type.code AS service_type,
+                service.completed_at, flight.flight_date,
+                handoff.id AS handoff_id, handoff.snapshot_json AS handoff_snapshot_json
+         FROM flight_station_costs cost
+         JOIN station_cost_statuses cost_status ON cost_status.id = cost.status_id
+         JOIN currencies approved_currency ON approved_currency.id = cost.approved_currency_id
+         JOIN flight_station_service_requests service ON service.id = cost.source_service_id
+         JOIN station_service_types service_type ON service_type.id = service.service_type_id
+         JOIN flight_operations flight ON flight.id = cost.flight_id
+         JOIN flight_finance_handoffs handoff
+           ON handoff.source_type = 'station_cost' AND handoff.source_id = cost.id
+         WHERE cost.id = ? AND cost_status.code = 'APPROVED'`
+      )
+      .get(stationCostId) as SqlRow | undefined;
+    if (!row) {
+      throw new DomainError(
+        'STATION_COST_HANDOFF_REQUIRED',
+        'Approved station cost and its Finance Handoff are required before accounting.',
+        409,
+        { stationCostId }
+      );
+    }
+    const serviceType = String(row.service_type);
+    if (!['HANDLING', 'PARKING'].includes(serviceType)) {
+      throw new DomainError(
+        'STATION_COST_ACCOUNTING_MAPPING_REQUIRED',
+        `Station service type ${serviceType} is not configured for accounting.`,
+        422,
+        { stationCostId, serviceType }
+      );
+    }
+    const approvedAt = String(row.approved_at);
+    const currencyCode = String(row.currency_code);
+    const event: SourceEvent = {
+      eventType:
+        serviceType === 'PARKING'
+          ? 'STATION_PARKING_COST_APPROVED'
+          : 'STATION_HANDLING_COST_APPROVED',
+      sourceType: 'STATION_COST',
+      sourceId: stationCostId,
+      productAccountingProfileId: null,
+      accountingDate: dateOnly(approvedAt),
+      transactionDate: approvedAt,
+      documentDate: dateOnly(approvedAt),
+      serviceDate: dateOnly(String(row.completed_at ?? row.flight_date)),
+      amountMinor: num(row.approved_amount),
+      currencyId: currencyCode === 'IDR' ? 'cur-idr' : null,
+      currencyCode,
+      exchangeRateToIdrMicros: 1_000_000,
+      baseAmountIdr: num(row.approved_amount),
+      stationId: String(row.station_id),
+      aircraftId: null,
+      flightId: String(row.flight_id),
+      workOrderReference: null,
+      costCenterId: String(row.station_id),
+      payload: {
+        stationCostId,
+        sourceServiceId: String(row.source_service_id),
+        financeHandoffId: String(row.handoff_id),
+        serviceType,
+        approvedSnapshot: JSON.parse(String(row.approval_snapshot_json ?? '{}')),
+        financeHandoffSnapshot: JSON.parse(String(row.handoff_snapshot_json ?? '{}')),
+        accountingCurrencySupported: currencyCode === 'IDR'
+      },
+      memo: `${serviceType === 'PARKING' ? 'Parking' : 'Handling'} cost approved by Finance`,
+      idempotencyKey: `${
+        serviceType === 'PARKING'
+          ? 'STATION_PARKING_COST_APPROVED'
+          : 'STATION_HANDLING_COST_APPROVED'
+      }:STATION_COST:${stationCostId}`
+    };
+    const process = () =>
+      this.createJournalFromSourceEvent(event, 'SYSTEM-STATION-COST-ACCOUNTING', false);
+    const result = this.sqlite.inTransaction
+      ? process()
+      : this.sqlite.transaction(process).immediate();
+    const chain = this.sqlite
+      .prepare(
+        `SELECT event.id AS accounting_event_id, journal.id AS journal_entry_id,
+                journal.status AS journal_status
+         FROM accounting_events event
+         LEFT JOIN journal_entries journal ON journal.accounting_event_id = event.id
+         WHERE event.event_type = ? AND event.source_type = ? AND event.source_id = ?`
+      )
+      .get(event.eventType, event.sourceType, event.sourceId) as SqlRow | undefined;
+    return {
+      ...result,
+      accountingEventId: str(chain?.accounting_event_id),
+      journalEntryId: str(chain?.journal_entry_id),
+      journalStatus: str(chain?.journal_status)
+    };
+  }
+
   listExceptions(query: AccountingListQuery): AccountingExceptionDto[] {
     const params: unknown[] = [];
     let where = '';
@@ -429,9 +534,32 @@ export class AccountingService {
         409
       );
     }
+    const invalidAccount = this.sqlite
+      .prepare(
+        `SELECT account.account_code AS accountCode, account.account_name AS accountName,
+                account.is_active AS isActive, account.is_postable AS isPostable
+         FROM journal_lines line
+         JOIN chart_of_accounts account ON account.id = line.account_id
+         WHERE line.journal_entry_id = ?
+           AND (account.is_active = 0 OR account.is_postable = 0)
+         ORDER BY line.line_number
+         LIMIT 1`
+      )
+      .get(id) as SqlRow | undefined;
+    if (invalidAccount) {
+      const inactive = Number(invalidAccount.isActive) === 0;
+      throw new DomainError(
+        inactive ? 'ACCOUNT_INACTIVE' : 'ACCOUNT_NOT_POSTABLE',
+        `Account ${String(invalidAccount.accountCode)} (${String(invalidAccount.accountName)}) ${
+          inactive ? 'is inactive' : 'does not allow posting'
+        }.`,
+        409
+      );
+    }
     const postingDate = dateOnly(this.now());
     const periodId = this.openPeriodId(postingDate);
     const now = this.now();
+    const sourceEvent = this.sourceEventFromAccountingEvent(current.accounting_event_id);
     const post = this.sqlite.transaction(() => {
       this.sqlite
         .prepare(
@@ -448,11 +576,34 @@ export class AccountingService {
         .run(id, now, current.accounting_event_id);
       const capitalizationAccountId = this.capitalizationAccountId(id);
       if (capitalizationAccountId) {
-        this.createAssetRegister(
-          id,
-          this.sourceEventFromAccountingEvent(current.accounting_event_id),
-          capitalizationAccountId
-        );
+        this.createAssetRegister(id, sourceEvent, capitalizationAccountId);
+      }
+      if (sourceEvent.sourceType === 'STATION_COST' && sourceEvent.flightId) {
+        this.sqlite
+          .prepare(
+            `INSERT INTO flight_operational_audit (
+               id, actor_user_id, actor_role, flight_id, station_id, module, action,
+               before_status, after_status, reason, request_id, metadata, timestamp, created_at
+             ) VALUES (?, ?, 'Accounting Reviewer', ?, ?, 'ACCOUNTING', 'JOURNAL_POSTED',
+               'APPROVED', 'POSTED', ?, ?, ?, ?, ?)`
+          )
+          .run(
+            `audit-${nanoid(12)}`,
+            actorUserId,
+            sourceEvent.flightId,
+            sourceEvent.stationId,
+            'Accounting journal posted through maker-checker workflow.',
+            sourceEvent.sourceId,
+            JSON.stringify({
+              stationCostId: sourceEvent.sourceId,
+              accountingEventId: current.accounting_event_id,
+              journalEntryId: id,
+              amountMinor: sourceEvent.amountMinor,
+              currencyCode: sourceEvent.currencyCode
+            }),
+            now,
+            now
+          );
       }
     });
     try {
@@ -1329,6 +1480,12 @@ export class AccountingService {
   private validatePolicyConditions(
     event: SourceEvent
   ): { reason: AccountingExceptionReason; message: string } | null {
+    if (event.sourceType === 'STATION_COST' && event.payload.accountingCurrencySupported !== true) {
+      return {
+        reason: 'MANUAL_REVIEW_REQUIRED',
+        message: `Station cost currency ${event.currencyCode} is not supported by the IDR demo accounting policy.`
+      };
+    }
     if (event.eventType === 'MAINTENANCE_PART_ISSUED') {
       const maintenanceCategory = str(event.payload.maintenanceCategory);
       if (!maintenanceCategory) {

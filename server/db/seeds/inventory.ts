@@ -79,6 +79,34 @@ export function seedInventoryData(
         criticality: 'CRITICAL',
         certificateRequired: 1,
         shelfLifeDays: null
+      },
+      {
+        id: 'inv-part-filter-c208-reserve',
+        partNumber: 'SP-C208-FLT-4101',
+        partName: 'C208B Engine Oil Filter',
+        description: 'Unallocated line-maintenance stock for user-created C208B MRO work.',
+        manufacturer: 'Nusantara Aviation Components',
+        manufacturerPartNumber: 'NAC-C208-OF-01',
+        unitOfMeasure: 'EA',
+        lifecycleType: 'CONSUMABLE',
+        trackingType: 'LOT',
+        criticality: 'CRITICAL',
+        certificateRequired: 1,
+        shelfLifeDays: 730
+      },
+      {
+        id: 'inv-part-tire-c208-reserve',
+        partNumber: 'SP-C208-TIR-4201',
+        partName: 'C208B Main Wheel Tire',
+        description: 'Unallocated expendable tire stock for user-created C208B MRO work.',
+        manufacturer: 'Nusantara Aviation Components',
+        manufacturerPartNumber: 'NAC-C208-MWT-01',
+        unitOfMeasure: 'EA',
+        lifecycleType: 'EXPENDABLE',
+        trackingType: 'LOT',
+        criticality: 'ESSENTIAL',
+        certificateRequired: 1,
+        shelfLifeDays: 1825
       }
     ];
     for (const part of parts) {
@@ -94,7 +122,19 @@ export function seedInventoryData(
       ['inv-app-filter-pc6', 'inv-part-filter-pc6', 'Pilatus PC-6', 'PC-6 Porter'],
       ['inv-app-brake-pc6', 'inv-part-brake-pc6', 'Pilatus PC-6', 'PC-6 Porter'],
       ['inv-app-oil-pc6', 'inv-part-oil', 'Pilatus PC-6', null],
-      ['inv-app-starter-pc6', 'inv-part-starter', 'Pilatus PC-6', null]
+      ['inv-app-starter-pc6', 'inv-part-starter', 'Pilatus PC-6', null],
+      [
+        'inv-app-filter-c208-reserve',
+        'inv-part-filter-c208-reserve',
+        'Cessna Caravan 208B',
+        'Caravan 208B'
+      ],
+      [
+        'inv-app-tire-c208-reserve',
+        'inv-part-tire-c208-reserve',
+        'Cessna Caravan 208B',
+        'Caravan 208B'
+      ]
     ] as const) {
       insertIgnore(sqlite, 'inventory_part_applicabilities', {
         id,
@@ -107,7 +147,8 @@ export function seedInventoryData(
 
     for (const warehouse of [
       ['inv-wh-djj-main', 'st-djj', 'DJJ-MAIN', 'Jayapura Main Stores'],
-      ['inv-wh-wmx-main', 'st-wmx', 'WMX-MAIN', 'Wamena Line Stores']
+      ['inv-wh-wmx-main', 'st-wmx', 'WMX-MAIN', 'Wamena Line Stores'],
+      ['inv-wh-bik-mro', 'st-bik', 'BIK-MRO', 'Biak MRO Reserve Stores']
     ] as const) {
       insertIgnore(sqlite, 'inventory_warehouses', {
         id: warehouse[0],
@@ -126,7 +167,8 @@ export function seedInventoryData(
       ['inv-bin-djj-repair', 'inv-wh-djj-main', 'REPAIR', 'Repair Control', 'REPAIR'],
       ['inv-bin-djj-transit', 'inv-wh-djj-main', 'TRANSIT', 'Transfer Transit', 'TRANSIT'],
       ['inv-bin-wmx-usable', 'inv-wh-wmx-main', 'USABLE-A', 'Serviceable Stock', 'USABLE'],
-      ['inv-bin-wmx-quarantine', 'inv-wh-wmx-main', 'QUARANTINE', 'Quarantine Hold', 'QUARANTINE']
+      ['inv-bin-wmx-quarantine', 'inv-wh-wmx-main', 'QUARANTINE', 'Quarantine Hold', 'QUARANTINE'],
+      ['inv-bin-bik-mro-usable', 'inv-wh-bik-mro', 'USABLE-A', 'MRO Reserve Stock', 'USABLE']
     ] as const) {
       insertIgnore(sqlite, 'inventory_bins', {
         id: bin[0],
@@ -458,6 +500,278 @@ export function seedInventoryData(
         movementLineId: line[4]
       });
     }
+
+    for (const lot of [
+      [
+        'inv-lot-filter-c208-reserve',
+        'inv-part-filter-c208-reserve',
+        'LOT-C208-FLT-RES-01',
+        context.date(-30),
+        context.date(700),
+        'ARC-C208-FLT-RES-01',
+        'inv-grl-filter-c208-reserve'
+      ],
+      [
+        'inv-lot-tire-c208-reserve',
+        'inv-part-tire-c208-reserve',
+        'LOT-C208-TIR-RES-01',
+        context.date(-45),
+        context.date(1780),
+        'ARC-C208-TIR-RES-01',
+        'inv-grl-tire-c208-reserve'
+      ]
+    ] as const) {
+      insertIgnore(sqlite, 'inventory_lots', {
+        id: lot[0],
+        partId: lot[1],
+        lotNumber: lot[2],
+        manufacturedAt: lot[3],
+        expiresAt: lot[4],
+        certificateReference: lot[5],
+        certificateVerified: 1,
+        receiptLineId: lot[6],
+        createdAt: seedNow
+      });
+    }
+
+    insertIgnore(sqlite, 'inventory_purchase_requests', {
+      id: 'inv-pr-bik-mro-reserve',
+      requestNumber: `PR-${context.compactDate(-2)}-MRO-RESERVE`,
+      stationId: 'st-bik',
+      requestReason: 'Initial C208B line-maintenance stock for new MRO transactions.',
+      status: 'ORDERED',
+      requestedByUserId: 'USR-MAINTENANCE-MANAGER',
+      createdAt: context.at(-3, '09:00'),
+      updatedAt: context.at(-2, '10:00')
+    });
+    for (const line of [
+      ['inv-prl-filter-c208-reserve', 'inv-part-filter-c208-reserve', 20, 540_000],
+      ['inv-prl-tire-c208-reserve', 'inv-part-tire-c208-reserve', 4, 1_500_000]
+    ] as const) {
+      insertIgnore(sqlite, 'inventory_purchase_request_lines', {
+        id: line[0],
+        purchaseRequestId: 'inv-pr-bik-mro-reserve',
+        partId: line[1],
+        quantity: line[2],
+        orderedQuantity: line[2],
+        requiredAt: context.date(-1),
+        note: 'Opening stock for the Biak MRO reserve store.'
+      });
+    }
+    insertIgnore(sqlite, 'inventory_purchase_orders', {
+      id: 'inv-po-bik-mro-reserve',
+      orderNumber: `PO-${context.compactDate(-2)}-MRO-RESERVE`,
+      purchaseRequestId: 'inv-pr-bik-mro-reserve',
+      vendorId: 'vendor-maintenance',
+      currencyId: 'cur-idr',
+      exchangeRateToIdrMicros: 1_000_000,
+      expectedAt: context.date(-1),
+      status: 'RECEIVED',
+      rejectionReason: null,
+      createdByUserId: 'USR-INVENTORY-CONTROLLER',
+      approvedByUserId: 'USR-DIRECTOR',
+      approvedAt: context.at(-2, '11:00'),
+      createdAt: context.at(-2, '10:00'),
+      updatedAt: seedNow
+    });
+    for (const line of [
+      [
+        'inv-pol-filter-c208-reserve',
+        'inv-prl-filter-c208-reserve',
+        'inv-part-filter-c208-reserve',
+        20,
+        540_000
+      ],
+      [
+        'inv-pol-tire-c208-reserve',
+        'inv-prl-tire-c208-reserve',
+        'inv-part-tire-c208-reserve',
+        4,
+        1_500_000
+      ]
+    ] as const) {
+      insertIgnore(sqlite, 'inventory_purchase_order_lines', {
+        id: line[0],
+        purchaseOrderId: 'inv-po-bik-mro-reserve',
+        purchaseRequestLineId: line[1],
+        partId: line[2],
+        quantity: line[3],
+        receivedQuantity: line[3],
+        sourceUnitCostMinor: line[4],
+        baseUnitCostIdr: line[4]
+      });
+    }
+
+    const reserveMovementExists = sqlite
+      .prepare(`SELECT 1 FROM inventory_movements WHERE id = 'inv-move-bik-mro-opening'`)
+      .get();
+    if (!reserveMovementExists) {
+      insertIgnore(sqlite, 'inventory_movements', {
+        id: 'inv-move-bik-mro-opening',
+        movementNumber: `MOV-${context.compactDate(0)}-MRO-RESERVE`,
+        movementType: 'RECEIPT',
+        sourceType: 'GOODS_RECEIPT',
+        sourceId: 'inv-gr-bik-mro-reserve',
+        stationId: 'st-bik',
+        destinationStationId: null,
+        aircraftId: null,
+        flightId: null,
+        reason: 'Initial unallocated stock for user-created MRO transactions.',
+        status: 'POSTED',
+        reversalOfMovementId: null,
+        totalBaseValueIdr: 16_800_000,
+        isFinalized: 0,
+        createdByUserId: 'USR-INVENTORY-CONTROLLER',
+        createdAt: seedNow
+      });
+
+      for (const line of [
+        [
+          'inv-ml-filter-c208-reserve',
+          'inv-part-filter-c208-reserve',
+          'inv-lot-filter-c208-reserve',
+          20,
+          540_000
+        ],
+        [
+          'inv-ml-tire-c208-reserve',
+          'inv-part-tire-c208-reserve',
+          'inv-lot-tire-c208-reserve',
+          4,
+          1_500_000
+        ]
+      ] as const) {
+        insertIgnore(sqlite, 'inventory_movement_lines', {
+          id: line[0],
+          movementId: 'inv-move-bik-mro-opening',
+          partId: line[1],
+          fromBinId: null,
+          toBinId: 'inv-bin-bik-mro-usable',
+          lotId: line[2],
+          serialId: null,
+          conditionFrom: null,
+          conditionTo: 'SERVICEABLE',
+          quantity: line[3],
+          sourceUnitCostMinor: line[4],
+          currencyId: 'cur-idr',
+          exchangeRateToIdrMicros: 1_000_000,
+          baseUnitCostIdr: line[4],
+          baseValueIdr: line[3] * line[4]
+        });
+      }
+      sqlite
+        .prepare(
+          `UPDATE inventory_movements SET is_finalized = 1
+           WHERE id = 'inv-move-bik-mro-opening' AND is_finalized = 0`
+        )
+        .run();
+    }
+
+    insertIgnore(sqlite, 'inventory_goods_receipts', {
+      id: 'inv-gr-bik-mro-reserve',
+      receiptNumber: `GR-${context.compactDate(0)}-MRO-RESERVE`,
+      purchaseOrderId: 'inv-po-bik-mro-reserve',
+      warehouseId: 'inv-wh-bik-mro',
+      documentReference: 'DO-MRO-RESERVE-001',
+      receivedAt: seedNow,
+      status: 'POSTED',
+      movementId: 'inv-move-bik-mro-opening',
+      totalBaseValueIdr: 16_800_000,
+      receivedByUserId: 'USR-INVENTORY-CONTROLLER',
+      createdAt: seedNow
+    });
+    for (const line of [
+      [
+        'inv-grl-filter-c208-reserve',
+        'inv-pol-filter-c208-reserve',
+        'inv-lot-filter-c208-reserve',
+        20,
+        'inv-ml-filter-c208-reserve'
+      ],
+      [
+        'inv-grl-tire-c208-reserve',
+        'inv-pol-tire-c208-reserve',
+        'inv-lot-tire-c208-reserve',
+        4,
+        'inv-ml-tire-c208-reserve'
+      ]
+    ] as const) {
+      insertIgnore(sqlite, 'inventory_goods_receipt_lines', {
+        id: line[0],
+        goodsReceiptId: 'inv-gr-bik-mro-reserve',
+        purchaseOrderLineId: line[1],
+        binId: 'inv-bin-bik-mro-usable',
+        lotId: line[2],
+        quantity: line[3],
+        movementLineId: line[4]
+      });
+    }
+
+    for (const stock of [
+      [
+        'inv-bal-filter-c208-reserve',
+        'inv-part-filter-c208-reserve',
+        'inv-lot-filter-c208-reserve',
+        'inv-ml-filter-c208-reserve',
+        20,
+        540_000
+      ],
+      [
+        'inv-bal-tire-c208-reserve',
+        'inv-part-tire-c208-reserve',
+        'inv-lot-tire-c208-reserve',
+        'inv-ml-tire-c208-reserve',
+        4,
+        1_500_000
+      ]
+    ] as const) {
+      insertIgnore(sqlite, 'inventory_stock_balances', {
+        id: stock[0],
+        partId: stock[1],
+        binId: 'inv-bin-bik-mro-usable',
+        lotKey: stock[2],
+        lotId: stock[2],
+        condition: 'SERVICEABLE',
+        onHandQuantity: stock[4],
+        updatedAt: seedNow
+      });
+      insertIgnore(sqlite, 'inventory_cost_layers', {
+        id: `${stock[0]}-layer`,
+        partId: stock[1],
+        warehouseId: 'inv-wh-bik-mro',
+        lotId: stock[2],
+        serialId: null,
+        sourceMovementLineId: stock[3],
+        originalQuantity: stock[4],
+        remainingQuantity: stock[4],
+        sourceUnitCostMinor: stock[5],
+        currencyId: 'cur-idr',
+        exchangeRateToIdrMicros: 1_000_000,
+        baseUnitCostIdr: stock[5],
+        receivedAt: seedNow
+      });
+    }
+
+    insertIgnore(sqlite, 'inventory_accounting_events', {
+      id: 'inv-ae-bik-mro-reserve',
+      eventType: 'INVENTORY_RECEIPT',
+      sourceType: 'GOODS_RECEIPT',
+      sourceId: 'inv-gr-bik-mro-reserve',
+      movementId: 'inv-move-bik-mro-opening',
+      stationId: 'st-bik',
+      aircraftId: null,
+      flightId: null,
+      currencyId: 'cur-idr',
+      sourceAmountMinor: 16_800_000,
+      exchangeRateToIdrMicros: 1_000_000,
+      baseAmountIdr: 16_800_000,
+      integrationStatus: 'PENDING_INTEGRATION',
+      payloadJson: JSON.stringify({
+        orderNumber: `PO-${context.compactDate(-2)}-MRO-RESERVE`,
+        receiptNumber: `GR-${context.compactDate(0)}-MRO-RESERVE`
+      }),
+      createdAt: seedNow
+    });
 
     insertIgnore(sqlite, 'inventory_accounting_events', {
       id: 'inv-ae-receipt-001',

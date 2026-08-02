@@ -7,6 +7,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [route:
 const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null);
 const submitting = ref(false);
 const serverError = ref('');
+const { label: fieldLabel } = useMasterDataFieldHelp();
 const form = reactive<RouteInput>({
   routeCode: '',
   originStationId: '',
@@ -99,46 +100,72 @@ async function submit() {
             <VCol cols="12">
               <VTextField
                 v-model="form.routeCode"
-                label="Route code"
+                :label="fieldLabel('route.routeCode')"
                 :rules="[required('Route code')]"
                 variant="outlined"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="route.routeCode" inline />
+                </template>
+              </VTextField>
+            </VCol>
+            <VCol cols="12" md="6">
+              <MasterDataFieldHelp field="route.origin" />
+              <StationSelect
+                v-model="form.originStationId"
+                :label="fieldLabel('route.origin')"
+                required
               />
             </VCol>
             <VCol cols="12" md="6">
-              <StationSelect v-model="form.originStationId" label="Origin" required />
-            </VCol>
-            <VCol cols="12" md="6">
-              <StationSelect v-model="form.destinationStationId" label="Destination" required />
+              <MasterDataFieldHelp field="route.destination" />
+              <StationSelect
+                v-model="form.destinationStationId"
+                :label="fieldLabel('route.destination')"
+                required
+              />
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.estimatedDurationMinutes"
-                label="Duration minutes"
+                :label="fieldLabel('route.duration')"
                 :rules="[required('Duration'), positive('Duration')]"
                 suffix="min"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="route.duration" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.distanceKm"
-                label="Distance"
+                :label="fieldLabel('route.distance')"
                 :rules="[required('Distance'), positive('Distance')]"
                 suffix="km"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="route.distance" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.operationalNotes"
                 auto-grow
                 counter="1000"
-                label="Operational notes"
+                :label="fieldLabel('route.operationalNotes')"
                 rows="3"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="route.operationalNotes" inline />
+                </template>
+              </VTextarea>
             </VCol>
             <VCol cols="12" md="5">
               <VSelect
@@ -148,20 +175,28 @@ async function submit() {
                   { title: 'Advisory', value: 'ADVISORY' },
                   { title: 'Blocking', value: 'BLOCKING' }
                 ]"
-                label="Restriction level"
+                :label="fieldLabel('route.restrictionLevel')"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="route.restrictionLevel" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol v-if="form.restrictionLevel !== 'NONE'" cols="12" md="7">
               <VTextarea
                 v-model="form.restrictionNote"
                 auto-grow
                 counter="1000"
-                label="Restriction note"
+                :label="fieldLabel('route.restrictionNote')"
                 :rules="[restrictionNoteRequired]"
                 rows="2"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="route.restrictionNote" inline />
+                </template>
+              </VTextarea>
             </VCol>
           </VRow>
         </VForm>

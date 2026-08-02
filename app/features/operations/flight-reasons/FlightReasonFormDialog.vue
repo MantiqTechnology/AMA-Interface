@@ -12,6 +12,7 @@ const emit = defineEmits<{
 const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null);
 const submitting = ref(false);
 const serverError = ref('');
+const { label: fieldLabel } = useMasterDataFieldHelp();
 const form = reactive<FlightReasonInput>({
   reasonCode: '',
   reasonName: 'Flight Reason',
@@ -98,73 +99,113 @@ async function submit() {
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.reasonCode"
-                label="Reason code"
+                :label="fieldLabel('flightReason.reasonCode')"
                 :rules="[required('Reason code')]"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.reasonCode" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.reasonName"
-                label="Reason name"
+                :label="fieldLabel('flightReason.reasonName')"
                 :rules="[required('Reason name')]"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.reasonName" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.reasonType"
                 :items="['DELAY', 'CANCELLED', 'DIVERTED', 'REOPENED_FOR_CORRECTION']"
-                label="Reason type"
+                :label="fieldLabel('flightReason.reasonType')"
                 :rules="[required('Reason type')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.reasonType" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.category"
-                label="Category"
+                :label="fieldLabel('flightReason.category')"
                 :rules="[required('Category')]"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.category" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.description"
-                label="Description"
+                :label="fieldLabel('flightReason.description')"
                 :rules="[required('Description')]"
                 rows="3"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.description" inline />
+                </template>
+              </VTextarea>
             </VCol>
             <VCol cols="12" md="4">
-              <VSwitch v-model="form.requiresNote" color="primary" label="Require operator note" />
+              <VSwitch
+                v-model="form.requiresNote"
+                color="primary"
+                :label="fieldLabel('flightReason.requiresNote')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.requiresNote" inline />
+                </template>
+              </VSwitch>
             </VCol>
             <VCol cols="12" md="4">
               <VSwitch
                 v-model="form.affectsOperationalKpi"
                 color="primary"
-                label="Operational KPI impact"
-              />
+                :label="fieldLabel('flightReason.affectsOperationalKpi')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.affectsOperationalKpi" inline />
+                </template>
+              </VSwitch>
             </VCol>
             <VCol cols="12" md="4">
               <VSwitch
                 v-model="form.affectsFinanceReview"
                 color="primary"
-                label="Require finance review"
-              />
+                :label="fieldLabel('flightReason.affectsFinanceReview')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.affectsFinanceReview" inline />
+                </template>
+              </VSwitch>
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.dashboardSeverity"
                 :items="['INFO', 'WARNING', 'CRITICAL']"
-                label="Operational severity"
+                :label="fieldLabel('flightReason.dashboardSeverity')"
                 :rules="[required('Operational severity')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="flightReason.dashboardSeverity" inline />
+                </template>
+              </VSelect>
             </VCol>
           </VRow>
         </VForm>

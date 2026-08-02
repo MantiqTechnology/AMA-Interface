@@ -711,7 +711,11 @@ export function seedAccountingScenarioData(
     const accounting = createAccountingService(sqlite, () => context.now);
     accounting.processInventoryEvents({ batchSize: 100 }, makerUserId);
 
-    for (const receiptId of ['inv-gr-finance-components', 'inv-gr-replenishment-001']) {
+    for (const receiptId of [
+      'inv-gr-finance-components',
+      'inv-gr-replenishment-001',
+      'inv-gr-bik-mro-reserve'
+    ]) {
       const receiptJournalId = journalId(sqlite, 'GOODS_RECEIPT', receiptId);
       accounting.submitJournal(receiptJournalId, makerUserId);
       accounting.approveJournal(receiptJournalId, approverUserId);

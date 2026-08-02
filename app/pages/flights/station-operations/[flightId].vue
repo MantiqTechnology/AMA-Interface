@@ -392,6 +392,17 @@ const backTarget = computed(() => ({
   }
 }));
 
+const commandCenterTarget = computed(() => ({
+  path: `/flights/${flightId.value}`,
+  query: {
+    from: 'station-operations',
+    stationCode: normalizeQueryValue(route.query.stationCode) ?? stationCode.value,
+    date: normalizeQueryValue(route.query.date) ?? flight.value?.flightDate,
+    stationTab: activeTab.value,
+    stationPhase: selectedPhase.value
+  }
+}));
+
 const serviceBoardTarget = computed(() => ({
   path: '/flights/station-operations/services',
   query: {
@@ -794,6 +805,14 @@ function handleSnackbarModelValue(value: boolean): void {
         >
           {{ phaseState.label }}
         </VChip>
+        <VBtn
+          :to="commandCenterTarget"
+          prepend-icon="mdi-airplane-cog"
+          size="small"
+          variant="tonal"
+        >
+          Flight Command Center
+        </VBtn>
         <VBtn
           :loading="pending"
           prepend-icon="mdi-refresh"

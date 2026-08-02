@@ -261,8 +261,8 @@ export function seedVerificationScenarios(sqlite: Database.Database) {
     updateTaskStatus(sqlite, task.id, 'VERIFIED', 'USR-STATION-ADMIN');
     if (task.task_code.endsWith('STATION_SIGNOFF')) {
       addTaskApproval(sqlite, task.id, 'STATION', 'APPROVED', 'USR-STATION-ADMIN', 'Station Admin');
+      addTaskApproval(sqlite, task.id, 'OCC', 'APPROVED', 'USR-001', 'OCC');
     }
-    // OCC approval pending - demonstrates dual approval gate
   }
   addReconciliation(sqlite, 'fop-pending-closure', 12, 11, 120, 118);
   addAuditEntry(sqlite, {

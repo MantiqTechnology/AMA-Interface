@@ -11,6 +11,7 @@ const { pushToast } = useDemoToasts();
 const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null);
 const submitting = ref(false);
 const serverError = ref('');
+const { label: fieldLabel } = useMasterDataFieldHelp();
 const form = reactive<StationInput>({
   stationCode: '',
   stationName: '',
@@ -115,85 +116,153 @@ async function submit() {
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.stationCode"
-                label="Station code"
+                :label="fieldLabel('station.stationCode')"
                 :rules="[required('Station code')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.stationCode" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.stationName"
-                label="Station name"
+                :label="fieldLabel('station.stationName')"
                 :rules="[required('Station name')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.stationName" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.airportType"
                 :items="['AIRPORT', 'AIRSTRIP', 'STOL_AIRFIELD']"
-                label="Airport type"
+                :label="fieldLabel('station.airportType')"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.airportType" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.city"
-                label="City or region"
+                :label="fieldLabel('station.city')"
                 :rules="[required('City or region')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.city" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.province"
-                label="Province"
+                :label="fieldLabel('station.province')"
                 :rules="[required('Province')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.province" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.stationPicName"
                 clearable
-                label="Station PIC"
+                :label="fieldLabel('station.stationPicName')"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.stationPicName" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.stationPicPhone"
                 clearable
-                label="PIC phone"
+                :label="fieldLabel('station.stationPicPhone')"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.stationPicPhone" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.operationalNotes"
-                label="Operational notes"
+                :label="fieldLabel('station.operationalNotes')"
                 rows="3"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.operationalNotes" inline />
+                </template>
+              </VTextarea>
             </VCol>
             <VCol cols="12" md="4">
-              <VSwitch v-model="form.isRemoteStation" color="primary" label="Remote station" />
+              <VSwitch
+                v-model="form.isRemoteStation"
+                color="primary"
+                :label="fieldLabel('station.isRemoteStation')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.isRemoteStation" inline />
+                </template>
+              </VSwitch>
             </VCol>
             <VCol cols="12" md="4">
               <VSwitch
                 v-model="form.lowConnectivityMode"
                 color="primary"
-                label="Low connectivity"
-              />
+                :label="fieldLabel('station.lowConnectivityMode')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.lowConnectivityMode" inline />
+                </template>
+              </VSwitch>
             </VCol>
             <VCol cols="12" md="4">
-              <VSwitch v-model="form.hasFuelService" color="primary" label="Fuel service" />
+              <VSwitch
+                v-model="form.hasFuelService"
+                color="primary"
+                :label="fieldLabel('station.hasFuelService')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.hasFuelService" inline />
+                </template>
+              </VSwitch>
             </VCol>
             <VCol cols="12" md="4">
-              <VSwitch v-model="form.hasHandlingService" color="primary" label="Handling service" />
+              <VSwitch
+                v-model="form.hasHandlingService"
+                color="primary"
+                :label="fieldLabel('station.hasHandlingService')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.hasHandlingService" inline />
+                </template>
+              </VSwitch>
             </VCol>
             <VCol cols="12" md="4">
-              <VSwitch v-model="form.hasParkingService" color="primary" label="Parking service" />
+              <VSwitch
+                v-model="form.hasParkingService"
+                color="primary"
+                :label="fieldLabel('station.hasParkingService')"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="station.hasParkingService" inline />
+                </template>
+              </VSwitch>
             </VCol>
           </VRow>
         </VForm>

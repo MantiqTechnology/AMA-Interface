@@ -387,4 +387,19 @@ describe('policy-driven accounting core', () => {
       /No open accounting period/u
     );
   });
+
+  it('rejects a new posting when a journal account has become inactive', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    insertDraftJournal(sqlite);
+    services.accounting.submitJournal('journal-draft-test', 'USR-MAKER');
+    services.accounting.approveJournal('journal-draft-test', 'USR-CHECKER');
+    sqlite.prepare("UPDATE chart_of_accounts SET is_active = 0 WHERE id = 'coa-1000'").run();
+
+    expect(() => services.accounting.postJournal('journal-draft-test', 'USR-POSTER')).toThrow(
+      expect.objectContaining({ code: 'ACCOUNT_INACTIVE' })
+    );
+    expect(
+      sqlite.prepare("SELECT status FROM journal_entries WHERE id = 'journal-draft-test'").get()
+    ).toEqual({ status: 'APPROVED' });
+  });
 });

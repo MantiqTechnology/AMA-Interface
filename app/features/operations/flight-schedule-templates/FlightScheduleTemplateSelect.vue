@@ -33,13 +33,14 @@ const emit = defineEmits<{
   'update:modelValue': [value: string | null];
   created: [record: FlightScheduleTemplateDto];
 }>();
+const { locale } = useI18n();
 const createOpen = ref(false);
 const {
   data: options,
   pending,
   refresh
 } = await useAsyncData(
-  'flight-schedule-templates-options',
+  'flight-schedule-template-select-options',
   () =>
     fetchApi<FlightScheduleTemplateOption[]>('/api/master-data/flight-schedule-templates/options'),
   { default: () => [] }
@@ -47,21 +48,86 @@ const {
 
 type DisplayItem = { id: string; title: string; subtitle: string | null };
 
+const operatingDayLabels = {
+  en: {
+    MON: 'Mon',
+    TUE: 'Tue',
+    WED: 'Wed',
+    THU: 'Thu',
+    FRI: 'Fri',
+    SAT: 'Sat',
+    SUN: 'Sun'
+  },
+  id: {
+    MON: 'Sen',
+    TUE: 'Sel',
+    WED: 'Rab',
+    THU: 'Kam',
+    FRI: 'Jum',
+    SAT: 'Sab',
+    SUN: 'Min'
+  }
+} as const;
+
 const usingCandidates = computed(() => Array.isArray(props.candidates));
 const isLoading = computed(() => props.loading || (!usingCandidates.value && pending.value));
 
+function scheduleTitle(option: FlightScheduleTemplateOption) {
+  const nextDay = option.arrivalDayOffset > 0 ? ` +${option.arrivalDayOffset}` : '';
+  return `${option.routeCode} | ${option.departureTimeLocal}-${option.arrivalTimeLocal}${nextDay}`;
+}
+
+function scheduleSubtitle(option: FlightScheduleTemplateOption, recommended: boolean): string {
+  const language = locale.value === 'id' ? 'id' : 'en';
+  const days = option.operatingDays.map((day) => operatingDayLabels[language][day]).join('/');
+  const recommendation = recommended
+    ? language === 'id'
+      ? 'Direkomendasikan untuk tanggal ini'
+      : 'Recommended for this date'
+    : null;
+  return [
+    recommendation,
+    days,
+    option.serviceTypeLabel,
+    option.defaultAircraftRegistration ??
+      (language === 'id' ? 'Pesawat belum ditentukan' : 'No aircraft assigned'),
+    option.templateCode
+  ]
+    .filter(Boolean)
+    .join(' | ');
+}
+
 const items = computed<DisplayItem[]>(() => {
   if (props.candidates) {
+    const candidatesById = new Map<string, FlightPlanningOptionDto>(
+      props.candidates.map((candidate: FlightPlanningOptionDto) => [candidate.id, candidate])
+    );
+    const detailedItems = options.value
+      .filter((option) => candidatesById.has(option.id))
+      .map((option) => {
+        const candidate = candidatesById.get(option.id);
+        return {
+          id: option.id,
+          title: scheduleTitle(option),
+          subtitle: scheduleSubtitle(option, candidate?.recommended ?? false)
+        };
+      });
+    if (detailedItems.length > 0 || options.value.length > 0) return detailedItems;
+
     return props.candidates.map((candidate: FlightPlanningOptionDto) => ({
       id: candidate.id,
       title: candidate.label,
-      subtitle: candidate.recommended ? 'Recommended for this date' : null
+      subtitle: candidate.recommended
+        ? locale.value === 'id'
+          ? 'Direkomendasikan untuk tanggal ini'
+          : 'Recommended for this date'
+        : null
     }));
   }
   return options.value.map((option) => ({
     id: option.id,
-    title: option.templateCode,
-    subtitle: null
+    title: scheduleTitle(option),
+    subtitle: scheduleSubtitle(option, false)
   }));
 });
 
@@ -107,3 +173,10 @@ async function created(record: FlightScheduleTemplateDto) {
     <FlightScheduleTemplateFormDialog v-model="createOpen" @saved="created" />
   </div>
 </template>
+
+<style scoped>
+:deep(.v-list-item-subtitle) {
+  overflow: visible;
+  white-space: normal;
+}
+</style>

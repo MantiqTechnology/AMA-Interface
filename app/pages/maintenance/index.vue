@@ -1,0 +1,1063 @@
+<script setup lang="ts">
+import type {
+  MaintenanceCommandCenterDto,
+  MaintenanceDefectSummaryDto,
+  MaintenanceSelectorDataDto,
+  MaintenanceWorkPackageDto
+} from '#shared/features/maintenance';
+import type { MaintenanceErrorPresentation } from '../../composables/useMaintenanceUi';
+
+const authorizationWording =
+  'Licence and PT AMA authorization verified for controlled MRO actions.';
+
+const format = useLocaleFormat();
+const session = useDemoSession();
+const route = useRoute();
+const { can } = useAuthorization();
+const ui = useMaintenanceUi();
+
+const createDialog = ref(false);
+const createStep = ref(0);
+const creating = ref(false);
+const createError = ref<MaintenanceErrorPresentation | null>(null);
+const search = ref('');
+const stageFilter = ref('');
+const handledCreateQuery = ref('');
+
+const { data, pending, error, refresh } = await useAsyncData('maintenance-command-center', () =>
+  fetchApi<MaintenanceCommandCenterDto>('/api/maintenance/command-center')
+);
+
+const {
+  data: selectorData,
+  pending: selectorsPending,
+  error: selectorsError,
+  refresh: refreshSelectors
+} = await useAsyncData(
+  'maintenance-selector-data',
+  () => fetchApi<MaintenanceSelectorDataDto>('/api/maintenance/selector-data'),
+  { server: false }
+);
+
+const canPlan = computed(() => can('maintenance.package.plan').allowed);
+const canIssueRelease = computed(() => can('maintenance.release.issue').allowed);
+
+const createForm = reactive({
+  sourceType: 'TECHNICAL_DEFECT',
+  aircraftId: '',
+  defectId: '',
+  title: '',
+  priority: 'HIGH' as 'LOW' | 'NORMAL' | 'HIGH',
+  executionMode: 'INTERNAL' as 'INTERNAL' | 'EXTERNAL_AMO_VENDOR',
+  vendorId: '',
+  planningNote: '',
+  jobCardTitle: '',
+  maintenanceDataRef: '',
+  maintenanceDataRevision: 'REV-MROV1-2026-08',
+  requiresIndependentInspection: true,
+  evidenceNote: ''
+});
+
+const sourceTypes = [{ title: 'Assessed technical defect', value: 'TECHNICAL_DEFECT' }];
+const createStepLabels = ['Source', 'Aircraft Context', 'Execution Planning', 'Scope', 'Review'];
+
+const aircraftOptions = computed(() => selectorData.value?.aircraft ?? []);
+const selectedAircraft = computed(() =>
+  aircraftOptions.value.find((aircraft) => aircraft.id === createForm.aircraftId)
+);
+const eligibleDefects = computed(() => selectorData.value?.eligibleDefects ?? []);
+const defectsForAircraft = computed(() =>
+  eligibleDefects.value.filter((defect) => defect.aircraftId === createForm.aircraftId)
+);
+const selectedDefect = computed(() =>
+  eligibleDefects.value.find((defect) => defect.id === createForm.defectId)
+);
+const selectedVendor = computed(() =>
+  (selectorData.value?.vendors ?? []).find((vendor) => vendor.id === createForm.vendorId)
+);
+
+const filteredAttention = computed(() => {
+  const query = search.value.trim().toLowerCase();
+  return (data.value?.operationalAttention ?? []).filter((item) => {
+    const matchesQuery =
+      !query ||
+      [
+        item.aircraftRegistrationNumber,
+        formatOperationalText(item.defectOrDueItem),
+        item.activePackageNumber,
+        item.currentStage,
+        formatOperationalText(item.blocker),
+        formatOperationalText(item.requiredAction),
+        item.owner
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
+    const matchesStage = !stageFilter.value || item.currentStage === stageFilter.value;
+    return matchesQuery && matchesStage;
+  });
+});
+
+const stages = computed(() => [
+  ...new Set((data.value?.operationalAttention ?? []).map((item) => item.currentStage))
+]);
+
+const flowMetrics = computed(() => [
+  {
+    label: 'Defects',
+    value: data.value?.defects.length ?? '-',
+    helper: 'Assessed technical findings'
+  },
+  {
+    label: 'Work packages',
+    value: data.value?.summary.activeWorkPackages ?? '-',
+    helper: 'Controlled maintenance scope'
+  },
+  {
+    label: 'Job cards',
+    value: data.value?.summary.jobCardsAwaitingExecution ?? '-',
+    helper: 'Execution queue'
+  },
+  {
+    label: 'Inspections',
+    value: data.value?.summary.inspectionsAwaitingAction ?? '-',
+    helper: 'Independent review'
+  },
+  {
+    label: 'Releases',
+    value: data.value?.technicalReleases.length ?? '-',
+    helper: 'Signed technical records'
+  },
+  {
+    label: 'Audit',
+    value: data.value?.recentAuditRecords.length ?? '-',
+    helper: 'Traceable actions'
+  }
+]);
+
+const stale = computed(() => {
+  if (!data.value?.generatedAt) return false;
+  return Date.now() - new Date(data.value.generatedAt).getTime() > 10 * 60 * 1000;
+});
+
+const creationWarnings = computed(() => {
+  const warnings: string[] = [];
+  if (!selectedAircraft.value) warnings.push('Select an aircraft.');
+  if (!selectedDefect.value) warnings.push('Select an eligible open defect for this aircraft.');
+  if (selectedDefect.value && selectedDefect.value.assessmentDecision !== 'GROUND') {
+    warnings.push('Selected defect is not assessed as grounding; confirm planning context.');
+  }
+  if (createForm.executionMode === 'EXTERNAL_AMO_VENDOR' && !selectedVendor.value) {
+    warnings.push('External execution requires a maintenance provider.');
+  }
+  if (!createForm.maintenanceDataRef.trim() || !createForm.maintenanceDataRevision.trim()) {
+    warnings.push('Initial mandatory job card requires approved-data reference and revision.');
+  }
+  if (!createForm.evidenceNote.trim()) {
+    warnings.push('Record planning evidence in the package note before creation.');
+  }
+  return warnings;
+});
+
+const currentStepValid = computed(() => stepValid(createStep.value));
+
+const canCreatePackage = computed(
+  () =>
+    canPlan.value &&
+    Boolean(createForm.aircraftId) &&
+    Boolean(createForm.defectId) &&
+    createForm.title.trim().length >= 5 &&
+    createForm.jobCardTitle.trim().length >= 5 &&
+    createForm.maintenanceDataRef.trim().length >= 2 &&
+    createForm.maintenanceDataRevision.trim().length >= 1 &&
+    createForm.evidenceNote.trim().length >= 10 &&
+    (createForm.executionMode === 'INTERNAL' || Boolean(createForm.vendorId))
+);
+
+watch(
+  () => createForm.aircraftId,
+  () => {
+    if (selectedDefect.value?.aircraftId !== createForm.aircraftId) {
+      createForm.defectId = '';
+    }
+  }
+);
+
+watch(
+  () => createForm.defectId,
+  () => {
+    const defect = selectedDefect.value;
+    if (!defect) return;
+    createForm.aircraftId = defect.aircraftId;
+    if (!createForm.title.trim()) createForm.title = `${defect.defectNumber} rectification`;
+    if (!createForm.jobCardTitle.trim()) createForm.jobCardTitle = defect.title;
+    if (!createForm.planningNote.trim()) {
+      createForm.planningNote = `Source defect ${defect.defectNumber}: ${defect.assessmentNote ?? defect.title}`;
+    }
+  }
+);
+
+watch(
+  () => createForm.executionMode,
+  (mode) => {
+    if (mode === 'INTERNAL') createForm.vendorId = '';
+  }
+);
+
+watch(
+  () => [selectorData.value?.generatedAt, route.query.defect],
+  () => {
+    const defectReference = String(route.query.defect ?? '');
+    if (!defectReference || handledCreateQuery.value === defectReference) return;
+    const defect = eligibleDefects.value.find((item) => item.defectNumber === defectReference);
+    if (!defect) return;
+    openCreateDialog(defect.defectNumber);
+    handledCreateQuery.value = defectReference;
+  },
+  { immediate: true }
+);
+
+function resetCreateForm() {
+  createStep.value = 0;
+  createError.value = null;
+  Object.assign(createForm, {
+    sourceType: 'TECHNICAL_DEFECT',
+    aircraftId: '',
+    defectId: '',
+    title: '',
+    priority: 'HIGH',
+    executionMode: 'INTERNAL',
+    vendorId: '',
+    planningNote: '',
+    jobCardTitle: '',
+    maintenanceDataRef: '',
+    maintenanceDataRevision: 'REV-MROV1-2026-08',
+    requiresIndependentInspection: true,
+    evidenceNote: ''
+  });
+}
+
+function seedCreateFormFromDefect(defectNumber: string) {
+  const defect = eligibleDefects.value.find((item) => item.defectNumber === defectNumber);
+  if (!defect) return;
+  createForm.aircraftId = defect.aircraftId;
+  createForm.defectId = defect.id;
+  createForm.title = `${defect.defectNumber} rectification`;
+  createForm.jobCardTitle = defect.title;
+  createForm.planningNote = `Source defect ${defect.defectNumber}: ${defect.assessmentNote ?? defect.title}`;
+}
+
+function openCreateDialog(defectNumber?: string) {
+  resetCreateForm();
+  if (defectNumber) {
+    seedCreateFormFromDefect(defectNumber);
+    createStep.value = 2;
+  }
+  createDialog.value = true;
+}
+
+function nextStep() {
+  if (!currentStepValid.value) return;
+  createStep.value = Math.min(createStep.value + 1, 4);
+}
+
+function previousStep() {
+  createStep.value = Math.max(createStep.value - 1, 0);
+}
+
+function stepValid(index: number) {
+  if (index === 0) return createForm.sourceType === 'TECHNICAL_DEFECT';
+  if (index === 1) return Boolean(selectedAircraft.value && selectedDefect.value);
+  if (index === 2) {
+    return createForm.executionMode === 'INTERNAL' || Boolean(selectedVendor.value);
+  }
+  if (index === 3) {
+    return (
+      createForm.title.trim().length >= 5 &&
+      createForm.jobCardTitle.trim().length >= 5 &&
+      createForm.maintenanceDataRef.trim().length >= 2 &&
+      createForm.maintenanceDataRevision.trim().length >= 1 &&
+      createForm.evidenceNote.trim().length >= 10
+    );
+  }
+  return canCreatePackage.value;
+}
+
+function sourceFlightText(defect: MaintenanceDefectSummaryDto | null | undefined) {
+  if (!defect) return 'Select a defect first.';
+  if (defect.derivedSourceFlightNumber) return defect.derivedSourceFlightNumber;
+  return defect.sourceReference ?? 'No linked flight record in the current backend.';
+}
+
+function packageSubtitle(item: MaintenanceWorkPackageDto) {
+  return `${item.aircraftRegistrationNumber} / ${item.packageNumber}`;
+}
+
+function jobCardSubtitle(card: { aircraftRegistrationNumber: string; cardNumber: string }) {
+  return `${card.aircraftRegistrationNumber} / ${card.cardNumber}`;
+}
+
+function formatOperationalText(value: string | null | undefined) {
+  if (!value) return '-';
+  return value.replace(/\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b/g, (token) =>
+    token
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+      .join(' ')
+  );
+}
+
+async function createPackage() {
+  if (!canCreatePackage.value) return;
+  creating.value = true;
+  createError.value = null;
+  try {
+    const created = await fetchApi<MaintenanceWorkPackageDto>('/api/maintenance/work-packages', {
+      method: 'POST',
+      body: {
+        aircraftId: createForm.aircraftId,
+        primaryDefectId: createForm.defectId,
+        sourceFlightId: selectedDefect.value?.derivedSourceFlightId ?? null,
+        title: createForm.title,
+        priority: createForm.priority,
+        executionMode: createForm.executionMode,
+        vendorId: createForm.executionMode === 'EXTERNAL_AMO_VENDOR' ? createForm.vendorId : null,
+        planningNote: [createForm.planningNote, `Planning evidence: ${createForm.evidenceNote}`]
+          .filter(Boolean)
+          .join('\n'),
+        initialJobCard: {
+          title: createForm.jobCardTitle,
+          taskType: 'DEFECT_RECTIFICATION',
+          maintenanceDataRef: createForm.maintenanceDataRef,
+          maintenanceDataRevision: createForm.maintenanceDataRevision,
+          mandatoryFlag: true,
+          requiresIndependentInspection: createForm.requiresIndependentInspection
+        }
+      }
+    });
+
+    createDialog.value = false;
+    await Promise.all([refresh(), refreshSelectors()]);
+    await navigateTo(`/maintenance/work-packages/${created.id}`);
+  } catch (errorValue) {
+    createError.value = ui.presentError(errorValue);
+  } finally {
+    creating.value = false;
+  }
+}
+</script>
+
+<template>
+  <VContainer fluid class="maintenance-command-center">
+    <div class="d-flex flex-wrap align-start ga-4 mb-4">
+      <div>
+        <h1 class="text-h4 font-weight-bold">Maintenance Command Center</h1>
+        <p class="text-body-2 text-medium-emphasis mb-0">
+          Standards-aligned maintenance control and technical-record workflow with traceable
+          Defect-to-Technical-Release integration.
+        </p>
+      </div>
+      <VSpacer />
+      <VBtn
+        v-if="canPlan"
+        color="primary"
+        prepend-icon="mdi-plus"
+        :disabled="selectorsPending || Boolean(selectorsError)"
+        @click="openCreateDialog"
+      >
+        Create work package
+      </VBtn>
+      <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
+    </div>
+
+    <VAlert type="info" variant="tonal" class="mb-4" density="comfortable">
+      {{ authorizationWording }}
+    </VAlert>
+    <VAlert v-if="stale" type="warning" variant="tonal" class="mb-4">
+      Command Center data is older than 10 minutes. Refresh before issuing any technical command.
+    </VAlert>
+    <VAlert v-if="error" type="error" variant="tonal" class="mb-4">
+      Unable to load authoritative maintenance command-center data.
+    </VAlert>
+
+    <VCard border class="mb-4">
+      <VCardTitle>
+        <div class="text-h6">Operational release path</div>
+        <div class="text-body-2 text-medium-emphasis">
+          Live backend counts across defect control, package execution, technical release,
+          readiness, and audit.
+        </div>
+      </VCardTitle>
+      <VCardText>
+        <div class="flow-strip">
+          <div v-for="metric in flowMetrics" :key="metric.label" class="flow-step">
+            <div class="flow-step__label">{{ metric.label }}</div>
+            <div class="flow-step__value">{{ metric.value }}</div>
+            <div class="flow-step__helper">{{ metric.helper }}</div>
+          </div>
+        </div>
+      </VCardText>
+    </VCard>
+
+    <VRow>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard label="Fleet Total" :value="data?.summary.fleetTotal ?? '-'" tone="info" />
+      </VCol>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard
+          label="Unserviceable"
+          :value="data?.summary.unserviceable ?? '-'"
+          tone="danger"
+        />
+      </VCol>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard
+          label="Inspections Awaiting Action"
+          :value="data?.summary.inspectionsAwaitingAction ?? '-'"
+          tone="warning"
+        />
+      </VCol>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard
+          label="Ready For Release"
+          :value="data?.summary.readyForRelease ?? '-'"
+          tone="success"
+        />
+      </VCol>
+    </VRow>
+
+    <VRow class="mt-2">
+      <VCol cols="12">
+        <VCard border>
+          <VCardTitle class="d-flex flex-wrap align-center ga-3">
+            <div>
+              <div class="text-h6">Operational attention</div>
+              <div class="text-body-2 text-medium-emphasis">
+                Backend-derived technical state, package stage, blocker, and owner.
+              </div>
+            </div>
+            <VSpacer />
+            <VTextField
+              v-model="search"
+              density="compact"
+              hide-details
+              clearable
+              label="Search attention"
+              prepend-inner-icon="mdi-magnify"
+              max-width="280"
+            />
+            <VSelect
+              v-model="stageFilter"
+              density="compact"
+              hide-details
+              clearable
+              label="Stage"
+              :items="stages"
+              max-width="240"
+            />
+          </VCardTitle>
+          <VCardText>
+            <div class="maintenance-table-wrap">
+              <VTable class="maintenance-table maintenance-table--attention">
+                <thead>
+                  <tr>
+                    <th>Aircraft</th>
+                    <th>Technical item</th>
+                    <th>Package and stage</th>
+                    <th>Blocker and required action</th>
+                    <th>Owner and updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="pending">
+                    <td colspan="5">Loading authoritative MRO status...</td>
+                  </tr>
+                  <tr
+                    v-for="item in filteredAttention"
+                    :key="`${item.aircraftId}-${item.updatedAt}`"
+                  >
+                    <td class="font-weight-bold">{{ item.aircraftRegistrationNumber }}</td>
+                    <td>
+                      <VChip
+                        :color="ui.technicalStateColor(item.technicalState)"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ ui.label(item.technicalState) }}
+                      </VChip>
+                      <div class="mt-1">{{ formatOperationalText(item.defectOrDueItem) }}</div>
+                    </td>
+                    <td>
+                      <VBtn
+                        v-if="item.activePackageId"
+                        :to="`/maintenance/work-packages/${item.activePackageId}`"
+                        variant="text"
+                        size="small"
+                        append-icon="mdi-arrow-right"
+                      >
+                        {{ item.activePackageNumber }}
+                      </VBtn>
+                      <span v-else>-</span>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ ui.label(item.currentStage) }}
+                      </div>
+                    </td>
+                    <td>
+                      <div>{{ formatOperationalText(item.blocker) }}</div>
+                      <div class="text-caption text-medium-emphasis">
+                        Required action: {{ formatOperationalText(item.requiredAction) }}
+                      </div>
+                    </td>
+                    <td>
+                      <div>{{ item.owner }}</div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ format.dateTime(item.updatedAt) }}
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="!pending && data && !filteredAttention.length">
+                    <td colspan="5">
+                      {{
+                        search || stageFilter
+                          ? 'No attention rows match the current filters.'
+                          : 'No aircraft currently require maintenance-control attention.'
+                      }}
+                    </td>
+                  </tr>
+                </tbody>
+              </VTable>
+            </div>
+          </VCardText>
+        </VCard>
+      </VCol>
+
+      <VCol cols="12" lg="4">
+        <VCard border class="mb-4">
+          <VCardTitle>Release queue</VCardTitle>
+          <VCardText>
+            <VList density="compact">
+              <VListItem
+                v-for="item in data?.readyForRelease ?? []"
+                :key="item.id"
+                :to="`/maintenance/work-packages/${item.id}`"
+                :title="item.title"
+                :subtitle="packageSubtitle(item)"
+              >
+                <template #append>
+                  <VChip color="success" size="small" variant="tonal">Ready</VChip>
+                </template>
+              </VListItem>
+            </VList>
+            <VEmptyState
+              v-if="!pending && !error && data && !(data?.readyForRelease.length ?? 0)"
+              title="No release-ready package"
+              text="Complete mandatory job cards and inspections before release review."
+            />
+            <VDivider class="my-4" />
+            <VAlert v-if="!canIssueRelease" type="info" variant="tonal" density="compact">
+              {{ ui.permissionHint(false, 'maintenance.release.issue', session.role.value) }}
+            </VAlert>
+          </VCardText>
+        </VCard>
+
+        <VCard border>
+          <VCardTitle>Recent technical activity</VCardTitle>
+          <VCardText>
+            <VTimeline density="compact" side="end">
+              <VTimelineItem
+                v-for="record in data?.recentAuditRecords.slice(0, 6) ?? []"
+                :key="record.id"
+                dot-color="primary"
+                size="small"
+              >
+                <div class="text-body-2 font-weight-medium">{{ ui.label(record.action) }}</div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ record.actorRole }} / {{ format.dateTime(record.occurredAt) }}
+                </div>
+              </VTimelineItem>
+            </VTimeline>
+            <VEmptyState
+              v-if="!pending && !error && data && !(data?.recentAuditRecords.length ?? 0)"
+              title="No technical audit activity"
+            />
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
+
+    <VRow class="mt-2">
+      <VCol cols="12" md="4">
+        <VCard border height="100%">
+          <VCardTitle>Job cards awaiting execution</VCardTitle>
+          <VCardText>
+            <VList density="compact">
+              <VListItem
+                v-for="card in data?.jobCardsAwaitingExecution.slice(0, 6) ?? []"
+                :key="card.id"
+                :to="`/maintenance/work-packages/${card.workPackageId}`"
+                :title="card.title"
+                :subtitle="jobCardSubtitle(card)"
+              />
+            </VList>
+            <VEmptyState
+              v-if="!pending && !error && data && !(data?.jobCardsAwaitingExecution.length ?? 0)"
+              title="No job cards awaiting work"
+            />
+          </VCardText>
+        </VCard>
+      </VCol>
+      <VCol cols="12" md="4">
+        <VCard border height="100%">
+          <VCardTitle>Independent inspections</VCardTitle>
+          <VCardText>
+            <VList density="compact">
+              <VListItem
+                v-for="card in data?.inspectionsAwaitingAction.slice(0, 6) ?? []"
+                :key="card.id"
+                :to="`/maintenance/work-packages/${card.workPackageId}`"
+                :title="card.title"
+                :subtitle="jobCardSubtitle(card)"
+              >
+                <template #append>
+                  <VChip color="warning" size="small" variant="tonal">Inspection</VChip>
+                </template>
+              </VListItem>
+            </VList>
+            <VEmptyState
+              v-if="!pending && !error && data && !(data?.inspectionsAwaitingAction.length ?? 0)"
+              title="No inspection waiting"
+            />
+          </VCardText>
+        </VCard>
+      </VCol>
+      <VCol cols="12" md="4">
+        <VCard border height="100%">
+          <VCardTitle>Release blockers</VCardTitle>
+          <VCardText>
+            <VList density="compact">
+              <VListItem
+                v-for="item in data?.releaseBlockers.slice(0, 6) ?? []"
+                :key="item.workPackageId"
+                :to="`/maintenance/work-packages/${item.workPackageId}`"
+                :title="item.blockers[0]?.message ?? 'Release prerequisite not satisfied.'"
+                :subtitle="`${item.aircraftRegistrationNumber} / ${item.packageNumber}`"
+              />
+            </VList>
+            <VEmptyState
+              v-if="!pending && !error && data && !(data?.releaseBlockers.length ?? 0)"
+              title="No release blockers"
+            />
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
+
+    <VDialog v-model="createDialog" max-width="980" persistent scrollable>
+      <VCard>
+        <VCardTitle class="d-flex align-center ga-3">
+          <div>
+            <h2 class="text-h6 mb-0">Create Work Package</h2>
+            <div class="text-body-2 text-medium-emphasis">
+              Contextual creation from source, aircraft, planning, scope, and review.
+            </div>
+          </div>
+          <VSpacer />
+          <VBtn
+            icon="mdi-close"
+            variant="text"
+            :disabled="creating"
+            @click="createDialog = false"
+          />
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VRow>
+            <VCol cols="12" md="3">
+              <VList density="compact" nav>
+                <VListItem
+                  v-for="(step, index) in createStepLabels"
+                  :key="step"
+                  :active="createStep === Number(index)"
+                  :disabled="Number(index) > createStep"
+                  color="primary"
+                  @click="createStep = Number(index)"
+                >
+                  <template #prepend>
+                    <VAvatar
+                      size="24"
+                      :color="createStep === Number(index) ? 'primary' : 'surface-variant'"
+                    >
+                      {{ Number(index) + 1 }}
+                    </VAvatar>
+                  </template>
+                  <VListItemTitle>{{ step }}</VListItemTitle>
+                </VListItem>
+              </VList>
+            </VCol>
+            <VCol cols="12" md="9">
+              <div class="text-caption text-medium-emphasis mb-2">
+                Step {{ createStep + 1 }} of {{ createStepLabels.length }}
+              </div>
+              <VAlert v-if="createError" type="error" variant="tonal" class="mb-4">
+                <strong>{{ createError.title }}</strong>
+                <div>{{ createError.impact }}</div>
+                <div class="text-caption">Required action: {{ createError.requiredAction }}</div>
+                <div v-if="createError.referenceId" class="text-caption">
+                  Reference: {{ createError.referenceId }}
+                </div>
+              </VAlert>
+
+              <div v-if="createStep === 0" class="create-step">
+                <h2 class="text-h6 mb-3">Source</h2>
+                <VSelect
+                  v-model="createForm.sourceType"
+                  label="Source type"
+                  :items="sourceTypes"
+                  item-title="title"
+                  item-value="value"
+                />
+                <VAlert type="info" variant="tonal">
+                  Create packages from assessed technical defects. Other source types remain outside
+                  Demo-v1 package creation.
+                </VAlert>
+              </div>
+
+              <div v-else-if="createStep === 1" class="create-step">
+                <h2 class="text-h6 mb-3">Aircraft context</h2>
+                <VAutocomplete
+                  v-model="createForm.aircraftId"
+                  label="Aircraft"
+                  :items="aircraftOptions"
+                  item-value="id"
+                  item-title="registrationNumber"
+                  :loading="selectorsPending"
+                  no-data-text="No aircraft available from selector API"
+                />
+                <VAlert
+                  v-if="!selectedAircraft"
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Select the aircraft before choosing a defect.
+                </VAlert>
+                <VAutocomplete
+                  v-model="createForm.defectId"
+                  label="Eligible assessed defect"
+                  :items="defectsForAircraft"
+                  item-value="id"
+                  item-title="defectNumber"
+                  :disabled="!createForm.aircraftId"
+                  no-data-text="No eligible open defect for selected aircraft"
+                />
+                <VAlert
+                  v-if="createForm.aircraftId && !selectedDefect"
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Select an assessed open defect linked to this aircraft.
+                </VAlert>
+                <VTextField
+                  :model-value="sourceFlightText(selectedDefect)"
+                  label="Derived source flight / technical-log reference"
+                  readonly
+                />
+                <VAlert v-if="selectedAircraft" type="info" variant="tonal">
+                  {{ selectedAircraft.registrationNumber }} /
+                  {{ ui.label(selectedAircraft.serviceabilityStatus) }} /
+                  {{ ui.label(selectedAircraft.technicalEligibility) }}
+                </VAlert>
+              </div>
+
+              <div v-else-if="createStep === 2" class="create-step">
+                <h2 class="text-h6 mb-3">Execution planning</h2>
+                <VSelect
+                  v-model="createForm.executionMode"
+                  label="Execution mode"
+                  :items="[
+                    { title: 'Internal maintenance execution', value: 'INTERNAL' },
+                    { title: 'External AMO/vendor execution', value: 'EXTERNAL_AMO_VENDOR' }
+                  ]"
+                  item-title="title"
+                  item-value="value"
+                />
+                <VAutocomplete
+                  v-if="createForm.executionMode === 'EXTERNAL_AMO_VENDOR'"
+                  v-model="createForm.vendorId"
+                  label="Maintenance provider"
+                  :items="selectorData?.vendors ?? []"
+                  item-value="id"
+                  item-title="vendorName"
+                  no-data-text="No active provider found"
+                />
+                <VAlert type="info" variant="tonal">
+                  Use the planning note for station, access, or date instructions required by
+                  Maintenance Control.
+                </VAlert>
+                <VAlert
+                  v-if="createForm.executionMode === 'EXTERNAL_AMO_VENDOR' && !selectedVendor"
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mt-4"
+                >
+                  Select an active maintenance provider for external execution.
+                </VAlert>
+              </div>
+
+              <div v-else-if="createStep === 3" class="create-step">
+                <h2 class="text-h6 mb-3">Scope</h2>
+                <VTextField v-model="createForm.title" label="Work package title" />
+                <VAlert
+                  v-if="createForm.title.trim().length < 5"
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Enter a work-package title.
+                </VAlert>
+                <VSelect
+                  v-model="createForm.priority"
+                  label="Priority"
+                  :items="['LOW', 'NORMAL', 'HIGH']"
+                />
+                <VTextarea v-model="createForm.planningNote" label="Planning note" rows="3" />
+                <VTextarea
+                  v-model="createForm.evidenceNote"
+                  label="Planning evidence / reason"
+                  rows="2"
+                  hint="Stored in the package planning note and maintenance audit trail."
+                  persistent-hint
+                />
+                <VAlert
+                  v-if="createForm.evidenceNote.trim().length < 10"
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Record the planning evidence or reason.
+                </VAlert>
+                <VDivider class="my-4" />
+                <div class="text-subtitle-2 mb-2">Initial mandatory job card</div>
+                <VTextField v-model="createForm.jobCardTitle" label="Job card title" />
+                <VTextField
+                  v-model="createForm.maintenanceDataRef"
+                  label="Approved maintenance data reference"
+                />
+                <VTextField
+                  v-model="createForm.maintenanceDataRevision"
+                  label="Approved data revision snapshot"
+                />
+                <VAlert
+                  v-if="
+                    createForm.jobCardTitle.trim().length < 5 ||
+                      createForm.maintenanceDataRef.trim().length < 2 ||
+                      createForm.maintenanceDataRevision.trim().length < 1
+                  "
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Complete the job-card title and approved-data reference.
+                </VAlert>
+                <VSwitch
+                  v-model="createForm.requiresIndependentInspection"
+                  color="primary"
+                  label="Independent inspection required"
+                />
+              </div>
+
+              <div v-else class="create-step">
+                <h2 class="text-h6 mb-3">Review</h2>
+                <VList density="compact" border rounded class="mb-4">
+                  <VListItem
+                    title="Aircraft"
+                    :subtitle="selectedAircraft?.registrationNumber ?? '-'"
+                  >
+                    <template #append>
+                      <VBtn variant="text" size="small" @click="createStep = 1">Edit</VBtn>
+                    </template>
+                  </VListItem>
+                  <VListItem
+                    title="Source defect"
+                    :subtitle="
+                      selectedDefect
+                        ? `${selectedDefect.title} / ${selectedDefect.defectNumber}`
+                        : '-'
+                    "
+                  >
+                    <template #append>
+                      <VBtn variant="text" size="small" @click="createStep = 1">Edit</VBtn>
+                    </template>
+                  </VListItem>
+                  <VListItem title="Execution" :subtitle="ui.label(createForm.executionMode)">
+                    <template #append>
+                      <VBtn variant="text" size="small" @click="createStep = 2">Edit</VBtn>
+                    </template>
+                  </VListItem>
+                  <VListItem
+                    title="Provider"
+                    :subtitle="
+                      createForm.executionMode === 'EXTERNAL_AMO_VENDOR'
+                        ? (selectedVendor?.vendorName ?? '-')
+                        : 'Internal execution'
+                    "
+                  >
+                    <template #append>
+                      <VBtn variant="text" size="small" @click="createStep = 2">Edit</VBtn>
+                    </template>
+                  </VListItem>
+                  <VListItem title="Mandatory job card" :subtitle="createForm.jobCardTitle || '-'">
+                    <template #append>
+                      <VBtn variant="text" size="small" @click="createStep = 3">Edit</VBtn>
+                    </template>
+                  </VListItem>
+                  <VListItem
+                    title="Approved data"
+                    :subtitle="
+                      createForm.maintenanceDataRef
+                        ? `${createForm.maintenanceDataRef} / ${createForm.maintenanceDataRevision || '-'}`
+                        : 'Not selected'
+                    "
+                  >
+                    <template #append>
+                      <VBtn variant="text" size="small" @click="createStep = 3">Edit</VBtn>
+                    </template>
+                  </VListItem>
+                </VList>
+                <VAlert v-if="creationWarnings.length" type="warning" variant="tonal" class="mb-4">
+                  <div class="font-weight-bold mb-2">Review blockers and warnings</div>
+                  <ul class="mb-0">
+                    <li v-for="warning in creationWarnings" :key="warning">{{ warning }}</li>
+                  </ul>
+                </VAlert>
+                <VAlert v-else type="success" variant="tonal">
+                  The work package and initial mandatory job card can be submitted.
+                </VAlert>
+              </div>
+            </VCol>
+          </VRow>
+        </VCardText>
+        <VDivider />
+        <VCardActions>
+          <VBtn variant="text" :disabled="createStep === 0 || creating" @click="previousStep">
+            Back
+          </VBtn>
+          <VSpacer />
+          <VBtn variant="text" :disabled="creating" @click="createDialog = false">Cancel</VBtn>
+          <VBtn
+            v-if="createStep < 4"
+            color="primary"
+            :disabled="creating || !currentStepValid"
+            @click="nextStep"
+          >
+            Next
+          </VBtn>
+          <VBtn
+            v-else
+            color="primary"
+            :loading="creating"
+            :disabled="!canCreatePackage"
+            @click="createPackage"
+          >
+            Create package
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+  </VContainer>
+</template>
+
+<style scoped>
+.maintenance-command-center {
+  --mro-border: rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.maintenance-table-wrap {
+  overflow-x: auto;
+}
+
+.maintenance-table :deep(table) {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.maintenance-table :deep(th),
+.maintenance-table :deep(td) {
+  vertical-align: top;
+}
+
+.maintenance-table--attention :deep(th:nth-child(1)),
+.maintenance-table--attention :deep(td:nth-child(1)) {
+  width: 120px;
+}
+
+.maintenance-table--attention :deep(th:nth-child(2)),
+.maintenance-table--attention :deep(td:nth-child(2)) {
+  width: 250px;
+}
+
+.maintenance-table--attention :deep(th:nth-child(3)),
+.maintenance-table--attention :deep(td:nth-child(3)) {
+  width: 210px;
+}
+
+.maintenance-table--attention :deep(th:nth-child(4)),
+.maintenance-table--attention :deep(td:nth-child(4)) {
+  width: 300px;
+}
+
+.maintenance-table--attention :deep(th:nth-child(5)),
+.maintenance-table--attention :deep(td:nth-child(5)) {
+  width: 180px;
+}
+
+.flow-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(140px, 1fr));
+  gap: 1px;
+  overflow-x: auto;
+  border: 1px solid var(--mro-border);
+  border-radius: 6px;
+  background: var(--mro-border);
+}
+
+.flow-step {
+  min-width: 140px;
+  background: rgb(var(--v-theme-surface));
+  padding: 12px;
+}
+
+.flow-step__label {
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.flow-step__value {
+  margin-top: 8px;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.flow-step__helper {
+  margin-top: 6px;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.create-step {
+  min-height: 420px;
+}
+</style>

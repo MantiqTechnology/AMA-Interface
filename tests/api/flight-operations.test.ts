@@ -32,6 +32,27 @@ await setup({
 });
 
 describe('flight request APIs', () => {
+  it('returns actor-aware command-center capabilities without exposing an executable forbidden action', async () => {
+    const director = await $fetch<ApiResponse<FlightOperationDetailDto>>(
+      '/api/flight-operations/flights/fop-ticketing-passenger',
+      { headers: { cookie: 'ama_demo_role=Director' } }
+    );
+    expect(director.ok).toBe(true);
+    if (!director.ok) throw new Error(director.error.message);
+
+    expect(director.data.commandCenter?.lifecycle.currentPhase).toBe('SCHEDULED');
+    expect(
+      director.data.commandCenter?.capabilities.find(
+        (capability) => capability.action === 'open-check-in'
+      )
+    ).toMatchObject({
+      visible: true,
+      allowed: false,
+      permissionGranted: false,
+      blockedReasons: [expect.objectContaining({ code: 'PERMISSION_DENIED' })]
+    });
+  });
+
   it('enforces station scope on the persistent Station Operations workbench', async () => {
     const denied = await $fetch<ApiResponse<unknown>>('/api/flight-operations/station-operations', {
       headers: { cookie: 'ama_demo_role=Station%20Admin' },
@@ -71,6 +92,36 @@ describe('flight request APIs', () => {
     ).toBe(true);
   });
 
+  it('allows the Finance Reviewer to read the station-cost review queue', async () => {
+    const response = await $fetch<
+      ApiResponse<
+        Array<{
+          id: string;
+          stationCode: string;
+          status: string;
+          estimatedAmount: number | null;
+          actualAmount: number | null;
+        }>
+      >
+    >('/api/flight-operations/station-costs', {
+      headers: { cookie: 'ama_demo_role=Finance%20Reviewer' }
+    });
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) throw new Error(response.error.message);
+    expect(response.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'fop-landed-maintenance-station-cost',
+          stationCode: 'WMX',
+          status: 'SUBMITTED',
+          estimatedAmount: 8_000_000,
+          actualAmount: 8_750_000
+        })
+      ])
+    );
+  });
+
   it('persists evidence and dual approval for station sign-off through public APIs', async () => {
     const tasks = await $fetch<ApiResponse<Array<Record<string, unknown>>>>(
       '/api/flight-operations/flights/fop-ticketing-passenger/station-tasks',
@@ -86,29 +137,47 @@ describe('flight request APIs', () => {
       (item) => item.task_code !== 'DESTINATION_STATION_SIGNOFF'
     )) {
       const dependencyId = String(task.id);
+      const started = await $fetch<ApiResponse<Record<string, unknown>>>(
+        `/api/flight-operations/station-tasks/${dependencyId}/actions/start`,
+        {
+          method: 'POST',
+          headers: { cookie: 'ama_demo_role=Station%20Admin' },
+          body: { expectedVersion: task.version }
+        }
+      );
+      const startedVersion = started.ok ? started.data.version : task.version;
       await $fetch(`/api/flight-operations/station-tasks/${dependencyId}/evidence`, {
         method: 'POST',
         headers: { cookie: 'ama_demo_role=Station%20Admin' },
         body: {
-          expectedVersion: task.version,
+          expectedVersion: startedVersion,
           fileName: `${String(task.task_code).toLowerCase()}.pdf`
         }
       });
       await $fetch(`/api/flight-operations/station-tasks/${dependencyId}/actions/verify`, {
         method: 'POST',
         headers: { cookie: 'ama_demo_role=Station%20Admin' },
-        body: { expectedVersion: task.version }
+        body: { expectedVersion: startedVersion }
       });
     }
 
     const taskId = String(signoff?.id);
+    const startedSignoff = await $fetch<ApiResponse<Record<string, unknown>>>(
+      `/api/flight-operations/station-tasks/${taskId}/actions/start`,
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Station%20Admin' },
+        body: { expectedVersion: signoff?.version }
+      }
+    );
+    const signoffVersion = startedSignoff.ok ? startedSignoff.data.version : signoff?.version;
     const evidence = await $fetch<ApiResponse<Record<string, unknown>>>(
       `/api/flight-operations/station-tasks/${taskId}/evidence`,
       {
         method: 'POST',
         headers: { cookie: 'ama_demo_role=Station%20Admin' },
         body: {
-          expectedVersion: signoff?.version,
+          expectedVersion: signoffVersion,
           fileName: 'destination-signoff.pdf',
           documentType: 'STATION_SIGNOFF',
           notes: 'Destination evidence'
@@ -122,7 +191,7 @@ describe('flight request APIs', () => {
       {
         method: 'POST',
         headers: { cookie: 'ama_demo_role=Station%20Admin' },
-        body: { expectedVersion: signoff?.version, reason: 'Station verification completed.' }
+        body: { expectedVersion: signoffVersion, reason: 'Station verification completed.' }
       }
     );
     expect(verified.ok && verified.data.status).toBe('VERIFIED');

@@ -81,12 +81,27 @@ export class FinanceReportingService {
     const rows = this.sqlite
       .prepare(
         `SELECT account.id, account.account_code AS code, account.account_name AS name,
+                account.is_active AS isActive,
                 account.account_type AS accountType, account.normal_balance AS normalBalance,
+                COALESCE(balance.openingDebitMinor, 0) AS openingDebitMinor,
+                COALESCE(balance.openingCreditMinor, 0) AS openingCreditMinor,
+                COALESCE(balance.periodDebitMinor, 0) AS periodDebitMinor,
+                COALESCE(balance.periodCreditMinor, 0) AS periodCreditMinor,
                 COALESCE(balance.debitMinor, 0) AS debitMinor,
                 COALESCE(balance.creditMinor, 0) AS creditMinor
          FROM chart_of_accounts account
          LEFT JOIN (
            SELECT line.account_id,
+                  SUM(CASE WHEN entry.posting_date < @startDate
+                           THEN line.base_debit_idr ELSE 0 END) AS openingDebitMinor,
+                  SUM(CASE WHEN entry.posting_date < @startDate
+                           THEN line.base_credit_idr ELSE 0 END) AS openingCreditMinor,
+                  SUM(CASE WHEN entry.posting_date >= @startDate
+                            AND entry.posting_date <= @endDate
+                           THEN line.base_debit_idr ELSE 0 END) AS periodDebitMinor,
+                  SUM(CASE WHEN entry.posting_date >= @startDate
+                            AND entry.posting_date <= @endDate
+                           THEN line.base_credit_idr ELSE 0 END) AS periodCreditMinor,
                   SUM(line.base_debit_idr) AS debitMinor,
                   SUM(line.base_credit_idr) AS creditMinor
            FROM journal_lines line
@@ -95,14 +110,30 @@ export class FinanceReportingService {
            GROUP BY line.account_id
          ) balance ON balance.account_id = account.id
          WHERE account.is_active = 1
+            OR COALESCE(balance.openingDebitMinor, 0) <> 0
+            OR COALESCE(balance.openingCreditMinor, 0) <> 0
+            OR COALESCE(balance.periodDebitMinor, 0) <> 0
+            OR COALESCE(balance.periodCreditMinor, 0) <> 0
+            OR COALESCE(balance.debitMinor, 0) <> COALESCE(balance.creditMinor, 0)
          ORDER BY account.account_code`
       )
-      .all({ endDate: `${period.endDate}T23:59:59.999Z` }) as SqlRow[];
+      .all({
+        startDate: period.startDate,
+        endDate: `${period.endDate}T23:59:59.999Z`
+      }) as SqlRow[];
 
     const accounts: TrialBalanceAccountDto[] = rows.map((row) => {
       const normalBalance = String(row.normalBalance) === 'CREDIT' ? 'CREDIT' : 'DEBIT';
+      const openingDebitMinor = amount(row.openingDebitMinor);
+      const openingCreditMinor = amount(row.openingCreditMinor);
+      const periodDebitMinor = amount(row.periodDebitMinor);
+      const periodCreditMinor = amount(row.periodCreditMinor);
       const debitMinor = amount(row.debitMinor);
       const creditMinor = amount(row.creditMinor);
+      const openingBalanceMinor =
+        normalBalance === 'DEBIT'
+          ? openingDebitMinor - openingCreditMinor
+          : openingCreditMinor - openingDebitMinor;
       const balanceMinor =
         normalBalance === 'DEBIT' ? debitMinor - creditMinor : creditMinor - debitMinor;
       const name = String(row.name);
@@ -111,8 +142,14 @@ export class FinanceReportingService {
         id: String(row.id),
         code: String(row.code),
         name,
+        isActive: Boolean(row.isActive),
         accountType: this.accountType(row.accountType),
         normalBalance,
+        openingDebitMinor,
+        openingCreditMinor,
+        openingBalanceMinor,
+        periodDebitMinor,
+        periodCreditMinor,
         debitMinor,
         creditMinor,
         balanceMinor,

@@ -286,11 +286,12 @@ async function saveDraft(thenSubmit = false) {
       <VCardText>
         <VRow>
           <VCol cols="12" md="4">
-            <VTextField
+            <VDateInput
               v-model="form.flightDate"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
               :disabled="!canEdit"
               label="Flight date"
-              type="date"
               variant="outlined"
             />
           </VCol>
@@ -331,6 +332,7 @@ async function saveDraft(thenSubmit = false) {
             <RouteSelect
               v-model="form.routeId"
               :allow-create="true"
+              density="default"
               :disabled="!canEdit"
               label="Route"
               :required="true"

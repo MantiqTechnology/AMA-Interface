@@ -12,6 +12,41 @@ pnpm demo:scenarios
 
 ## Presentation Flow
 
+The primary aviation operations walkthrough is a 10-15 minute vertical slice:
+
+1. Run `pnpm demo:reset`, then switch to the **OCC** persona.
+2. Open `/flights/requests`, approve the submitted request with a different authorized persona, and
+   convert it once. Retrying conversion returns the same Flight Order.
+3. Open the generated Flight Order. Use the command strip for current phase, next action, owner, and
+   active blockers.
+4. Resolve readiness, maintenance coordination, fuel/manifest, and origin station evidence using
+   each blocker recovery link.
+5. Complete OCC acceptance and switch to **Director** for final approval.
+6. Complete station preparation, departure, simulated flight tracking, arrival, and destination
+   station completion.
+7. In Station Services, confirm the explicitly assigned supplier, record completion evidence, and
+   verify the service.
+8. In Station Costs, distinguish `REFERENCE ESTIMATE` from actual, attach an invoice/evidence
+   reference, submit as Station Admin, and approve as Finance Reviewer. Self-approval is rejected.
+9. Complete `MAINTENANCE COORDINATION / MAINTENANCE HANDOFF`, Finance Handoff, then Closure.
+10. Review the Flight Order History tab for the cross-domain audit trail.
+
+The seeded exception flights are:
+
+- `fop-blocked-crew-expired`: aircraft/maintenance readiness blocker;
+- `fop-dg-pending`: missing manifest, fuel, or station evidence before departure;
+- `fop-ticketing-passenger-later`: prepared destination-change impact from DJJ-WMX to DJJ-TIM;
+- `fop-pending-closure`: existing Station Cost remains `DRAFT` and blocks closure until approved
+  with a Finance Handoff or voided with a reason.
+
+Fuel is created automatically only when a converted Flight Request contains an explicit origin
+fuel supplier and a requested quantity. The generated record begins at `REQUESTED`; Station Admin
+must approve it, record uplift, and post it in `/flights/fuel`. A directly created Flight Order does
+not silently choose a supplier, so its fuel request must be created explicitly in Fuel Control.
+
+All flight-following positions are labelled `SIMULATED FLIGHT TRACKING`. Maintenance is a
+coordination/handoff demonstration, not full MRO.
+
 1. **OCC:** open `/flights/requests`, review the request queue, then inspect the converted DG charter in `/flights/readiness`.
 2. **Director:** open `/flights` and approve the flight marked ready for approval.
 3. **Station Admin:** open `/ticketing/passenger` for check-in and rescheduling, then `/ticketing/cargo` for DG acceptance.

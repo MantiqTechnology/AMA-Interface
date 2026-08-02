@@ -36,6 +36,25 @@ describe('Finance reporting read model', () => {
     );
   });
 
+  it('keeps an inactive account with historical posted movement in the Trial Balance', async () => {
+    const context = await createSeededTestServices();
+    context.services.accounting.postDemoEvents({ source: 'all' }, 'USR-FINANCE-REVIEWER');
+    context.sqlite
+      .prepare("UPDATE chart_of_accounts SET is_active = 0 WHERE id = 'coa-1000'")
+      .run();
+
+    const report = context.services.financeReporting.trialBalance({ period: '2026-07' });
+
+    expect(report.accounts).toContainEqual(
+      expect.objectContaining({
+        code: '1000',
+        isActive: false,
+        debitMinor: expect.any(Number)
+      })
+    );
+    expect(report.totals).toMatchObject({ balanced: true, differenceMinor: 0 });
+  });
+
   it('allocates immutable invoice snapshot cost without changing the total', async () => {
     const context = await createSeededTestServices();
     const report = context.services.financeReporting.profitability({ period: '2026-07' });

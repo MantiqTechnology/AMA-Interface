@@ -540,6 +540,7 @@ describe('Operational Verification and Readiness Assurance', () => {
       'AIRCRAFT_CAPACITY',
       'CREW_AVAILABILITY',
       'CREW_LICENSE_MEDICAL',
+      'CREW_QUALIFICATION',
       'MANIFEST_LOCKED',
       'DG_ACCEPTANCE',
       'FUEL_CONFIRMED',

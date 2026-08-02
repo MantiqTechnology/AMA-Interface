@@ -99,10 +99,6 @@ const priorityFlights = computed<StationFlightRow[]>(() => {
     .slice(0, 8);
 });
 
-const pendingVerificationCount = computed<number>(
-  () => stationTasks.value.filter((task: StationTaskRow) => task.status !== 'VERIFIED').length
-);
-
 const pendingServiceCount = computed<number>(
   () =>
     dataset.value.services.filter((service: StationServiceRow) => service.status === 'REQUESTED')
@@ -132,34 +128,103 @@ const submittedCostCount = computed<number>(
 const approvedCostCount = computed<number>(
   () => dataset.value.costs.filter((cost: StationCostRow) => cost.status === 'APPROVED').length
 );
+const originTaskCount = computed(
+  () =>
+    stationTasks.value.filter(
+      (task) => task.phase === 'ORIGIN_DEPARTURE' && task.status !== 'VERIFIED'
+    ).length
+);
+const arrivalTaskCount = computed(
+  () =>
+    stationTasks.value.filter(
+      (task) => task.phase === 'DESTINATION_ARRIVAL' && task.status !== 'VERIFIED'
+    ).length
+);
+const closureTaskCount = computed(
+  () =>
+    stationTasks.value.filter(
+      (task) => task.phase === 'DESTINATION_CLOSURE' && task.status !== 'VERIFIED'
+    ).length
+);
+const evidencePendingCount = computed(
+  () =>
+    stationTasks.value.filter(
+      (task) =>
+        task.requiresEvidence &&
+        task.evidenceCount === 0 &&
+        ['PENDING', 'IN_PROGRESS'].includes(task.status)
+    ).length
+);
+const occSignoffCount = computed(
+  () =>
+    stationTasks.value.filter(
+      (task) => task.stationDecision === 'VERIFIED' && task.occDecision !== 'APPROVED'
+    ).length
+);
 const attentionItems = computed(() => [
   {
-    label: 'Verification tasks pending',
-    value: pendingVerificationCount.value,
-    icon: 'mdi-clipboard-alert-outline',
+    label: 'Departure preparation',
+    value: originTaskCount.value,
+    icon: 'mdi-airplane-takeoff',
     tone: 'warning',
-    to: '/flights/station-operations/verification'
+    to: '/flights/station-operations/verification',
+    query: { phase: 'ORIGIN_DEPARTURE' }
+  },
+  {
+    label: 'Arrival completion',
+    value: arrivalTaskCount.value,
+    icon: 'mdi-airplane-landing',
+    tone: 'info',
+    to: '/flights/station-operations/verification',
+    query: { phase: 'DESTINATION_ARRIVAL' }
+  },
+  {
+    label: 'Closure dependency',
+    value: closureTaskCount.value,
+    icon: 'mdi-lock-clock-outline',
+    tone: 'warning',
+    to: '/flights/station-operations/verification',
+    query: { phase: 'DESTINATION_CLOSURE' }
+  },
+  {
+    label: 'Evidence pending',
+    value: evidencePendingCount.value,
+    icon: 'mdi-file-alert-outline',
+    tone: 'error',
+    to: '/flights/station-operations/verification',
+    query: {}
+  },
+  {
+    label: 'OCC sign-off pending',
+    value: occSignoffCount.value,
+    icon: 'mdi-shield-check-outline',
+    tone: 'secondary',
+    to: '/flights/station-operations/verification',
+    query: {}
   },
   {
     label: 'Services awaiting confirmation',
     value: pendingServiceCount.value,
     icon: 'mdi-toolbox-outline',
     tone: 'info',
-    to: '/flights/station-operations/services'
+    to: '/flights/station-operations/services',
+    query: {}
   },
   {
     label: 'Costs awaiting action',
     value: pendingCostCount.value,
     icon: 'mdi-cash-clock',
     tone: 'warning',
-    to: '/flights/station-operations/costs'
+    to: '/flights/station-operations/costs',
+    query: {}
   },
   {
     label: 'Flights not ready',
     value: flightsNotReadyCount.value,
     icon: 'mdi-airplane-alert',
     tone: 'error',
-    to: '/flights/station-operations/flights'
+    to: '/flights/station-operations/flights',
+    query: {}
   }
 ]);
 
@@ -280,7 +345,7 @@ const isEmpty = computed(
           <VListItem
             v-for="item in attentionItems"
             :key="item.label"
-            :to="context.withContext(item.to)"
+            :to="context.withContext(item.to, item.query)"
           >
             <template #prepend>
               <VAvatar :color="item.tone" size="34" variant="tonal">

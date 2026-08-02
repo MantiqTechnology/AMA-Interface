@@ -1,5 +1,5 @@
 import {
-  actionNoteBodySchema,
+  approvalActionBodySchema,
   flightOperationIdParamsSchema
 } from '../../../../../../shared/contracts/flight-operations';
 import { defineApiEventHandler } from '../../../../../utils/api-response';
@@ -10,6 +10,6 @@ import { parseBody, parseParams } from '../../../../../utils/validation';
 export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'flight.approve');
   const params = parseParams(event, flightOperationIdParamsSchema);
-  const body = await parseBody(event, actionNoteBodySchema);
+  const body = await parseBody(event, approvalActionBodySchema);
   return getServices().flightOperations.approve(params.id, body, getDemoActorId(event));
 });
