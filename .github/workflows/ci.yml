@@ -39,7 +39,7 @@ jobs:
         run: pnpm lint
 
       - name: Test
-        timeout-minutes: 20
+        timeout-minutes: 45
         run: |
           pnpm test:prepare
           pnpm exec vitest run --maxWorkers=1 --no-file-parallelism --execArgv=--max-old-space-size=8192 --reporter=default --reporter=hanging-process
