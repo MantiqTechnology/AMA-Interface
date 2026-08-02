@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createCargoBodySchema,
+  createDirectFlightOperationBodySchema,
   createFlightOperationBodySchema,
   createFlightRequestBodySchema,
   createFuelRequestBodySchema,
@@ -8,6 +9,24 @@ import {
 } from '../../shared/contracts/flight-operations';
 
 describe('flight operation request contracts', () => {
+  it('requires an auditable reason for direct Flight Order creation', () => {
+    const base = {
+      flightDate: '2026-07-08',
+      flightTypeId: 'flight-type-charter',
+      serviceTypeId: 'flight-service-type-charter-cargo',
+      priorityId: 'flight-priority-normal',
+      routeId: 'route-djj-wmx'
+    };
+
+    expect(createDirectFlightOperationBodySchema.safeParse(base).success).toBe(false);
+    expect(
+      createDirectFlightOperationBodySchema.parse({
+        ...base,
+        directCreationReason: 'Emergency operational recovery flight.'
+      }).directCreationReason
+    ).toBe('Emergency operational recovery flight.');
+  });
+
   it('normalizes blank optional flight fields and datetime-local values', () => {
     const parsed = createFlightOperationBodySchema.parse({
       flightDate: '2026-07-08',
@@ -59,10 +78,18 @@ describe('flight operation request contracts', () => {
       fuelSupplierId: 'supplier-1',
       fuelType: 'AVTUR',
       requestedQuantityLitre: '700',
+      fuelOnBoardBeforeUpliftLitre: '180',
+      defuelQuantityLitre: '',
+      measuredFuelOnBoardLitre: '',
+      confirmedBlockFuelLitre: '400',
       referencePricePerLitre: ''
     });
 
     expect(fuel.requestedQuantityLitre).toBe(700);
+    expect(fuel.fuelOnBoardBeforeUpliftLitre).toBe(180);
+    expect(fuel.defuelQuantityLitre).toBeNull();
+    expect(fuel.measuredFuelOnBoardLitre).toBeNull();
+    expect(fuel.confirmedBlockFuelLitre).toBe(400);
     expect(fuel.referencePricePerLitre).toBeNull();
 
     const stationCost = createStationCostBodySchema.parse({

@@ -159,9 +159,7 @@ async function reject(id: string) {
       />
     </template>
     <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{
-        actionError || 'Purchase orders could not be loaded.'
-      }}
+      {{ actionError || 'Purchase orders could not be loaded.' }}
     </VAlert>
     <VTextField
       v-model="search"
@@ -264,9 +262,7 @@ async function reject(id: string) {
         <VCardTitle>Create purchase order</VCardTitle><VDivider />
         <VCardText>
           <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
-            {{
-              actionError
-            }}
+            {{ actionError }}
           </VAlert>
           <VSelect
             v-model="form.purchaseRequestId"
@@ -306,10 +302,11 @@ async function reject(id: string) {
               />
             </VCol>
             <VCol cols="12" md="5">
-              <VTextField
+              <VDateInput
                 v-model="form.expectedAt"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
                 label="Expected date"
-                type="date"
                 variant="outlined"
               />
             </VCol>

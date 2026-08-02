@@ -1,33 +1,25 @@
 export function useInventoryUi() {
+  const format = useLocaleFormat();
+  const apiErrors = useApiErrorMessage();
+
   function money(value: number | null | undefined, currency = 'IDR') {
-    if (value === null || value === undefined) return '-';
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 0
-    }).format(value);
+    return format.currency(value, currency);
   }
 
   function number(value: number | null | undefined, maximumFractionDigits = 2) {
-    if (value === null || value === undefined) return '-';
-    return new Intl.NumberFormat('id-ID', { maximumFractionDigits }).format(value);
+    return format.number(value, { maximumFractionDigits });
   }
 
   function dateTime(value: string | null | undefined) {
-    if (!value) return '-';
-    return new Intl.DateTimeFormat('id-ID', {
-      dateStyle: 'medium',
-      timeStyle: 'short'
-    }).format(new Date(value));
+    return format.dateTime(value);
   }
 
   function date(value: string | null | undefined) {
-    if (!value) return '-';
-    return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(new Date(value));
+    return format.date(value);
   }
 
   function errorMessage(error: unknown, fallback = 'Inventory action failed') {
-    return error instanceof Error ? error.message : fallback;
+    return apiErrors.errorMessage(error, fallback);
   }
 
   return { money, number, date, dateTime, errorMessage };

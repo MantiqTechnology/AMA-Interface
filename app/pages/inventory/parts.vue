@@ -4,7 +4,7 @@ import DocumentPanel from '../../components/documents/DocumentPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { can } = useAuthorization();
-const { number, errorMessage } = useInventoryUi();
+const { number, date, errorMessage } = useInventoryUi();
 const search = ref('');
 const dialog = ref(false);
 const saving = ref(false);
@@ -85,6 +85,29 @@ function updateDocumentDialog(value: boolean) {
   if (!value) documentPart.value = null;
 }
 
+function expiryColor(status: InventoryPartDto['expiryProfile']['status']) {
+  if (status === 'EXPIRED') return 'error';
+  if (status === 'EXPIRING_SOON') return 'warning';
+  if (status === 'VALID') return 'success';
+  return 'medium-emphasis';
+}
+
+function expiryLabel(profile: InventoryPartDto['expiryProfile']) {
+  if (!profile.expiresAt) return 'No stock expiry';
+  if (profile.daysUntilExpiry === null) return 'Invalid expiry date';
+  if (profile.daysUntilExpiry < 0)
+    return `${number(Math.abs(profile.daysUntilExpiry), 0)} days expired`;
+  if (profile.daysUntilExpiry === 0) return 'Expires today';
+  return `${number(profile.daysUntilExpiry, 0)} days remaining`;
+}
+
+function shelfLifeCountdown(part: InventoryPartDto) {
+  if (!part.shelfLifeDays) return '-';
+  const remaining = part.expiryProfile.daysUntilExpiry;
+  if (remaining === null) return `${number(part.shelfLifeDays, 0)} total days`;
+  return `${number(Math.max(remaining, 0), 0)} / ${number(part.shelfLifeDays, 0)} days left`;
+}
+
 async function save() {
   saving.value = true;
   actionError.value = '';
@@ -147,7 +170,8 @@ async function save() {
           { title: 'Lifecycle', key: 'lifecycleType' },
           { title: 'Tracking', key: 'trackingType' },
           { title: 'Criticality', key: 'criticality' },
-          { title: 'Shelf Life', key: 'shelfLifeDays' },
+          { title: 'Expiry Date', key: 'expiryDate', sortable: false },
+          { title: 'Countdown', key: 'expiryCountdown', sortable: false },
           { title: 'Certificate', key: 'certificateRequired' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
@@ -177,8 +201,20 @@ async function save() {
         <template #[`item.criticality`]="{ item }">
           <DsStatusBadge :value="item.criticality" />
         </template>
-        <template #[`item.shelfLifeDays`]="{ item }">
-          {{ item.shelfLifeDays ? `${number(item.shelfLifeDays, 0)} days` : '-' }}
+        <template #[`item.expiryDate`]="{ item }">
+          <div>{{ date(item.expiryProfile.expiresAt) }}</div>
+          <div v-if="item.expiryProfile.lotNumber" class="text-caption text-medium-emphasis">
+            {{ item.expiryProfile.lotNumber }} ·
+            {{ number(item.expiryProfile.quantityOnNearestExpiry) }} {{ item.unitOfMeasure }}
+          </div>
+        </template>
+        <template #[`item.expiryCountdown`]="{ item }">
+          <VChip :color="expiryColor(item.expiryProfile.status)" size="small" variant="tonal">
+            {{ expiryLabel(item.expiryProfile) }}
+          </VChip>
+          <div class="mt-1 text-caption text-medium-emphasis">
+            {{ shelfLifeCountdown(item) }}
+          </div>
         </template>
         <template #[`item.certificateRequired`]="{ item }">
           <VIcon
@@ -211,9 +247,7 @@ async function save() {
         <VDivider />
         <VCardText>
           <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
-            {{
-              actionError
-            }}
+            {{ actionError }}
           </VAlert>
           <VRow dense>
             <VCol cols="12" md="5">

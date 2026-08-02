@@ -9,6 +9,7 @@ type StationServiceForm = {
   serviceTypeId: string;
   serviceSupplierId: string;
   referenceRate: number | null;
+  creationReason: string;
 };
 
 const props = defineProps<{
@@ -66,12 +67,17 @@ const referenceRate = computed({
     updateForm('referenceRate', Number.isFinite(parsedValue) ? parsedValue : null);
   }
 });
+const creationReason = computed({
+  get: () => props.form.creationReason,
+  set: (value: string | null) => updateForm('creationReason', value ?? '')
+});
 
 const canSubmit = computed(() => {
   return (
     Boolean(flightId.value) &&
     Boolean(serviceTypeId.value) &&
     Boolean(serviceSupplierId.value) &&
+    creationReason.value.trim().length >= 5 &&
     (referenceRate.value === null || referenceRate.value >= 0)
   );
 });
@@ -118,6 +124,8 @@ function closeDialog() {
           item-title="title"
           item-value="id"
           label="Supplier"
+          hint="Select explicitly. The system will not choose a default supplier."
+          persistent-hint
           variant="outlined"
         />
 
@@ -126,6 +134,15 @@ function closeDialog() {
           label="Reference rate (optional)"
           type="number"
           min="0"
+          variant="outlined"
+        />
+
+        <VTextarea
+          v-model="creationReason"
+          label="Reason for additional service"
+          hint="Manual services are audited as MANUAL_ADDITIONAL_SERVICE."
+          persistent-hint
+          rows="2"
           variant="outlined"
         />
       </VCardText>

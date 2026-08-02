@@ -8,10 +8,19 @@ import type {
   DgDecisionBody,
   EmptyLoadSubmitBody,
   FlightConcurrencyBody,
+  FlightChangeImpactDto,
+  FlightChangePreviewBody,
+  FlightActionBlockerDto,
+  FlightActionCapabilityDto,
+  FlightLifecyclePhase,
+  NeedsMyActionItemDto,
   FlightOperationDetailDto,
+  FlightOperationRouteUpdateBody,
+  FlightOperationStatus,
   ManifestRejectBody,
   ManifestUnlockBody
 } from '#shared/contracts/flight-operations';
+import { demoRolePermissions, type DemoRole } from '#shared/types/roles';
 import { DomainError } from '../utils/errors';
 import { getApplicationNow } from '../utils/time';
 
@@ -47,7 +56,1033 @@ function readinessCodeForTask(taskCode: string) {
   return taskCode;
 }
 
+const lifecyclePhases: Record<
+  FlightOperationStatus,
+  { phase: FlightLifecyclePhase; step: number | null; label: string }
+> = {
+  DRAFT: { phase: 'PLANNING', step: 1, label: 'Planning' },
+  PENDING_READINESS: { phase: 'READINESS', step: 2, label: 'Operational Readiness' },
+  BLOCKED: { phase: 'READINESS', step: 2, label: 'Operational Readiness' },
+  READY_FOR_OCC_REVIEW: { phase: 'READINESS', step: 2, label: 'OCC Readiness Review' },
+  READY_FOR_APPROVAL: { phase: 'APPROVAL', step: 3, label: 'Final Flight Approval' },
+  APPROVED: { phase: 'APPROVAL', step: 3, label: 'Approved' },
+  REAPPROVAL_REQUIRED: { phase: 'APPROVAL', step: 3, label: 'Reapproval Required' },
+  SCHEDULED: { phase: 'SCHEDULED', step: 4, label: 'Scheduled' },
+  CHECK_IN_OPEN: { phase: 'DEPARTURE', step: 5, label: 'Departure Preparation' },
+  CHECK_IN_CLOSED: { phase: 'DEPARTURE', step: 5, label: 'Departure Assurance' },
+  READY_FOR_DEPARTURE: { phase: 'DEPARTURE', step: 5, label: 'Ready for Departure' },
+  IN_PROGRESS: { phase: 'IN_FLIGHT', step: 6, label: 'In Flight' },
+  LANDED: { phase: 'ARRIVAL', step: 7, label: 'Arrival' },
+  PENDING_CLOSURE: { phase: 'CLOSURE', step: 8, label: 'Closure' },
+  CLOSED: { phase: 'FINAL', step: 9, label: 'Closed' },
+  CANCELLED: { phase: 'EXCEPTION', step: null, label: 'Cancelled' },
+  DIVERTED: { phase: 'EXCEPTION', step: null, label: 'Diverted Arrival' },
+  REOPENED_FOR_CORRECTION: { phase: 'EXCEPTION', step: null, label: 'Correction' }
+};
+
+const actionDefinitions: Array<{
+  action: string;
+  label: string;
+  statuses: FlightOperationStatus[];
+  permission: string;
+  ownerRoles: string[];
+  station: 'ORIGIN' | 'DESTINATION' | 'ACTUAL_DESTINATION' | null;
+  requiresConfirmation?: boolean;
+  requiresReason?: boolean;
+}> = [
+  {
+    action: 'submit',
+    label: 'Submit Order',
+    statuses: ['DRAFT'],
+    permission: 'flight.readiness.evaluate',
+    ownerRoles: ['OCC'],
+    station: 'ORIGIN'
+  },
+  {
+    action: 'evaluate',
+    label: 'Evaluate Readiness',
+    statuses: ['PENDING_READINESS', 'BLOCKED', 'REAPPROVAL_REQUIRED'],
+    permission: 'flight.readiness.evaluate',
+    ownerRoles: ['OCC'],
+    station: null
+  },
+  {
+    action: 'accept-readiness',
+    label: 'Terima Kesiapan OCC',
+    statuses: ['READY_FOR_OCC_REVIEW'],
+    permission: 'flight.readiness.approve',
+    ownerRoles: ['OCC Checker'],
+    station: null,
+    requiresConfirmation: true
+  },
+  {
+    action: 'approve',
+    label: 'Setujui Penerbangan',
+    statuses: ['READY_FOR_APPROVAL'],
+    permission: 'flight.approve',
+    ownerRoles: ['Director'],
+    station: null,
+    requiresConfirmation: true
+  },
+  {
+    action: 'schedule',
+    label: 'Schedule Flight',
+    statuses: ['APPROVED'],
+    permission: 'flight.schedule',
+    ownerRoles: ['OCC'],
+    station: null
+  },
+  {
+    action: 'open-check-in',
+    label: 'Open Check-in',
+    statuses: ['SCHEDULED'],
+    permission: 'flight.schedule',
+    ownerRoles: ['OCC'],
+    station: 'ORIGIN'
+  },
+  {
+    action: 'close-check-in',
+    label: 'Close Check-in / Load Intake',
+    statuses: ['CHECK_IN_OPEN'],
+    permission: 'flight.checkin.close',
+    ownerRoles: ['Station Admin'],
+    station: 'ORIGIN',
+    requiresConfirmation: true
+  },
+  {
+    action: 'evaluate-departure-assurance',
+    label: 'Evaluate Departure Assurance',
+    statuses: ['CHECK_IN_CLOSED'],
+    permission: 'flight.departure.assurance.evaluate',
+    ownerRoles: ['OCC'],
+    station: null
+  },
+  {
+    action: 'mark-ready-for-departure',
+    label: 'Mark Ready for Departure',
+    statuses: ['CHECK_IN_CLOSED'],
+    permission: 'flight.departure.ready',
+    ownerRoles: ['OCC'],
+    station: null,
+    requiresConfirmation: true
+  },
+  {
+    action: 'depart',
+    label: 'Record Departure',
+    statuses: ['READY_FOR_DEPARTURE'],
+    permission: 'flight.departure.execute',
+    ownerRoles: ['OCC'],
+    station: 'ORIGIN',
+    requiresConfirmation: true
+  },
+  {
+    action: 'land',
+    label: 'Record Landing',
+    statuses: ['IN_PROGRESS'],
+    permission: 'flight.movement.update',
+    ownerRoles: ['OCC'],
+    station: 'ACTUAL_DESTINATION',
+    requiresConfirmation: true
+  },
+  {
+    action: 'pending-closure',
+    label: 'Start Closure',
+    statuses: ['LANDED', 'DIVERTED', 'REOPENED_FOR_CORRECTION'],
+    permission: 'flight.movement.update',
+    ownerRoles: ['OCC'],
+    station: 'ACTUAL_DESTINATION'
+  },
+  {
+    action: 'close',
+    label: 'Close Flight',
+    statuses: ['PENDING_CLOSURE'],
+    permission: 'flight.closure.execute',
+    ownerRoles: ['Director'],
+    station: null,
+    requiresConfirmation: true
+  },
+  {
+    action: 'divert',
+    label: 'Divert / Return to Base',
+    statuses: ['IN_PROGRESS'],
+    permission: 'flight.exception.update',
+    ownerRoles: ['OCC'],
+    station: null,
+    requiresConfirmation: true,
+    requiresReason: true
+  },
+  {
+    action: 'reopen',
+    label: 'Reopen for Correction',
+    statuses: ['CLOSED'],
+    permission: 'flight.closure.create',
+    ownerRoles: ['Director'],
+    station: null,
+    requiresConfirmation: true,
+    requiresReason: true
+  },
+  {
+    action: 'cancel',
+    label: 'Cancel Flight',
+    statuses: [
+      'DRAFT',
+      'PENDING_READINESS',
+      'BLOCKED',
+      'READY_FOR_OCC_REVIEW',
+      'READY_FOR_APPROVAL',
+      'APPROVED',
+      'REAPPROVAL_REQUIRED',
+      'SCHEDULED',
+      'CHECK_IN_OPEN',
+      'CHECK_IN_CLOSED',
+      'READY_FOR_DEPARTURE'
+    ],
+    permission: 'flight.exception.update',
+    ownerRoles: ['OCC'],
+    station: null,
+    requiresConfirmation: true,
+    requiresReason: true
+  }
+];
+
 export class FlightOperationsVerificationService extends FlightOperationsService {
+  needsMyAction(ctx: ActorContext): NeedsMyActionItemDto[] {
+    const items: NeedsMyActionItemDto[] = [];
+    const roleMatches = (owners: string[]) =>
+      ctx.role === 'Demo Admin' ||
+      owners.includes(ctx.role) ||
+      (ctx.role === 'Station Admin Origin' && owners.includes('Station Admin')) ||
+      (ctx.role === 'OCC' && owners.includes('OCC/Flight Coordinator'));
+    const inScope = (origin: string, destination: string) =>
+      ctx.stationCodes.includes('ALL') ||
+      ctx.stationCodes.includes(origin) ||
+      ctx.stationCodes.includes(destination);
+
+    for (const flight of this.list({ search: '', limit: 100, offset: 0 }).flights) {
+      if (
+        ['CLOSED', 'CANCELLED'].includes(flight.currentStatus) ||
+        !inScope(flight.originStationCode, flight.destinationStationCode)
+      ) {
+        continue;
+      }
+      const detail = this.detailForActor(flight.id, ctx);
+      for (const nextAction of detail.commandCenter?.nextRequiredActions ?? []) {
+        if (!roleMatches(nextAction.ownerRoleCodes)) continue;
+        items.push({
+          id: `flight-${flight.id}-${nextAction.id}`,
+          flightId: flight.id,
+          flightNumber: flight.flightNumber,
+          action: nextAction.title,
+          reason: nextAction.description,
+          responsibleRole: nextAction.ownerRoleCodes.join(', ') || ctx.role,
+          responsibleStationCode: nextAction.ownerStationCode,
+          scheduledDepartureAt: flight.scheduledDepartureAt,
+          severity: nextAction.urgency === 'BLOCKING' ? 'BLOCKING' : 'ACTION',
+          href: nextAction.href ?? `/flights/${encodeURIComponent(flight.id)}`
+        });
+      }
+
+      if (
+        ctx.role === 'Station Admin' ||
+        ctx.role === 'Station Admin Origin' ||
+        ctx.role === 'Demo Admin'
+      ) {
+        for (const service of detail.stationServices) {
+          if (
+            !ctx.stationCodes.includes('ALL') &&
+            !ctx.stationCodes.includes(service.stationCode)
+          ) {
+            continue;
+          }
+          const action =
+            service.status === 'PLANNED' || service.status === 'REQUESTED'
+              ? 'Confirm station service'
+              : service.status === 'CONFIRMED'
+                ? 'Record station service completion'
+                : service.status === 'COMPLETED'
+                  ? 'Verify station service evidence'
+                  : null;
+          if (!action) continue;
+          items.push({
+            id: `service-${service.id}`,
+            flightId: flight.id,
+            flightNumber: flight.flightNumber,
+            action,
+            reason: `${service.serviceType} at ${service.stationCode} is ${service.status}.`,
+            responsibleRole:
+              ctx.role === 'Station Admin Origin' ? 'Station Admin Origin' : 'Station Admin',
+            responsibleStationCode: service.stationCode,
+            scheduledDepartureAt: flight.scheduledDepartureAt,
+            severity: 'ACTION',
+            href: `/flights/station-operations/services?stationCode=${encodeURIComponent(service.stationCode)}`
+          });
+        }
+      }
+
+      if (ctx.role === 'Finance Reviewer' || ctx.role === 'Demo Admin') {
+        for (const cost of detail.stationCosts.filter((record) =>
+          ['DRAFT', 'SUBMITTED'].includes(record.status)
+        )) {
+          items.push({
+            id: `cost-${cost.id}`,
+            flightId: flight.id,
+            flightNumber: flight.flightNumber,
+            action:
+              cost.status === 'SUBMITTED'
+                ? 'Approve or void Station Cost'
+                : 'Review or void draft Station Cost',
+            reason: `${cost.costCategoryName} is ${cost.status}; closure remains blocked while the recorded cost is unresolved.`,
+            responsibleRole: 'Finance Reviewer',
+            responsibleStationCode: cost.stationCode,
+            scheduledDepartureAt: flight.scheduledDepartureAt,
+            severity: flight.currentStatus === 'PENDING_CLOSURE' ? 'BLOCKING' : 'ACTION',
+            href: `/flights/station-operations/costs?stationCode=${encodeURIComponent(cost.stationCode)}`
+          });
+        }
+      }
+
+      if (['Maintenance Manager', 'Certifying Staff', 'Demo Admin'].includes(ctx.role)) {
+        for (const blocker of detail.commandCenter?.activeBlockers ?? []) {
+          if (blocker.domain !== 'MAINTENANCE' && blocker.domain !== 'AIRCRAFT') continue;
+          items.push({
+            id: `maintenance-${flight.id}-${blocker.code}`,
+            flightId: flight.id,
+            flightNumber: flight.flightNumber,
+            action: 'Resolve maintenance release blocker',
+            reason: blocker.message,
+            responsibleRole: blocker.ownerRoleCode ?? 'Maintenance/Certifying Staff',
+            responsibleStationCode: blocker.ownerStationCode,
+            scheduledDepartureAt: flight.scheduledDepartureAt,
+            severity: 'BLOCKING',
+            href:
+              blocker.recoveryHref ??
+              `/flights/maintenance?flightId=${encodeURIComponent(flight.id)}`
+          });
+        }
+      }
+    }
+
+    return [...new Map(items.map((item) => [item.id, item])).values()]
+      .sort((left, right) => {
+        if (left.severity !== right.severity) return left.severity === 'BLOCKING' ? -1 : 1;
+        return String(left.scheduledDepartureAt).localeCompare(String(right.scheduledDepartureAt));
+      })
+      .slice(0, 30);
+  }
+
+  changeRouteAssignment(
+    id: string,
+    input: FlightOperationRouteUpdateBody,
+    ctx: ActorContext
+  ): FlightOperationDetailDto {
+    const permissions = demoRolePermissions[ctx.role as DemoRole] ?? ([] as readonly string[]);
+    if (!permissions.includes('*') && !permissions.includes('flight.create.direct')) {
+      throw new DomainError(
+        'PERMISSION_DENIED',
+        'Changing a planned route requires OCC flight planning permission.',
+        403
+      );
+    }
+    const existingCommand = this.sqlite
+      .prepare(
+        `SELECT flight_id, action, actor_user_id, expected_version
+         FROM flight_action_commands WHERE idempotency_key = ?`
+      )
+      .get(input.idempotencyKey) as
+      | {
+          flight_id: string;
+          action: string;
+          actor_user_id: string;
+          expected_version: number;
+        }
+      | undefined;
+    const commandAction = `ROUTE_STATION:${input.routeId}`;
+    if (existingCommand) {
+      if (
+        existingCommand.flight_id !== id ||
+        existingCommand.action !== commandAction ||
+        existingCommand.actor_user_id !== ctx.userId ||
+        existingCommand.expected_version !== input.expectedVersion
+      ) {
+        throw new DomainError(
+          'FLIGHT_IDEMPOTENCY_CONFLICT',
+          'This idempotency key was already used for a different route command.',
+          409
+        );
+      }
+      return this.detailForActor(id, ctx);
+    }
+
+    const detail = this.detailForActor(id, ctx);
+    if (detail.version !== input.expectedVersion) {
+      throw new DomainError(
+        'FLIGHT_VERSION_CONFLICT',
+        'Flight data changed after the route impact preview was shown.',
+        409,
+        {
+          expectedVersion: input.expectedVersion,
+          actualVersion: detail.version,
+          refreshRequired: true
+        }
+      );
+    }
+    if (
+      ![
+        'DRAFT',
+        'PENDING_READINESS',
+        'BLOCKED',
+        'READY_FOR_OCC_REVIEW',
+        'READY_FOR_APPROVAL',
+        'APPROVED',
+        'REAPPROVAL_REQUIRED',
+        'SCHEDULED'
+      ].includes(detail.currentStatus)
+    ) {
+      throw new DomainError(
+        'INVALID_TRANSITION',
+        'Route may only be changed before departure preparation starts.',
+        409
+      );
+    }
+
+    const route = this.sqlite
+      .prepare(
+        `SELECT route.id, route.origin_station_id, route.destination_station_id,
+                origin.station_code AS origin_code, destination.station_code AS destination_code
+         FROM routes route
+         JOIN stations origin ON origin.id = route.origin_station_id
+         JOIN stations destination ON destination.id = route.destination_station_id
+         WHERE route.id = ? AND route.is_active = 1`
+      )
+      .get(input.routeId) as SqlRow | undefined;
+    if (!route) {
+      throw new DomainError('NOT_FOUND', `Active route ${input.routeId} not found.`, 404);
+    }
+    if (String(route.origin_station_id) !== detail.originStationId) {
+      throw new DomainError(
+        'ROUTE_ORIGIN_CHANGE_NOT_SUPPORTED',
+        'This demo action changes the destination only; the origin must remain unchanged.',
+        422
+      );
+    }
+    if (String(route.destination_station_id) === detail.destinationStationId) {
+      throw new DomainError(
+        'ROUTE_DESTINATION_UNCHANGED',
+        'Select a route with a different destination.',
+        422
+      );
+    }
+    const supplier = this.sqlite
+      .prepare(
+        `SELECT id FROM station_service_suppliers
+         WHERE id = ? AND station_id = ? AND service_type IN ('HANDLING', 'BOTH')
+           AND is_active = 1`
+      )
+      .get(input.destinationHandlingSupplierId, String(route.destination_station_id));
+    if (!supplier) {
+      throw new DomainError(
+        'STATION_SERVICE_SUPPLIER_SCOPE_MISMATCH',
+        `Select an active handling supplier for destination ${String(route.destination_code)}.`,
+        422
+      );
+    }
+
+    this.sqlite.transaction(() => {
+      const now = timestamp();
+      const oldDestinationId = detail.destinationStationId;
+      const oldDestinationCode = detail.destinationStationCode;
+      const affectedServices = this.sqlite
+        .prepare(
+          `SELECT id, status_id FROM flight_station_service_requests
+           WHERE flight_id = ? AND station_id = ? AND status_id <> 'station-service-status-cancelled'`
+        )
+        .all(id, oldDestinationId) as Array<{ id: string; status_id: string }>;
+
+      for (const service of affectedServices) {
+        this.sqlite
+          .prepare(
+            `UPDATE flight_station_service_requests
+             SET status_id = 'station-service-status-cancelled',
+                 rejection_note = ?, version = version + 1, updated_at = ?
+             WHERE id = ?`
+          )
+          .run(
+            `Invalidated because destination changed from ${oldDestinationCode} to ${String(route.destination_code)}.`,
+            now,
+            service.id
+          );
+        this.sqlite
+          .prepare(
+            `UPDATE flight_station_costs
+             SET status_id = 'station-cost-status-voided', voided_by_user_id = ?,
+                 voided_at = ?, void_reason = ?, version = version + 1, updated_at = ?
+             WHERE source_service_id = ?
+               AND status_id IN ('station-cost-status-draft', 'station-cost-status-submitted')`
+          )
+          .run(
+            ctx.userId,
+            now,
+            `Destination changed from ${oldDestinationCode} to ${String(route.destination_code)}.`,
+            now,
+            service.id
+          );
+      }
+
+      this.sqlite
+        .prepare(
+          `UPDATE flight_station_tasks
+           SET status = 'REJECTED', verified_by_user_id = NULL, verified_at = NULL,
+               rejection_reason = ?, version = version + 1, updated_at = ?
+           WHERE flight_id = ? AND station_id = ?`
+        )
+        .run(
+          `Destination changed from ${oldDestinationCode} to ${String(route.destination_code)}.`,
+          now,
+          id,
+          oldDestinationId
+        );
+      this.sqlite
+        .prepare(
+          `UPDATE flight_operation_approvals
+           SET status_id = 'flight-approval-status-invalidated', invalidated_at = ?,
+               invalidation_reason = ?, updated_at = ?
+           WHERE flight_id = ? AND approval_type_id IN (
+             'flight-approval-type-readiness-approval',
+             'flight-approval-type-flight-approval'
+           ) AND status_id = 'flight-approval-status-approved'`
+        )
+        .run(
+          now,
+          `Route destination changed from ${oldDestinationCode} to ${String(route.destination_code)}.`,
+          now,
+          id
+        );
+      const update = this.sqlite
+        .prepare(
+          `UPDATE flight_operations
+           SET route_id = ?, destination_station_id = ?,
+               current_status_id = 'flight-operation-status-reapproval-required',
+               readiness_revision = readiness_revision + 1, version = version + 1,
+               blocking_reason = ?, updated_at = ?
+           WHERE id = ? AND version = ?`
+        )
+        .run(
+          input.routeId,
+          String(route.destination_station_id),
+          `Destination changed to ${String(route.destination_code)}; dependent readiness requires review.`,
+          now,
+          id,
+          input.expectedVersion
+        );
+      if (!update.changes) {
+        throw new DomainError(
+          'FLIGHT_VERSION_CONFLICT',
+          'Flight data changed while the route update was being applied.',
+          409
+        );
+      }
+
+      this.ensureOperationalVerificationTasks(id);
+      this.createStationService(
+        {
+          flightId: id,
+          stationId: String(route.destination_station_id),
+          serviceSupplierId: input.destinationHandlingSupplierId,
+          serviceTypeId: 'station-service-type-handling',
+          referenceRate: null
+        },
+        ctx.userId,
+        { planningAssignment: true }
+      );
+      this.invalidateStationVerification(
+        id,
+        'Route and destination station changed.',
+        ctx.userId,
+        [],
+        [
+          'ROUTE_AVAILABILITY',
+          'OPERATIONAL_ADVISORY',
+          'FUEL_CONFIRMED',
+          'HANDLING_CONFIRMED',
+          'DESTINATION_STATION_SIGNOFF'
+        ]
+      );
+      const resultingVersion = Number(
+        (
+          this.sqlite.prepare('SELECT version FROM flight_operations WHERE id = ?').get(id) as {
+            version: number;
+          }
+        ).version
+      );
+      this.appendOperationalAudit({
+        actorUserId: ctx.userId,
+        flightId: id,
+        stationId: String(route.destination_station_id),
+        module: 'FLIGHT',
+        action: 'ROUTE_STATION_CHANGED',
+        beforeStatus: detail.currentStatus,
+        afterStatus: 'REAPPROVAL_REQUIRED',
+        beforeVersion: input.expectedVersion,
+        afterVersion: resultingVersion,
+        reason: `Destination changed from ${oldDestinationCode} to ${String(route.destination_code)}.`,
+        metadata: {
+          before: {
+            routeId: detail.routeId,
+            destinationStationId: oldDestinationId,
+            destinationStationCode: oldDestinationCode
+          },
+          after: {
+            routeId: input.routeId,
+            destinationStationId: String(route.destination_station_id),
+            destinationStationCode: String(route.destination_code)
+          },
+          invalidatedDestinationServiceIds: affectedServices.map((service) => service.id),
+          preservedOriginStationId: detail.originStationId
+        }
+      });
+      this.sqlite
+        .prepare(
+          `INSERT INTO flight_action_commands (
+             id, idempotency_key, flight_id, action, actor_user_id, expected_version,
+             resulting_version, created_at, completed_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          `fcmd-${nanoid(12)}`,
+          input.idempotencyKey,
+          id,
+          commandAction,
+          ctx.userId,
+          input.expectedVersion,
+          resultingVersion,
+          now,
+          now
+        );
+    })();
+
+    return this.detailForActor(id, ctx);
+  }
+
+  previewFlightChange(
+    id: string,
+    input: FlightChangePreviewBody,
+    ctx: ActorContext
+  ): FlightChangeImpactDto {
+    const detail = this.detailForActor(id, ctx);
+    if (detail.version !== input.expectedVersion) {
+      throw new DomainError(
+        'FLIGHT_VERSION_CONFLICT',
+        'Flight data changed after this preview was requested.',
+        409,
+        {
+          expectedVersion: input.expectedVersion,
+          actualVersion: detail.version,
+          refreshRequired: true
+        }
+      );
+    }
+    const impactCodes: Record<
+      FlightChangePreviewBody['changeType'],
+      Array<[string, string, FlightActionBlockerDto['domain']]>
+    > = {
+      AIRCRAFT_ASSIGNMENT: [
+        ['AIRCRAFT_SERVICEABILITY', 'Aircraft serviceability', 'AIRCRAFT'],
+        ['AIRCRAFT_LOCATION', 'Aircraft location', 'AIRCRAFT'],
+        ['AIRCRAFT_CAPACITY', 'Aircraft capacity', 'AIRCRAFT'],
+        ['MAINTENANCE_RELEASE', 'Maintenance release', 'MAINTENANCE']
+      ],
+      CREW_ASSIGNMENT: [
+        ['CREW_AVAILABILITY', 'Crew availability', 'CREW'],
+        ['CREW_LICENSE_MEDICAL', 'Crew licence and medical', 'CREW'],
+        ['CREW_QUALIFICATION', 'Crew qualification', 'CREW']
+      ],
+      SCHEDULE: [
+        ['AIRCRAFT_SCHEDULE', 'Aircraft schedule', 'AIRCRAFT'],
+        ['CREW_AVAILABILITY', 'Crew duty and availability', 'CREW'],
+        ['FUEL_CONFIRMED', 'Fuel planning', 'FUEL'],
+        ['HANDLING_CONFIRMED', 'Station timing', 'STATION']
+      ],
+      ROUTE_STATION: [
+        ['ROUTE_AVAILABILITY', 'Route availability', 'PLANNING'],
+        ['OPERATIONAL_ADVISORY', 'Operational advisory', 'PLANNING'],
+        ['FUEL_CONFIRMED', 'Fuel planning', 'FUEL'],
+        ['HANDLING_CONFIRMED', 'Station preparation', 'STATION']
+      ],
+      PAYLOAD_MANIFEST: [
+        ['AIRCRAFT_CAPACITY', 'Aircraft capacity', 'AIRCRAFT'],
+        ['MANIFEST_APPROVED', 'Manifest approval', 'MANIFEST'],
+        ['DG_ACCEPTANCE', 'Dangerous goods acceptance', 'MANIFEST'],
+        ['ORIGIN_STATION_SIGNOFF', 'Origin station sign-off', 'STATION']
+      ],
+      COMMERCIAL_CLASSIFICATION: [
+        ['FINANCE_INITIALIZED', 'Commercial and finance readiness', 'FINANCE']
+      ],
+      EVIDENCE_SOURCE: [
+        ['REQUIRED_DOCUMENTS', 'Required operational documents', 'PLANNING'],
+        ['ORIGIN_STATION_SIGNOFF', 'Origin station sign-off', 'STATION'],
+        ['DESTINATION_STATION_SIGNOFF', 'Destination station sign-off', 'STATION']
+      ],
+      CANCELLATION: [['FLIGHT_LIFECYCLE', 'Flight lifecycle', 'MOVEMENT']],
+      DIVERSION: [
+        ['ACTUAL_DESTINATION', 'Actual destination responsibility', 'MOVEMENT'],
+        ['DESTINATION_STATION_SIGNOFF', 'Destination station sign-off', 'STATION'],
+        ['MAINTENANCE_HANDOFF', 'Post-flight maintenance handoff', 'MAINTENANCE']
+      ],
+      REOPEN: [['CLOSURE_APPROVAL', 'Closure approval', 'CLOSURE']]
+    };
+    const approvalTypes =
+      input.changeType === 'COMMERCIAL_CLASSIFICATION'
+        ? ['FLIGHT_APPROVAL' as const]
+        : ['READINESS_APPROVAL' as const, 'FLIGHT_APPROVAL' as const];
+    const invalidatedApprovals = detail.approvals
+      .filter(
+        (approval) =>
+          approvalTypes.includes(approval.approvalType as (typeof approvalTypes)[number]) &&
+          approval.status === 'APPROVED'
+      )
+      .map((approval) => ({
+        checkpoint: approval.approvalType,
+        approvedBy: approval.decidedByUserId,
+        reason: `${input.changeType.replaceAll('_', ' ')} changes the approved operational snapshot.`
+      }));
+    const invalidatedItems = impactCodes[input.changeType].map(([code, label, domain]) => ({
+      code,
+      label,
+      domain,
+      reason: `${label} must be evaluated again after this change.`
+    }));
+    const resultingStatus: FlightOperationStatus =
+      ['APPROVED', 'SCHEDULED'].includes(detail.currentStatus) && invalidatedItems.length > 0
+        ? 'REAPPROVAL_REQUIRED'
+        : detail.currentStatus;
+    const resultingPhase = lifecyclePhases[resultingStatus].phase;
+
+    return {
+      changeType: input.changeType,
+      resultingStatus,
+      resultingPhase,
+      invalidatedItems,
+      invalidatedApprovals,
+      requiredNextActions: detail.commandCenter?.nextRequiredActions ?? [],
+      warnings: [],
+      requiresConfirmation: invalidatedItems.length > 0 || invalidatedApprovals.length > 0
+    };
+  }
+
+  detailForActor(id: string, ctx: ActorContext): FlightOperationDetailDto {
+    const detail = this.detail(id);
+    this.assertFlightStationScope(id, ctx);
+    const presentation = lifecyclePhases[detail.currentStatus];
+    const rolePermissions = demoRolePermissions[ctx.role as DemoRole] ?? ([] as readonly string[]);
+    const hasPermission = (permission: string) =>
+      rolePermissions.includes('*') || rolePermissions.includes(permission);
+    const stationCodeFor = (
+      station: (typeof actionDefinitions)[number]['station']
+    ): string | null => {
+      if (station === 'ORIGIN') return detail.originStationCode;
+      if (station === 'DESTINATION') return detail.destinationStationCode;
+      if (station === 'ACTUAL_DESTINATION') {
+        return detail.actualArrivalStationCode ?? detail.destinationStationCode;
+      }
+      return null;
+    };
+
+    const capabilities: FlightActionCapabilityDto[] = actionDefinitions.map((definition) => {
+      const visible = definition.statuses.includes(detail.currentStatus);
+      const permissionGranted = hasPermission(definition.permission);
+      const ownerStationCode = stationCodeFor(definition.station);
+      const stationGranted =
+        !ownerStationCode ||
+        ctx.stationCodes.includes('ALL') ||
+        ctx.stationCodes.includes(ownerStationCode);
+      const blockers: FlightActionBlockerDto[] = [];
+
+      if (visible && !permissionGranted) {
+        blockers.push({
+          code: 'PERMISSION_DENIED',
+          message: `${definition.label} must be performed by ${definition.ownerRoles.join(' or ')}.`,
+          domain: 'PERMISSION',
+          severity: 'BLOCKER',
+          ownerRoleCode: definition.ownerRoles[0] ?? null,
+          ownerStationCode,
+          recoveryHref: null,
+          evidenceReference: null
+        });
+      }
+      if (visible && permissionGranted && !stationGranted) {
+        blockers.push({
+          code: 'STATION_SCOPE_DENIED',
+          message: `${definition.label} belongs to station ${ownerStationCode}.`,
+          domain: 'STATION',
+          severity: 'BLOCKER',
+          ownerRoleCode: definition.ownerRoles[0] ?? null,
+          ownerStationCode,
+          recoveryHref: `/flights/station-operations/${encodeURIComponent(id)}`,
+          evidenceReference: null
+        });
+      }
+      if (
+        visible &&
+        definition.action === 'accept-readiness' &&
+        detail.createdByUserId === ctx.userId
+      ) {
+        blockers.push({
+          code: 'SEPARATION_OF_DUTIES',
+          message:
+            'Penerbangan ini dibuat oleh akun Anda. Penerimaan kesiapan OCC harus dilakukan oleh personel berbeda.',
+          domain: 'APPROVAL',
+          severity: 'BLOCKER',
+          ownerRoleCode: 'OCC Checker',
+          ownerStationCode: null,
+          recoveryHref: null,
+          evidenceReference: null
+        });
+      }
+      if (visible && definition.action === 'approve') {
+        const readinessApprover = detail.approvals.find(
+          (approval) => approval.approvalType === 'READINESS_APPROVAL'
+        )?.decidedByUserId;
+        if (detail.createdByUserId === ctx.userId || readinessApprover === ctx.userId) {
+          blockers.push({
+            code: 'SEPARATION_OF_DUTIES',
+            message:
+              'Final approval must be performed by a Director different from the creator and OCC readiness checker.',
+            domain: 'APPROVAL',
+            severity: 'BLOCKER',
+            ownerRoleCode: 'Director',
+            ownerStationCode: null,
+            recoveryHref: null,
+            evidenceReference: null
+          });
+        }
+      }
+      if (visible && definition.action === 'close' && !detail.closureReadiness.allowed) {
+        for (const missing of detail.closureReadiness.missing) {
+          blockers.push({
+            code: 'CLOSURE_DEPENDENCY_MISSING',
+            message: `Complete ${missing} before closing this flight.`,
+            domain: 'CLOSURE',
+            severity: 'BLOCKER',
+            ownerRoleCode: null,
+            ownerStationCode: detail.actualArrivalStationCode ?? detail.destinationStationCode,
+            recoveryHref: `/flights/${encodeURIComponent(id)}?tab=records`,
+            evidenceReference: null
+          });
+        }
+      }
+
+      return {
+        action: definition.action,
+        label: definition.label,
+        description: null,
+        allowed: visible && permissionGranted && stationGranted && blockers.length === 0,
+        visible,
+        permissionGranted,
+        requiresConfirmation: definition.requiresConfirmation ?? false,
+        requiresReason: definition.requiresReason ?? false,
+        requiresConcurrencyVersion: true,
+        blockedReasons: blockers,
+        warnings: [],
+        ownerRoleCodes: definition.ownerRoles,
+        ownerStationCodes: ownerStationCode ? [ownerStationCode] : [],
+        href: visible ? `/flights/${encodeURIComponent(id)}` : null,
+        invalidates: []
+      };
+    });
+    const readinessBlockerIsCurrent = (
+      check: FlightOperationDetailDto['readinessChecks'][number]
+    ) => {
+      if (check.checkCode === 'ORIGIN_STATION_SIGNOFF') {
+        return [
+          'CHECK_IN_OPEN',
+          'CHECK_IN_CLOSED',
+          'READY_FOR_DEPARTURE',
+          'IN_PROGRESS',
+          'LANDED',
+          'DIVERTED',
+          'PENDING_CLOSURE',
+          'REOPENED_FOR_CORRECTION'
+        ].includes(detail.currentStatus);
+      }
+      if (check.checkCode === 'DESTINATION_STATION_SIGNOFF') {
+        return ['LANDED', 'DIVERTED', 'PENDING_CLOSURE', 'REOPENED_FOR_CORRECTION'].includes(
+          detail.currentStatus
+        );
+      }
+      return true;
+    };
+    const readinessActions = detail.readinessChecks
+      .filter((check) => check.blocking && readinessBlockerIsCurrent(check))
+      .map((check) => ({
+        id: `${id}:readiness:${check.checkCode}`,
+        title: check.checkName,
+        description: check.resultNote ?? check.recommendedAction,
+        domain: (check.category === 'AIRCRAFT'
+          ? 'AIRCRAFT'
+          : check.category === 'CREW'
+            ? 'CREW'
+            : check.category) as FlightActionBlockerDto['domain'],
+        ownerRoleCodes: [check.ownerRole],
+        ownerStationCode:
+          check.category === 'STATION'
+            ? check.checkCode.startsWith('DESTINATION_')
+              ? (detail.actualArrivalStationCode ?? detail.destinationStationCode)
+              : detail.originStationCode
+            : null,
+        urgency: 'BLOCKING' as const,
+        href: check.actionHref,
+        capabilityAction: null
+      }));
+    const readinessBlockers: FlightActionBlockerDto[] = detail.readinessChecks
+      .filter((check) => check.blocking && readinessBlockerIsCurrent(check))
+      .map((check) => {
+        const supplierMissing = check.resultNote?.startsWith('STATION_SERVICE_SUPPLIER_REQUIRED');
+        return {
+          code: supplierMissing ? 'STATION_SERVICE_SUPPLIER_REQUIRED' : check.checkCode,
+          message:
+            (supplierMissing
+              ? check.resultNote?.replace('STATION_SERVICE_SUPPLIER_REQUIRED: ', '')
+              : check.resultNote) ?? check.recommendedAction,
+          domain: (check.category === 'AIRCRAFT'
+            ? 'AIRCRAFT'
+            : check.category === 'CREW'
+              ? 'CREW'
+              : check.category) as FlightActionBlockerDto['domain'],
+          severity: 'BLOCKER',
+          ownerRoleCode: check.ownerRole,
+          ownerStationCode:
+            check.category === 'STATION'
+              ? check.checkCode.startsWith('DESTINATION_')
+                ? (detail.actualArrivalStationCode ?? detail.destinationStationCode)
+                : detail.originStationCode
+              : null,
+          recoveryHref:
+            check.actionHref ??
+            (supplierMissing
+              ? `/flights/station-operations/${encodeURIComponent(id)}?tab=services`
+              : null),
+          evidenceReference: check.sourceReference
+        };
+      });
+    const requestPlanning = detail.flightRequestId
+      ? (this.sqlite
+          .prepare(
+            `SELECT parking_required, destination_handling_required
+             FROM flight_requests WHERE id = ?`
+          )
+          .get(detail.flightRequestId) as SqlRow | undefined)
+      : undefined;
+    const hasActiveService = (stationId: string, serviceType: 'HANDLING' | 'PARKING') =>
+      detail.stationServices.some(
+        (service) =>
+          service.stationId === stationId &&
+          service.serviceType === serviceType &&
+          !['CANCELLED', 'REJECTED'].includes(service.status)
+      );
+    const planningSupplierBlockers: FlightActionBlockerDto[] = [];
+    if (
+      requestPlanning &&
+      Boolean(requestPlanning.parking_required) &&
+      !hasActiveService(detail.originStationId, 'PARKING')
+    ) {
+      planningSupplierBlockers.push({
+        code: 'STATION_SERVICE_SUPPLIER_REQUIRED',
+        message: `Select an explicit parking supplier for origin station ${detail.originStationCode}.`,
+        domain: 'STATION',
+        severity: 'BLOCKER',
+        ownerRoleCode: 'Station Admin',
+        ownerStationCode: detail.originStationCode,
+        recoveryHref: `/flights/station-operations/${encodeURIComponent(id)}?tab=services`,
+        evidenceReference: detail.flightRequestId
+      });
+    }
+    if (
+      requestPlanning &&
+      Boolean(requestPlanning.destination_handling_required) &&
+      !hasActiveService(detail.destinationStationId, 'HANDLING')
+    ) {
+      planningSupplierBlockers.push({
+        code: 'STATION_SERVICE_SUPPLIER_REQUIRED',
+        message: `Select an explicit destination handling supplier for station ${detail.destinationStationCode}.`,
+        domain: 'STATION',
+        severity: 'BLOCKER',
+        ownerRoleCode: 'Station Admin',
+        ownerStationCode: detail.destinationStationCode,
+        recoveryHref: `/flights/station-operations/${encodeURIComponent(id)}?tab=services`,
+        evidenceReference: detail.flightRequestId
+      });
+    }
+    const actionable = capabilities.filter((capability) => capability.visible);
+    const capabilityActions = actionable.map((capability) => ({
+      id: `${id}:${capability.action}`,
+      title: capability.allowed ? capability.label : `Waiting: ${capability.label}`,
+      description:
+        capability.blockedReasons[0]?.message ??
+        `${capability.ownerRoleCodes.join(' or ')} can perform this action.`,
+      domain: capability.blockedReasons[0]?.domain ?? ('PLANNING' as const),
+      ownerRoleCodes: capability.ownerRoleCodes,
+      ownerStationCode: capability.ownerStationCodes[0] ?? null,
+      urgency: capability.allowed ? ('NORMAL' as const) : ('BLOCKING' as const),
+      href: capability.blockedReasons[0]?.recoveryHref ?? capability.href,
+      capabilityAction: capability.action
+    }));
+    const supplierActions = planningSupplierBlockers.map((blocker, index) => ({
+      id: `${id}:supplier:${blocker.ownerStationCode ?? index}`,
+      title: 'Assign station service supplier',
+      description: blocker.message,
+      domain: blocker.domain,
+      ownerRoleCodes: blocker.ownerRoleCode ? [blocker.ownerRoleCode] : [],
+      ownerStationCode: blocker.ownerStationCode,
+      urgency: 'BLOCKING' as const,
+      href: blocker.recoveryHref,
+      capabilityAction: null
+    }));
+    const nextRequiredActions =
+      readinessActions.length > 0 || supplierActions.length > 0
+        ? [...supplierActions, ...readinessActions, ...capabilityActions]
+        : capabilityActions;
+
+    return {
+      ...detail,
+      commandCenter: {
+        lifecycle: {
+          currentPhase: presentation.phase,
+          currentStep: presentation.step,
+          totalNormalSteps: 9,
+          isException: presentation.phase === 'EXCEPTION',
+          exceptionType:
+            detail.currentStatus === 'CANCELLED'
+              ? 'CANCELLED'
+              : detail.currentStatus === 'DIVERTED'
+                ? detail.actualArrivalStationId === detail.originStationId
+                  ? 'RETURN_TO_BASE'
+                  : 'DIVERTED'
+                : detail.currentStatus === 'REOPENED_FOR_CORRECTION'
+                  ? 'REOPENED'
+                  : null,
+          previousStatus: detail.histories[0]?.fromStatus ?? null,
+          statusLabel: detail.currentStatusLabel,
+          phaseLabel: presentation.label
+        },
+        stateVersion: detail.version,
+        activeBlockers: [
+          ...planningSupplierBlockers,
+          ...readinessBlockers,
+          ...actionable.flatMap((capability) => capability.blockedReasons)
+        ].filter(
+          (blocker, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.code === blocker.code &&
+                candidate.ownerStationCode === blocker.ownerStationCode
+            ) === index
+        ),
+        capabilities,
+        nextRequiredActions
+      }
+    };
+  }
+
   invalidateFlightDocumentVerification(flightId: string, actorUserId: string) {
     this.invalidateStationVerification(
       flightId,
@@ -2069,7 +3104,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
              OR check_code IN (
                'ROUTE_AVAILABILITY', 'AIRCRAFT_SERVICEABILITY', 'AIRCRAFT_LOCATION',
                'AIRCRAFT_SCHEDULE', 'AIRCRAFT_CAPACITY', 'CREW_AVAILABILITY',
-               'CREW_LICENSE_MEDICAL', 'PLANNING_DOCUMENTS', 'SEPARATION_OF_DUTIES'
+               'CREW_LICENSE_MEDICAL', 'CREW_QUALIFICATION', 'PLANNING_DOCUMENTS',
+               'SEPARATION_OF_DUTIES'
              )
            )
            AND is_required = 1 AND effective_status != 'PASSED'`
@@ -2111,6 +3147,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       'AIRCRAFT_CAPACITY',
       'CREW_AVAILABILITY',
       'CREW_LICENSE_MEDICAL',
+      'CREW_QUALIFICATION',
       'MANIFEST_LOCKED',
       'DG_ACCEPTANCE',
       'FUEL_CONFIRMED',
@@ -2334,14 +3371,40 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       `/flights/${flightId}`
     );
 
-    const hasCosts = this.hasStationCosts(flightId);
+    const stationCostClosure = this.stationCostClosureState(flightId);
     add(
-      'STATION_COST',
-      'Station cost approval',
-      hasCosts,
-      !hasCosts || this.hasApprovedStationCosts(flightId),
-      'Submit and approve every recorded station cost. This does not replace station sign-off.',
-      `/flights/station-operations?flightId=${flightId}`
+      'STATION_COST_REQUIRED',
+      'Station cost generation integrity',
+      stationCostClosure.missingGeneratedCostCount > 0,
+      stationCostClosure.missingGeneratedCostCount === 0,
+      'A confirmed handling or parking service is missing its Station Cost draft. Retry service processing before closure.',
+      `/flights/station-operations/${flightId}?tab=services`
+    );
+    add(
+      'STATION_COST_REVIEW_REQUIRED',
+      'Station cost Finance review',
+      stationCostClosure.unresolvedCostCount > 0,
+      stationCostClosure.unresolvedCostCount === 0,
+      'Submit, approve, or void every recorded Station Cost. Estimate values are not Finance-approved actuals.',
+      `/flights/station-operations/costs?flightId=${flightId}`
+    );
+    add(
+      'STATION_COST_HANDOFF_REQUIRED',
+      'Station cost Finance Handoff',
+      stationCostClosure.missingHandoffCount > 0,
+      stationCostClosure.missingHandoffCount === 0,
+      'An approved Station Cost is missing its Finance Handoff. Retry Finance processing; journal posting is not a closure dependency.',
+      `/flights/station-operations/costs?flightId=${flightId}&accountingStatus=EXCEPTION`
+    );
+
+    const hasServices = this.hasStationServices(flightId);
+    add(
+      'STATION_SERVICE',
+      'Station service verification',
+      hasServices,
+      !hasServices || this.hasCompletedStationServices(flightId),
+      'Complete and verify every recorded station service before closure.',
+      `/flights/station-operations/${flightId}?tab=services`
     );
 
     const failedRequired = results.filter((r) => r.required && !r.satisfied);
@@ -2538,27 +3601,71 @@ export class FlightOperationsVerificationService extends FlightOperationsService
     return result.count > 0;
   }
 
-  private hasStationCosts(flightId: string): boolean {
-    const result = this.sqlite
+  private stationCostClosureState(flightId: string): {
+    missingGeneratedCostCount: number;
+    unresolvedCostCount: number;
+    missingHandoffCount: number;
+  } {
+    const missingGeneratedCost = this.sqlite
       .prepare(
-        `
-      SELECT COUNT(*) as count FROM flight_station_costs
-      WHERE flight_id = ?
-    `
+        `SELECT COUNT(*) AS count
+         FROM flight_station_service_requests service
+         JOIN station_service_types type ON type.id = service.service_type_id
+         JOIN station_service_statuses status ON status.id = service.status_id
+         LEFT JOIN flight_station_costs cost ON cost.source_service_id = service.id
+         WHERE service.flight_id = ?
+           AND type.code IN ('HANDLING', 'PARKING')
+           AND status.code IN ('CONFIRMED', 'COMPLETED', 'VERIFIED')
+           AND cost.id IS NULL`
       )
-      .get(flightId) as any;
+      .get(flightId) as { count: number };
+    const costState = this.sqlite
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN status.code NOT IN ('APPROVED', 'VOID', 'VOIDED') THEN 1 ELSE 0 END)
+             AS unresolvedCostCount,
+           SUM(CASE
+                 WHEN status.code = 'APPROVED'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM flight_finance_handoffs handoff
+                    JOIN finance_handoff_statuses handoff_status
+                      ON handoff_status.id = handoff.status_id
+                    WHERE handoff.source_type = 'station_cost'
+                      AND handoff.source_id = cost.id
+                      AND handoff_status.code IN ('READY', 'POSTED')
+                  )
+                 THEN 1 ELSE 0
+               END) AS missingHandoffCount
+         FROM flight_station_costs cost
+         JOIN station_cost_statuses status ON status.id = cost.status_id
+         WHERE cost.flight_id = ?`
+      )
+      .get(flightId) as {
+      unresolvedCostCount: number | null;
+      missingHandoffCount: number | null;
+    };
+    return {
+      missingGeneratedCostCount: Number(missingGeneratedCost.count),
+      unresolvedCostCount: Number(costState.unresolvedCostCount ?? 0),
+      missingHandoffCount: Number(costState.missingHandoffCount ?? 0)
+    };
+  }
+
+  private hasStationServices(flightId: string): boolean {
+    const result = this.sqlite
+      .prepare('SELECT COUNT(*) AS count FROM flight_station_service_requests WHERE flight_id = ?')
+      .get(flightId) as { count: number };
     return result.count > 0;
   }
 
-  private hasApprovedStationCosts(flightId: string): boolean {
+  private hasCompletedStationServices(flightId: string): boolean {
     const result = this.sqlite
       .prepare(
-        `
-      SELECT COUNT(*) AS count
-      FROM flight_station_costs cost
-      JOIN station_cost_statuses status ON status.id = cost.status_id
-      WHERE cost.flight_id = ? AND status.code <> 'APPROVED'
-    `
+        `SELECT COUNT(*) AS count
+         FROM flight_station_service_requests service
+         JOIN station_service_statuses status ON status.id = service.status_id
+         WHERE service.flight_id = ? AND status.code NOT IN ('VERIFIED', 'CONFIRMED')`
       )
       .get(flightId) as { count: number };
     return result.count === 0;
@@ -2787,8 +3894,14 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         // Check if crew is available
         return await this.evaluateCrewAvailability(flightId);
       case 'CREW_LICENSE_MEDICAL':
-        // Check if crew licenses and medicals are valid
-        return await this.evaluateCrewLicenseMedical(flightId);
+      case 'CREW_QUALIFICATION': {
+        const check = this.evaluate(
+          flightId,
+          'SYSTEM_CREDENTIAL_REVALIDATION'
+        ).readinessChecks.find((item) => item.checkCode === checkCode);
+        if (!check) return 'PENDING';
+        return check.status === 'NOT_APPLICABLE' ? 'PASS' : check.status;
+      }
       case 'MANIFEST_APPROVED':
         // Check if manifest is approved
         return await this.evaluateManifestApproved(flightId);

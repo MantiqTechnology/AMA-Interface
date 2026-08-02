@@ -13,6 +13,7 @@ const emit = defineEmits<{
 const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null);
 const submitting = ref(false);
 const serverError = ref('');
+const { label: fieldLabel } = useMasterDataFieldHelp();
 const form = reactive<FlightCapacityProfileInput>({
   profileCode: '',
   profileName: 'Capacity Profile',
@@ -106,26 +107,44 @@ async function submit() {
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.profileCode"
-                label="Profile code"
+                :label="fieldLabel('capacityProfile.profileCode')"
                 :rules="[required('Profile code')]"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.profileCode" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.profileName"
-                label="Profile name"
+                :label="fieldLabel('capacityProfile.profileName')"
                 :rules="[required('Profile name')]"
                 type="text"
                 variant="outlined"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.profileName" inline />
+                </template>
+              </VTextField>
+            </VCol>
+            <VCol cols="12" md="6">
+              <MasterDataFieldHelp field="capacityProfile.aircraftId" />
+              <AircraftSelect
+                v-model="form.aircraftId"
+                :label="fieldLabel('capacityProfile.aircraftId')"
+                required
               />
             </VCol>
             <VCol cols="12" md="6">
-              <AircraftSelect v-model="form.aircraftId" label="Aircraft" required />
-            </VCol>
-            <VCol cols="12" md="6">
-              <RouteSelect v-model="form.routeId" label="Route" required />
+              <MasterDataFieldHelp field="capacityProfile.routeId" />
+              <RouteSelect
+                v-model="form.routeId"
+                :label="fieldLabel('capacityProfile.routeId')"
+                required
+              />
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
@@ -137,54 +156,78 @@ async function submit() {
                   'flight-service-type-medevac',
                   'flight-service-type-positioning'
                 ]"
-                label="Operation type"
+                :label="fieldLabel('capacityProfile.serviceTypeId')"
                 :rules="[required('Operation type')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.serviceTypeId" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.seatCapacity"
-                label="Total seats"
+                :label="fieldLabel('capacityProfile.seatCapacity')"
                 :rules="[required('Total seats')]"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.seatCapacity" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.cargoCapacityKg"
-                label="Maximum cargo capacity"
+                :label="fieldLabel('capacityProfile.cargoCapacityKg')"
                 :rules="[required('Maximum cargo capacity')]"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.cargoCapacityKg" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.reservedSeatCount"
-                label="Blocked seats"
+                :label="fieldLabel('capacityProfile.reservedSeatCount')"
                 :rules="[required('Blocked seats')]"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.reservedSeatCount" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.reservedCargoKg"
-                label="Reserved operational cargo"
+                :label="fieldLabel('capacityProfile.reservedCargoKg')"
                 :rules="[required('Reserved operational cargo')]"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.reservedCargoKg" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.capacityNote"
-                label="Capacity note"
+                :label="fieldLabel('capacityProfile.capacityNote')"
                 rows="3"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="capacityProfile.capacityNote" inline />
+                </template>
+              </VTextarea>
             </VCol>
           </VRow>
         </VForm>

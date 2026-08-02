@@ -100,9 +100,7 @@ async function submitRequest(id: string) {
       />
     </template>
     <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{
-        actionError || 'Purchase requests could not be loaded.'
-      }}
+      {{ actionError || 'Purchase requests could not be loaded.' }}
     </VAlert>
     <VTextField
       v-model="search"
@@ -163,9 +161,7 @@ async function submitRequest(id: string) {
         <VCardTitle>Create purchase request</VCardTitle><VDivider />
         <VCardText>
           <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
-            {{
-              actionError
-            }}
+            {{ actionError }}
           </VAlert>
           <VSelect
             v-model="form.stationId"
@@ -214,10 +210,11 @@ async function submitRequest(id: string) {
               />
             </VCol>
             <VCol cols="6" md="3">
-              <VTextField
+              <VDateInput
                 v-model="line.requiredAt"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
                 label="Required date"
-                type="date"
                 variant="outlined"
               />
             </VCol>

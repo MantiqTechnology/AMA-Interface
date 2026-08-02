@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { ApiResponse } from '#shared/contracts/api';
-import QRCode from 'qrcode';
 import DocumentPanel from '../../../components/documents/DocumentPanel.vue';
 import AssetStatusBadge from '../../../features/corporate-assets/components/AssetStatusBadge.vue';
 
@@ -228,10 +227,12 @@ async function showQr() {
     `/asset-management/assets/${id.value}`,
     window.location.origin
   ).toString();
-  qrDataUrl.value = await QRCode.toDataURL(
-    JSON.stringify({ id: asset.value.id, code: asset.value.assetCode, url: detailUrl }),
-    { width: 280, margin: 2 }
-  );
+  const payload = JSON.stringify({
+    id: asset.value.id,
+    code: asset.value.assetCode,
+    url: detailUrl
+  });
+  qrDataUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(payload)}`;
   qrOpen.value = true;
 }
 </script>
@@ -565,11 +566,17 @@ async function showQr() {
               v-model.number="form.premiumMinor"
               type="number"
               label="Premium (minor unit)"
-            /><VTextField
+            /><VDateInput
               v-model="form.effectiveDate"
-              type="date"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
               label="Effective date"
-            /><VTextField v-model="form.expiryDate" type="date" label="Expiry date" />
+            /><VDateInput
+              v-model="form.expiryDate"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
+              label="Expiry date"
+            />
           </template>
           <template v-else-if="dialog === 'complete'">
             <VTextarea v-model="form.completionResult" label="Completion result" /><VTextField

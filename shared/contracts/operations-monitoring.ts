@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AircraftPositionDto } from './aircraft-tracking';
 
 const emptyQueryValue = (value: unknown) =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
@@ -21,6 +22,11 @@ export type OperationalFlightMonitorDto = {
   originCode: string;
   destinationStationId: string;
   destinationCode: string;
+  originLatitude: number | null;
+  originLongitude: number | null;
+  destinationLatitude: number | null;
+  destinationLongitude: number | null;
+  aircraftId: string | null;
   aircraftRegistration: string | null;
   pilotInCommandName: string | null;
   scheduledDepartureAt: string | null;
@@ -35,6 +41,7 @@ export type OperationalFlightMonitorDto = {
   stationScopeMatch: boolean;
   readinessPercent: number;
   blockingReason: string | null;
+  position: AircraftPositionDto | null;
 };
 
 export type OperationalAlertDto = {

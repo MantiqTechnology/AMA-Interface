@@ -62,6 +62,7 @@ The UI uses Vuetify through `vuetify-nuxt-module`. Brand colors are configured i
 8. Switch demo roles from the header to exercise server-side workflow permissions.
 
 The ticketing architecture and OCC manifest synchronization are documented in [ticketing-flow.md](ticketing-flow.md).
+The enterprise MVP planning, HRIS/CRM roadmap, offline sync scope, and implementation rundown are documented in [roadmap-enterprise-mvp.md](roadmap-enterprise-mvp.md).
 
 ## Data
 

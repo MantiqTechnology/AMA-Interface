@@ -18,5 +18,10 @@ export default defineApiEventHandler(async (event) => {
   const service = getServices().flightOperations;
   const flight = service.detail(params.id);
   requireDemoFlightStationAccess(event, [flight.originStationCode]);
-  return service.updateAircraftAssignment(params.id, body.aircraftId, getDemoActorId(event));
+  return service.updateAircraftAssignment(
+    params.id,
+    body.aircraftId,
+    getDemoActorId(event),
+    body.expectedVersion
+  );
 });

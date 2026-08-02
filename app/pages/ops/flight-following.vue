@@ -5,6 +5,22 @@ import type { OperationalFlightMonitorDto } from '#shared/contracts/operations-m
 const date = ref<Date | null>(null);
 const status = ref<string | null>(null);
 const stationId = ref<string | null>(null);
+const statusItems = [
+  'SCHEDULED',
+  'CHECK_IN_OPEN',
+  'IN_PROGRESS',
+  'LANDED',
+  'DIVERTED',
+  'PENDING_CLOSURE',
+  'BLOCKED',
+  'CLOSED',
+  'CANCELLED'
+];
+const selectedFlightId = ref<string | null>(null);
+const autoRefresh = ref(true);
+const advancing = ref(false);
+const mapRef = ref<{ fitFleet: () => void } | null>(null);
+const { can } = useAuthorization();
 const query = computed(() => ({
   date: date.value || undefined,
   stationId: stationId.value || undefined,
@@ -22,6 +38,46 @@ const {
     }),
   { default: () => [], watch: [query] }
 );
+const selectedFlight = computed(
+  () => flights.value.find((flight) => flight.id === selectedFlightId.value) ?? null
+);
+const trackedCount = computed(() => flights.value.filter((flight) => flight.position).length);
+const staleCount = computed(
+  () => flights.value.filter((flight) => flight.position?.isStale).length
+);
+
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  refreshTimer = setInterval(() => {
+    if (autoRefresh.value) void refresh();
+  }, 15_000);
+});
+onBeforeUnmount(() => {
+  if (refreshTimer) clearInterval(refreshTimer);
+});
+
+async function advanceDemoPosition() {
+  if (!selectedFlight.value) return;
+  advancing.value = true;
+  try {
+    await fetchApi(
+      `/api/flight-operations/flights/${selectedFlight.value.id}/actions/advance-demo-position`,
+      { method: 'POST' }
+    );
+    await refresh();
+  } finally {
+    advancing.value = false;
+  }
+}
+
+function coordinate(value: number) {
+  return value.toFixed(5);
+}
+
+function positionAge(value: string) {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60_000));
+  return minutes < 1 ? 'just now' : `${minutes} min ago`;
+}
 
 function time(value: string | null) {
   if (!value) return '-';
@@ -45,11 +101,12 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
         <h1 class="text-h5 font-weight-bold text-text-primary">Operational flights</h1>
 
         <p class="page-description text-body-2 text-text-secondary">
-          Live operational timeline from canonical flight records.
+          SIMULATED FLIGHT TRACKING from canonical flight records and manual demo positions.
         </p>
       </div>
 
       <div class="page-header-actions">
+        <VChip color="warning" size="small" variant="tonal">DEMO ENVIRONMENT</VChip>
         <VChip prepend-icon="mdi-clock-outline" size="small" variant="tonal"> Asia/Jayapura </VChip>
 
         <VTooltip text="Refresh flight following">
@@ -114,6 +171,178 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
         </div>
       </div>
     </VCard>
+
+    <section class="tracking-surface">
+      <div class="tracking-toolbar">
+        <div>
+          <div class="text-subtitle-1 font-weight-bold">Fleet position monitor</div>
+          <div class="text-caption text-text-secondary">
+            {{ trackedCount }} aircraft tracked · {{ staleCount }} stale report{{
+              staleCount === 1 ? '' : 's'
+            }}
+          </div>
+        </div>
+        <div class="tracking-actions">
+          <VSwitch
+            v-model="autoRefresh"
+            color="secondary"
+            density="compact"
+            hide-details
+            inset
+            label="Auto refresh"
+          />
+          <VTooltip text="Fit all tracked flights">
+            <template #activator="{ props }">
+              <VBtn
+                v-bind="props"
+                aria-label="Fit all tracked flights"
+                icon="mdi-crosshairs-gps"
+                size="small"
+                variant="tonal"
+                @click="mapRef?.fitFleet()"
+              />
+            </template>
+          </VTooltip>
+        </div>
+      </div>
+
+      <div class="tracking-layout">
+        <div class="map-shell">
+          <OperationsFlightFollowingMap
+            ref="mapRef"
+            :flights="flights"
+            :selected-flight-id="selectedFlightId"
+            @select="selectedFlightId = $event"
+          />
+          <div class="map-legend">
+            <span><i class="legend-dot is-live" /> Live</span>
+            <span><i class="legend-dot is-stale" /> Stale &gt; 15 min</span>
+            <span><i class="legend-line" /> Planned route</span>
+          </div>
+        </div>
+
+        <aside class="tracking-detail">
+          <template v-if="selectedFlight?.position">
+            <div class="detail-heading">
+              <div>
+                <div class="text-overline text-text-secondary">Selected aircraft</div>
+                <div class="aircraft-detail-registration">
+                  {{ selectedFlight.aircraftRegistration ?? 'Unassigned' }}
+                </div>
+                <div class="text-body-2 text-text-secondary">
+                  {{ selectedFlight.flightNumber }} · {{ selectedFlight.originCode }} →
+                  {{ selectedFlight.destinationCode }}
+                </div>
+              </div>
+              <VBtn
+                aria-label="Close aircraft detail"
+                icon="mdi-close"
+                size="x-small"
+                variant="text"
+                @click="selectedFlightId = null"
+              />
+            </div>
+
+            <div class="position-state">
+              <VChip
+                :color="selectedFlight.position.isStale ? 'warning' : 'success'"
+                size="small"
+                variant="tonal"
+              >
+                {{ selectedFlight.position.isStale ? 'Stale telemetry' : 'Position current' }}
+              </VChip>
+              <span class="text-caption text-text-secondary">
+                {{ positionAge(selectedFlight.position.recordedAt) }}
+              </span>
+            </div>
+
+            <div class="progress-block">
+              <div class="progress-label">
+                <span>Operation progress</span>
+                <strong>{{ selectedFlight.position.progressPercent ?? 0 }}%</strong>
+              </div>
+              <VProgressLinear
+                color="accent-cenderawasih"
+                height="8"
+                :model-value="selectedFlight.position.progressPercent ?? 0"
+                rounded
+              />
+            </div>
+
+            <dl class="telemetry-grid">
+              <div>
+                <dt>Latitude</dt>
+                <dd>{{ coordinate(selectedFlight.position.latitude) }}</dd>
+              </div>
+              <div>
+                <dt>Longitude</dt>
+                <dd>{{ coordinate(selectedFlight.position.longitude) }}</dd>
+              </div>
+              <div>
+                <dt>Altitude</dt>
+                <dd>
+                  {{
+                    selectedFlight.position.altitudeFt === null
+                      ? '-'
+                      : `${selectedFlight.position.altitudeFt.toLocaleString('id-ID')} ft`
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>Ground speed</dt>
+                <dd>
+                  {{
+                    selectedFlight.position.groundSpeedKt === null
+                      ? '-'
+                      : `${selectedFlight.position.groundSpeedKt} kt`
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>Heading</dt>
+                <dd>
+                  {{
+                    selectedFlight.position.headingDeg === null
+                      ? '-'
+                      : `${Math.round(selectedFlight.position.headingDeg)}°`
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{{ selectedFlight.position.source.replaceAll('_', ' ') }}</dd>
+              </div>
+            </dl>
+
+            <VBtn
+              v-if="
+                selectedFlight.currentStatus === 'IN_PROGRESS' &&
+                  can('flight.movement.update').allowed
+              "
+              block
+              color="secondary"
+              :loading="advancing"
+              prepend-icon="mdi-airplane-clock"
+              variant="flat"
+              @click="advanceDemoPosition"
+            >
+              Advance demo position
+            </VBtn>
+            <p class="demo-disclaimer">
+              Simulated operational telemetry for demonstration, not certified surveillance or
+              navigation data.
+            </p>
+          </template>
+          <div v-else class="detail-empty">
+            <VIcon icon="mdi-radar" size="40" />
+            <div class="text-subtitle-2 font-weight-bold">Select an aircraft</div>
+            <div class="text-body-2 text-text-secondary">
+              Choose a marker to inspect its latest coordinate and operation progress.
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
 
     <VCard class="flight-table-card" border flat>
       <div class="table-toolbar">
@@ -186,7 +415,13 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
             </tr>
 
             <template v-else>
-              <tr v-for="flight in flights" :key="flight.id" class="flight-row">
+              <tr
+                v-for="flight in flights"
+                :key="flight.id"
+                class="flight-row"
+                :class="{ 'is-selected': flight.id === selectedFlightId }"
+                @click="flight.position && (selectedFlightId = flight.id)"
+              >
                 <td class="flight-column">
                   <div class="flight-number">
                     {{ flight.flightNumber }}
@@ -369,6 +604,165 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
   border-radius: 10px;
 }
 
+.tracking-surface {
+  overflow: hidden;
+  border: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+}
+
+.tracking-toolbar {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.tracking-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tracking-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  min-height: 460px;
+}
+
+.map-shell {
+  position: relative;
+  min-width: 0;
+  min-height: 460px;
+}
+
+.map-legend {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 2px 8px rgb(18 33 31 / 10%);
+  color: #334846;
+  font-size: 0.7rem;
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend-dot.is-live {
+  background: #0e8c8a;
+}
+
+.legend-dot.is-stale {
+  background: #7a8586;
+}
+
+.legend-line {
+  display: inline-block;
+  width: 17px;
+  border-top: 2px dashed #286e9e;
+}
+
+.tracking-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  border-left: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.detail-heading,
+.position-state,
+.progress-label {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.aircraft-detail-registration {
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+
+.position-state {
+  align-items: center;
+}
+
+.progress-block {
+  display: grid;
+  gap: 8px;
+}
+
+.progress-label {
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  border-top: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-left: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.telemetry-grid > div {
+  min-width: 0;
+  padding: 10px;
+  border-right: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-bottom: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.telemetry-grid dt {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: 0.68rem;
+}
+
+.telemetry-grid dd {
+  overflow: hidden;
+  margin: 3px 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-disclaimer {
+  margin: -10px 0 0;
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.detail-empty {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
 .filter-card {
   display: flex;
   align-items: center;
@@ -467,6 +861,10 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
   background: rgba(var(--v-theme-on-surface), 0.025);
 }
 
+.flight-row.is-selected td {
+  background: rgba(var(--v-theme-secondary), 0.08);
+}
+
 .column-caption {
   margin-top: 1px;
   font-size: 0.66rem;
@@ -517,6 +915,49 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
   padding-left: 8px !important;
   background: rgb(var(--v-theme-surface));
   text-align: center;
+}
+
+@media (max-width: 960px) {
+  .filter-card {
+    display: grid;
+  }
+
+  .filter-grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .tracking-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tracking-detail {
+    border-top: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+    border-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .tracking-toolbar {
+    align-items: flex-start;
+  }
+
+  .tracking-actions {
+    align-items: flex-end;
+  }
+
+  .tracking-actions :deep(.v-label) {
+    display: none;
+  }
+
+  .map-shell,
+  .tracking-layout {
+    min-height: 380px;
+  }
+
+  .map-legend {
+    right: 12px;
+  }
 }
 
 .following-table :deep(thead .open-column) {

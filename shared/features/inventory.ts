@@ -347,6 +347,14 @@ export type ReturnServiceableInput = z.infer<typeof returnServiceableInputSchema
 
 export type InventoryPartDto = InventoryPartInput & {
   id: string;
+  expiryProfile: {
+    lotNumber: string | null;
+    expiresAt: string | null;
+    daysUntilExpiry: number | null;
+    shelfLifeElapsedDays: number | null;
+    quantityOnNearestExpiry: number;
+    status: 'NO_EXPIRY' | 'VALID' | 'EXPIRING_SOON' | 'EXPIRED';
+  };
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

@@ -2,10 +2,17 @@ export const demoRoles = [
   'Demo Admin',
   'Director',
   'OCC',
+  'OCC Checker',
   'Station Admin',
+  'Station Admin Origin',
   'Finance Reviewer',
   'Maintenance Manager',
-  'Inventory Controller'
+  'Certifying Staff',
+  'Inventory Controller',
+  'HR Staff',
+  'HR Manager',
+  'Chief of Pilot',
+  'Employee'
 ] as const;
 
 export type DemoRole = (typeof demoRoles)[number];
@@ -16,20 +23,34 @@ export const demoRoleActorIds: Record<DemoRole, string> = {
   'Demo Admin': 'USR-ADMIN',
   Director: 'USR-DIRECTOR',
   OCC: 'USR-001',
+  'OCC Checker': 'USR-OCC-CHECKER',
   'Station Admin': 'USR-STATION-ADMIN',
+  'Station Admin Origin': 'USR-STATION-ADMIN-DJJ',
   'Finance Reviewer': 'USR-FINANCE-REVIEWER',
   'Maintenance Manager': 'USR-MAINTENANCE-MANAGER',
-  'Inventory Controller': 'USR-INVENTORY-CONTROLLER'
+  'Certifying Staff': 'USR-CERTIFYING-STAFF',
+  'Inventory Controller': 'USR-INVENTORY-CONTROLLER',
+  'HR Staff': 'USR-HR-STAFF',
+  'HR Manager': 'USR-HR-MANAGER',
+  'Chief of Pilot': 'USR-CHIEF-PILOT',
+  Employee: 'USR-EMPLOYEE'
 };
 
 export const demoRoleStationScopes: Record<DemoRole, readonly string[]> = {
   'Demo Admin': ['ALL'],
   Director: ['ALL'],
   OCC: ['DJJ', 'WMX'],
+  'OCC Checker': ['DJJ', 'WMX'],
   'Station Admin': ['WMX'],
+  'Station Admin Origin': ['DJJ'],
   'Finance Reviewer': ['ALL'],
   'Maintenance Manager': ['DJJ'],
-  'Inventory Controller': ['ALL']
+  'Certifying Staff': ['ALL'],
+  'Inventory Controller': ['ALL'],
+  'HR Staff': ['ALL'],
+  'HR Manager': ['ALL'],
+  'Chief of Pilot': ['ALL'],
+  Employee: ['ALL']
 };
 
 const personnelReadPermissions = [
@@ -120,6 +141,30 @@ const rateManagePermissions = [
 
 const commercialContractPermissions = ['commercial.contract.read'] as const;
 
+const maintenanceReadPermissions = ['maintenance.package.read', 'maintenance.audit.read'] as const;
+
+const maintenanceControlPermissions = [
+  ...maintenanceReadPermissions,
+  'maintenance.defect.assess',
+  'maintenance.package.plan',
+  'maintenance.jobcard.manage',
+  'maintenance.release.request',
+  'maintenance.financial.claim'
+] as const;
+
+const maintenanceExecutionPermissions = [
+  ...maintenanceReadPermissions,
+  'maintenance.jobcard.start',
+  'maintenance.jobcard.work.sign',
+  'maintenance.jobcard.inspect'
+] as const;
+
+const maintenanceReleasePermissions = [
+  ...maintenanceReadPermissions,
+  'maintenance.jobcard.inspect',
+  'maintenance.release.issue'
+] as const;
+
 export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
   'Demo Admin': ['*'],
   Director: [
@@ -143,6 +188,12 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read',
     'asset.finance.read',
     'master_data.read',
+    'aircraft.airworthiness.read',
+    ...maintenanceReadPermissions,
+    'hris.employee.read',
+    'hris.org.read',
+    'hris.kpi.read',
+    'hris.payroll.read',
     ...personnelReadPermissions,
     ...customerReadPermissions,
     ...customerFinancePermissions,
@@ -162,6 +213,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight.read',
     'flight.create.direct',
     'flight.readiness.evaluate',
+    'flight.advisory.manage',
     'flight.schedule',
     'flight.movement.update',
     'flight.exception.update',
@@ -173,6 +225,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'document.upload',
     'inventory.read',
     'master_data.read',
+    'aircraft.airworthiness.read',
     ...personnelReadPermissions,
     ...personnelManagePermissions,
     ...customerReadPermissions,
@@ -194,9 +247,68 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight.manifest.dg.decide',
     'flight.departure.assurance.evaluate',
     'flight.departure.ready',
-    'flight.departure.execute'
+    'flight.departure.execute',
+    'aircraft.defect.report',
+    'aircraft.lifecycle.manage'
+  ],
+  'OCC Checker': [
+    'platform.dashboard.view',
+    'flight.read',
+    'flight.readiness.evaluate',
+    'flight.readiness.approve',
+    'document.read',
+    'master_data.read',
+    'aircraft.airworthiness.read',
+    ...personnelReadPermissions,
+    'station.task.view',
+    'readiness.view'
   ],
   'Station Admin': [
+    'platform.dashboard.view',
+    'flight.read',
+    'flight.readiness.evaluate',
+    'flight.movement.update',
+    'flight.manifest.update',
+    'flight.fuel.update',
+    'station.operation.update',
+    'ticketing.operation.update',
+    'document.read',
+    'document.upload',
+    'inventory.read',
+    'asset.read',
+    'asset.assign',
+    'asset.move',
+    'master_data.read',
+    'hris.attendance.read',
+    'hris.attendance.manage',
+    'hris.schedule.read',
+    ...personnelReadPermissions,
+    'customer.read',
+    'customer.contact.read',
+    'customer.activity.read',
+    'customer.document.read',
+    ...agentReadPermissions,
+    ...rateReadPermissions,
+    ...commercialContractPermissions,
+    'personnel.assignment.manage',
+    'personnel.documents.manage',
+    'station.task.view',
+    'station.task.assign',
+    'station.task.start',
+    'station.task.verify',
+    'station.task.reject',
+    'station.evidence.add',
+    'station.origin.signoff',
+    'station.destination.signoff',
+    'readiness.view',
+    'readiness.attest',
+    'flight.manifest.view',
+    'flight.manifest.sensitive.read',
+    'flight.manifest.prepare',
+    'flight.manifest.submit',
+    'flight.checkin.close'
+  ],
+  'Station Admin Origin': [
     'platform.dashboard.view',
     'flight.read',
     'flight.readiness.evaluate',
@@ -247,12 +359,16 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'finance.accounting.post',
     'finance.handoff.process',
     'finance.payment.record',
+    'station.cost.approve',
+    'station.task.view',
     'document.read',
     'document.verify',
     'inventory.read',
     'asset.read',
     'asset.finance.read',
     'inventory.valuation.read',
+    ...maintenanceReadPermissions,
+    'hris.payroll.read',
     ...customerReadPermissions,
     ...customerFinancePermissions,
     ...agentReadPermissions,
@@ -271,7 +387,26 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.issue',
     'inventory.repair.manage',
     'asset.read',
-    'asset.maintenance.manage'
+    'asset.maintenance.manage',
+    'aircraft.airworthiness.read',
+    'aircraft.defect.report',
+    'aircraft.defect.manage',
+    'aircraft.deferment.manage',
+    ...maintenanceControlPermissions,
+    ...maintenanceExecutionPermissions
+  ],
+  'Certifying Staff': [
+    'platform.dashboard.view',
+    'flight.read',
+    'master_data.read',
+    'aircraft.airworthiness.read',
+    'aircraft.release.certify',
+    'document.read',
+    'document.verify',
+    'maintenance.handoff.update',
+    ...maintenanceReleasePermissions,
+    'inventory.read',
+    'asset.read'
   ],
   'Inventory Controller': [
     'platform.dashboard.view',
@@ -289,5 +424,83 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read',
     'document.read',
     'document.upload'
+  ],
+  'HR Staff': [
+    'platform.dashboard.view',
+    'hris.employee.read',
+    'hris.employee.manage',
+    'hris.employee.import',
+    'hris.attendance.read',
+    'hris.attendance.manage',
+    'hris.leave.read',
+    'hris.leave.approve',
+    'hris.overtime.approve',
+    'hris.certification.read',
+    'hris.certification.manage',
+    'hris.schedule.read',
+    'hris.schedule.manage',
+    'hris.payroll.read',
+    'hris.payroll.calculate',
+    'hris.allowance.read',
+    'hris.allowance.manage',
+    'hris.recruitment.manage',
+    'hris.kpi.read',
+    'hris.kpi.manage',
+    'hris.org.read',
+    'hris.self_service.read',
+    'master_data.read'
+  ],
+  'HR Manager': [
+    'platform.dashboard.view',
+    'hris.employee.read',
+    'hris.employee.manage',
+    'hris.employee.import',
+    'hris.attendance.read',
+    'hris.attendance.manage',
+    'hris.leave.read',
+    'hris.leave.approve',
+    'hris.overtime.approve',
+    'hris.certification.read',
+    'hris.certification.manage',
+    'hris.schedule.read',
+    'hris.schedule.manage',
+    'hris.payroll.read',
+    'hris.payroll.calculate',
+    'hris.payroll.approve',
+    'hris.payroll.journal',
+    'hris.allowance.read',
+    'hris.allowance.manage',
+    'hris.recruitment.manage',
+    'hris.kpi.read',
+    'hris.kpi.assess',
+    'hris.kpi.manage',
+    'hris.org.read',
+    'hris.self_service.read',
+    'master_data.read',
+    'finance.accounting.read'
+  ],
+  'Chief of Pilot': [
+    'platform.dashboard.view',
+    'flight.read',
+    'hris.employee.read',
+    'hris.certification.read',
+    'hris.certification.manage',
+    'hris.schedule.read',
+    'hris.schedule.manage',
+    'hris.kpi.read',
+    'hris.kpi.assess',
+    'hris.leave.read',
+    'hris.leave.approve',
+    'hris.overtime.approve',
+    'hris.org.read',
+    'hris.self_service.read',
+    'master_data.read'
+  ],
+  Employee: [
+    'platform.dashboard.view',
+    'hris.self_service.read',
+    'hris.leave.request',
+    'hris.overtime.request',
+    'hris.attendance.checkin'
   ]
 };

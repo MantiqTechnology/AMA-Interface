@@ -1,4 +1,4 @@
-import { and, asc, eq, like, or, type SQL } from 'drizzle-orm';
+import { and, asc, eq, like, or, sql, type SQL } from 'drizzle-orm';
 import type { AppDatabase } from '../../../db/client';
 import { aircraft } from '../../../db/schema';
 import type {
@@ -9,6 +9,9 @@ import type {
 } from '../../../../shared/features/operations/aircraft';
 
 function toDto(row: typeof aircraft.$inferSelect): AircraftDto {
+  const maintenanceDue = Boolean(
+    row.nextMaintenanceDueAt && row.nextMaintenanceDueAt <= new Date().toISOString().slice(0, 10)
+  );
   return {
     id: row.id,
     registrationNumber: row.registrationNumber,
@@ -20,14 +23,39 @@ function toDto(row: typeof aircraft.$inferSelect): AircraftDto {
     passengerCapacity: row.passengerCapacity,
     cargoCapacityKg: row.cargoCapacityKg,
     fuelType: row.fuelType,
+    engineCategory: row.engineCategory,
+    usableFuelCapacityLitre: row.usableFuelCapacityLitre,
+    fuelCapacityBasis: row.fuelCapacityBasis,
+    cruiseFuelBurnLitrePerHour: row.cruiseFuelBurnLitrePerHour,
+    holdingFuelBurnLitrePerHour: row.holdingFuelBurnLitrePerHour,
+    taxiFuelBurnLitrePerHour: row.taxiFuelBurnLitrePerHour,
+    fuelProfileSource: row.fuelProfileSource,
+    fuelProfileReference: row.fuelProfileReference,
+    fuelProfileEffectiveFrom: row.fuelProfileEffectiveFrom,
+    fuelProfileAdvisoryOnly: row.fuelProfileAdvisoryOnly,
     defaultCapacityProfileId: row.defaultCapacityProfileId,
-    operationalStatus: row.operationalStatus,
-    serviceabilityStatus: row.serviceabilityStatus,
+    operationalStatus: row.operationalStatus as AircraftDto['operationalStatus'],
+    serviceabilityStatus: row.serviceabilityStatus as AircraftDto['serviceabilityStatus'],
     baseStationId: row.baseStationId,
     currentStationId: row.currentStationId,
     lastMaintenanceCheckAt: row.lastMaintenanceCheckAt,
     nextMaintenanceDueAt: row.nextMaintenanceDueAt,
     serviceabilityNote: row.serviceabilityNote,
+    airframeHours: row.airframeHours,
+    airframeCycles: row.airframeCycles,
+    version: row.version,
+    maintenanceDue,
+    dueReasons: maintenanceDue
+      ? [`Legacy maintenance due on ${row.nextMaintenanceDueAt as string}.`]
+      : [],
+    technicalEligibility:
+      row.serviceabilityStatus === 'UNSERVICEABLE' || maintenanceDue
+        ? 'BLOCKED'
+        : row.serviceabilityStatus === 'SERVICEABLE_WITH_RESTRICTIONS'
+          ? 'RESTRICTED'
+          : 'ELIGIBLE',
+    openDefectCount: 0,
+    activeRestrictionCount: 0,
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
@@ -70,7 +98,16 @@ export class AircraftRepository {
     const values = input;
     const row = await this.db
       .insert(aircraft)
-      .values({ id, ...values, isActive: true, createdAt: timestamp, updatedAt: timestamp })
+      .values({
+        id,
+        ...values,
+        operationalStatus: 'SUSPENDED',
+        serviceabilityStatus: 'UNSERVICEABLE',
+        serviceabilityNote: null,
+        isActive: true,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      })
       .returning()
       .get();
     return toDto(row);
@@ -80,7 +117,7 @@ export class AircraftRepository {
     const values = input;
     const row = await this.db
       .update(aircraft)
-      .set({ ...values, updatedAt: timestamp })
+      .set({ ...values, version: sql`${aircraft.version} + 1`, updatedAt: timestamp })
       .where(eq(aircraft.id, id))
       .returning()
       .get();
@@ -90,7 +127,7 @@ export class AircraftRepository {
   async setActive(id: string, isActive: boolean, timestamp: string) {
     const row = await this.db
       .update(aircraft)
-      .set({ isActive, updatedAt: timestamp })
+      .set({ isActive, version: sql`${aircraft.version} + 1`, updatedAt: timestamp })
       .where(eq(aircraft.id, id))
       .returning()
       .get();
@@ -108,6 +145,16 @@ export class AircraftRepository {
         passengerCapacity: aircraft.passengerCapacity,
         cargoCapacityKg: aircraft.cargoCapacityKg,
         fuelType: aircraft.fuelType,
+        engineCategory: aircraft.engineCategory,
+        usableFuelCapacityLitre: aircraft.usableFuelCapacityLitre,
+        fuelCapacityBasis: aircraft.fuelCapacityBasis,
+        cruiseFuelBurnLitrePerHour: aircraft.cruiseFuelBurnLitrePerHour,
+        holdingFuelBurnLitrePerHour: aircraft.holdingFuelBurnLitrePerHour,
+        taxiFuelBurnLitrePerHour: aircraft.taxiFuelBurnLitrePerHour,
+        fuelProfileSource: aircraft.fuelProfileSource,
+        fuelProfileReference: aircraft.fuelProfileReference,
+        fuelProfileEffectiveFrom: aircraft.fuelProfileEffectiveFrom,
+        fuelProfileAdvisoryOnly: aircraft.fuelProfileAdvisoryOnly,
         serviceabilityStatus: aircraft.serviceabilityStatus,
         baseStationId: aircraft.baseStationId,
         currentStationId: aircraft.currentStationId,

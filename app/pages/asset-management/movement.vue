@@ -114,10 +114,22 @@ const displayDate = (value: string) => new Date(value).toLocaleString('id-ID');
             />
           </VCol>
           <VCol cols="6" md="3">
-            <VTextField v-model="dateFrom" type="date" label="Dari tanggal" hide-details />
+            <VDateInput
+              v-model="dateFrom"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
+              label="Dari tanggal"
+              hide-details
+            />
           </VCol>
           <VCol cols="6" md="3">
-            <VTextField v-model="dateTo" type="date" label="Sampai tanggal" hide-details />
+            <VDateInput
+              v-model="dateTo"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
+              label="Sampai tanggal"
+              hide-details
+            />
           </VCol>
         </VRow>
       </VCardText>

@@ -82,22 +82,6 @@ export class AircraftService {
         'Current station must reference an active record.',
         422
       );
-    if (
-      input.lastMaintenanceCheckAt &&
-      input.nextMaintenanceDueAt &&
-      input.nextMaintenanceDueAt < input.lastMaintenanceCheckAt
-    )
-      throw new DomainError(
-        'AIRCRAFT_MAINTENANCE_DATE_INVALID',
-        'Next maintenance date cannot be before the last inspection date.',
-        422
-      );
-    if (input.serviceabilityStatus !== 'SERVICEABLE' && !input.serviceabilityNote)
-      throw new DomainError(
-        'AIRCRAFT_SERVICEABILITY_NOTE_REQUIRED',
-        'Aircraft serviceability restrictions require an operational note.',
-        422
-      );
   }
   private rethrowWriteError(error: unknown): never {
     const message = error instanceof Error ? error.message : String(error);

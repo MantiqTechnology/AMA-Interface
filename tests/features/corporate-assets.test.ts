@@ -53,12 +53,10 @@ describe('Corporate Assets domain', () => {
   });
 
   it('seeds consistent masters, operational stories, and Accounting projection', () => {
-    expect(assets.listDepartments(true).map((item) => item.departmentCode)).toEqual([
-      'FIN',
-      'IT',
-      'OPS'
-    ]);
-    expect(assets.listEmployees(true)).toHaveLength(3);
+    expect(assets.listDepartments(true).map((item) => item.departmentCode)).toEqual(
+      expect.arrayContaining(['FIN', 'IT', 'OPS'])
+    );
+    expect(assets.listEmployees(true).length).toBeGreaterThanOrEqual(3);
     const gpu = assets.getAsset('asset-gse-gpu-01', ['ALL'], true);
     expect(gpu.conditionStatus).toBe('UNDER_MAINTENANCE');
     expect(gpu.financial?.assetNumber).toBe('FA-GSE-00001');

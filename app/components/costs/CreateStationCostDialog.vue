@@ -11,6 +11,8 @@ type StationCostForm = {
   currencyId: string;
   description: string;
   amount: number | null;
+  vendorReference: string;
+  evidenceReference: string;
 };
 
 defineProps<{
@@ -88,12 +90,22 @@ const amount = computed({
     updateForm('amount', Number.isFinite(parsed) ? parsed : null);
   }
 });
+const vendorReference = computed({
+  get: () => form.value.vendorReference,
+  set: (value: string | null) => updateForm('vendorReference', value ?? '')
+});
+const evidenceReference = computed({
+  get: () => form.value.evidenceReference,
+  set: (value: string | null) => updateForm('evidenceReference', value ?? '')
+});
 
 const canSubmit = computed(() => {
   return (
     Boolean(costCategoryId.value) &&
     Boolean(currencyId.value) &&
     Boolean(description.value.trim()) &&
+    Boolean(vendorReference.value.trim()) &&
+    Boolean(evidenceReference.value.trim()) &&
     amount.value !== null &&
     amount.value >= 0
   );
@@ -149,6 +161,20 @@ const canSubmit = computed(() => {
         </div>
 
         <VTextarea v-model="description" label="Description" rows="3" variant="outlined" />
+
+        <VTextField
+          v-model="vendorReference"
+          label="Vendor / invoice / receipt reference"
+          variant="outlined"
+        />
+
+        <VTextField
+          v-model="evidenceReference"
+          label="Cost evidence reference"
+          hint="Document, receipt, photo, or external reference."
+          persistent-hint
+          variant="outlined"
+        />
       </VCardText>
 
       <VCardActions>

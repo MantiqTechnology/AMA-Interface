@@ -322,19 +322,21 @@ async function submit() {
               />
             </VCol>
             <VCol cols="12" md="6">
-              <VTextField
+              <VDateInput
                 v-model="form.effectiveFrom"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
                 label="Effective from"
                 :rules="[required('Effective from')]"
-                type="date"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="12" md="6">
-              <VTextField
+              <VDateInput
                 v-model="form.effectiveTo"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
                 label="Effective to"
-                type="date"
                 variant="outlined"
               />
             </VCol>

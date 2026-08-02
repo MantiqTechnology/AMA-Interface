@@ -14,6 +14,8 @@ jobs:
   quality:
     name: Lint, test, typecheck, and build
     runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
 
     steps:
       - name: Checkout
@@ -37,7 +39,10 @@ jobs:
         run: pnpm lint
 
       - name: Test
-        run: pnpm test
+        timeout-minutes: 45
+        run: |
+          pnpm test:prepare
+          pnpm exec vitest run --maxWorkers=1 --no-file-parallelism --execArgv=--max-old-space-size=8192 --reporter=default --reporter=hanging-process
 
       - name: Typecheck
         run: pnpm typecheck

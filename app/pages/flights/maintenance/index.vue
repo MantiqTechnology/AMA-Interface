@@ -280,13 +280,18 @@ async function issueParts() {
         <div class="text-caption font-weight-bold text-medium-emphasis">
           Flight Control / Maintenance Handoff
         </div>
-        <h1 class="text-h4 font-weight-bold text-text-primary">Maintenance Handoff</h1>
+        <h1 class="text-h4 font-weight-bold text-text-primary">
+          MAINTENANCE COORDINATION / MAINTENANCE HANDOFF
+        </h1>
         <p class="text-text-muted">
-          Review aircraft serviceability, closure evidence, and maintenance cost before flight
-          closure.
+          Demo-only coordination for arrival evidence, defects, cost, and closure handoff. This is
+          not a full MRO workspace.
         </p>
       </div>
       <VSpacer />
+      <VBtn prepend-icon="mdi-airplane-alert" to="/flights/readiness" variant="tonal">
+        Pre-flight Blockers
+      </VBtn>
       <DsTooltipIconButton
         aria-label="Refresh maintenance handoffs"
         icon="mdi-refresh"
@@ -297,8 +302,9 @@ async function issueParts() {
     </div>
 
     <VAlert class="mb-4" color="info" icon="mdi-information-outline" variant="tonal">
-      Closure requires an approved maintenance handoff. Unserviceable aircraft or maintenance due
-      before departure will fail readiness.
+      This workspace is for post-flight closure handoff. Pre-flight airworthiness and maintenance
+      due blockers are resolved from Readiness and the aircraft profile. Handoff approval does not
+      issue return-to-service; Certifying Staff owns that decision.
     </VAlert>
     <VAlert v-if="error" class="mb-4" type="error" variant="tonal">
       Unable to load maintenance handoffs.
@@ -334,12 +340,13 @@ async function issueParts() {
             />
           </VCol>
           <VCol cols="12" md="2">
-            <VTextField
+            <VDateInput
               v-model="filters.date"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
               clearable
               density="comfortable"
               label="Date"
-              type="date"
               variant="outlined"
             />
           </VCol>
@@ -487,9 +494,9 @@ async function issueParts() {
                 :aria-label="`Approve maintenance handoff for ${row.flightNumber ?? row.aircraftRegistration}`"
                 :loading="loadingId === row.id"
                 :message="`Approve maintenance handoff for ${row.flightNumber ?? row.aircraftRegistration}.`"
-                title="Approve maintenance handoff?"
+                title="Approve closure handoff?"
                 tone="success"
-                tooltip="Approve maintenance handoff"
+                tooltip="Approve closure handoff"
                 variant="tonal"
               />
             </td>
@@ -715,14 +722,14 @@ async function issueParts() {
             <DsConfirmIconButton
               v-if="canApproveRecord(selectedRecord)"
               :action="() => approve(selectedRecord)"
-              aria-label="Review and approve maintenance handoff"
+              aria-label="Review and approve closure handoff"
               color="success"
               confirm-icon="mdi-check-decagram-outline"
               confirm-text="Approve"
               icon="mdi-check-decagram-outline"
               :loading="loadingId === selectedRecord.id"
               :message="`Approve maintenance handoff for ${selectedRecord.flightNumber ?? selectedRecord.aircraftRegistration}.`"
-              title="Approve maintenance handoff?"
+              title="Approve closure handoff?"
               tone="success"
               tooltip="Review and approve"
               variant="flat"

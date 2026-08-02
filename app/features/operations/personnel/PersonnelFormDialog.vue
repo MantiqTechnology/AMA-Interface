@@ -9,6 +9,7 @@ const emit = defineEmits<{
 const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null);
 const submitting = ref(false);
 const serverError = ref('');
+const { label: fieldLabel } = useMasterDataFieldHelp();
 const { data: departments } = await useAsyncData(
   'personnel-form-departments',
   () =>
@@ -128,20 +129,28 @@ async function submit() {
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.employeeCode"
-                label="Employee code"
+                :label="fieldLabel('personnel.employeeCode')"
                 :rules="[required('Employee code')]"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.employeeCode" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.fullName"
-                label="Full legal name"
+                :label="fieldLabel('personnel.fullName')"
                 :rules="[required('Full legal name')]"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.fullName" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
@@ -153,45 +162,65 @@ async function submit() {
                   'FLIGHT_OPERATIONS',
                   'GROUND_CREW'
                 ]"
-                label="Crew role"
+                :label="fieldLabel('personnel.crewRole')"
                 :rules="[required('Crew role')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.crewRole" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.licenseType"
-                label="Primary license type"
+                :label="fieldLabel('personnel.licenseType')"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.licenseType" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.licenseNumber"
-                label="Primary license number"
+                :label="fieldLabel('personnel.licenseNumber')"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.licenseNumber" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
-              <VTextField
+              <MasterDataFieldHelp field="personnel.licenseExpiryDate" />
+              <VDateInput
                 v-model="form.licenseExpiryDate"
-                label="License expiry"
-                type="date"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
+                :aria-label="fieldLabel('personnel.licenseExpiryDate')"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="12" md="6">
-              <VTextField
+              <MasterDataFieldHelp field="personnel.medicalExpiryDate" />
+              <VDateInput
                 v-model="form.medicalExpiryDate"
-                label="Medical certificate expiry"
-                type="date"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
+                :aria-label="fieldLabel('personnel.medicalExpiryDate')"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="12" md="6">
-              <StationSelect v-model="form.baseStationId" label="Base station" />
+              <MasterDataFieldHelp field="personnel.baseStationId" />
+              <StationSelect
+                v-model="form.baseStationId"
+                :label="fieldLabel('personnel.baseStationId')"
+              />
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
@@ -203,21 +232,33 @@ async function submit() {
                   'ON_LEAVE',
                   'UNAVAILABLE'
                 ]"
-                label="Availability"
+                :label="fieldLabel('personnel.availabilityStatus')"
                 :rules="[required('Availability')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.availabilityStatus" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol cols="12" md="6">
-              <StationSelect v-model="form.dutyStationId" label="Duty station" />
+              <MasterDataFieldHelp field="personnel.dutyStationId" />
+              <StationSelect
+                v-model="form.dutyStationId"
+                :label="fieldLabel('personnel.dutyStationId')"
+              />
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.readinessNote"
-                label="Operational note"
+                :label="fieldLabel('personnel.readinessNote')"
                 rows="3"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.readinessNote" inline />
+                </template>
+              </VTextarea>
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
@@ -225,19 +266,27 @@ async function submit() {
                 :items="departments"
                 item-title="departmentName"
                 item-value="id"
-                label="Unit"
+                :label="fieldLabel('personnel.departmentId')"
                 :rules="[required('Unit')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.departmentId" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.employmentStatus"
                 :items="['PERMANENT', 'CONTRACT', 'ON_LEAVE', 'INACTIVE']"
-                label="Employment status"
+                :label="fieldLabel('personnel.employmentStatus')"
                 :rules="[required('Employment status')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="personnel.employmentStatus" inline />
+                </template>
+              </VSelect>
             </VCol>
           </VRow>
         </VForm>

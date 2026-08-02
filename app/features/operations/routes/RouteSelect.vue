@@ -9,14 +9,25 @@ const props = withDefaults(
     clearable?: boolean;
     disabled?: boolean;
     allowCreate?: boolean;
+    density?: 'default' | 'comfortable' | 'compact';
+    externalLabel?: boolean;
   }>(),
-  { label: 'Route', required: false, clearable: true, disabled: false, allowCreate: true }
+  {
+    label: 'Route',
+    required: false,
+    clearable: true,
+    disabled: false,
+    allowCreate: true,
+    density: 'compact',
+    externalLabel: false
+  }
 );
 const emit = defineEmits<{
   'update:modelValue': [value: string | null];
   created: [route: RouteDto];
 }>();
 const { can } = useAuthorization();
+const { locale } = useI18n();
 const canManage = computed(() => can('master_data.manage').allowed);
 const createOpen = ref(false);
 const {
@@ -24,7 +35,7 @@ const {
   pending,
   refresh
 } = await useAsyncData(
-  'route-options',
+  'route-select-options',
   () => fetchApi<RouteOption[]>('/api/master-data/routes/options'),
   { default: () => [] }
 );
@@ -43,7 +54,32 @@ async function created(route: RouteDto) {
 function optionTitle(option: RouteOption | string | null | undefined) {
   if (typeof option === 'string') return option;
   if (!option) return '';
-  return `${option.routeCode} (${option.originStationCode} -> ${option.destinationStationCode})`;
+  const origin = option.originCity ?? option.originStationCode;
+  const destination = option.destinationCity ?? option.destinationStationCode;
+  return `${option.originStationCode} -> ${option.destinationStationCode} | ${origin} -> ${destination}`;
+}
+function optionSubtitle(option: RouteOption) {
+  const language = locale.value === 'id' ? 'id' : 'en';
+  const details = [
+    `${option.originStationName} -> ${option.destinationStationName}`,
+    `${option.estimatedDurationMinutes} ${language === 'id' ? 'mnt' : 'min'}`,
+    `${option.distanceKm} km`,
+    option.routeCode
+  ];
+  if (option.restrictionLevel !== 'NONE') {
+    const restrictionLabel =
+      option.restrictionLevel === 'BLOCKING'
+        ? language === 'id'
+          ? 'DIBLOKIR'
+          : 'BLOCKED'
+        : language === 'id'
+          ? 'PERHATIAN'
+          : 'ADVISORY';
+    details.push(
+      option.restrictionNote ? `${restrictionLabel}: ${option.restrictionNote}` : restrictionLabel
+    );
+  }
+  return details.join(' | ');
 }
 watch(
   selectedOption,
@@ -61,13 +97,15 @@ function updateValue(option: RouteOption | null) {
     <div class="d-flex align-start ga-2">
       <VAutocomplete
         v-model:search="searchText"
+        :aria-label="label"
         :clearable="clearable"
-        density="compact"
+        :density="density"
         :disabled="disabled"
         :item-title="optionTitle"
         item-value="id"
+        :item-props="(item: RouteOption) => ({ subtitle: optionSubtitle(item) })"
         :items="options"
-        :label="label"
+        :label="externalLabel ? undefined : label"
         :loading="pending"
         :model-value="selectedOption"
         return-object
@@ -90,3 +128,10 @@ function updateValue(option: RouteOption | null) {
     <RouteFormDialog v-model="createOpen" @saved="created" />
   </div>
 </template>
+
+<style scoped>
+:deep(.v-list-item-subtitle) {
+  overflow: visible;
+  white-space: normal;
+}
+</style>

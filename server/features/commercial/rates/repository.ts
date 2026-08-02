@@ -215,7 +215,7 @@ export class RateCardRepository {
       .values({
         id,
         ...values,
-        lifecycleStatus: input.lifecycleStatus ?? 'DRAFT',
+        lifecycleStatus: input.lifecycleStatus ?? 'ACTIVE',
         isActive: input.lifecycleStatus ? input.lifecycleStatus === 'ACTIVE' : true,
         rateFamilyId: id,
         version: 1,

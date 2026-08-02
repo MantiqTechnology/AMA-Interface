@@ -270,7 +270,7 @@ export class RoutesRepository {
   }
 
   async options(): Promise<RouteOption[]> {
-    return await this.db
+    const rows = await this.db
       .select({
         id: routes.id,
         routeCode: routes.routeCode,
@@ -278,8 +278,14 @@ export class RoutesRepository {
         destinationStationId: routes.destinationStationId,
         originStationCode: origin.stationCode,
         destinationStationCode: destination.stationCode,
+        originStationName: origin.stationName,
+        destinationStationName: destination.stationName,
+        originCity: origin.city,
+        destinationCity: destination.city,
         estimatedDurationMinutes: routes.estimatedDurationMinutes,
-        distanceKm: routes.distanceKm
+        distanceKm: routes.distanceKm,
+        restrictionLevel: routes.restrictionLevel,
+        restrictionNote: routes.restrictionNote
       })
       .from(routes)
       .innerJoin(origin, eq(routes.originStationId, origin.id))
@@ -288,5 +294,9 @@ export class RoutesRepository {
         and(eq(routes.isActive, true), eq(origin.isActive, true), eq(destination.isActive, true))
       )
       .orderBy(asc(routes.routeCode));
+    return rows.map((row) => ({
+      ...row,
+      restrictionLevel: row.restrictionLevel as RouteRestrictionLevel
+    }));
   }
 }

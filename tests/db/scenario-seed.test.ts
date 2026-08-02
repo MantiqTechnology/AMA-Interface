@@ -4,6 +4,7 @@ import { createDbClient, resolveDbPath } from '../../server/db/client';
 import { resetDemoDatabase } from '../../server/db/reset-demo';
 import { resetScenarioBaselineOnce } from '../../server/db/startup-reset';
 import { createAccountingService } from '../../server/features/finance/accounting';
+import { createServices } from '../../server/services';
 import { seedScenarioDatabase } from '../../server/db/seeds/scenario-database';
 import { createDemoSeedContext } from '../../server/db/seeds/context';
 import { listLocalUploads, saveLocalUpload } from '../../server/utils/local-upload-storage';
@@ -92,7 +93,7 @@ describe('realistic scenario seed', () => {
   it('seeds all scenario families and their cross-domain records', async () => {
     const sqlite = createDbClient(dbPath).sqlite;
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM flight_operations').get()).toEqual({
-      count: 16
+      count: 18
     });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM flight_requests').get()).toEqual({
       count: 5
@@ -108,6 +109,32 @@ describe('realistic scenario seed', () => {
         )
         .get()
     ).toEqual({ flightId: 'fop-landed-maintenance', aircraftId: 'ac-pk-ama' });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT flight.flight_number AS flightNumber, station.station_code AS stationCode,
+                  supplier.supplier_name AS supplierName, cost.estimated_amount AS estimateAmount,
+                  cost.actual_amount AS actualAmount, status.code AS status,
+                  cost.vendor_reference AS vendorReference,
+                  cost.evidence_reference AS evidenceReference
+           FROM flight_station_costs cost
+           JOIN flight_operations flight ON flight.id = cost.flight_id
+           JOIN stations station ON station.id = cost.station_id
+           JOIN station_service_suppliers supplier ON supplier.id = cost.service_supplier_id
+           JOIN station_cost_statuses status ON status.id = cost.status_id
+           WHERE cost.id = 'fop-landed-maintenance-station-cost'`
+        )
+        .get()
+    ).toMatchObject({
+      flightNumber: expect.stringMatching(/^AMA-.*-013$/u),
+      stationCode: 'WMX',
+      supplierName: 'Wamena Ground Handling Mock',
+      estimateAmount: 8_000_000,
+      actualAmount: 8_750_000,
+      status: 'SUBMITTED',
+      vendorReference: 'INV-WMX-8750000',
+      evidenceReference: 'RECEIPT-WMX-001'
+    });
     expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     sqlite.close();
 
@@ -116,6 +143,216 @@ describe('realistic scenario seed', () => {
     };
     expect(documents.documents.length).toBeGreaterThanOrEqual(20);
     expect(JSON.stringify(documents).toLowerCase()).not.toContain('demo');
+  });
+
+  it('keeps the aviation demo scenarios actionable and internally consistent', () => {
+    const sqlite = createDbClient(dbPath).sqlite;
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_readiness_checks readiness
+           JOIN readiness_statuses readiness_status ON readiness_status.id = readiness.status_id
+           JOIN flight_operations flight ON flight.id = readiness.flight_id
+           JOIN flight_operation_statuses flight_status ON flight_status.id = flight.current_status_id
+           WHERE readiness.check_code = 'FUEL_CONFIRMED'
+             AND readiness_status.code IN ('PENDING', 'FAIL')
+             AND flight_status.code <> 'CANCELLED'
+             AND NOT EXISTS (
+               SELECT 1 FROM flight_fuel_requests fuel WHERE fuel.flight_id = flight.id
+             )`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_readiness_checks readiness
+           JOIN flight_operations flight ON flight.id = readiness.flight_id
+           LEFT JOIN flight_fuel_requests fuel ON fuel.flight_id = flight.id
+           WHERE readiness.check_code = 'FUEL_CONFIRMED'
+             AND fuel.id IS NULL`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_fuel_requests fuel
+           JOIN flight_operations flight ON flight.id = fuel.flight_id
+           JOIN fuel_suppliers supplier ON supplier.id = fuel.fuel_supplier_id
+           WHERE supplier.station_id <> flight.origin_station_id`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_station_service_requests service
+           JOIN station_service_suppliers supplier ON supplier.id = service.service_supplier_id
+           JOIN station_service_types service_type ON service_type.id = service.service_type_id
+           WHERE service.station_id <> supplier.station_id
+              OR (supplier.service_type <> 'BOTH' AND supplier.service_type <> service_type.code)`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_station_costs cost
+           JOIN station_cost_statuses status ON status.id = cost.status_id
+           WHERE status.code = 'APPROVED'
+             AND cost.submitted_by_user_id = cost.approved_by_user_id`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_requests request
+           JOIN flight_crew_assignments assignment ON assignment.crew_id IN (
+             request.pilot_in_command_id, request.co_pilot_id
+           )
+           JOIN flight_operations flight ON flight.id = assignment.flight_id
+           JOIN flight_operation_statuses status ON status.id = flight.current_status_id
+           WHERE request.id = 'fr-government-submitted'
+             AND status.code NOT IN ('LANDED','DIVERTED','PENDING_CLOSURE','CLOSED','CANCELLED')
+             AND datetime(flight.scheduled_departure_at) < datetime(request.scheduled_arrival_at)
+             AND datetime(flight.scheduled_arrival_at) > datetime(request.scheduled_departure_at)`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    const services = createServices(sqlite);
+    const pendingClosure = services.flightOperations.detail('fop-pending-closure');
+    expect(
+      services.flightOperations
+        .validateClosureRequirements(pendingClosure.id, pendingClosure.serviceTypeCode, false)
+        .filter((requirement) => requirement.required && !requirement.satisfied)
+        .map((requirement) => requirement.code)
+    ).toEqual(['STATION_COST_REVIEW_REQUIRED']);
+
+    sqlite.close();
+  });
+
+  it('keeps reserve flight and MRO master data free from seeded operational usage', () => {
+    const sqlite = createDbClient(dbPath).sqlite;
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM stations
+           WHERE id IN ('st-bik', 'st-soq', 'st-zri')
+             AND is_active = 1
+             AND operational_status = 'ACTIVE'`
+        )
+        .get()
+    ).toEqual({ count: 3 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM routes
+           WHERE id IN (
+             'route-djj-bik', 'route-bik-djj', 'route-djj-soq',
+             'route-soq-djj', 'route-bik-zri', 'route-zri-bik'
+           )
+             AND is_active = 1`
+        )
+        .get()
+    ).toEqual({ count: 6 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM flight_requests WHERE route_id IN (
+               'route-djj-bik', 'route-bik-djj', 'route-djj-soq',
+               'route-soq-djj', 'route-bik-zri', 'route-zri-bik'
+             ))
+             + (SELECT COUNT(*) FROM flight_operations WHERE route_id IN (
+               'route-djj-bik', 'route-bik-djj', 'route-djj-soq',
+               'route-soq-djj', 'route-bik-zri', 'route-zri-bik'
+             )) AS count`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM aircraft
+           WHERE id IN ('ac-pk-amf', 'ac-pk-amg', 'ac-pk-amh')
+             AND is_active = 1
+             AND operational_status = 'ACTIVE'
+             AND serviceability_status = 'SERVICEABLE'
+             AND current_station_id IS NOT NULL`
+        )
+        .get()
+    ).toEqual({ count: 3 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM flight_requests
+               WHERE aircraft_id IN ('ac-pk-amf', 'ac-pk-amg', 'ac-pk-amh'))
+             + (SELECT COUNT(*) FROM flight_operations
+               WHERE aircraft_id IN ('ac-pk-amf', 'ac-pk-amg', 'ac-pk-amh'))
+             + (SELECT COUNT(*) FROM flight_maintenance_handoffs
+               WHERE aircraft_id IN ('ac-pk-amf', 'ac-pk-amg', 'ac-pk-amh')) AS count`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_crew_assignments
+           WHERE crew_id IN ('crew-pic-reserve', 'crew-cop-reserve')`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM inventory_stock_balances stock
+           JOIN inventory_bins bin ON bin.id = stock.bin_id
+           WHERE stock.part_id IN (
+             'inv-part-filter-c208-reserve', 'inv-part-tire-c208-reserve'
+           )
+             AND bin.warehouse_id = 'inv-wh-bik-mro'
+             AND stock.condition = 'SERVICEABLE'
+             AND stock.on_hand_quantity > 0`
+        )
+        .get()
+    ).toEqual({ count: 2 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM maintenance_part_issue_lines
+           WHERE part_id IN (
+             'inv-part-filter-c208-reserve', 'inv-part-tire-c208-reserve'
+           )`
+        )
+        .get()
+    ).toEqual({ count: 0 });
+
+    sqlite.close();
   });
 
   it('grandfathers closed flights and creates verification tasks only for active flights', () => {
@@ -363,10 +600,10 @@ describe('realistic scenario seed', () => {
          FROM inventory_cost_layers`
       )
       .get() as { value: number };
-    expect(inventoryLedger.balance).toBe(115_700_000);
+    expect(inventoryLedger.balance).toBe(132_500_000);
     expect(pendingInventoryCredit.amount).toBe(50_350_000);
     expect(exceptionInventoryCost.amount).toBe(25_000_000);
-    expect(physicalInventory.value).toBe(40_350_000);
+    expect(physicalInventory.value).toBe(57_150_000);
     expect(
       inventoryLedger.balance - pendingInventoryCredit.amount - exceptionInventoryCost.amount
     ).toBe(physicalInventory.value);

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createSeededTestServices } from '../helpers/demo-db';
 
 const occActor = 'USR-001';
+const occCheckerActor = 'USR-OCC-CHECKER';
 const adminActor = 'USR-ADMIN';
 
 function createReadinessDraft(
@@ -27,6 +28,194 @@ function createReadinessDraft(
 }
 
 describe('FlightOperationsService', () => {
+  it('derives actor-aware lifecycle capabilities instead of exposing status-only actions', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flightId = 'fop-ticketing-passenger';
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-approved'
+         WHERE id = ?`
+      )
+      .run(flightId);
+
+    const occ = services.flightOperations.detailForActor(flightId, {
+      userId: occActor,
+      role: 'OCC',
+      stationCodes: ['ALL']
+    });
+    const director = services.flightOperations.detailForActor(flightId, {
+      userId: 'USR-DIRECTOR',
+      role: 'Director',
+      stationCodes: ['ALL']
+    });
+
+    expect(occ.commandCenter?.lifecycle.currentPhase).toBe('APPROVAL');
+    expect(
+      occ.commandCenter?.capabilities.find((capability) => capability.action === 'schedule')
+    ).toMatchObject({ visible: true, allowed: true, permissionGranted: true });
+    expect(
+      director.commandCenter?.capabilities.find((capability) => capability.action === 'schedule')
+    ).toMatchObject({
+      visible: true,
+      allowed: false,
+      permissionGranted: false,
+      blockedReasons: [
+        expect.objectContaining({
+          code: 'PERMISSION_DENIED',
+          domain: 'PERMISSION',
+          ownerRoleCode: 'OCC'
+        })
+      ]
+    });
+
+    sqlite.close();
+  });
+
+  it('rejects cancellation after actual departure without changing flight state', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flightId = 'fop-ticketing-passenger';
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-in-progress',
+             actual_departure_at = '2026-07-17T01:00:00.000Z'
+         WHERE id = ?`
+      )
+      .run(flightId);
+
+    expect(() =>
+      services.flightOperations.cancel(
+        flightId,
+        {
+          reasonId: 'reason-weather',
+          reasonNote: 'Cancellation must not be accepted after departure.'
+        },
+        occActor
+      )
+    ).toThrowError(expect.objectContaining({ code: 'AIRBORNE_CANCELLATION_FORBIDDEN' }));
+    expect(services.flightOperations.detail(flightId).currentStatus).toBe('IN_PROGRESS');
+
+    sqlite.close();
+  });
+
+  it('applies a versioned lifecycle command once and rejects stale commands', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flightId = 'fop-ticketing-passenger';
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-approved', version = 7
+         WHERE id = ?`
+      )
+      .run(flightId);
+    const command = {
+      expectedVersion: 7,
+      idempotencyKey: `${flightId}:schedule:test-command`
+    };
+
+    const first = services.flightOperations.transition(flightId, 'SCHEDULED', occActor, command);
+    const repeated = services.flightOperations.transition(flightId, 'SCHEDULED', occActor, command);
+
+    expect(first.version).toBe(8);
+    expect(repeated.version).toBe(8);
+    expect(
+      (
+        sqlite
+          .prepare(
+            `SELECT COUNT(*) AS count FROM flight_status_histories
+             WHERE flight_id = ? AND action_type_id = 'flight-action-type-schedule'`
+          )
+          .get(flightId) as { count: number }
+      ).count
+    ).toBe(1);
+    expect(() =>
+      services.flightOperations.transition(flightId, 'CHECK_IN_OPEN', occActor, {
+        expectedVersion: 7,
+        idempotencyKey: `${flightId}:open-check-in:stale`
+      })
+    ).toThrowError(expect.objectContaining({ code: 'FLIGHT_VERSION_CONFLICT' }));
+
+    sqlite.close();
+  });
+
+  it('requires correction scope and records the previous lifecycle snapshot when reopening', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    expect(() =>
+      services.flightOperations.reopen(
+        'fop-closed-djj-wmx',
+        { reasonId: 'reason-data-correction', reasonNote: 'Correct arrival evidence.' },
+        adminActor
+      )
+    ).toThrowError(expect.objectContaining({ code: 'REOPEN_SCOPE_REQUIRED' }));
+
+    const before = services.flightOperations.detail('fop-closed-djj-wmx');
+    const reopened = services.flightOperations.reopen(
+      'fop-closed-djj-wmx',
+      {
+        reasonId: 'reason-data-correction',
+        reasonNote: 'Correct arrival evidence.',
+        correctionScope: 'ARRIVAL'
+      },
+      adminActor
+    );
+    const event = reopened.histories.find((history) => history.actionType === 'REOPEN');
+
+    expect(reopened.currentStatus).toBe('REOPENED_FOR_CORRECTION');
+    expect(event?.metadata).toMatchObject({
+      correctionScope: 'ARRIVAL',
+      previousStatus: 'CLOSED',
+      previousVersion: before.version,
+      expectedResultingStatus: 'PENDING_CLOSURE'
+    });
+
+    sqlite.close();
+  });
+
+  it('previews selective aircraft-change invalidation without mutating the flight', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flightId = 'fop-ticketing-passenger';
+    sqlite
+      .prepare(
+        `UPDATE flight_operations
+         SET current_status_id = 'flight-operation-status-approved'
+         WHERE id = ?`
+      )
+      .run(flightId);
+    const before = services.flightOperations.detail(flightId);
+
+    const preview = services.flightOperations.previewFlightChange(
+      flightId,
+      {
+        changeType: 'AIRCRAFT_ASSIGNMENT',
+        changes: { aircraftId: 'ac-pk-amb' },
+        expectedVersion: before.version
+      },
+      { userId: occActor, role: 'OCC', stationCodes: ['ALL'] }
+    );
+
+    expect(preview).toMatchObject({
+      resultingStatus: 'REAPPROVAL_REQUIRED',
+      resultingPhase: 'APPROVAL',
+      requiresConfirmation: true
+    });
+    expect(preview.invalidatedItems.map((item) => item.code)).toEqual(
+      expect.arrayContaining([
+        'AIRCRAFT_SERVICEABILITY',
+        'AIRCRAFT_LOCATION',
+        'MAINTENANCE_RELEASE'
+      ])
+    );
+    expect(services.flightOperations.detail(flightId)).toMatchObject({
+      currentStatus: before.currentStatus,
+      version: before.version,
+      aircraftId: before.aircraftId
+    });
+
+    sqlite.close();
+  });
+
   it('represents ON_DUTY crew as assigned rather than unavailable', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const scheduled = services.flightOperations.detail('fop-ticketing-passenger');
@@ -208,6 +397,115 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
+  it('calculates CASR fuel planning advisory from fuel onboard plus actual uplift', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flight = services.flightOperations.create(
+      {
+        flightDate: '2026-07-14',
+        flightTypeId: 'flight-type-charter',
+        serviceTypeId: 'flight-service-type-charter-cargo',
+        priorityId: 'flight-priority-normal',
+        routeId: 'route-djj-wmx',
+        customerId: 'cust-papua-logistics',
+        aircraftId: 'ac-pk-amb',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: '2026-07-14T01:00:00.000Z',
+        scheduledArrivalAt: '2026-07-14T02:00:00.000Z',
+        remarks: 'Fuel planning advisory regression'
+      },
+      occActor
+    );
+    sqlite
+      .prepare('UPDATE flight_operations SET planned_taxi_fuel_litre = 15 WHERE id = ?')
+      .run(flight.id);
+    const withFuel = services.flightOperations.createFuel(
+      {
+        flightId: flight.id,
+        fuelSupplierId: 'fuel-pertamina-djj',
+        fuelType: 'AVTUR',
+        requestedQuantityLitre: 220,
+        fuelOnBoardBeforeUpliftLitre: 180,
+        defuelQuantityLitre: null,
+        measuredFuelOnBoardLitre: null,
+        confirmedBlockFuelLitre: null,
+        referencePricePerLitre: null
+      },
+      occActor
+    );
+    const fuelId = withFuel.fuelRequests[0]!.id;
+    sqlite
+      .prepare('UPDATE flight_fuel_requests SET actual_uplift_litre = 220 WHERE id = ?')
+      .run(fuelId);
+
+    const estimate = services.flightOperations.detail(flight.id).fuelPlanningEstimate;
+
+    expect(estimate).toMatchObject({
+      status: 'ENOUGH_FOR_PLANNED_LEG',
+      assessment: 'ADVISORY_COMPLETE',
+      regulatoryBasis: 'CASR_135_637',
+      availableBlockFuelLitre: 400,
+      taxiFuelLitre: 15,
+      tripFuelLitre: 180,
+      contingencyFuelLitre: 15,
+      alternateFuelLitre: 45,
+      finalReserveFuelLitre: 90,
+      requiredBlockFuelLitre: 345,
+      operationalMarginLitre: 55,
+      operationalMarginMinutes: 18
+    });
+    expect(estimate.calculationSources.fuelQuantitySource).toContain('fuelOnBoardBeforeUplift');
+
+    sqlite.close();
+  });
+
+  it('does not treat uplift-only fuel requests as confirmed available block fuel', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flight = createReadinessDraft(services);
+    const detail = services.flightOperations.createFuel(
+      {
+        flightId: flight.id,
+        fuelSupplierId: 'fuel-pertamina-djj',
+        fuelType: 'AVTUR',
+        requestedQuantityLitre: 220,
+        referencePricePerLitre: null
+      },
+      occActor
+    );
+
+    const estimate = detail.fuelPlanningEstimate;
+
+    expect(estimate.availableBlockFuelLitre).toBe(220);
+    expect(estimate.calculationSources.fuelQuantitySource).toBe('requestedQuantityLitre');
+    expect(estimate.warnings).toContain('FUEL_QUANTITY_IS_UPLIFT_ONLY');
+
+    sqlite.close();
+  });
+
+  it('uses published usable capacity without applying expansion-space deduction', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flight = createReadinessDraft(services);
+    services.flightOperations.createFuel(
+      {
+        flightId: flight.id,
+        fuelSupplierId: 'fuel-pertamina-djj',
+        fuelType: 'AVTUR',
+        requestedQuantityLitre: 800,
+        confirmedBlockFuelLitre: 800,
+        referencePricePerLitre: null
+      },
+      occActor
+    );
+
+    const estimate = services.flightOperations.detail(flight.id).fuelPlanningEstimate;
+
+    expect(estimate.usableFuelCapacityLitre).toBe(646);
+    expect(estimate.assessmentBlockFuelLitre).toBe(646);
+    expect(estimate.warnings).toContain('AVAILABLE_BLOCK_FUEL_EXCEEDS_USABLE_CAPACITY');
+
+    sqlite.close();
+  });
+
   it('builds a route-aware planning context with explainable aircraft and crew candidates', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
@@ -300,7 +598,7 @@ describe('FlightOperationsService', () => {
     sqlite.close();
   });
 
-  it('blocks readiness when PIC license or medical is expired', async () => {
+  it('keeps the aircraft-unserviceable scenario focused on maintenance action', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
     const blocked = services.flightOperations.detail('fop-blocked-crew-expired');
@@ -309,8 +607,8 @@ describe('FlightOperationsService', () => {
     );
 
     expect(blocked.currentStatus).toBe('BLOCKED');
-    expect(crewGate?.status).toBe('FAIL');
-    expect(blocked.blockingReason).toContain('PIC licence');
+    expect(crewGate?.status).toBe('PASS');
+    expect(blocked.blockingReason).toContain('unserviceable');
 
     sqlite.close();
   });
@@ -339,6 +637,73 @@ describe('FlightOperationsService', () => {
     expect(
       evaluated.readinessChecks.find((check) => check.checkCode === 'CREW_LICENSE_MEDICAL')
     ).toMatchObject({ status: 'FAIL' });
+
+    sqlite.close();
+  });
+
+  it('blocks readiness when an assigned crew member lacks the aircraft fleet qualification', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    sqlite
+      .prepare(
+        `DELETE FROM personnel_qualifications
+         WHERE personnel_id = 'crew-cop-valid-2'
+           AND qualification_type = 'AIRCRAFT_TYPE'
+           AND reference_id = 'PC6'`
+      )
+      .run();
+
+    const evaluated = services.flightOperations.evaluate('fop-ready-approval', occActor);
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'CREW_QUALIFICATION')
+    ).toMatchObject({
+      status: 'FAIL',
+      effectiveStatus: 'BLOCKED'
+    });
+    expect(evaluated.blockingReason).toContain('PC6 fleet qualification');
+
+    sqlite.close();
+  });
+
+  it('uses authoritative license records instead of the legacy crew expiry columns', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    sqlite
+      .prepare(
+        `UPDATE personnel_licenses SET status = 'SUSPENDED'
+         WHERE personnel_id = 'crew-pic-valid' AND is_primary = 1`
+      )
+      .run();
+
+    const evaluated = services.flightOperations.evaluate('fop-ready-approval', occActor);
+    expect(
+      evaluated.readinessChecks.find((check) => check.checkCode === 'CREW_LICENSE_MEDICAL')
+    ).toMatchObject({ status: 'FAIL', effectiveStatus: 'BLOCKED' });
+    expect(evaluated.blockingReason).toContain('active primary licence');
+
+    sqlite.close();
+  });
+
+  it('recalculates nonterminal flight readiness after a personnel qualification change', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    sqlite
+      .prepare(
+        `UPDATE personnel_qualifications
+         SET status = 'SUSPENDED'
+         WHERE personnel_id = 'crew-pic-valid'
+           AND qualification_type = 'CRM'`
+      )
+      .run();
+
+    const affected = services.flightOperations.recalculatePersonnelReadiness(
+      'crew-pic-valid',
+      'SYSTEM_TEST'
+    );
+    const detail = services.flightOperations.detail('fop-ready-approval');
+
+    expect(affected).toContain('fop-ready-approval');
+    expect(
+      detail.readinessChecks.find((check) => check.checkCode === 'CREW_QUALIFICATION')
+    ).toMatchObject({ status: 'FAIL', effectiveStatus: 'BLOCKED' });
+    expect(detail.currentStatus).toBe('BLOCKED');
 
     sqlite.close();
   });
@@ -472,16 +837,33 @@ describe('FlightOperationsService', () => {
     services.flightOperations.fuelAction(
       fuel.id,
       'approve',
-      { approvedQuantityLitre: 700 },
+      {
+        expectedVersion: 1,
+        idempotencyKey: `${fuel.id}:approve:system-ready`,
+        approvedQuantityLitre: 700
+      },
       adminActor
     );
     services.flightOperations.fuelAction(
       fuel.id,
       'uplift',
-      { actualUpliftLitre: 690, actualPricePerLitre: 18500 },
+      {
+        expectedVersion: 2,
+        idempotencyKey: `${fuel.id}:uplift:system-ready`,
+        actualUpliftLitre: 690,
+        actualPricePerLitre: 18500
+      },
       adminActor
     );
-    const fuelPosted = services.flightOperations.fuelAction(fuel.id, 'post', {}, adminActor);
+    const fuelPosted = services.flightOperations.fuelAction(
+      fuel.id,
+      'post',
+      {
+        expectedVersion: 3,
+        idempotencyKey: `${fuel.id}:post:system-ready`
+      },
+      adminActor
+    );
     const fuelHandoff = fuelPosted.financeHandoffs.find(
       (handoff) => handoff.sourceType === 'fuel' && handoff.sourceId === fuel.id
     );
@@ -497,7 +879,8 @@ describe('FlightOperationsService', () => {
         stationId: 'st-djj',
         serviceSupplierId: 'hp-angkasa-djj',
         serviceTypeId: 'station-service-type-handling',
-        referenceRate: 2750000
+        referenceRate: 2750000,
+        creationReason: 'Required origin handling for departure verification.'
       },
       occActor
     );
@@ -508,15 +891,75 @@ describe('FlightOperationsService', () => {
     services.flightOperations.confirmStationService(stationService.id, adminActor);
 
     const submitted = services.flightOperations.submit(created.id, occActor);
-    expect(['PENDING_READINESS', 'READY_FOR_APPROVAL']).toContain(submitted.currentStatus);
+    expect(['PENDING_READINESS', 'READY_FOR_OCC_REVIEW']).toContain(submitted.currentStatus);
 
     const evaluated = services.flightOperations.evaluate(created.id, occActor);
-    expect(evaluated.currentStatus).toBe('READY_FOR_APPROVAL');
+    expect(evaluated.currentStatus).toBe('READY_FOR_OCC_REVIEW');
     expect(
       evaluated.readinessChecks.find((check) => check.checkCode === 'PLANNING_DOCUMENTS')
     ).toMatchObject({ effectiveStatus: 'PASSED' });
-    expect(services.flightOperations.approve(created.id, {}, adminActor).currentStatus).toBe(
-      'APPROVED'
+    const accepted = services.flightOperations.acceptReadiness(
+      created.id,
+      {
+        expectedVersion: evaluated.version,
+        readinessRevision: evaluated.readinessRevision,
+        note: 'Independent OCC readiness review complete.'
+      },
+      occCheckerActor
+    );
+    expect(accepted.currentStatus).toBe('READY_FOR_APPROVAL');
+    expect(
+      services.flightOperations.approve(
+        created.id,
+        {
+          expectedVersion: accepted.version,
+          readinessRevision: accepted.readinessRevision,
+          note: 'Director final approval granted.'
+        },
+        adminActor
+      ).currentStatus
+    ).toBe('APPROVED');
+
+    sqlite
+      .prepare(
+        `INSERT INTO operational_advisories (
+           id, advisory_type, severity, route_id, station_id, status, valid_from, valid_until,
+           summary, operational_limitation, source_reference, created_at, updated_at
+         ) VALUES (?, 'RUNWAY', 'BLOCKING', ?, NULL, 'RESOLVED', ?, ?,
+           'Runway condition requires confirmation', 'Dispatch prohibited.', 'TEST-NOTAM', ?, ?)`
+      )
+      .run(
+        'advisory-readiness-invalidation',
+        created.routeId,
+        '2026-07-08T00:00:00.000Z',
+        '2026-07-10T23:59:59.000Z',
+        '2026-07-13T00:00:00.000Z',
+        '2026-07-13T00:00:00.000Z'
+      );
+    const advisoryResult = services.flightOperations.setOperationalAdvisoryStatus(
+      'advisory-readiness-invalidation',
+      'ACTIVE',
+      'Runway report became unavailable.',
+      occActor
+    );
+    const invalidated = services.flightOperations.detail(created.id);
+    expect(advisoryResult.affectedFlightIds).toContain(created.id);
+    expect(
+      invalidated.readinessChecks.find((check) => check.checkCode === 'OPERATIONAL_ADVISORY')
+    ).toMatchObject({ status: 'FAIL', effectiveStatus: 'BLOCKED' });
+    expect(invalidated.currentStatus).toBe('REAPPROVAL_REQUIRED');
+    expect(invalidated.readinessRevision).toBeGreaterThan(accepted.readinessRevision);
+    expect(
+      invalidated.approvals.filter((approval) =>
+        ['READINESS_APPROVAL', 'FLIGHT_APPROVAL'].includes(approval.approvalType)
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: 'INVALIDATED',
+          invalidationReason: expect.stringContaining('Runway condition')
+        })
+      ])
     );
 
     sqlite.close();
@@ -582,6 +1025,281 @@ describe('FlightOperationsService', () => {
     expect(result.flight.requestNumber).toBe(request.requestNumber);
     expect(result.flight.orderNumber).toMatch(/^FO-2026-/u);
     expect(result.flight.flightNumber).toMatch(/^FL-2026-/u);
+    const retry = services.flightOperations.decideRequest(
+      request.id,
+      { decision: 'APPROVE', reason: 'Safe retry after response loss.' },
+      'USR-ADMIN'
+    );
+    expect(retry.flight?.id).toBe(result.flight.id);
+    expect(
+      (
+        sqlite
+          .prepare('SELECT COUNT(*) AS count FROM flight_operations WHERE flight_request_id = ?')
+          .get(request.id) as { count: number }
+      ).count
+    ).toBe(1);
+
+    sqlite.close();
+  });
+
+  it('enforces the fuel lifecycle, optimistic version, and deterministic retry', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const fuelId = 'fop-dg-pending-fuel';
+
+    expect(() =>
+      services.flightOperations.fuelAction(
+        fuelId,
+        'post',
+        {
+          expectedVersion: 1,
+          idempotencyKey: `${fuelId}:post:invalid`
+        },
+        'USR-STATION-ADMIN-ORIGIN'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_TRANSITION' }));
+
+    const approveCommand = {
+      expectedVersion: 1,
+      idempotencyKey: `${fuelId}:approve:deterministic`,
+      approvedQuantityLitre: 850
+    };
+    services.flightOperations.fuelAction(
+      fuelId,
+      'approve',
+      approveCommand,
+      'USR-STATION-ADMIN-ORIGIN'
+    );
+    services.flightOperations.fuelAction(
+      fuelId,
+      'approve',
+      approveCommand,
+      'USR-STATION-ADMIN-ORIGIN'
+    );
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT status.code AS status, fuel.version
+           FROM flight_fuel_requests fuel
+           JOIN fuel_workflow_statuses status ON status.id = fuel.status_id
+           WHERE fuel.id = ?`
+        )
+        .get(fuelId)
+    ).toEqual({ status: 'APPROVED', version: 2 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM flight_fuel_action_commands
+           WHERE fuel_request_id = ? AND action = 'approve'`
+        )
+        .get(fuelId)
+    ).toEqual({ count: 1 });
+
+    services.flightOperations.fuelAction(
+      fuelId,
+      'uplift',
+      {
+        expectedVersion: 2,
+        idempotencyKey: `${fuelId}:uplift:deterministic`,
+        actualUpliftLitre: 840,
+        actualPricePerLitre: 18_750,
+        varianceNote: 'Ten litres below the approved quantity.'
+      },
+      'USR-STATION-ADMIN-ORIGIN'
+    );
+    services.flightOperations.fuelAction(
+      fuelId,
+      'post',
+      {
+        expectedVersion: 3,
+        idempotencyKey: `${fuelId}:post:deterministic`
+      },
+      'USR-STATION-ADMIN-ORIGIN'
+    );
+
+    expect(() =>
+      services.flightOperations.fuelAction(
+        fuelId,
+        'approve',
+        {
+          expectedVersion: 4,
+          idempotencyKey: `${fuelId}:approve:terminal`,
+          approvedQuantityLitre: 850
+        },
+        'USR-STATION-ADMIN-ORIGIN'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_TRANSITION' }));
+
+    sqlite.close();
+  });
+
+  it('rejects a fuel supplier outside the flight origin station', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    expect(() =>
+      services.flightOperations.createFuel(
+        {
+          flightId: 'fop-dg-pending',
+          fuelSupplierId: 'fuel-pertamina-wmx',
+          fuelType: 'AVTUR',
+          requestedQuantityLitre: 500,
+          fuelOnBoardBeforeUpliftLitre: null,
+          defuelQuantityLitre: null,
+          measuredFuelOnBoardLitre: null,
+          confirmedBlockFuelLitre: null,
+          referencePricePerLitre: null
+        },
+        'USR-STATION-ADMIN-ORIGIN'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'FUEL_SUPPLIER_STATION_MISMATCH' }));
+
+    sqlite.close();
+  });
+
+  it('converts explicit origin parking and exposes destination supplier recovery', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const request = services.flightOperations.createRequest(
+      {
+        flightDate: '2026-08-10',
+        flightTypeId: 'flight-type-charter',
+        serviceTypeId: 'flight-service-type-charter-passenger',
+        routeId: 'route-djj-wmx',
+        customerId: 'cust-government',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: '2026-08-10T08:00:00.000+09:00',
+        scheduledArrivalAt: '2026-08-10T08:55:00.000+09:00',
+        requestSource: 'Regression test',
+        priorityId: 'flight-priority-normal',
+        passengerEstimate: 4,
+        cargoWeightEstimateKg: 50,
+        cargoCategory: 'Personal baggage',
+        dangerousGoods: false,
+        fuelType: 'AVTUR',
+        requestedFuelLitre: 600,
+        fuelSupplierId: 'fuel-pertamina-djj',
+        handlingSupplierId: 'hp-angkasa-djj',
+        parkingRequired: true,
+        destinationHandlingRequired: true,
+        billingType: 'CHARTER',
+        estimatedRevenue: 25_000_000,
+        remarks: 'Station planning conversion regression'
+      },
+      occActor
+    );
+    services.flightOperations.submitRequest(request.id);
+    const converted = services.flightOperations.decideRequest(
+      request.id,
+      { decision: 'APPROVE', reason: 'Planning is complete.' },
+      'USR-DIRECTOR'
+    ).flight;
+    if (!converted) throw new Error('Expected converted Flight Order');
+
+    expect(
+      services.flightOperations
+        .listStationServices({ flightId: converted.id })
+        .filter((service) => service.stationCode === 'DJJ')
+        .map((service) => service.serviceType)
+    ).toEqual(expect.arrayContaining(['HANDLING', 'PARKING']));
+
+    const detail = services.flightOperations.detailForActor(converted.id, {
+      userId: occActor,
+      role: 'OCC',
+      stationCodes: ['ALL']
+    });
+    expect(detail.commandCenter?.activeBlockers).toContainEqual(
+      expect.objectContaining({
+        code: 'STATION_SERVICE_SUPPLIER_REQUIRED',
+        ownerStationCode: 'WMX',
+        message: expect.stringContaining('destination handling')
+      })
+    );
+
+    sqlite.close();
+  });
+
+  it('applies a destination change selectively and preserves origin service records', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const flightId = 'fop-ticketing-passenger-later';
+    const before = services.flightOperations.detail(flightId);
+    const originBefore = before.stationServices.filter(
+      (service) => service.stationId === before.originStationId
+    );
+    const originCostBefore = before.stationCosts.find(
+      (cost) => cost.stationId === before.originStationId
+    );
+    const command = {
+      routeId: 'route-djj-tim',
+      destinationHandlingSupplierId: 'hp-angkasa-tim',
+      expectedVersion: before.version,
+      idempotencyKey: `${flightId}:route:djj-tim`
+    };
+
+    const changed = services.flightOperations.changeRouteAssignment(flightId, command, {
+      userId: occActor,
+      role: 'OCC',
+      stationCodes: ['ALL']
+    });
+
+    expect(changed).toMatchObject({
+      destinationStationCode: 'TIM',
+      currentStatus: 'REAPPROVAL_REQUIRED'
+    });
+    expect(
+      changed.stationServices
+        .filter((service) => service.stationId === before.originStationId)
+        .map((service) => ({ id: service.id, status: service.status }))
+    ).toEqual(originBefore.map((service) => ({ id: service.id, status: service.status })));
+    expect(changed.stationServices).toContainEqual(
+      expect.objectContaining({
+        stationCode: 'WMX',
+        status: 'CANCELLED'
+      })
+    );
+    expect(changed.stationServices).toContainEqual(
+      expect.objectContaining({
+        stationCode: 'TIM',
+        serviceType: 'HANDLING',
+        status: 'PLANNED'
+      })
+    );
+    expect(changed.stationCosts).toContainEqual(
+      expect.objectContaining({
+        id: originCostBefore?.id,
+        status: originCostBefore?.status
+      })
+    );
+    expect(changed.stationCosts).toContainEqual(
+      expect.objectContaining({
+        stationCode: 'WMX',
+        status: 'VOIDED'
+      })
+    );
+    expect(
+      services.flightOperations.changeRouteAssignment(flightId, command, {
+        userId: occActor,
+        role: 'OCC',
+        stationCodes: ['ALL']
+      }).version
+    ).toBe(changed.version);
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count FROM flight_operational_audit
+           WHERE flight_id = ? AND action = 'ROUTE_STATION_CHANGED'`
+        )
+        .get(flightId)
+    ).toEqual({ count: 1 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count FROM flight_action_commands
+           WHERE flight_id = ? AND action = ?`
+        )
+        .get(flightId, 'ROUTE_STATION:route-djj-tim')
+    ).toEqual({ count: 1 });
 
     sqlite.close();
   });
@@ -846,7 +1564,7 @@ describe('FlightOperationsService', () => {
         'actual departure/arrival',
         'final manifest',
         'actual fuel uplift',
-        'approved station cost',
+        'verified station service',
         'approved maintenance handoff'
       ])
     });
@@ -980,6 +1698,17 @@ describe('FlightOperationsService', () => {
     expect(
       sqlite.prepare('SELECT current_station_id FROM aircraft WHERE id = ?').get(before.aircraftId!)
     ).toEqual({ current_station_id: 'st-djj' });
+    expect(
+      (
+        sqlite
+          .prepare(
+            `SELECT COUNT(*) AS count FROM flight_station_tasks
+             WHERE flight_id = 'fop-in-progress'
+               AND phase LIKE 'DESTINATION_%' AND station_id <> 'st-djj'`
+          )
+          .get() as { count: number }
+      ).count
+    ).toBe(0);
     expect(
       services.flightOperations.transition('fop-in-progress', 'PENDING_CLOSURE', occActor)
         .currentStatus

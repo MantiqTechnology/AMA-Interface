@@ -8,6 +8,7 @@ export const stations = sqliteTable('stations', {
   icaoCode: text('icao_code'),
   airportType: text('airport_type'),
   operationalStatus: text('operational_status').notNull().default('ACTIVE'),
+  cityOrRegion: text('city_or_region'),
   city: text('city'),
   province: text('province'),
   countryCode: text('country_code'),
@@ -44,6 +45,18 @@ export const aircraft = sqliteTable('aircraft', {
   passengerCapacity: integer('passenger_capacity').notNull(),
   cargoCapacityKg: integer('cargo_capacity_kg').notNull(),
   fuelType: text('fuel_type').notNull(),
+  engineCategory: text('engine_category').notNull().default('TURBINE'),
+  usableFuelCapacityLitre: real('usable_fuel_capacity_litre'),
+  fuelCapacityBasis: text('fuel_capacity_basis').notNull().default('USABLE'),
+  cruiseFuelBurnLitrePerHour: real('cruise_fuel_burn_litre_per_hour'),
+  holdingFuelBurnLitrePerHour: real('holding_fuel_burn_litre_per_hour'),
+  taxiFuelBurnLitrePerHour: real('taxi_fuel_burn_litre_per_hour'),
+  fuelProfileSource: text('fuel_profile_source').notNull().default('DEMO'),
+  fuelProfileReference: text('fuel_profile_reference'),
+  fuelProfileEffectiveFrom: text('fuel_profile_effective_from'),
+  fuelProfileAdvisoryOnly: integer('fuel_profile_advisory_only', { mode: 'boolean' })
+    .notNull()
+    .default(true),
   operationalStatus: text('operational_status').notNull().default('ACTIVE'),
   serviceabilityStatus: text('serviceability_status').notNull(),
   baseStationId: text('base_station_id').references(() => stations.id),
@@ -52,9 +65,123 @@ export const aircraft = sqliteTable('aircraft', {
   lastMaintenanceCheckAt: text('last_maintenance_check_at'),
   nextMaintenanceDueAt: text('next_maintenance_due_at'),
   serviceabilityNote: text('serviceability_note'),
+  airframeHours: real('airframe_hours').notNull().default(0),
+  airframeCycles: integer('airframe_cycles').notNull().default(0),
+  version: integer('version').notNull().default(1),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
+});
+
+export const aircraftDefects = sqliteTable('aircraft_defects', {
+  id: text('id').primaryKey(),
+  aircraftId: text('aircraft_id')
+    .notNull()
+    .references(() => aircraft.id),
+  defectNumber: text('defect_number').notNull().unique(),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  detectedAt: text('detected_at').notNull(),
+  detectedByUserId: text('detected_by_user_id').notNull(),
+  sourceReference: text('source_reference'),
+  evidenceReferences: text('evidence_references').notNull().default('[]'),
+  status: text('status').notNull().default('OPEN'),
+  rectificationNote: text('rectification_note'),
+  rectifiedAt: text('rectified_at'),
+  rectifiedByUserId: text('rectified_by_user_id'),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const aircraftDeferments = sqliteTable('aircraft_deferments', {
+  id: text('id').primaryKey(),
+  aircraftId: text('aircraft_id')
+    .notNull()
+    .references(() => aircraft.id),
+  defectId: text('defect_id')
+    .notNull()
+    .unique()
+    .references(() => aircraftDefects.id),
+  defermentType: text('deferment_type').notNull(),
+  referenceCode: text('reference_code').notNull(),
+  category: text('category'),
+  operationalLimitations: text('operational_limitations').notNull(),
+  maintenanceProcedure: text('maintenance_procedure'),
+  operationsProcedure: text('operations_procedure'),
+  effectiveAt: text('effective_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  authorizedByUserId: text('authorized_by_user_id').notNull(),
+  authorizationReference: text('authorization_reference').notNull(),
+  applicableRouteIds: text('applicable_route_ids').notNull().default('[]'),
+  applicableServiceTypeCodes: text('applicable_service_type_codes').notNull().default('[]'),
+  status: text('status').notNull().default('ACTIVE'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const aircraftMaintenanceRequirements = sqliteTable('aircraft_maintenance_requirements', {
+  id: text('id').primaryKey(),
+  aircraftId: text('aircraft_id')
+    .notNull()
+    .references(() => aircraft.id),
+  requirementCode: text('requirement_code').notNull(),
+  title: text('title').notNull(),
+  dueAt: text('due_at'),
+  dueAirframeHours: real('due_airframe_hours'),
+  dueAirframeCycles: integer('due_airframe_cycles'),
+  sourceReference: text('source_reference').notNull(),
+  status: text('status').notNull().default('ACTIVE'),
+  compliedAt: text('complied_at'),
+  releaseId: text('release_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const aircraftMaintenanceReleases = sqliteTable('aircraft_maintenance_releases', {
+  id: text('id').primaryKey(),
+  aircraftId: text('aircraft_id')
+    .notNull()
+    .references(() => aircraft.id),
+  releaseNumber: text('release_number').notNull().unique(),
+  resultingStatus: text('resulting_status').notNull(),
+  workOrderReference: text('work_order_reference').notNull(),
+  releaseStatement: text('release_statement').notNull(),
+  certifyingUserId: text('certifying_user_id').notNull(),
+  certifyingLicenseNumber: text('certifying_license_number').notNull(),
+  releasedAt: text('released_at').notNull(),
+  evidenceReferences: text('evidence_references').notNull().default('[]'),
+  defectIds: text('defect_ids').notNull().default('[]'),
+  signerAuthorizationSnapshotJson: text('signer_authorization_snapshot_json'),
+  createdAt: text('created_at').notNull()
+});
+
+export const aircraftStatusHistory = sqliteTable('aircraft_status_history', {
+  id: text('id').primaryKey(),
+  aircraftId: text('aircraft_id')
+    .notNull()
+    .references(() => aircraft.id),
+  statusDimension: text('status_dimension').notNull(),
+  fromStatus: text('from_status'),
+  toStatus: text('to_status').notNull(),
+  reason: text('reason').notNull(),
+  sourceType: text('source_type').notNull(),
+  sourceId: text('source_id'),
+  actorUserId: text('actor_user_id').notNull(),
+  actorRole: text('actor_role').notNull(),
+  occurredAt: text('occurred_at').notNull(),
+  metadata: text('metadata')
+});
+
+export const aircraftUtilizationLedger = sqliteTable('aircraft_utilization_ledger', {
+  id: text('id').primaryKey(),
+  aircraftId: text('aircraft_id')
+    .notNull()
+    .references(() => aircraft.id),
+  flightId: text('flight_id').notNull().unique(),
+  flightHours: real('flight_hours').notNull(),
+  cycles: integer('cycles').notNull().default(1),
+  postedAt: text('posted_at').notNull()
 });
 
 export const routes = sqliteTable(

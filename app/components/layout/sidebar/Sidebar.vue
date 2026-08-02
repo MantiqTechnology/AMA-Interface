@@ -6,6 +6,7 @@ const mobileDrawer = useState('ama-sidebar-mobile-open', () => false);
 const { can } = useAuthorization();
 const route = useRoute();
 const { mdAndUp } = useDisplay();
+const { t } = useI18n();
 
 const openedGroups = ref<string[]>([]);
 
@@ -45,51 +46,56 @@ const commercialVisible = computed(
 
 const navItems = computed<NavItem[]>(() =>
   [
-    { label: 'Dashboard', to: '/dashboard', icon: 'mdi-view-dashboard-outline', visible: true },
     {
-      label: 'Ops',
+      label: t('nav.dashboard'),
+      to: '/dashboard',
+      icon: 'mdi-view-dashboard-outline',
+      visible: true
+    },
+    {
+      label: t('nav.ops'),
       icon: 'mdi-airport',
       visible:
         can('flight.read').allowed || masterDataVisible.value || routeMasterDataVisible.value,
       children: [
         {
-          label: 'Following',
+          label: t('nav.following'),
           to: '/ops/flight-following',
           icon: 'mdi-radar',
           visible: can('flight.read').allowed
         },
         {
-          label: 'Stations',
+          label: t('nav.stations'),
           to: '/master-data/stations',
           icon: 'mdi-airport',
           visible: masterDataVisible.value
         },
         {
-          label: 'Routes',
+          label: t('nav.routes'),
           to: '/master-data/routes',
           icon: 'mdi-map-marker-path',
           visible: routeMasterDataVisible.value
         },
         {
-          label: 'Schedule Templates',
+          label: t('nav.scheduleTemplates'),
           to: '/master-data/flight-schedule-templates',
           icon: 'mdi-calendar-clock',
           visible: masterDataVisible.value
         },
         {
-          label: 'Capacity Profiles',
+          label: t('nav.capacityProfiles'),
           to: '/master-data/flight-capacity-profiles',
           icon: 'mdi-seat-passenger',
           visible: masterDataVisible.value
         },
         {
-          label: 'Personnel',
+          label: t('nav.personnel'),
           to: '/master-data/personnel',
           icon: 'mdi-account-group-outline',
           visible: masterDataVisible.value
         },
         {
-          label: 'Flight Reasons',
+          label: t('nav.flightReasons'),
           to: '/master-data/flight-reasons',
           icon: 'mdi-alert-circle-outline',
           visible: masterDataVisible.value
@@ -97,60 +103,60 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Flight Control',
+      label: t('nav.flightControl'),
       icon: 'mdi-airplane',
       visible: can('flight.read').allowed,
       children: [
         {
-          label: 'Flights',
+          label: t('nav.flights'),
           to: '/flights',
           icon: 'mdi-airplane-marker',
           visible: can('flight.read').allowed
         },
         {
-          label: 'Flight Requests',
+          label: t('nav.flightRequests'),
           to: '/flights/requests',
           icon: 'mdi-clipboard-plus-outline',
           visible: can('flight_request.read').allowed
         },
         {
-          label: 'Planning Readiness',
+          label: t('nav.planningReadiness'),
           to: '/flights/readiness',
           icon: 'mdi-clipboard-pulse-outline',
           visible: can('readiness.view').allowed
         },
         {
-          label: 'Manifest Control',
+          label: t('nav.manifestControl'),
           to: '/flights/manifest',
           icon: 'mdi-account-box-multiple-outline',
           visible: can('flight.manifest.view').allowed
         },
         {
-          label: 'Fuel Control',
+          label: t('nav.fuelControl'),
           to: '/flights/fuel',
           icon: 'mdi-fuel',
           visible: can('flight.read').allowed && can('flight.fuel.update').allowed
         },
         {
-          label: 'Station Operations',
+          label: t('nav.stationOperations'),
           to: '/flights/station-operations',
           icon: 'mdi-airport',
           visible: can('station.task.view').allowed
         },
         {
-          label: 'Actual & Closure',
+          label: t('nav.actualClosure'),
           to: '/flights/actual-closure',
           icon: 'mdi-airplane-check',
           visible: can('flight.read').allowed
         },
         {
-          label: 'Maintenance',
+          label: t('nav.maintenance'),
           to: '/flights/maintenance',
           icon: 'mdi-wrench-clock',
           visible: can('flight.read').allowed
         },
         {
-          label: 'Aircraft',
+          label: t('nav.aircraft'),
           icon: 'mdi-airplane',
           to: '/master-data/aircraft',
           visible: masterDataVisible.value
@@ -158,30 +164,30 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Commercial',
+      label: t('nav.commercial'),
       icon: 'mdi-handshake-outline',
       visible: commercialVisible.value,
       children: [
         {
-          label: 'Customers',
+          label: t('nav.customers'),
           to: '/master-data/customers',
           icon: 'mdi-domain',
           visible: masterDataVisible.value
         },
         {
-          label: 'Agents',
+          label: t('nav.agents'),
           to: '/master-data/agents',
           icon: 'mdi-storefront-outline',
           visible: masterDataVisible.value
         },
         {
-          label: 'Rates',
+          label: t('nav.rates'),
           to: '/master-data/rates',
           icon: 'mdi-cash-multiple',
           visible: masterDataVisible.value
         },
         {
-          label: 'Contracts & Subsidies',
+          label: t('nav.contractsSubsidies'),
           to: '/marketing/contracts-subsidies',
           icon: 'mdi-file-sign',
           visible: can('commercial.contract.read').allowed || masterDataVisible.value
@@ -189,60 +195,60 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Inventory',
+      label: t('nav.inventory'),
       icon: 'mdi-package-variant-closed',
       visible: can('inventory.read').allowed,
       children: [
         {
-          label: 'Dashboard',
+          label: t('nav.dashboard'),
           to: '/inventory',
           icon: 'mdi-view-dashboard-outline',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Stock',
+          label: t('nav.stock'),
           to: '/inventory/stock',
           icon: 'mdi-layers-triple-outline',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Parts',
+          label: t('nav.parts'),
           to: '/inventory/parts',
           icon: 'mdi-cog-outline',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Warehouses & Bins',
+          label: t('nav.warehousesBins'),
           to: '/inventory/warehouses',
           icon: 'mdi-warehouse',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Purchase Requests',
+          label: t('nav.purchaseRequests'),
           to: '/inventory/purchase-requests',
           icon: 'mdi-clipboard-text-outline',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Purchase Orders',
+          label: t('nav.purchaseOrders'),
           to: '/inventory/purchase-orders',
           icon: 'mdi-file-sign',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Receipts',
+          label: t('nav.receipts'),
           to: '/inventory/receipts',
           icon: 'mdi-truck-check-outline',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Movements & Counts',
+          label: t('nav.movementsCounts'),
           to: '/inventory/movements',
           icon: 'mdi-swap-horizontal',
           visible: can('inventory.read').allowed
         },
         {
-          label: 'Repairables',
+          label: t('nav.repairables'),
           to: '/inventory/repairables',
           icon: 'mdi-wrench-cog-outline',
           visible: can('inventory.read').allowed
@@ -250,48 +256,48 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Corporate Assets',
+      label: t('nav.corporateAssets'),
       icon: 'mdi-toolbox-outline',
       visible: can('asset.read').allowed,
       children: [
         {
-          label: 'Overview',
+          label: t('nav.overview'),
           to: '/asset-management/overview',
           icon: 'mdi-view-dashboard-outline',
           visible: can('asset.read').allowed
         },
         {
-          label: 'Asset Register',
+          label: t('nav.assetRegister'),
           to: '/asset-management/register',
           icon: 'mdi-clipboard-list-outline',
           visible: can('asset.read').allowed
         },
         {
-          label: 'Assignments',
+          label: t('nav.assignments'),
           to: '/asset-management/assignment',
           icon: 'mdi-account-arrow-right-outline',
           visible: can('asset.read').allowed
         },
         {
-          label: 'Movements',
+          label: t('nav.movements'),
           to: '/asset-management/movement',
           icon: 'mdi-swap-horizontal',
           visible: can('asset.read').allowed
         },
         {
-          label: 'Maintenance Queue',
+          label: t('nav.maintenanceQueue'),
           to: '/asset-management/maintenance',
           icon: 'mdi-wrench-outline',
           visible: can('asset.read').allowed
         },
         {
-          label: 'Audits',
+          label: t('nav.audits'),
           to: '/asset-management/audit',
           icon: 'mdi-clipboard-check-outline',
           visible: can('asset.read').allowed
         },
         {
-          label: 'Finance',
+          label: t('nav.finance'),
           to: '/asset-management/finance',
           icon: 'mdi-calculator-variant-outline',
           visible: can('asset.finance.read').allowed
@@ -299,30 +305,30 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Ticketing',
+      label: t('nav.ticketing'),
       icon: 'mdi-ticket-confirmation-outline',
       visible: true,
       children: [
         {
-          label: 'Passenger Sales & Check-in',
+          label: t('nav.passengerSalesCheckIn'),
           to: '/ticketing/passenger',
           icon: 'mdi-account-multiple-outline',
           visible: true
         },
         {
-          label: 'Cargo Tracking',
+          label: t('nav.cargoTracking'),
           to: '/ticketing/cargo',
           icon: 'mdi-package-variant',
           visible: true
         },
         {
-          label: 'Sales Management',
+          label: t('nav.salesManagement'),
           to: '/ticketing/management',
           icon: 'mdi-store-cog-outline',
           visible: masterDataVisible.value
         },
         {
-          label: 'Operational Ledger',
+          label: t('nav.operationalLedger'),
           to: '/ticketing/finance',
           icon: 'mdi-cash-register',
           visible: true
@@ -330,36 +336,36 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Finance',
+      label: t('nav.finance'),
       icon: 'mdi-finance',
       visible: financeVisible.value,
       children: [
         {
-          label: 'Overview',
+          label: t('nav.overview'),
           to: '/finance/dashboard',
           icon: 'mdi-view-dashboard-outline',
           visible: can('finance.accounting.read').allowed
         },
         {
-          label: 'Invoices',
+          label: t('nav.invoices'),
           to: '/invoices',
           icon: 'mdi-file-document-outline',
           visible: can('finance.invoice.read').allowed
         },
         {
-          label: 'Accounting Workbench',
+          label: t('nav.accountingWorkbench'),
           to: '/finance/accounting',
           icon: 'mdi-book-open-page-variant-outline',
           visible: can('finance.accounting.read').allowed
         },
         {
-          label: 'Trial Balance',
+          label: t('nav.trialBalance'),
           to: '/finance/trial-balance',
           icon: 'mdi-scale-balance',
           visible: can('finance.accounting.read').allowed
         },
         {
-          label: 'HPP & Margin',
+          label: t('nav.hppMargin'),
           to: '/finance/hpp',
           icon: 'mdi-chart-bar-stacked',
           visible: can('finance.accounting.read').allowed
@@ -367,54 +373,54 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Master Data',
+      label: t('nav.masterData'),
       icon: 'mdi-database-cog-outline',
       visible: masterDataVisible.value,
       children: [
         {
-          label: 'Vendors',
+          label: t('nav.vendors'),
           to: '/master-data/vendors',
           icon: 'mdi-truck-outline',
           visible: masterDataVisible.value
         },
         {
-          label: 'Fuel Suppliers',
+          label: t('nav.fuelSuppliers'),
           to: '/master-data/fuel-suppliers',
           icon: 'mdi-fuel',
           visible: masterDataVisible.value
         },
         {
-          label: 'Handling & Parking',
+          label: t('nav.handlingParking'),
           to: '/master-data/handling-parking-suppliers',
           icon: 'mdi-warehouse',
           visible: masterDataVisible.value
         },
         {
-          label: 'Cost Categories',
+          label: t('nav.costCategories'),
           to: '/master-data/cost-categories',
           icon: 'mdi-shape-outline',
           visible: masterDataVisible.value
         },
         {
-          label: 'Chart of Accounts',
+          label: t('nav.chartOfAccounts'),
           to: '/master-data/chart-of-accounts',
           icon: 'mdi-file-tree-outline',
           visible: masterDataVisible.value
         },
         {
-          label: 'Tax Codes',
+          label: t('nav.taxCodes'),
           to: '/master-data/tax-codes',
           icon: 'mdi-percent-outline',
           visible: masterDataVisible.value
         },
         {
-          label: 'Payment Terms',
+          label: t('nav.paymentTerms'),
           to: '/master-data/payment-terms',
           icon: 'mdi-calendar-clock',
           visible: masterDataVisible.value
         },
         {
-          label: 'Currencies',
+          label: t('nav.currencies'),
           to: '/master-data/currencies',
           icon: 'mdi-currency-usd',
           visible: masterDataVisible.value
@@ -422,21 +428,155 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Cargo',
+      label: t('nav.cargo'),
       icon: 'mdi-package-variant',
       visible: masterDataVisible.value,
       children: [
         {
-          label: 'DG Categories',
+          label: t('nav.dgCategories'),
           to: '/master-data/dg-categories',
           icon: 'mdi-package-variant-closed',
           visible: masterDataVisible.value
         }
       ].filter((child) => child.visible)
     },
-    { label: 'Uploads', to: '/uploads', icon: 'mdi-file-upload-outline', visible: true },
     {
-      label: 'Access',
+      label: t('nav.hris'),
+      icon: 'mdi-account-tie',
+      visible: can('hris.employee.read').allowed || can('hris.self_service.read').allowed,
+      children: [
+        {
+          label: t('nav.dashboard'),
+          to: '/hris',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('hris.employee.read').allowed
+        },
+        {
+          label: t('nav.hrisEmployees'),
+          to: '/hris/employees',
+          icon: 'mdi-account-group-outline',
+          visible: can('hris.employee.read').allowed
+        },
+        {
+          label: t('nav.organization'),
+          to: '/hris/organization',
+          icon: 'mdi-sitemap-outline',
+          visible: can('hris.org.read').allowed
+        },
+        {
+          label: t('nav.certifications'),
+          to: '/hris/certifications',
+          icon: 'mdi-certificate-outline',
+          visible: can('hris.certification.read').allowed
+        },
+        {
+          label: t('nav.attendance'),
+          to: '/hris/attendance',
+          icon: 'mdi-clock-check-outline',
+          visible: can('hris.attendance.read').allowed
+        },
+        {
+          label: t('nav.leave'),
+          to: '/hris/leave',
+          icon: 'mdi-calendar-account-outline',
+          visible: can('hris.leave.read').allowed
+        },
+        {
+          label: t('nav.overtime'),
+          to: '/hris/overtime',
+          icon: 'mdi-clock-plus-outline',
+          visible: can('hris.leave.read').allowed
+        },
+        {
+          label: t('nav.schedulesRoster'),
+          to: '/hris/schedules',
+          icon: 'mdi-calendar-clock',
+          visible: can('hris.schedule.read').allowed
+        },
+        {
+          label: t('nav.payroll'),
+          to: '/hris/payroll',
+          icon: 'mdi-cash-multiple',
+          visible: can('hris.payroll.read').allowed
+        },
+        {
+          label: t('nav.recruitment'),
+          to: '/hris/recruitment',
+          icon: 'mdi-account-plus-outline',
+          visible: can('hris.recruitment.manage').allowed
+        },
+        {
+          label: t('nav.careerPortal'),
+          to: '/careers',
+          icon: 'mdi-briefcase-search-outline',
+          visible: true
+        },
+        {
+          label: t('nav.kpi'),
+          to: '/hris/kpi',
+          icon: 'mdi-chart-line',
+          visible: can('hris.kpi.read').allowed
+        },
+        {
+          label: t('nav.employeePortal'),
+          to: '/hris/portal',
+          icon: 'mdi-account-circle-outline',
+          visible: can('hris.self_service.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'Maintenance Pesawat',
+      icon: 'mdi-airplane-cog',
+      visible: can('maintenance.package.read').allowed,
+      children: [
+        {
+          label: 'Ringkasan Maintenance',
+          to: '/maintenance',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Pekerjaan Saya',
+          to: '/maintenance/my-work',
+          icon: 'mdi-account-hard-hat',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Pesawat',
+          to: '/maintenance/aircraft',
+          icon: 'mdi-airplane-check',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Temuan',
+          to: '/maintenance/defects',
+          icon: 'mdi-alert-octagon-outline',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Paket Pekerjaan',
+          to: '/maintenance/work-packages',
+          icon: 'mdi-clipboard-list-outline',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Rilis Teknis',
+          to: '/maintenance/releases',
+          icon: 'mdi-certificate-outline',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Riwayat Aktivitas',
+          to: '/maintenance/records',
+          icon: 'mdi-history',
+          visible: can('maintenance.audit.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
+    { label: t('nav.uploads'), to: '/uploads', icon: 'mdi-file-upload-outline', visible: true },
+    {
+      label: t('nav.access'),
       to: '/admin/access-demo',
       icon: 'mdi-shield-account-outline',
       visible: can('platform.module.manage').allowed
@@ -457,6 +597,7 @@ const flightModulePaths = [
 ];
 
 function isActiveChild(to: string) {
+  if (to === '/maintenance') return route.path === '/maintenance';
   if (to !== '/flights') return isActiveTop(to);
   if (route.path === '/flights') return true;
   return route.path.startsWith('/flights/') && !flightModulePaths.some((path) => isActiveTop(path));
@@ -543,7 +684,7 @@ function closeMobileOnNavigate() {
 
         <VBtn
           v-if="mdAndUp"
-          :aria-label="rail ? 'Expand navigation' : 'Minimize navigation'"
+          :aria-label="rail ? t('actions.expandNavigation') : t('actions.minimizeNavigation')"
           :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
           density="comfortable"
           size="small"
@@ -620,13 +761,15 @@ function closeMobileOnNavigate() {
 
       <div class="mt-auto border-t border-border-default p-3">
         <template v-if="!rail">
-          <div class="mb-2 text-xs font-semibold uppercase text-text-secondary">Demo Persona</div>
+          <div class="mb-2 text-xs font-semibold uppercase text-text-secondary">
+            {{ t('topbar.demoPersona') }}
+          </div>
           <FeatureDemoPersonaSwitcher />
         </template>
 
         <VBtn
           v-else
-          aria-label="Expand to switch demo persona"
+          :aria-label="t('actions.expandToSwitchDemoPersona')"
           block
           color="primary"
           icon="mdi-account-switch-outline"

@@ -408,10 +408,11 @@ function returnServiceable(order: RepairOrder) {
                       />
                     </VCol>
                   </VRow>
-                  <VTextField
+                  <VDateInput
                     v-model="install.readyForUseDate"
+                    prepend-icon=""
+                    prepend-inner-icon="mdi-calendar"
                     label="Ready for use date"
-                    type="date"
                     variant="outlined"
                   />
                 </template>
@@ -501,11 +502,12 @@ function returnServiceable(order: RepairOrder) {
                   label="Repair vendor"
                   variant="outlined"
                 />
-                <VTextField
+                <VDateInput
                   v-model="repair.expectedReturnAt"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
                   class="mb-3"
                   label="Expected return"
-                  type="date"
                   variant="outlined"
                 />
                 <VTextarea

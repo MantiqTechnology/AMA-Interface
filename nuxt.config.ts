@@ -59,7 +59,11 @@ export default defineNuxtConfig({
   },
   nitro: {
     experimental: {
-      openAPI: true
+      openAPI: true,
+      tasks: true
+    },
+    scheduledTasks: {
+      '*/15 * * * *': ['airworthiness-sweep']
     }
   },
   vite: {

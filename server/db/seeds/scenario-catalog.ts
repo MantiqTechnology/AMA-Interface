@@ -1,5 +1,40 @@
 export const scenarioCatalog = [
   [
+    'golden-request-to-closure',
+    'Golden Request-to-Closure',
+    'OCC / Director / Station Admin / Maintenance / Finance',
+    '/flights/requests',
+    'Start from the submitted request, follow the Flight Order command center, and close the flight'
+  ],
+  [
+    'aircraft-unserviceable',
+    'Aircraft unserviceable exception',
+    'OCC / Maintenance Manager / Certifying Staff',
+    '/flights/fop-blocked-crew-expired',
+    'Review the aircraft maintenance blocker and server-enforced recovery ownership'
+  ],
+  [
+    'missing-departure-evidence',
+    'Missing fuel or station evidence',
+    'OCC / Station Admin',
+    '/flights/fop-dg-pending',
+    'Attempt departure and follow the fuel, manifest, and station evidence recovery links'
+  ],
+  [
+    'destination-change-impact',
+    'Destination change impact preview',
+    'OCC',
+    '/flights/fop-ticketing-passenger-later',
+    'Change the prepared DJJ-WMX destination to TIM and review selective invalidation'
+  ],
+  [
+    'pending-station-cost',
+    'Pending Station Cost blocks closure',
+    'Finance Reviewer',
+    '/flights/fop-pending-closure',
+    'Record actual cost and evidence, then approve or void with a reason'
+  ],
+  [
     'request-queue',
     'Flight request queue',
     'OCC / Director',
@@ -15,7 +50,7 @@ export const scenarioCatalog = [
   ],
   [
     'blocked-readiness',
-    'Crew and maintenance blocked',
+    'Aircraft and maintenance blocked',
     'OCC / Maintenance Manager',
     '/flights/readiness',
     'Review hard blockers'

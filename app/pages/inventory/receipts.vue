@@ -23,6 +23,7 @@ const form = reactive({
     partNumber: string;
     trackingType: string;
     certificateRequired: boolean;
+    shelfLifeDays: number | null;
     maximumQuantity: number;
     quantity: number;
     binId: string;
@@ -77,18 +78,37 @@ watch(
             partNumber: line.partNumber,
             trackingType: part?.trackingType ?? 'QUANTITY',
             certificateRequired: part?.certificateRequired ?? false,
+            shelfLifeDays: part?.shelfLifeDays ?? null,
             maximumQuantity,
             quantity: maximumQuantity,
             binId: '',
             lotNumber: '',
             manufacturedAt: '',
-            expiresAt: '',
+            expiresAt: defaultExpiryDate(part?.shelfLifeDays ?? null),
             certificateReference: '',
             serialNumbersText: ''
           };
         }) ?? [];
   }
 );
+
+watch(
+  () => form.receivedAt,
+  () => {
+    for (const line of form.lines) {
+      if (line.expiresAt || !line.shelfLifeDays) continue;
+      line.expiresAt = defaultExpiryDate(line.shelfLifeDays);
+    }
+  }
+);
+
+function defaultExpiryDate(shelfLifeDays: number | null | undefined) {
+  if (!shelfLifeDays || !form.receivedAt) return '';
+  const received = new Date(form.receivedAt);
+  if (Number.isNaN(received.getTime())) return '';
+  received.setDate(received.getDate() + shelfLifeDays);
+  return received.toISOString().slice(0, 10);
+}
 
 function openCreate() {
   Object.assign(form, {
@@ -169,9 +189,7 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
       />
     </template>
     <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{
-        actionError || 'Goods receipts could not be loaded.'
-      }}
+      {{ actionError || 'Goods receipts could not be loaded.' }}
     </VAlert>
     <VCard border>
       <VDataTable
@@ -222,9 +240,7 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
         <VCardTitle>Post goods receipt</VCardTitle><VDivider />
         <VCardText>
           <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
-            {{
-              actionError
-            }}
+            {{ actionError }}
           </VAlert>
           <VRow dense>
             <VCol cols="12" md="6">
@@ -265,7 +281,11 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
           <div v-for="line in form.lines" :key="line.purchaseOrderLineId" class="mb-5">
             <div class="mb-2 d-flex align-center">
               <div class="text-subtitle-2 font-weight-bold">{{ line.partNumber }}</div>
-              <VSpacer /><VChip size="small" variant="tonal">{{ line.trackingType }}</VChip>
+              <VSpacer />
+              <VChip v-if="line.shelfLifeDays" class="me-2" size="small" variant="tonal">
+                Shelf life {{ number(line.shelfLifeDays, 0) }} days
+              </VChip>
+              <VChip size="small" variant="tonal">{{ line.trackingType }}</VChip>
             </div>
             <VRow dense>
               <VCol cols="12" md="3">
@@ -302,18 +322,26 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
                 />
               </VCol>
               <VCol v-if="line.trackingType !== 'QUANTITY'" cols="12" md="4">
-                <VTextField
+                <VDateInput
                   v-model="line.manufacturedAt"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
                   label="Manufactured date"
-                  type="date"
                   variant="outlined"
                 />
               </VCol>
               <VCol v-if="line.trackingType !== 'QUANTITY'" cols="12" md="4">
-                <VTextField
+                <VDateInput
                   v-model="line.expiresAt"
+                  prepend-icon=""
+                  prepend-inner-icon="mdi-calendar"
+                  :hint="
+                    line.shelfLifeDays
+                      ? `Default countdown starts from received date + ${number(line.shelfLifeDays, 0)} days`
+                      : undefined
+                  "
                   label="Expiry date"
-                  type="date"
+                  persistent-hint
                   variant="outlined"
                 />
               </VCol>

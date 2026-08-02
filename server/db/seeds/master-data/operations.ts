@@ -13,7 +13,12 @@ import {
   personnelLicenses,
   personnelMedicalCertificates,
   personnelQualifications,
-  personnelNotes
+  personnelNotes,
+  aircraftDefects,
+  aircraftDeferments,
+  aircraftMaintenanceRequirements,
+  aircraftMaintenanceReleases,
+  aircraftStatusHistory
 } from '../../schema/operations';
 
 export async function seedOperationsMasterData(
@@ -175,6 +180,69 @@ export async function seedOperationsMasterData(
         updatedAt: referenceNow
       },
       {
+        id: 'st-bik',
+        stationCode: 'BIK',
+        stationName: 'Biak Station',
+        iataCode: 'BIK',
+        icaoCode: 'WABB',
+        airportType: 'AIRPORT',
+        operationalStatus: 'ACTIVE',
+        city: 'Biak',
+        province: 'Papua',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        surfaceType: 'ASPHALT',
+        hasFuelService: true,
+        hasHandlingService: true,
+        hasParkingService: true,
+        operationalNotes: 'Reserve operating station with line-maintenance stock support.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'st-soq',
+        stationCode: 'SOQ',
+        stationName: 'Sorong Station',
+        iataCode: 'SOQ',
+        icaoCode: 'WASS',
+        airportType: 'AIRPORT',
+        operationalStatus: 'ACTIVE',
+        city: 'Sorong',
+        province: 'Papua Barat Daya',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        surfaceType: 'ASPHALT',
+        hasFuelService: true,
+        hasHandlingService: true,
+        hasParkingService: true,
+        operationalNotes: 'Reserve station for user-created charter and positioning flights.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'st-zri',
+        stationCode: 'ZRI',
+        stationName: 'Serui Station',
+        iataCode: 'ZRI',
+        icaoCode: 'WABO',
+        airportType: 'AIRPORT',
+        operationalStatus: 'ACTIVE',
+        city: 'Serui',
+        province: 'Papua',
+        countryCode: 'ID',
+        timezone: 'Asia/Jayapura',
+        surfaceType: 'ASPHALT',
+        hasFuelService: false,
+        hasHandlingService: true,
+        hasParkingService: true,
+        operationalNotes: 'Reserve outstation; fuel uplift must be planned at origin.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
         id: 'st-mkq',
         stationCode: 'MKQ',
         stationName: 'Merauke Station',
@@ -216,6 +284,16 @@ export async function seedOperationsMasterData(
         passengerCapacity: 10,
         cargoCapacityKg: 1200,
         fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 646,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 160,
+        holdingFuelBurnLitrePerHour: 140,
+        taxiFuelBurnLitrePerHour: 90,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
         operationalStatus: 'ACTIVE',
         serviceabilityStatus: 'SERVICEABLE',
         baseStationId: 'st-djj',
@@ -234,6 +312,16 @@ export async function seedOperationsMasterData(
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 1257,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 180,
+        holdingFuelBurnLitrePerHour: 180,
+        taxiFuelBurnLitrePerHour: 120,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
         operationalStatus: 'ACTIVE',
         serviceabilityStatus: 'SERVICEABLE',
         baseStationId: 'st-djj',
@@ -252,6 +340,16 @@ export async function seedOperationsMasterData(
         passengerCapacity: 9,
         cargoCapacityKg: 1000,
         fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 1460,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 190,
+        holdingFuelBurnLitrePerHour: 180,
+        taxiFuelBurnLitrePerHour: 120,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
         operationalStatus: 'ACTIVE',
         serviceabilityStatus: 'UNSERVICEABLE',
         baseStationId: 'st-wmx',
@@ -270,8 +368,18 @@ export async function seedOperationsMasterData(
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 1257,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 180,
+        holdingFuelBurnLitrePerHour: 180,
+        taxiFuelBurnLitrePerHour: 120,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
         operationalStatus: 'ACTIVE',
-        serviceabilityStatus: 'MAINTENANCE_DUE',
+        serviceabilityStatus: 'UNSERVICEABLE',
         baseStationId: 'st-djj',
         isActive: true,
         createdAt: referenceNow,
@@ -288,9 +396,109 @@ export async function seedOperationsMasterData(
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 1257,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 180,
+        holdingFuelBurnLitrePerHour: 180,
+        taxiFuelBurnLitrePerHour: 120,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
         operationalStatus: 'ACTIVE',
         serviceabilityStatus: 'SERVICEABLE_WITH_RESTRICTIONS',
         baseStationId: 'st-wmx',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ac-pk-amf',
+        registrationNumber: 'PK-AMF',
+        serialNumber: '208B-AMF-RESERVE',
+        aircraftType: 'Cessna Caravan 208B',
+        manufacturer: 'Cessna',
+        model: 'Caravan 208B',
+        fleetCode: 'CVN-04',
+        passengerCapacity: 12,
+        cargoCapacityKg: 1400,
+        fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 1257,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 180,
+        holdingFuelBurnLitrePerHour: 180,
+        taxiFuelBurnLitrePerHour: 120,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
+        operationalStatus: 'ACTIVE',
+        serviceabilityStatus: 'SERVICEABLE',
+        baseStationId: 'st-bik',
+        currentStationId: 'st-bik',
+        serviceabilityNote: 'Available for user-created flight and MRO transactions.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ac-pk-amg',
+        registrationNumber: 'PK-AMG',
+        serialNumber: 'PC6-AMG-RESERVE',
+        aircraftType: 'Pilatus PC-6',
+        manufacturer: 'Pilatus',
+        model: 'PC-6 Porter',
+        fleetCode: 'PC6-02',
+        passengerCapacity: 10,
+        cargoCapacityKg: 1200,
+        fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 646,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 160,
+        holdingFuelBurnLitrePerHour: 140,
+        taxiFuelBurnLitrePerHour: 90,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
+        operationalStatus: 'ACTIVE',
+        serviceabilityStatus: 'SERVICEABLE',
+        baseStationId: 'st-djj',
+        currentStationId: 'st-djj',
+        serviceabilityNote: 'Available for user-created flight and MRO transactions.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'ac-pk-amh',
+        registrationNumber: 'PK-AMH',
+        serialNumber: 'PAC-AMH-RESERVE',
+        aircraftType: 'PAC 750XL',
+        manufacturer: 'Pacific Aerospace',
+        model: 'PAC 750XL',
+        fleetCode: 'PAC-02',
+        passengerCapacity: 9,
+        cargoCapacityKg: 1000,
+        fuelType: 'AVTUR',
+        engineCategory: 'TURBINE',
+        usableFuelCapacityLitre: 1460,
+        fuelCapacityBasis: 'USABLE',
+        cruiseFuelBurnLitrePerHour: 190,
+        holdingFuelBurnLitrePerHour: 180,
+        taxiFuelBurnLitrePerHour: 120,
+        fuelProfileSource: 'HISTORICAL_ESTIMATE',
+        fuelProfileReference: 'Advisory planning profile; validate against AMA AFM/POH records',
+        fuelProfileEffectiveFrom: '2026-01-01',
+        fuelProfileAdvisoryOnly: true,
+        operationalStatus: 'ACTIVE',
+        serviceabilityStatus: 'SERVICEABLE',
+        baseStationId: 'st-soq',
+        currentStationId: 'st-soq',
+        serviceabilityNote: 'Available for user-created flight and MRO transactions.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -418,6 +626,26 @@ export async function seedOperationsMasterData(
         updatedAt: referenceNow
       },
       {
+        id: 'crew-certifying-staff',
+        employeeCode: 'USR-CERTIFYING-STAFF',
+        fullName: 'Bima Ardiansyah',
+        crewRole: 'GROUND_CREW',
+        licenseType: 'AMEL',
+        licenseNumber: 'AME-CERT-MRO-001',
+        licenseExpiryDate: context.date(365),
+        medicalExpiryDate: null,
+        baseStationId: 'st-djj',
+        dutyStationId: 'st-djj',
+        availabilityStatus: 'AVAILABLE',
+        readinessNote: 'Certifying staff for MRO Foundation technical-release licence validation.',
+        unit: 'Maintenance Control',
+        departmentId: 'dept-ops',
+        employmentStatus: 'PERMANENT',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
         id: 'crew-ops-001',
         employeeCode: 'AMA-OPS-001',
         fullName: 'Samuel Itlay',
@@ -428,6 +656,46 @@ export async function seedOperationsMasterData(
         medicalExpiryDate: null,
         baseStationId: 'st-tim',
         unit: 'OCC',
+        departmentId: 'dept-ops',
+        employmentStatus: 'PERMANENT',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'crew-pic-reserve',
+        employeeCode: 'AMA-PIC-010',
+        fullName: 'Markus Rumbiak',
+        crewRole: 'PILOT_IN_COMMAND',
+        licenseType: 'CPL',
+        licenseNumber: 'LIC-PIC-010',
+        licenseExpiryDate: context.date(420),
+        medicalExpiryDate: context.date(330),
+        baseStationId: 'st-bik',
+        dutyStationId: 'st-bik',
+        availabilityStatus: 'AVAILABLE',
+        readinessNote: 'Reserve crew for user-created flight operations.',
+        unit: 'Flight Operations',
+        departmentId: 'dept-ops',
+        employmentStatus: 'PERMANENT',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'crew-cop-reserve',
+        employeeCode: 'AMA-COP-010',
+        fullName: 'Elisa Mandacan',
+        crewRole: 'CO_PILOT',
+        licenseType: 'CPL',
+        licenseNumber: 'LIC-COP-010',
+        licenseExpiryDate: context.date(390),
+        medicalExpiryDate: context.date(300),
+        baseStationId: 'st-bik',
+        dutyStationId: 'st-bik',
+        availabilityStatus: 'AVAILABLE',
+        readinessNote: 'Reserve crew for user-created flight operations.',
+        unit: 'Flight Operations',
         departmentId: 'dept-ops',
         employmentStatus: 'PERMANENT',
         isActive: true,
@@ -460,6 +728,13 @@ export async function seedOperationsMasterData(
       medicalExpiryDate: context.date(-17)
     },
     {
+      id: 'crew-certifying-staff',
+      licenseType: 'AMEL',
+      licenseNumber: 'AME-CERT-MRO-001',
+      licenseExpiryDate: context.date(365),
+      medicalExpiryDate: context.date(365)
+    },
+    {
       id: 'crew-cop-valid',
       licenseType: 'CPL',
       licenseNumber: 'LIC-COP-001',
@@ -472,6 +747,20 @@ export async function seedOperationsMasterData(
       licenseNumber: 'LIC-COP-002',
       licenseExpiryDate: context.date(240),
       medicalExpiryDate: context.date(212)
+    },
+    {
+      id: 'crew-pic-reserve',
+      licenseType: 'CPL',
+      licenseNumber: 'LIC-PIC-010',
+      licenseExpiryDate: context.date(420),
+      medicalExpiryDate: context.date(330)
+    },
+    {
+      id: 'crew-cop-reserve',
+      licenseType: 'CPL',
+      licenseNumber: 'LIC-COP-010',
+      licenseExpiryDate: context.date(390),
+      medicalExpiryDate: context.date(300)
     }
   ];
 
@@ -496,6 +785,24 @@ export async function seedOperationsMasterData(
     .onConflictDoNothing();
 
   await db
+    .insert(personnelLicenses)
+    .values({
+      id: 'plic-crew-certifying-staff-expired',
+      personnelId: 'crew-certifying-staff',
+      licenseType: 'AMEL',
+      licenseNumber: 'AME-CERT-MRO-EXPIRED',
+      issuingAuthority: 'Directorate General of Civil Aviation',
+      issueDate: context.date(-420),
+      expiryDate: context.date(-14),
+      isPrimary: false,
+      status: 'EXPIRED',
+      documentId: null,
+      createdAt: referenceNow,
+      updatedAt: referenceNow
+    })
+    .onConflictDoNothing();
+
+  await db
     .insert(personnelMedicalCertificates)
     .values(
       crewCredentialSeeds.map((crew) => ({
@@ -517,31 +824,105 @@ export async function seedOperationsMasterData(
 
   await db
     .insert(personnelQualifications)
+    .values(
+      [
+        'crew-pic-valid',
+        'crew-pic-expiring',
+        'crew-pic-expired',
+        'crew-certifying-staff',
+        'crew-cop-valid',
+        'crew-cop-valid-2',
+        'crew-pic-reserve',
+        'crew-cop-reserve'
+      ].flatMap((personnelId) =>
+        [
+          {
+            suffix: 'crm',
+            qualificationType: 'CRM',
+            referenceType: 'TRAINING',
+            referenceId: null,
+            notes: 'Crew resource management recurrent training.'
+          },
+          {
+            suffix: 'pc6',
+            qualificationType: 'AIRCRAFT_TYPE',
+            referenceType: 'AIRCRAFT_TYPE',
+            referenceId: 'PC6',
+            notes: 'Pilatus PC-6 operator fleet qualification.'
+          },
+          {
+            suffix: 'c208b',
+            qualificationType: 'AIRCRAFT_TYPE',
+            referenceType: 'AIRCRAFT_TYPE',
+            referenceId: 'C208B',
+            notes: 'Cessna Caravan 208B operator fleet qualification.'
+          },
+          {
+            suffix: 'pac750xl',
+            qualificationType: 'AIRCRAFT_TYPE',
+            referenceType: 'AIRCRAFT_TYPE',
+            referenceId: 'PAC750XL',
+            notes: 'PAC 750XL operator fleet qualification.'
+          },
+          {
+            suffix: 'dg',
+            qualificationType: 'DANGEROUS_GOODS',
+            referenceType: 'OPERATION',
+            referenceId: null,
+            notes: 'Flight crew dangerous goods recurrent training.'
+          },
+          {
+            suffix: 'medevac',
+            qualificationType: 'MEDEVAC',
+            referenceType: 'OPERATION',
+            referenceId: null,
+            notes: 'Medevac operational qualification.'
+          }
+        ].map((qualification) => ({
+          id: `pqual-${personnelId}-${qualification.suffix}`,
+          personnelId,
+          qualificationType: qualification.qualificationType,
+          referenceType: qualification.referenceType,
+          referenceId: qualification.referenceId,
+          issuedAt: context.date(-120),
+          expiresAt: context.date(245),
+          status: 'VALID',
+          notes: qualification.notes,
+          documentId: null,
+          createdAt: referenceNow,
+          updatedAt: referenceNow
+        }))
+      )
+    )
+    .onConflictDoNothing();
+
+  await db
+    .insert(personnelQualifications)
     .values([
       {
-        id: 'pqual-crew-cop-valid-crm',
-        personnelId: 'crew-cop-valid',
-        qualificationType: 'CRM',
-        referenceType: 'TRAINING',
-        referenceId: null,
-        issuedAt: context.date(-80),
-        expiresAt: context.date(285),
+        id: 'pqual-crew-certifying-staff-c208b-full',
+        personnelId: 'crew-certifying-staff',
+        qualificationType: 'AIRCRAFT_TYPE',
+        referenceType: 'AIRCRAFT_TYPE',
+        referenceId: 'Cessna Caravan 208B',
+        issuedAt: context.date(-120),
+        expiresAt: context.date(245),
         status: 'VALID',
-        notes: 'Crew resource management recurrent training.',
+        notes: 'Aircraft/type scope for PT AMA MRO licence validation.',
         documentId: null,
         createdAt: referenceNow,
         updatedAt: referenceNow
       },
       {
-        id: 'pqual-crew-cop-valid-c208',
-        personnelId: 'crew-cop-valid',
-        qualificationType: 'Aircraft Type Rating',
+        id: 'pqual-crew-certifying-staff-pc6-full',
+        personnelId: 'crew-certifying-staff',
+        qualificationType: 'AIRCRAFT_TYPE',
         referenceType: 'AIRCRAFT_TYPE',
-        referenceId: 'C208B',
+        referenceId: 'Pilatus PC-6',
         issuedAt: context.date(-120),
         expiresAt: context.date(245),
         status: 'VALID',
-        notes: 'Cessna Caravan 208B co-pilot qualification.',
+        notes: 'Aircraft/type scope for PT AMA MRO licence validation.',
         documentId: null,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -676,6 +1057,90 @@ export async function seedOperationsMasterData(
         operationalNotes: 'Published reverse sector for the highland passenger rotation.',
         restrictionLevel: 'NONE',
         restrictionNote: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'route-djj-bik',
+        routeCode: 'DJJ-BIK',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-bik',
+        estimatedDurationMinutes: 75,
+        distanceKm: 520,
+        operationalNotes: 'Reserve route available for user-created flight operations.',
+        restrictionLevel: 'NONE',
+        restrictionNote: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'route-bik-djj',
+        routeCode: 'BIK-DJJ',
+        originStationId: 'st-bik',
+        destinationStationId: 'st-djj',
+        estimatedDurationMinutes: 75,
+        distanceKm: 520,
+        operationalNotes: 'Reserve route available for user-created flight operations.',
+        restrictionLevel: 'NONE',
+        restrictionNote: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'route-djj-soq',
+        routeCode: 'DJJ-SOQ',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-soq',
+        estimatedDurationMinutes: 105,
+        distanceKm: 720,
+        operationalNotes: 'Reserve route available for user-created flight operations.',
+        restrictionLevel: 'NONE',
+        restrictionNote: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'route-soq-djj',
+        routeCode: 'SOQ-DJJ',
+        originStationId: 'st-soq',
+        destinationStationId: 'st-djj',
+        estimatedDurationMinutes: 105,
+        distanceKm: 720,
+        operationalNotes: 'Reserve route available for user-created flight operations.',
+        restrictionLevel: 'NONE',
+        restrictionNote: null,
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'route-bik-zri',
+        routeCode: 'BIK-ZRI',
+        originStationId: 'st-bik',
+        destinationStationId: 'st-zri',
+        estimatedDurationMinutes: 40,
+        distanceKm: 210,
+        operationalNotes: 'Fuel uplift is planned at Biak for this reserve outstation sector.',
+        restrictionLevel: 'ADVISORY',
+        restrictionNote: 'Destination fuel service is not available at ZRI.',
+        isActive: true,
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'route-zri-bik',
+        routeCode: 'ZRI-BIK',
+        originStationId: 'st-zri',
+        destinationStationId: 'st-bik',
+        estimatedDurationMinutes: 40,
+        distanceKm: 210,
+        operationalNotes: 'Reserve return sector to the Biak maintenance-support station.',
+        restrictionLevel: 'ADVISORY',
+        restrictionNote: 'Departure fuel must be carried in from the prior sector.',
         isActive: true,
         createdAt: referenceNow,
         updatedAt: referenceNow
@@ -1156,6 +1621,157 @@ export async function seedOperationsMasterData(
       })
       .where(eq(aircraft.id, aircraftRecord.id));
   }
+
+  await db
+    .insert(aircraftDefects)
+    .values([
+      {
+        id: 'adefect-pk-amc-open',
+        aircraftId: 'ac-pk-amc',
+        defectNumber: 'DEF-BASE-AMC-001',
+        title: 'Engine indication anomaly',
+        description: 'Engine indication anomaly requires troubleshooting before return to service.',
+        detectedAt: context.at(-2, '09:00'),
+        detectedByUserId: 'USR-MAINTENANCE-MANAGER',
+        sourceReference: 'TECHLOG-AMC-001',
+        evidenceReferences: JSON.stringify(['TECHLOG-AMC-001']),
+        status: 'OPEN',
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      },
+      {
+        id: 'adefect-pk-ame-deferred',
+        aircraftId: 'ac-pk-ame',
+        defectNumber: 'DEF-BASE-AME-001',
+        title: 'Cabin payload restraint limitation',
+        description:
+          'Cabin restraint configuration requires a temporary payload limitation under the operator MEL.',
+        detectedAt: context.at(-1, '08:00'),
+        detectedByUserId: 'USR-MAINTENANCE-MANAGER',
+        sourceReference: 'TECHLOG-AME-001',
+        evidenceReferences: JSON.stringify(['TECHLOG-AME-001']),
+        status: 'DEFERRED',
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      }
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(aircraftDeferments)
+    .values({
+      id: 'adefer-pk-ame-001',
+      aircraftId: 'ac-pk-ame',
+      defectId: 'adefect-pk-ame-deferred',
+      defermentType: 'MEL',
+      referenceCode: 'MEL 25-20-01',
+      category: 'C',
+      operationalLimitations: 'Maximum payload is restricted to the approved reduced-load profile.',
+      maintenanceProcedure: 'Inspect and placard the affected restraint position.',
+      operationsProcedure: 'Apply the reduced-load capacity profile during dispatch.',
+      effectiveAt: context.at(-1, '09:00'),
+      expiresAt: context.at(9, '09:00'),
+      authorizedByUserId: 'USR-MAINTENANCE-MANAGER',
+      authorizationReference: 'MEL-AUTH-BASE-001',
+      applicableRouteIds: JSON.stringify([]),
+      applicableServiceTypeCodes: JSON.stringify(['CHARTER_CARGO', 'POSITIONING']),
+      status: 'ACTIVE',
+      createdAt: referenceNow,
+      updatedAt: referenceNow
+    })
+    .onConflictDoNothing();
+
+  const releaseableAircraft = [
+    ['ac-pk-ama', 'AMA'],
+    ['ac-pk-amb', 'AMB'],
+    ['ac-pk-ame', 'AME'],
+    ['ac-pk-amf', 'AMF'],
+    ['ac-pk-amg', 'AMG'],
+    ['ac-pk-amh', 'AMH']
+  ] as const;
+  await db
+    .insert(aircraftMaintenanceReleases)
+    .values(
+      releaseableAircraft.map(([aircraftId, suffix]) => ({
+        id: `arelease-baseline-${suffix.toLowerCase()}`,
+        aircraftId,
+        releaseNumber: `RTS-BASE-${suffix}-001`,
+        resultingStatus:
+          aircraftId === 'ac-pk-ame' ? 'SERVICEABLE_WITH_RESTRICTIONS' : 'SERVICEABLE',
+        workOrderReference: `WO-BASE-${suffix}-001`,
+        releaseStatement:
+          aircraftId === 'ac-pk-ame'
+            ? 'Aircraft approved for return to service subject to the active MEL limitation.'
+            : 'Aircraft approved for return to service after completion of the recorded inspection.',
+        certifyingUserId: 'USR-CERTIFYING-STAFF',
+        certifyingLicenseNumber: 'AME-BASE-001',
+        releasedAt: context.at(-3, '14:00'),
+        evidenceReferences: JSON.stringify([`WO-BASE-${suffix}-001`]),
+        defectIds:
+          aircraftId === 'ac-pk-ame'
+            ? JSON.stringify(['adefect-pk-ame-deferred'])
+            : JSON.stringify([]),
+        createdAt: referenceNow
+      }))
+    )
+    .onConflictDoNothing();
+
+  const maintenanceDates = [
+    ['ac-pk-ama', context.date(29)],
+    ['ac-pk-amb', context.date(3)],
+    ['ac-pk-amc', context.date(20)],
+    ['ac-pk-amd', context.date(-11)],
+    ['ac-pk-ame', context.date(21)]
+  ] as const;
+  await db
+    .insert(aircraftMaintenanceRequirements)
+    .values(
+      maintenanceDates.map(([aircraftId, dueAt]) => ({
+        id: `areq-${aircraftId}-calendar`,
+        aircraftId,
+        requirementCode: 'NEXT_SCHEDULED_INSPECTION',
+        title: 'Next scheduled inspection',
+        dueAt,
+        sourceReference: 'BASELINE_MAINTENANCE_PROGRAM',
+        status: 'ACTIVE',
+        createdAt: referenceNow,
+        updatedAt: referenceNow
+      }))
+    )
+    .onConflictDoNothing();
+
+  await db
+    .insert(aircraftStatusHistory)
+    .values(
+      releaseableAircraft.flatMap(([aircraftId]) => [
+        {
+          id: `ahist-seed-operational-${aircraftId}`,
+          aircraftId,
+          statusDimension: 'OPERATIONAL',
+          fromStatus: null,
+          toStatus: 'ACTIVE',
+          reason: 'Scenario baseline',
+          sourceType: 'SEED',
+          actorUserId: 'SYSTEM_SEED',
+          actorRole: 'SYSTEM',
+          occurredAt: referenceNow
+        },
+        {
+          id: `ahist-seed-technical-${aircraftId}`,
+          aircraftId,
+          statusDimension: 'TECHNICAL',
+          fromStatus: null,
+          toStatus: aircraftId === 'ac-pk-ame' ? 'SERVICEABLE_WITH_RESTRICTIONS' : 'SERVICEABLE',
+          reason: 'Scenario maintenance release baseline',
+          sourceType: 'MAINTENANCE_RELEASE',
+          sourceId: `arelease-baseline-${aircraftId.replace('ac-pk-', '')}`,
+          actorUserId: 'USR-CERTIFYING-STAFF',
+          actorRole: 'Certifying Staff',
+          occurredAt: referenceNow
+        }
+      ])
+    )
+    .onConflictDoNothing();
 
   for (const crew of [
     {

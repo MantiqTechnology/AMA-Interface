@@ -42,6 +42,8 @@ const eventLabels: Record<string, string> = {
   PASSENGER_SERVICE_FULFILLED: 'Passenger service fulfilled',
   CARGO_SERVICE_FULFILLED: 'Cargo service fulfilled',
   TICKET_REFUND_APPROVED: 'Ticket refund approved',
+  STATION_HANDLING_COST_APPROVED: 'Station handling cost approved by Finance',
+  STATION_PARKING_COST_APPROVED: 'Station parking cost approved by Finance',
   JOURNAL_REVERSAL: 'Journal reversal posted'
 };
 
@@ -224,6 +226,24 @@ export class AccountingJournalDetailReader {
   }
 
   private sourceReference(sourceType: string, sourceId: string, payload: Record<string, unknown>) {
+    if (sourceType === 'STATION_COST') {
+      const cost = this.sqlite
+        .prepare(
+          `SELECT cost.description, flight.id AS flight_id, flight.flight_number
+           FROM flight_station_costs cost
+           LEFT JOIN flight_operations flight ON flight.id = cost.flight_id
+           WHERE cost.id = ?`
+        )
+        .get(sourceId) as Row | undefined;
+      return {
+        label:
+          text(cost?.description) ??
+          (cost?.flight_number ? `${String(cost.flight_number)} Station Cost` : sourceId),
+        route: cost?.flight_id
+          ? `/flights/station-operations/${String(cost.flight_id)}?tab=costs&sourceRecordId=${encodeURIComponent(sourceId)}`
+          : '/flights/station-operations/costs'
+      };
+    }
     const definitions: Record<string, { table?: string; label?: string; route: string | null }> = {
       GOODS_RECEIPT: {
         table: 'inventory_goods_receipts',
@@ -533,7 +553,48 @@ export class AccountingJournalDetailReader {
       }
     ];
     const add = (item: JournalEvidenceItem) => items.push(item);
-    if (row.event_type === 'AIRCRAFT_COMPONENT_READY_FOR_USE') {
+    if (
+      ['STATION_HANDLING_COST_APPROVED', 'STATION_PARKING_COST_APPROVED'].includes(
+        String(row.event_type)
+      )
+    ) {
+      const approvedSnapshot =
+        payload.approvedSnapshot &&
+        typeof payload.approvedSnapshot === 'object' &&
+        !Array.isArray(payload.approvedSnapshot)
+          ? (payload.approvedSnapshot as Record<string, unknown>)
+          : {};
+      const evidenceReference = Array.isArray(approvedSnapshot.evidenceReferences)
+        ? text(approvedSnapshot.evidenceReferences[0])
+        : text(approvedSnapshot.evidenceReference);
+      add({
+        type: 'VENDOR_REFERENCE',
+        label: 'Invoice or vendor reference',
+        reference: text(approvedSnapshot.vendorReference),
+        status: approvedSnapshot.vendorReference ? 'AVAILABLE' : 'MISSING',
+        recordedAt: text(approvedSnapshot.submittedAt),
+        recordedBy: actor(approvedSnapshot.submittedBy),
+        sourceRoute
+      });
+      add({
+        type: 'COST_EVIDENCE',
+        label: 'Station cost evidence',
+        reference: evidenceReference,
+        status: evidenceReference ? 'AVAILABLE' : 'MISSING',
+        recordedAt: text(approvedSnapshot.submittedAt),
+        recordedBy: actor(approvedSnapshot.submittedBy),
+        sourceRoute
+      });
+      add({
+        type: 'FINANCE_APPROVAL',
+        label: 'Finance approval snapshot',
+        reference: text(payload.financeHandoffId),
+        status: payload.financeHandoffId ? 'VERIFIED' : 'MISSING',
+        recordedAt: text(approvedSnapshot.approvedAt),
+        recordedBy: actor(approvedSnapshot.approvedBy),
+        sourceRoute
+      });
+    } else if (row.event_type === 'AIRCRAFT_COMPONENT_READY_FOR_USE') {
       add({
         type: 'WORK_ORDER',
         label: 'Work order',

@@ -533,11 +533,12 @@ async function reject(document: MasterDocumentDto, reason: string) {
               />
             </VCol>
             <VCol cols="12" md="4">
-              <VTextField
+              <VDateInput
                 v-model="form.expiresAt"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
                 density="compact"
                 label="Expires at"
-                type="date"
                 variant="outlined"
               />
             </VCol>

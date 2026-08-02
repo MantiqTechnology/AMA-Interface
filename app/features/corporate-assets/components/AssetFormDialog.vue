@@ -117,7 +117,12 @@ async function save() {
             <VTextField v-model="form.custodianNameSnapshot" label="Custodian name snapshot" />
           </VCol>
           <VCol cols="12" md="6">
-            <VTextField v-model="form.acquisitionDate" type="date" label="Acquisition date" />
+            <VDateInput
+              v-model="form.acquisitionDate"
+              prepend-icon=""
+              prepend-inner-icon="mdi-calendar"
+              label="Acquisition date"
+            />
           </VCol>
           <VCol cols="12" md="6">
             <VTextField v-model="form.acquisitionReference" label="Acquisition reference" />

@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const apiErrorSchema = z.object({
   code: z.string(),
   message: z.string(),
+  messageKey: z.string().optional(),
+  messageParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   details: z.unknown().optional()
 });
 

@@ -107,17 +107,29 @@ describe('station operations flight workspace', () => {
     const parkingType = sqlite
       .prepare("SELECT id FROM station_service_types WHERE code = 'PARKING'")
       .get() as { id: string };
-    const supplier = sqlite
-      .prepare('SELECT id FROM station_service_suppliers ORDER BY id LIMIT 1')
+    const originSupplier = sqlite
+      .prepare(
+        `SELECT id FROM station_service_suppliers
+         WHERE station_id = 'st-djj' AND service_type IN ('HANDLING', 'BOTH')
+         ORDER BY id LIMIT 1`
+      )
+      .get() as { id: string };
+    const destinationSupplier = sqlite
+      .prepare(
+        `SELECT id FROM station_service_suppliers
+         WHERE station_id = 'st-wmx' AND service_type IN ('PARKING', 'BOTH')
+         ORDER BY id LIMIT 1`
+      )
       .get() as { id: string };
 
     const handling = services.flightOperations.createStationService(
       {
         flightId: 'fop-checkin-open',
         stationId: 'st-djj',
-        serviceSupplierId: supplier.id,
+        serviceSupplierId: originSupplier.id,
         serviceTypeId: handlingType.id,
-        referenceRate: 1_000_000
+        referenceRate: 1_000_000,
+        creationReason: 'Required origin handling for station verification.'
       },
       admin.userId
     );
@@ -168,9 +180,10 @@ describe('station operations flight workspace', () => {
       {
         flightId: 'fop-checkin-open',
         stationId: 'st-wmx',
-        serviceSupplierId: supplier.id,
+        serviceSupplierId: destinationSupplier.id,
         serviceTypeId: parkingType.id,
-        referenceRate: 250_000
+        referenceRate: 250_000,
+        creationReason: 'Additional destination parking for station preparation.'
       },
       admin.userId
     );
@@ -225,22 +238,21 @@ describe('station operations flight workspace', () => {
       {
         flightId: 'fop-checkin-open',
         stationId: 'st-djj',
-        serviceSupplierId: supplier.id,
+        serviceSupplierId: originSupplier.id,
         serviceTypeId: handlingType.id,
-        referenceRate: 1_250_000
+        referenceRate: 1_250_000,
+        creationReason: 'Retry the same origin handling request safely.'
       },
       admin.userId
     );
-    const [invalidatedWorkspace] = await services.flightOperations.getStationOperations(
+    const [retryWorkspace] = await services.flightOperations.getStationOperations(
       { flightId: 'fop-checkin-open' },
       admin
     );
     expect(
-      invalidatedWorkspace.tasks.find(
-        (task: { taskCode: string }) => task.taskCode === 'ORIGIN_HANDLING'
-      )
+      retryWorkspace.tasks.find((task: { taskCode: string }) => task.taskCode === 'ORIGIN_HANDLING')
     ).toMatchObject({
-      status: 'PENDING',
+      status: 'VERIFIED',
       evidenceCount: 1
     });
     expect(
@@ -252,10 +264,10 @@ describe('station operations flight workspace', () => {
         )
         .get()
     ).toEqual({
-      status_id: 'readiness-status-pending',
-      calculation_status: 'UNKNOWN',
-      verification_status: 'PENDING',
-      effective_status: 'BLOCKED'
+      status_id: 'readiness-status-pass',
+      calculation_status: 'PASS',
+      verification_status: 'VERIFIED',
+      effective_status: 'PASSED'
     });
     expect(
       sqlite

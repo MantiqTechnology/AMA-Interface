@@ -94,8 +94,14 @@ export type TrialBalanceAccountDto = {
   id: string;
   code: string;
   name: string;
+  isActive: boolean;
   accountType: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
   normalBalance: 'DEBIT' | 'CREDIT';
+  openingDebitMinor: number;
+  openingCreditMinor: number;
+  openingBalanceMinor: number;
+  periodDebitMinor: number;
+  periodCreditMinor: number;
   debitMinor: number;
   creditMinor: number;
   balanceMinor: number;

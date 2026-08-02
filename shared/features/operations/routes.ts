@@ -66,8 +66,14 @@ export type RouteOption = {
   destinationStationId: string;
   originStationCode: string;
   destinationStationCode: string;
+  originStationName: string;
+  destinationStationName: string;
+  originCity: string | null;
+  destinationCity: string | null;
   estimatedDurationMinutes: number;
   distanceKm: number;
+  restrictionLevel: RouteRestrictionLevel;
+  restrictionNote: string | null;
 };
 
 export type RouteProfileStationDto = {

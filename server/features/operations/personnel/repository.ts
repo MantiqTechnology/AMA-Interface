@@ -20,6 +20,7 @@ import type {
   PersonnelListQuery,
   PersonnelMedicalCertificateDto,
   PersonnelMedicalCertificateInput,
+  PersonnelQualificationInput,
   PersonnelOption
 } from '../../../../shared/features/operations/personnel';
 
@@ -390,6 +391,38 @@ export class PersonnelRepository {
       .from(personnelQualifications)
       .where(eq(personnelQualifications.personnelId, personnelId))
       .orderBy(asc(personnelQualifications.qualificationType));
+  }
+
+  async addQualification(
+    id: string,
+    personnelId: string,
+    input: PersonnelQualificationInput,
+    timestamp: string
+  ) {
+    return await this.db
+      .insert(personnelQualifications)
+      .values({ id, personnelId, ...input, createdAt: timestamp, updatedAt: timestamp })
+      .returning()
+      .get();
+  }
+
+  async updateQualification(
+    id: string,
+    personnelId: string,
+    input: PersonnelQualificationInput,
+    timestamp: string
+  ) {
+    return await this.db
+      .update(personnelQualifications)
+      .set({ ...input, updatedAt: timestamp })
+      .where(
+        and(
+          eq(personnelQualifications.id, id),
+          eq(personnelQualifications.personnelId, personnelId)
+        )
+      )
+      .returning()
+      .get();
   }
 
   async listNotes(personnelId: string, includeRestricted: boolean) {

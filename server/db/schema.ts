@@ -6,3 +6,4 @@ export * from './schema/flight-operations';
 export * from './schema/billing';
 export * from './schema/ticketing';
 export * from './schema/inventory';
+export * from './schema/hris';

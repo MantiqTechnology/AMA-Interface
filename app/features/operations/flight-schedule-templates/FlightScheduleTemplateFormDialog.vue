@@ -14,6 +14,7 @@ const emit = defineEmits<{
 const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null);
 const submitting = ref(false);
 const serverError = ref('');
+const { label: fieldLabel } = useMasterDataFieldHelp();
 const form = reactive<FlightScheduleTemplateInput>({
   templateCode: '',
   routeId: '',
@@ -145,31 +146,49 @@ async function submit() {
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.templateCode"
-                label="Template code"
+                :label="fieldLabel('scheduleTemplate.templateCode')"
                 :rules="[required('Template code')]"
                 type="text"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.templateCode" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
-              <RouteSelect v-model="form.routeId" label="Route" required />
+              <MasterDataFieldHelp field="scheduleTemplate.routeId" />
+              <RouteSelect
+                v-model="form.routeId"
+                :label="fieldLabel('scheduleTemplate.routeId')"
+                required
+              />
             </VCol>
             <VCol cols="12" md="6">
               <VSelect
                 v-model="form.serviceTypeId"
                 :items="serviceTypeItems"
-                label="Service type"
+                :label="fieldLabel('scheduleTemplate.serviceTypeId')"
                 :rules="[required('Service type')]"
                 variant="outlined"
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.serviceTypeId" inline />
+                </template>
+              </VSelect>
+            </VCol>
+            <VCol cols="12" md="6">
+              <MasterDataFieldHelp field="scheduleTemplate.defaultAircraftId" />
+              <AircraftSelect
+                v-model="form.defaultAircraftId"
+                :label="fieldLabel('scheduleTemplate.defaultAircraftId')"
               />
             </VCol>
             <VCol cols="12" md="6">
-              <AircraftSelect v-model="form.defaultAircraftId" label="Default aircraft" />
-            </VCol>
-            <VCol cols="12" md="6">
+              <MasterDataFieldHelp field="scheduleTemplate.capacityProfileId" />
               <FlightCapacityProfileSelect
                 v-model="form.capacityProfileId"
-                label="Capacity profile"
+                :label="fieldLabel('scheduleTemplate.capacityProfileId')"
                 :allow-create="false"
               />
             </VCol>
@@ -177,88 +196,124 @@ async function submit() {
               <VSelect
                 v-model="form.operatingDays"
                 :items="['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']"
-                label="Operating days"
+                :label="fieldLabel('scheduleTemplate.operatingDays')"
                 multiple
                 chips
                 :rules="[required('Operating days')]"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.operatingDays" inline />
+                </template>
+              </VSelect>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.departureTimeLocal"
-                label="Departure local"
+                :label="fieldLabel('scheduleTemplate.departureTimeLocal')"
                 :rules="[required('Departure local')]"
                 type="time"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.departureTimeLocal" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.arrivalTimeLocal"
-                label="Arrival local"
+                :label="fieldLabel('scheduleTemplate.arrivalTimeLocal')"
                 :rules="[required('Arrival local')]"
                 type="time"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.arrivalTimeLocal" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.arrivalDayOffset"
-                label="Arrival day offset"
+                :label="fieldLabel('scheduleTemplate.arrivalDayOffset')"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.arrivalDayOffset" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.bookingOpenMinutesBefore"
-                label="Booking opens before (minutes)"
+                :label="fieldLabel('scheduleTemplate.bookingOpenMinutesBefore')"
                 :rules="[required('Booking opens before')]"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.bookingOpenMinutesBefore" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model.number="form.bookingCloseMinutesBefore"
-                label="Booking closes before"
+                :label="fieldLabel('scheduleTemplate.bookingCloseMinutesBefore')"
                 :rules="[required('Booking closes before')]"
                 type="number"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.bookingCloseMinutesBefore" inline />
+                </template>
+              </VTextField>
             </VCol>
             <VCol cols="12" md="6">
-              <VTextField
+              <MasterDataFieldHelp field="scheduleTemplate.effectiveFrom" />
+              <VDateInput
                 v-model="form.effectiveFrom"
-                label="Effective from"
-                type="date"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
+                :aria-label="fieldLabel('scheduleTemplate.effectiveFrom')"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="12" md="6">
-              <VTextField
+              <MasterDataFieldHelp field="scheduleTemplate.effectiveUntil" />
+              <VDateInput
                 v-model="form.effectiveUntil"
-                label="Effective until"
-                type="date"
+                prepend-icon=""
+                prepend-inner-icon="mdi-calendar"
+                :aria-label="fieldLabel('scheduleTemplate.effectiveUntil')"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.scheduleNote"
-                label="Schedule note"
+                :label="fieldLabel('scheduleTemplate.scheduleNote')"
                 rows="3"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.scheduleNote" inline />
+                </template>
+              </VTextarea>
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="form.internalOperationalNote"
-                label="Internal operational note"
+                :label="fieldLabel('scheduleTemplate.internalOperationalNote')"
                 rows="3"
                 variant="outlined"
-              />
+              >
+                <template #label>
+                  <MasterDataFieldHelp field="scheduleTemplate.internalOperationalNote" inline />
+                </template>
+              </VTextarea>
             </VCol>
           </VRow>
         </VForm>

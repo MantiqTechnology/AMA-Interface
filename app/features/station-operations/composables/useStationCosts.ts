@@ -17,8 +17,22 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
     vendorId: '',
     currencyId: '',
     description: '',
-    amount: null as number | null
+    amount: null as number | null,
+    vendorReference: '',
+    evidenceReference: ''
   });
+  const showActualCost = ref(false);
+  const actualCostForm = ref({
+    id: '',
+    expectedVersion: 1,
+    actualAmount: null as number | null,
+    currencyId: '',
+    vendorReference: '',
+    evidenceReference: '',
+    description: ''
+  });
+  const showVoidCost = ref(false);
+  const voidCostForm = ref({ id: '', expectedVersion: 1, reason: '' });
 
   async function loadOptions(): Promise<void> {
     optionsLoading.value = true;
@@ -64,13 +78,15 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
     costForm.value = {
       flightId: dataset.value.flights[0]?.flightId ?? '',
       costCategoryId: categories.value[0]?.id ?? '',
-      vendorId: vendors.value[0]?.id ?? '',
+      vendorId: '',
       currencyId:
         currencies.value.find((item) => item.subtitle === 'IDR')?.id ??
         currencies.value[0]?.id ??
         '',
       description: '',
-      amount: null
+      amount: null,
+      vendorReference: '',
+      evidenceReference: ''
     };
     showCreateCost.value = true;
   }
@@ -100,7 +116,9 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
           costCategoryId: costForm.value.costCategoryId,
           amount: costForm.value.amount,
           currencyId: costForm.value.currencyId,
-          description: costForm.value.description
+          description: costForm.value.description,
+          vendorReference: costForm.value.vendorReference,
+          evidenceReference: costForm.value.evidenceReference
         }
       });
       showCreateCost.value = false;
@@ -111,6 +129,81 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
         error instanceof Error ? error.message : 'Gagal membuat station cost.';
     } finally {
       creatingCost.value = false;
+    }
+  }
+
+  function openActualCost(row: StationCostRow): void {
+    actualCostForm.value = {
+      id: row.id,
+      expectedVersion: row.version,
+      actualAmount: row.actualAmount,
+      currencyId: currencies.value.find((item) => item.subtitle === row.currencyCode)?.id ?? '',
+      vendorReference: row.vendorReference ?? '',
+      evidenceReference: row.evidenceReference ?? '',
+      description: row.description
+    };
+    showActualCost.value = true;
+  }
+
+  async function saveActualCost(): Promise<void> {
+    const form = actualCostForm.value;
+    if (
+      form.actualAmount === null ||
+      !form.currencyId ||
+      !form.vendorReference.trim() ||
+      !form.evidenceReference.trim() ||
+      !form.description.trim()
+    ) {
+      return;
+    }
+    loadingId.value = form.id;
+    context.actionError.value = '';
+    try {
+      await fetchApi(`/api/flight-operations/station-costs/${form.id}`, {
+        method: 'PATCH',
+        body: {
+          expectedVersion: form.expectedVersion,
+          actualAmount: form.actualAmount,
+          currencyId: form.currencyId,
+          vendorReference: form.vendorReference,
+          evidenceReference: form.evidenceReference,
+          description: form.description
+        }
+      });
+      showActualCost.value = false;
+      await reload();
+      context.actionSuccess.value = 'Actual station cost and evidence recorded.';
+    } catch (error) {
+      context.actionError.value =
+        error instanceof Error ? error.message : 'Gagal menyimpan actual station cost.';
+    } finally {
+      loadingId.value = '';
+    }
+  }
+
+  function openVoidCost(row: StationCostRow): void {
+    voidCostForm.value = { id: row.id, expectedVersion: row.version, reason: '' };
+    showVoidCost.value = true;
+  }
+
+  async function voidCost(): Promise<void> {
+    const form = voidCostForm.value;
+    if (form.reason.trim().length < 5) return;
+    loadingId.value = form.id;
+    context.actionError.value = '';
+    try {
+      await fetchApi(`/api/flight-operations/station-costs/${form.id}/actions/void`, {
+        method: 'POST',
+        body: { expectedVersion: form.expectedVersion, reason: form.reason }
+      });
+      showVoidCost.value = false;
+      await reload();
+      context.actionSuccess.value = 'Station cost voided with an audit reason.';
+    } catch (error) {
+      context.actionError.value =
+        error instanceof Error ? error.message : 'Gagal melakukan void station cost.';
+    } finally {
+      loadingId.value = '';
     }
   }
 
@@ -146,8 +239,16 @@ export function useStationCosts(dataset: Ref<StationDataset>, reload: () => Prom
     vendors,
     currencies,
     costForm,
+    showActualCost,
+    actualCostForm,
+    showVoidCost,
+    voidCostForm,
     openCreateCost,
     submitCreateCost,
-    processCost
+    processCost,
+    openActualCost,
+    saveActualCost,
+    openVoidCost,
+    voidCost
   };
 }

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { FlightRequestRecord } from '#shared/contracts/flight-operations';
+import type {
+  FlightOperationDetailDto,
+  FlightRequestRecord
+} from '#shared/contracts/flight-operations';
 import { demoRoleActorIds } from '#shared/types/roles';
 
 const route = useRoute();
@@ -59,11 +62,18 @@ async function decide() {
   actionLoading.value = true;
   actionError.value = '';
   try {
-    await fetchApi(`/api/flight-operations/requests/${id.value}/actions/decision`, {
+    const result = await fetchApi<{
+      request: FlightRequestRecord;
+      flight: FlightOperationDetailDto | null;
+    }>(`/api/flight-operations/requests/${id.value}/actions/decision`, {
       method: 'POST',
       body: { decision: decision.value, reason: reason.value || undefined }
     });
     decisionDialog.value = false;
+    if (decision.value === 'APPROVE' && result.flight) {
+      await navigateTo(`/flights/${result.flight.id}?sourceRequest=${id.value}`);
+      return;
+    }
     await refresh();
   } catch (errorValue) {
     if (isMissingRequestError(errorValue)) {
@@ -152,7 +162,7 @@ async function decide() {
           prepend-icon="mdi-check-decagram-outline"
           @click="openDecision('APPROVE')"
         >
-          Approve & Create Order
+          Setujui Permintaan
         </VBtn>
         <VBtn
           v-if="request.convertedFlightId"
@@ -285,8 +295,26 @@ async function decide() {
             </div>
           </section>
           <VAlert v-if="request.status === 'SUBMITTED'" type="info" variant="tonal">
-            Approval creates a separate Flight Order. Operational readiness, manifest, fuel
-            confirmation, and closure continue on that order.
+            Business Request Approval creates a separate Flight Order. Operational readiness and
+            flight approval continue on that order.
+          </VAlert>
+          <VAlert v-if="request.convertedFlightId" type="success" variant="tonal">
+            <strong>Flight Order {{ request.convertedFlightId }} created</strong>
+            <div class="mt-1 text-sm">
+              Request {{ request.requestNumber }} was approved by
+              {{ request.approvedByUserId ?? 'business approver' }} and converted at
+              {{ formatDate(request.updatedAt) }}.
+            </div>
+            <VBtn
+              class="mt-3"
+              color="success"
+              prepend-icon="mdi-airplane"
+              size="small"
+              :to="`/flights/${request.convertedFlightId}`"
+              variant="tonal"
+            >
+              Continue to Flight Order
+            </VBtn>
           </VAlert>
           <VAlert
             v-if="request.status === 'SUBMITTED' && !canDecide"

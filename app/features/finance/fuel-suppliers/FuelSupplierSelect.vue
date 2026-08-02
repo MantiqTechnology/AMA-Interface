@@ -9,8 +9,18 @@ const props = withDefaults(
     clearable?: boolean;
     disabled?: boolean;
     allowCreate?: boolean;
+    density?: 'default' | 'comfortable' | 'compact';
+    externalLabel?: boolean;
   }>(),
-  { label: 'Fuel Suppliers', required: false, clearable: true, disabled: false, allowCreate: true }
+  {
+    label: 'Fuel Suppliers',
+    required: false,
+    clearable: true,
+    disabled: false,
+    allowCreate: true,
+    density: 'compact',
+    externalLabel: false
+  }
 );
 const emit = defineEmits<{
   'update:modelValue': [value: string | null];
@@ -44,13 +54,14 @@ function optionTitle(option: FuelSupplierOption | string | null | undefined) {
   <div>
     <div class="d-flex align-start ga-2">
       <VAutocomplete
+        :aria-label="label"
         :clearable="clearable"
-        density="compact"
+        :density="density"
         :disabled="disabled"
         :item-title="optionTitle"
         item-value="id"
         :items="options"
-        :label="label"
+        :label="externalLabel ? undefined : label"
         :loading="pending"
         :model-value="modelValue"
         :rules="rules"

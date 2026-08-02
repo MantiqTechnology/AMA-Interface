@@ -25,6 +25,8 @@ import {
   corporateAssetDropStatements,
   corporateAssetStatements
 } from './migrations/corporate-assets';
+import { maintenanceDropStatements, maintenanceStatements } from './migrations/maintenance';
+import { hrisDropStatements, hrisStatements } from './migrations/hris';
 import { migrateVerificationData } from './migrations/operations/verification-migration';
 import { migrateManifestAssuranceData } from './migrations/operations/manifest-assurance-migration';
 
@@ -82,8 +84,10 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['DRAFT', 'Draft'],
       ['PENDING_READINESS', 'Pending Readiness'],
       ['BLOCKED', 'Blocked'],
+      ['READY_FOR_OCC_REVIEW', 'Ready For OCC Review'],
       ['READY_FOR_APPROVAL', 'Ready For Approval'],
       ['APPROVED', 'Approved'],
+      ['REAPPROVAL_REQUIRED', 'Reapproval Required'],
       ['SCHEDULED', 'Scheduled'],
       ['CHECK_IN_OPEN', 'Check-In Open'],
       ['CHECK_IN_CLOSED', 'Check-In Closed'],
@@ -156,7 +160,8 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['PENDING', 'Pending'],
       ['APPROVED', 'Approved'],
       ['REJECTED', 'Rejected'],
-      ['REVISION_REQUESTED', 'Revision Requested']
+      ['REVISION_REQUESTED', 'Revision Requested'],
+      ['INVALIDATED', 'Invalidated']
     ]
   },
   {
@@ -228,8 +233,11 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
     table: 'station_service_statuses',
     idPrefix: 'station-service-status',
     values: [
+      ['PLANNED', 'Planned'],
       ['REQUESTED', 'Requested'],
       ['CONFIRMED', 'Confirmed'],
+      ['COMPLETED', 'Completed'],
+      ['VERIFIED', 'Verified'],
       ['REJECTED', 'Rejected'],
       ['CANCELLED', 'Cancelled']
     ]
@@ -241,6 +249,7 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['DRAFT', 'Draft'],
       ['SUBMITTED', 'Submitted'],
       ['APPROVED', 'Approved'],
+      ['VOIDED', 'Voided'],
       ['REJECTED', 'Rejected'],
       ['VOID', 'Void']
     ]
@@ -657,12 +666,87 @@ const createStatements = [
     billing_type TEXT NOT NULL DEFAULT 'CHARTER',
     estimated_revenue INTEGER,
     currency_code TEXT NOT NULL DEFAULT 'IDR',
+    flight_rules TEXT NOT NULL DEFAULT 'VFR',
+    operation_rule TEXT NOT NULL DEFAULT 'CASR_135',
+    departure_period TEXT NOT NULL DEFAULT 'DAY',
+    alternate_station_id TEXT REFERENCES stations(id),
+    isolated_aerodrome INTEGER NOT NULL DEFAULT 0,
+    planned_taxi_minutes INTEGER,
+    planned_taxi_fuel_litre REAL,
+    additional_fuel_litre REAL NOT NULL DEFAULT 0,
+    discretionary_fuel_litre REAL NOT NULL DEFAULT 0,
     is_locked INTEGER NOT NULL DEFAULT 0,
     blocking_reason TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    readiness_revision INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK (scheduled_arrival_at IS NULL OR scheduled_departure_at IS NULL OR scheduled_arrival_at >= scheduled_departure_at),
     CHECK (actual_arrival_at IS NULL OR actual_departure_at IS NULL OR actual_arrival_at >= actual_departure_at)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_action_commands (
+    id TEXT PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    flight_id TEXT NOT NULL REFERENCES flight_operations(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL,
+    expected_version INTEGER NOT NULL,
+    resulting_version INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_action_commands_flight
+    ON flight_action_commands(flight_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS aircraft_position_reports (
+    id TEXT PRIMARY KEY,
+    aircraft_id TEXT NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+    flight_id TEXT REFERENCES flight_operations(id) ON DELETE SET NULL,
+    latitude REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+    longitude REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+    position_status TEXT NOT NULL CHECK (position_status IN ('ON_GROUND', 'AIRBORNE', 'UNKNOWN')),
+    altitude_ft REAL CHECK (altitude_ft IS NULL OR altitude_ft >= 0),
+    ground_speed_kt REAL CHECK (ground_speed_kt IS NULL OR ground_speed_kt >= 0),
+    heading_deg REAL CHECK (heading_deg IS NULL OR (heading_deg >= 0 AND heading_deg < 360)),
+    source TEXT NOT NULL CHECK (source IN ('MANUAL', 'DEMO_SIMULATION', 'SYSTEM_DEPARTURE', 'SYSTEM_ARRIVAL')),
+    recorded_at TEXT NOT NULL,
+    reported_by_user_id TEXT,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_aircraft_position_reports_aircraft_time
+    ON aircraft_position_reports(aircraft_id, recorded_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_aircraft_position_reports_flight_time
+    ON aircraft_position_reports(flight_id, recorded_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS aircraft_current_positions (
+    aircraft_id TEXT PRIMARY KEY REFERENCES aircraft(id) ON DELETE CASCADE,
+    report_id TEXT NOT NULL UNIQUE REFERENCES aircraft_position_reports(id) ON DELETE CASCADE,
+    flight_id TEXT REFERENCES flight_operations(id) ON DELETE SET NULL,
+    latitude REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+    longitude REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+    position_status TEXT NOT NULL CHECK (position_status IN ('ON_GROUND', 'AIRBORNE', 'UNKNOWN')),
+    altitude_ft REAL,
+    ground_speed_kt REAL,
+    heading_deg REAL,
+    source TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS fuel_planning_policies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    regulatory_basis TEXT NOT NULL,
+    operation_type TEXT NOT NULL,
+    contingency_percent REAL NOT NULL,
+    minimum_contingency_holding_minutes INTEGER NOT NULL,
+    turbine_final_reserve_minutes INTEGER NOT NULL,
+    reciprocating_final_reserve_minutes INTEGER NOT NULL,
+    low_margin_minutes INTEGER NOT NULL,
+    no_alternate_holding_minutes INTEGER NOT NULL DEFAULT 15,
+    version INTEGER NOT NULL,
+    effective_from TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS flight_crew_assignments (
     id TEXT PRIMARY KEY,
@@ -701,9 +785,30 @@ const createStatements = [
     reason TEXT,
     affected_section TEXT,
     required_correction TEXT,
+    readiness_revision INTEGER,
+    snapshot_hash TEXT,
+    snapshot_json TEXT,
+    invalidated_at TEXT,
+    invalidation_reason TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (flight_id, approval_type_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS operational_advisories (
+    id TEXT PRIMARY KEY,
+    advisory_type TEXT NOT NULL CHECK (advisory_type IN ('WEATHER','NOTAM','RUNWAY','STATION_OPERATION')),
+    severity TEXT NOT NULL CHECK (severity IN ('INFO','WARNING','BLOCKING')),
+    route_id TEXT REFERENCES routes(id),
+    station_id TEXT REFERENCES stations(id),
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','RESOLVED','CANCELLED')),
+    valid_from TEXT NOT NULL,
+    valid_until TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    operational_limitation TEXT,
+    source_reference TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (route_id IS NOT NULL OR station_id IS NOT NULL)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_operation_attachments (
     id TEXT PRIMARY KEY,
@@ -787,8 +892,12 @@ const createStatements = [
     fuel_supplier_id TEXT NOT NULL REFERENCES fuel_suppliers(id),
     fuel_type TEXT NOT NULL,
     requested_quantity_litre REAL NOT NULL,
+    fuel_on_board_before_uplift_litre REAL,
     approved_quantity_litre REAL,
     actual_uplift_litre REAL,
+    defuel_quantity_litre REAL,
+    measured_fuel_on_board_litre REAL,
+    confirmed_block_fuel_litre REAL,
     reference_price_per_litre INTEGER,
     actual_price_per_litre INTEGER,
     tax_code_id TEXT REFERENCES tax_codes(id),
@@ -801,11 +910,27 @@ const createStatements = [
     requested_by_user_id TEXT,
     approved_by_user_id TEXT,
     uplift_recorded_by_user_id TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK (requested_quantity_litre >= 0),
+    CHECK (fuel_on_board_before_uplift_litre IS NULL OR fuel_on_board_before_uplift_litre >= 0),
     CHECK (approved_quantity_litre IS NULL OR approved_quantity_litre >= 0),
-    CHECK (actual_uplift_litre IS NULL OR actual_uplift_litre >= 0)
+    CHECK (actual_uplift_litre IS NULL OR actual_uplift_litre >= 0),
+    CHECK (defuel_quantity_litre IS NULL OR defuel_quantity_litre >= 0),
+    CHECK (measured_fuel_on_board_litre IS NULL OR measured_fuel_on_board_litre >= 0),
+    CHECK (confirmed_block_fuel_litre IS NULL OR confirmed_block_fuel_litre >= 0)
+  )`,
+  `CREATE TABLE IF NOT EXISTS flight_fuel_action_commands (
+    id TEXT PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    fuel_request_id TEXT NOT NULL REFERENCES flight_fuel_requests(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL,
+    expected_version INTEGER NOT NULL,
+    resulting_version INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS flight_station_service_requests (
     id TEXT PRIMARY KEY,
@@ -815,30 +940,57 @@ const createStatements = [
     service_type_id TEXT NOT NULL REFERENCES station_service_types(id),
     status_id TEXT NOT NULL REFERENCES station_service_statuses(id),
     reference_rate INTEGER,
+    reference_currency_id TEXT REFERENCES currencies(id),
+    creation_source TEXT NOT NULL DEFAULT 'MANUAL_ADDITIONAL_SERVICE',
+    creation_reason TEXT,
+    created_by_user_id TEXT,
     confirmed_at TEXT,
     confirmed_by_user_id TEXT,
+    completion_record TEXT,
+    completion_evidence_reference TEXT,
+    completed_at TEXT,
+    completed_by_user_id TEXT,
+    verified_at TEXT,
+    verified_by_user_id TEXT,
     rejection_note TEXT,
     version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    UNIQUE (flight_id, station_id, service_type_id)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_station_costs (
     id TEXT PRIMARY KEY,
     flight_id TEXT REFERENCES flight_operations(id) ON DELETE SET NULL,
     station_id TEXT NOT NULL REFERENCES stations(id),
     vendor_id TEXT REFERENCES vendors(id),
+    service_supplier_id TEXT REFERENCES station_service_suppliers(id),
+    source_service_id TEXT REFERENCES flight_station_service_requests(id),
     cost_category_id TEXT NOT NULL REFERENCES cost_categories(id),
     amount INTEGER NOT NULL,
+    estimated_amount INTEGER,
+    actual_amount INTEGER,
+    approved_amount INTEGER,
     currency_id TEXT NOT NULL REFERENCES currencies(id),
+    approved_currency_id TEXT REFERENCES currencies(id),
     description TEXT NOT NULL,
+    vendor_reference TEXT,
+    evidence_reference TEXT,
+    approval_snapshot_json TEXT,
     status_id TEXT NOT NULL REFERENCES station_cost_statuses(id),
     submitted_by_user_id TEXT,
+    submitted_at TEXT,
     approved_by_user_id TEXT,
     approved_at TEXT,
+    voided_by_user_id TEXT,
+    voided_at TEXT,
+    void_reason TEXT,
     version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (amount >= 0)
+    CHECK (amount >= 0),
+    CHECK (estimated_amount IS NULL OR estimated_amount >= 0),
+    CHECK (actual_amount IS NULL OR actual_amount >= 0),
+    CHECK (approved_amount IS NULL OR approved_amount > 0)
   )`,
   `CREATE TABLE IF NOT EXISTS flight_maintenance_handoffs (
     id TEXT PRIMARY KEY,
@@ -868,6 +1020,9 @@ const createStatements = [
     summary TEXT NOT NULL,
     amount INTEGER,
     currency_id TEXT REFERENCES currencies(id),
+    snapshot_json TEXT,
+    processed_by_user_id TEXT,
+    processed_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -974,6 +1129,8 @@ const createStatements = [
   ...ticketingStatements,
   ...inventoryStatements,
   ...corporateAssetStatements,
+  ...maintenanceStatements,
+  ...hrisStatements,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_due_at ON invoices(due_at)`,
@@ -985,7 +1142,15 @@ const createStatements = [
   `CREATE INDEX IF NOT EXISTS idx_flight_readiness_checks_flight ON flight_readiness_checks(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_manifests_flight_operation ON flight_manifests(flight_operation_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_fuel_requests_flight ON flight_fuel_requests(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_flight_fuel_action_commands_request
+    ON flight_fuel_action_commands(fuel_request_id, created_at DESC)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_flight_operations_request_once
+    ON flight_operations(flight_request_id) WHERE flight_request_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_station_service_once
+    ON flight_station_service_requests(flight_id, station_id, service_type_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_station_costs_flight ON flight_station_costs(flight_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_finance_handoff_source_once
+    ON flight_finance_handoffs(source_type, source_id) WHERE source_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_flight ON flight_station_tasks(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_station ON flight_station_tasks(station_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_station_tasks_phase ON flight_station_tasks(phase)`,
@@ -999,6 +1164,8 @@ const createStatements = [
 ];
 
 const dropStatements = [
+  ...maintenanceDropStatements,
+  ...hrisDropStatements,
   ...corporateAssetDropStatements,
   ...inventoryDropStatements,
   ...ticketingDropStatements,
@@ -1012,6 +1179,9 @@ const dropStatements = [
   'DROP TABLE IF EXISTS accounting_policies',
   'DROP TABLE IF EXISTS product_accounting_profiles',
   'DROP TABLE IF EXISTS accounting_periods',
+  'DROP TABLE IF EXISTS aircraft_current_positions',
+  'DROP TABLE IF EXISTS aircraft_position_reports',
+  'DROP TABLE IF EXISTS operational_advisories',
   'DROP TABLE IF EXISTS flight_finance_handoffs',
   'DROP TABLE IF EXISTS flight_maintenance_handoffs',
   'DROP TABLE IF EXISTS flight_actual_reconciliations',
@@ -1022,7 +1192,9 @@ const dropStatements = [
   'DROP TABLE IF EXISTS flight_station_tasks',
   'DROP TABLE IF EXISTS flight_station_costs',
   'DROP TABLE IF EXISTS flight_station_service_requests',
+  'DROP TABLE IF EXISTS flight_fuel_action_commands',
   'DROP TABLE IF EXISTS flight_fuel_requests',
+  'DROP TABLE IF EXISTS fuel_planning_policies',
   'DROP TABLE IF EXISTS flight_manifest_cargo_items',
   'DROP TABLE IF EXISTS flight_manifest_passengers',
   'DROP TABLE IF EXISTS flight_manifests',
@@ -1031,6 +1203,7 @@ const dropStatements = [
   'DROP TABLE IF EXISTS flight_operation_approvals',
   'DROP TABLE IF EXISTS flight_status_histories',
   'DROP TABLE IF EXISTS flight_crew_assignments',
+  'DROP TABLE IF EXISTS flight_action_commands',
   'DROP TABLE IF EXISTS flight_operations',
   'DROP TABLE IF EXISTS flight_requests',
   'DROP TABLE IF EXISTS finance_handoff_statuses',
@@ -1055,6 +1228,18 @@ const dropStatements = [
   'DROP TABLE IF EXISTS flight_priorities',
   'DROP TABLE IF EXISTS flight_service_types',
   'DROP TABLE IF EXISTS flight_types',
+  'DROP TABLE IF EXISTS contract_subsidy_audit_logs',
+  'DROP TABLE IF EXISTS contract_subsidy_consumptions',
+  'DROP TABLE IF EXISTS contract_subsidy_programs',
+  'DROP TABLE IF EXISTS rate_audit_logs',
+  'DROP TABLE IF EXISTS rate_booking_channels',
+  'DROP TABLE IF EXISTS rate_contract_links',
+  'DROP TABLE IF EXISTS schedule_template_audit_logs',
+  'DROP TABLE IF EXISTS personnel_audit_logs',
+  'DROP TABLE IF EXISTS personnel_licenses',
+  'DROP TABLE IF EXISTS personnel_medical_certificates',
+  'DROP TABLE IF EXISTS personnel_notes',
+  'DROP TABLE IF EXISTS personnel_qualifications',
   ...cargoMasterDataDropStatements,
   ...commercialMasterDataDropStatements,
   ...financeMasterDataDropStatements,
@@ -1244,7 +1429,81 @@ export function runMigrations(sqlite: Database.Database) {
       'version',
       'INTEGER NOT NULL DEFAULT 1'
     );
+    ensureColumn(
+      sqlite,
+      'flight_station_service_requests',
+      'reference_currency_id',
+      'TEXT REFERENCES currencies(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'flight_station_service_requests',
+      'creation_source',
+      "TEXT NOT NULL DEFAULT 'MANUAL_ADDITIONAL_SERVICE'"
+    );
+    ensureColumn(sqlite, 'flight_station_service_requests', 'creation_reason', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_service_requests', 'created_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_service_requests', 'completion_record', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'flight_station_service_requests',
+      'completion_evidence_reference',
+      'TEXT'
+    );
+    ensureColumn(sqlite, 'flight_station_service_requests', 'completed_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_service_requests', 'completed_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_service_requests', 'verified_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_service_requests', 'verified_by_user_id', 'TEXT');
     ensureColumn(sqlite, 'flight_station_costs', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(
+      sqlite,
+      'flight_station_costs',
+      'service_supplier_id',
+      'TEXT REFERENCES station_service_suppliers(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'flight_station_costs',
+      'source_service_id',
+      'TEXT REFERENCES flight_station_service_requests(id)'
+    );
+    ensureColumn(sqlite, 'flight_station_costs', 'estimated_amount', 'INTEGER');
+    ensureColumn(sqlite, 'flight_station_costs', 'actual_amount', 'INTEGER');
+    ensureColumn(sqlite, 'flight_station_costs', 'approved_amount', 'INTEGER');
+    ensureColumn(
+      sqlite,
+      'flight_station_costs',
+      'approved_currency_id',
+      'TEXT REFERENCES currencies(id)'
+    );
+    ensureColumn(sqlite, 'flight_station_costs', 'vendor_reference', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_costs', 'evidence_reference', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_costs', 'approval_snapshot_json', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_costs', 'submitted_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_costs', 'voided_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_costs', 'voided_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_station_costs', 'void_reason', 'TEXT');
+    sqlite.exec(`UPDATE flight_station_costs
+      SET approved_amount = COALESCE(approved_amount, actual_amount, amount),
+          approved_currency_id = COALESCE(approved_currency_id, currency_id),
+          approval_snapshot_json = COALESCE(
+            approval_snapshot_json,
+            json_object(
+              'sourceType', 'STATION_COST',
+              'sourceId', id,
+              'snapshotSource', 'MIGRATION_BACKFILL',
+              'approvedAmount', COALESCE(actual_amount, amount),
+              'currencyId', currency_id,
+              'approvedBy', approved_by_user_id,
+              'approvedAt', approved_at
+            )
+          )
+      WHERE status_id = 'station-cost-status-approved'`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_station_cost_source_service
+      ON flight_station_costs(source_service_id) WHERE source_service_id IS NOT NULL`);
+    ensureColumn(sqlite, 'flight_finance_handoffs', 'snapshot_json', 'TEXT');
+    ensureColumn(sqlite, 'flight_finance_handoffs', 'processed_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'flight_finance_handoffs', 'processed_at', 'TEXT');
     ensureColumn(sqlite, 'flight_readiness_checks', 'classification', 'TEXT');
     ensureColumn(sqlite, 'flight_readiness_checks', 'calculation_status', 'TEXT');
     ensureColumn(sqlite, 'flight_readiness_checks', 'verification_status', 'TEXT');
@@ -1334,6 +1593,17 @@ export function runMigrations(sqlite: Database.Database) {
       'TEXT REFERENCES flight_requests(id)'
     );
     ensureLookupColumns(sqlite);
+    ensureColumn(sqlite, 'hris_shift_patterns', 'roster_type', "TEXT NOT NULL DEFAULT 'SHIFT'");
+    ensureColumn(sqlite, 'hris_shift_patterns', 'color_code', "TEXT DEFAULT '#1976D2'");
+    ensureColumn(sqlite, 'employee_certifications', 'document_url', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'hris_applicants',
+      'interviewer_employee_id',
+      'TEXT REFERENCES employees(id)'
+    );
+    ensureColumn(sqlite, 'hris_applicants', 'interview_scheduled_at', 'TEXT');
+    backfillEmployeeBankAndBpjsAndLeave(sqlite);
     ensureColumn(
       sqlite,
       'flight_operations',
@@ -1343,6 +1613,25 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'flight_operations', 'billing_type', "TEXT NOT NULL DEFAULT 'CHARTER'");
     ensureColumn(sqlite, 'flight_operations', 'estimated_revenue', 'INTEGER');
     ensureColumn(sqlite, 'flight_operations', 'currency_code', "TEXT NOT NULL DEFAULT 'IDR'");
+    ensureColumn(sqlite, 'flight_operations', 'flight_rules', "TEXT NOT NULL DEFAULT 'VFR'");
+    ensureColumn(sqlite, 'flight_operations', 'operation_rule', "TEXT NOT NULL DEFAULT 'CASR_135'");
+    ensureColumn(sqlite, 'flight_operations', 'departure_period', "TEXT NOT NULL DEFAULT 'DAY'");
+    ensureColumn(
+      sqlite,
+      'flight_operations',
+      'alternate_station_id',
+      'TEXT REFERENCES stations(id)'
+    );
+    ensureColumn(sqlite, 'flight_operations', 'isolated_aerodrome', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'flight_operations', 'planned_taxi_minutes', 'INTEGER');
+    ensureColumn(sqlite, 'flight_operations', 'planned_taxi_fuel_litre', 'REAL');
+    ensureColumn(sqlite, 'flight_operations', 'additional_fuel_litre', 'REAL NOT NULL DEFAULT 0');
+    ensureColumn(
+      sqlite,
+      'flight_operations',
+      'discretionary_fuel_litre',
+      'REAL NOT NULL DEFAULT 0'
+    );
     ensureColumn(
       sqlite,
       'flight_operations',
@@ -1355,8 +1644,16 @@ export function runMigrations(sqlite: Database.Database) {
       'actual_arrival_station_id',
       'TEXT REFERENCES stations(id)'
     );
+    ensureColumn(sqlite, 'flight_operations', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_operations', 'readiness_revision', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_operation_approvals', 'readiness_revision', 'INTEGER');
+    ensureColumn(sqlite, 'flight_operation_approvals', 'snapshot_hash', 'TEXT');
+    ensureColumn(sqlite, 'flight_operation_approvals', 'snapshot_json', 'TEXT');
+    ensureColumn(sqlite, 'flight_operation_approvals', 'invalidated_at', 'TEXT');
+    ensureColumn(sqlite, 'flight_operation_approvals', 'invalidation_reason', 'TEXT');
     ensureColumn(sqlite, 'stations', 'station_pic_name', 'TEXT');
     ensureColumn(sqlite, 'stations', 'station_pic_phone', 'TEXT');
+    ensureColumn(sqlite, 'stations', 'city_or_region', 'TEXT');
     ensureColumn(sqlite, 'stations', 'operational_notes', 'TEXT');
     ensureColumn(sqlite, 'stations', 'is_remote_station', 'INTEGER NOT NULL DEFAULT 0');
     ensureColumn(sqlite, 'stations', 'low_connectivity_mode', 'INTEGER NOT NULL DEFAULT 0');
@@ -1381,6 +1678,80 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'aircraft', 'last_maintenance_check_at', 'TEXT');
     ensureColumn(sqlite, 'aircraft', 'next_maintenance_due_at', 'TEXT');
     ensureColumn(sqlite, 'aircraft', 'serviceability_note', 'TEXT');
+    ensureColumn(sqlite, 'aircraft', 'airframe_hours', 'REAL NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'aircraft', 'airframe_cycles', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'aircraft', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(
+      sqlite,
+      'aircraft_maintenance_releases',
+      'signer_authorization_snapshot_json',
+      'TEXT'
+    );
+    ensureColumn(sqlite, 'maintenance_job_card_signoffs', 'certifying_license_number', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_job_card_signoffs',
+      'company_authorization_snapshot_json',
+      'TEXT'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_inspection_attempts',
+      'company_authorization_snapshot_json',
+      'TEXT'
+    );
+    ensureColumn(sqlite, 'maintenance_rework_actions', 'mechanic_license_number', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_rework_actions',
+      'company_authorization_snapshot_json',
+      'TEXT'
+    );
+    sqlite.exec(`UPDATE aircraft
+	      SET operational_status = 'SUSPENDED'
+	      WHERE operational_status = 'INACTIVE'`);
+    sqlite.exec(`INSERT OR IGNORE INTO aircraft_maintenance_requirements (
+      id, aircraft_id, requirement_code, title, due_at, source_reference, status, created_at, updated_at
+    )
+    SELECT 'baseline-calendar-' || id, id, 'LEGACY_NEXT_MAINTENANCE',
+           'Legacy next maintenance due', next_maintenance_due_at,
+           'aircraft.next_maintenance_due_at', 'ACTIVE', created_at, updated_at
+    FROM aircraft WHERE next_maintenance_due_at IS NOT NULL`);
+    sqlite.exec(`UPDATE aircraft
+      SET serviceability_status = 'UNSERVICEABLE',
+          serviceability_note = COALESCE(serviceability_note, 'Maintenance requirement is due.')
+      WHERE serviceability_status = 'MAINTENANCE_DUE'`);
+    sqlite.exec(`INSERT OR IGNORE INTO aircraft_status_history (
+      id, aircraft_id, status_dimension, from_status, to_status, reason,
+      source_type, actor_user_id, actor_role, occurred_at
+    )
+    SELECT 'baseline-operational-' || id, id, 'OPERATIONAL', NULL, operational_status,
+           'Migration baseline', 'MIGRATION', 'SYSTEM_MIGRATION', 'SYSTEM', updated_at
+    FROM aircraft`);
+    sqlite.exec(`INSERT OR IGNORE INTO aircraft_status_history (
+      id, aircraft_id, status_dimension, from_status, to_status, reason,
+      source_type, actor_user_id, actor_role, occurred_at
+    )
+    SELECT 'baseline-technical-' || id, id, 'TECHNICAL', NULL, serviceability_status,
+           'Migration baseline; no maintenance release asserted', 'MIGRATION',
+           'SYSTEM_MIGRATION', 'SYSTEM', updated_at
+    FROM aircraft`);
+    ensureColumn(sqlite, 'aircraft', 'engine_category', "TEXT NOT NULL DEFAULT 'TURBINE'");
+    ensureColumn(sqlite, 'aircraft', 'usable_fuel_capacity_litre', 'REAL');
+    ensureColumn(sqlite, 'aircraft', 'fuel_capacity_basis', "TEXT NOT NULL DEFAULT 'USABLE'");
+    ensureColumn(sqlite, 'aircraft', 'cruise_fuel_burn_litre_per_hour', 'REAL');
+    ensureColumn(sqlite, 'aircraft', 'holding_fuel_burn_litre_per_hour', 'REAL');
+    ensureColumn(sqlite, 'aircraft', 'taxi_fuel_burn_litre_per_hour', 'REAL');
+    ensureColumn(sqlite, 'aircraft', 'fuel_profile_source', "TEXT NOT NULL DEFAULT 'DEMO'");
+    ensureColumn(sqlite, 'aircraft', 'fuel_profile_reference', 'TEXT');
+    ensureColumn(sqlite, 'aircraft', 'fuel_profile_effective_from', 'TEXT');
+    ensureColumn(sqlite, 'aircraft', 'fuel_profile_advisory_only', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'flight_fuel_requests', 'fuel_on_board_before_uplift_litre', 'REAL');
+    ensureColumn(sqlite, 'flight_fuel_requests', 'defuel_quantity_litre', 'REAL');
+    ensureColumn(sqlite, 'flight_fuel_requests', 'measured_fuel_on_board_litre', 'REAL');
+    ensureColumn(sqlite, 'flight_fuel_requests', 'confirmed_block_fuel_litre', 'REAL');
+    ensureColumn(sqlite, 'flight_fuel_requests', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    seedFuelPlanningPolicies(sqlite);
     ensureColumn(
       sqlite,
       'inventory_movements',
@@ -1643,6 +2014,54 @@ export function runMigrations(sqlite: Database.Database) {
     sqlite.exec(
       'CREATE INDEX IF NOT EXISTS idx_flight_operation_approvals_flight ON flight_operation_approvals(flight_id)'
     );
+
+    // ── HRIS: extend employees table ──────────────────────────────────
+    ensureColumn(sqlite, 'employees', 'date_of_birth', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'gender', "TEXT CHECK (gender IN ('MALE', 'FEMALE'))");
+    ensureColumn(sqlite, 'employees', 'identity_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'phone', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'email', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'address', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'join_date', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'end_date', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'employees',
+      'employment_type',
+      "TEXT DEFAULT 'PERMANENT' CHECK (employment_type IN ('PERMANENT', 'CONTRACT', 'PROBATION'))"
+    );
+    ensureColumn(sqlite, 'employees', 'manager_id', 'TEXT REFERENCES employees(id)');
+    ensureColumn(sqlite, 'employees', 'crew_id', 'TEXT REFERENCES crews(id)');
+    ensureColumn(sqlite, 'employees', 'tax_id_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bank_name', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bank_account_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bank_account_name', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bpjs_kesehatan_number', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'bpjs_tk_number', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'employees',
+      'marital_status',
+      "TEXT DEFAULT 'SINGLE' CHECK (marital_status IN ('SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED'))"
+    );
+    ensureColumn(sqlite, 'employees', 'number_of_dependents', 'INTEGER DEFAULT 0');
+    ensureColumn(sqlite, 'employees', 'ptkp_status', "TEXT DEFAULT 'TK/0'");
+    ensureColumn(sqlite, 'employees', 'pin_hash', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'avatar_url', 'TEXT');
+    ensureColumn(sqlite, 'employees', 'basic_salary', 'INTEGER');
+    ensureColumn(sqlite, 'employees', 'position_allowance', 'INTEGER');
+    ensureColumn(sqlite, 'employees', 'flight_rate_per_hour', 'INTEGER');
+
+    // ── HRIS: extend departments table ────────────────────────────────
+    ensureColumn(sqlite, 'departments', 'parent_department_id', 'TEXT REFERENCES departments(id)');
+    ensureColumn(
+      sqlite,
+      'departments',
+      'department_level',
+      "TEXT DEFAULT 'UNIT' CHECK (department_level IN ('DIRECTORATE', 'DIVISION', 'DEPARTMENT', 'UNIT'))"
+    );
+    ensureColumn(sqlite, 'departments', 'head_employee_id', 'TEXT REFERENCES employees(id)');
+    ensureColumn(sqlite, 'departments', 'sort_order', 'INTEGER DEFAULT 0');
   });
 
   try {
@@ -1977,6 +2396,23 @@ function seedFlightOperationLookups(sqlite: Database.Database) {
   }
 }
 
+function seedFuelPlanningPolicies(sqlite: Database.Database) {
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT OR IGNORE INTO fuel_planning_policies (
+        id, name, regulatory_basis, operation_type, contingency_percent,
+        minimum_contingency_holding_minutes, turbine_final_reserve_minutes,
+        reciprocating_final_reserve_minutes, low_margin_minutes,
+        no_alternate_holding_minutes, version, effective_from, active, created_at, updated_at
+      ) VALUES (
+        'fuel-policy-casr-135-default', 'CASR 135.637 Advisory Default',
+        'CASR_135_637', 'CHARTER', 5, 5, 30, 45, 15, 15, 1, '2026-01-01', 1, @now, @now
+      )`
+    )
+    .run({ now });
+}
+
 function hasColumn(sqlite: Database.Database, table: string, column: string) {
   const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   return columns.some((item) => item.name === column);
@@ -2272,6 +2708,84 @@ function recreateIndexes(sqlite: Database.Database) {
     if (/^CREATE (UNIQUE )?INDEX/u.test(statement)) {
       sqlite.exec(statement);
     }
+  }
+}
+
+function backfillEmployeeBankAndBpjsAndLeave(sqlite: Database.Database) {
+  try {
+    const employees = sqlite
+      .prepare(
+        'SELECT id, employee_code, full_name, tax_id_number, bank_name, bank_account_number, bpjs_kesehatan_number, bpjs_tk_number FROM employees'
+      )
+      .all() as Array<{
+      id: string;
+      employee_code: string;
+      full_name: string;
+      tax_id_number?: string;
+      bank_name?: string;
+      bank_account_number?: string;
+      bpjs_kesehatan_number?: string;
+      bpjs_tk_number?: string;
+    }>;
+
+    const updateStmt = sqlite.prepare(`
+      UPDATE employees SET
+        bank_name = COALESCE(NULLIF(bank_name, ''), ?),
+        bank_account_number = COALESCE(NULLIF(bank_account_number, ''), ?),
+        bank_account_name = COALESCE(NULLIF(bank_account_name, ''), ?),
+        tax_id_number = COALESCE(NULLIF(tax_id_number, ''), ?),
+        bpjs_kesehatan_number = COALESCE(NULLIF(bpjs_kesehatan_number, ''), ?),
+        bpjs_tk_number = COALESCE(NULLIF(bpjs_tk_number, ''), ?)
+      WHERE id = ?
+    `);
+
+    const banks = ['Bank Mandiri', 'BCA', 'BRI', 'BNI'];
+    const nowStr = new Date().toISOString();
+
+    for (let i = 0; i < employees.length; i++) {
+      const emp = employees[i];
+      const numSeed = String(1000 + (i + 1) * 37).padStart(4, '0');
+      const bankName = emp.bank_name || banks[i % banks.length];
+      const bankAccount = emp.bank_account_number || `13700${numSeed}84${i % 9}`;
+      const bankAccountName = emp.full_name;
+      const npwp = emp.tax_id_number || `09.234.${numSeed.slice(0, 3)}.${numSeed.slice(3)}-012.000`;
+      const bpjsKes = emp.bpjs_kesehatan_number || `00019284${numSeed}${i % 10}`;
+      const bpjsTk = emp.bpjs_tk_number || `2109847${numSeed}${i % 10}`;
+
+      updateStmt.run(bankName, bankAccount, bankAccountName, npwp, bpjsKes, bpjsTk, emp.id);
+
+      // Ensure initial annual leave balance
+      const annualLeave = sqlite
+        .prepare("SELECT id FROM hris_leave_types WHERE leave_code = 'ANNUAL'")
+        .get() as { id: string } | undefined;
+      if (annualLeave) {
+        const year = new Date().getFullYear();
+        const existingBal = sqlite
+          .prepare(
+            'SELECT id FROM hris_leave_balances WHERE employee_id = ? AND leave_type_id = ? AND period_year = ?'
+          )
+          .get(emp.id, annualLeave.id, year);
+
+        if (!existingBal) {
+          sqlite
+            .prepare(
+              `INSERT INTO hris_leave_balances (id, employee_id, leave_type_id, period_year, entitled_days, used_days, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 12, ?, ?, ?)`
+            )
+            .run(
+              `bal-${emp.id.slice(0, 8)}-${year}`,
+              emp.id,
+              annualLeave.id,
+              year,
+              i % 4,
+              nowStr,
+              nowStr
+            );
+        }
+      }
+    }
+  } catch {
+    // Ignore if table not yet ready
   }
 }
 

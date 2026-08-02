@@ -345,8 +345,13 @@ export class FlightScheduleTemplateRepository {
         id: flightScheduleTemplates.id,
         templateCode: flightScheduleTemplates.templateCode,
         routeId: flightScheduleTemplates.routeId,
+        routeCode: routes.routeCode,
+        originStationCode: origin.stationCode,
+        destinationStationCode: destination.stationCode,
         serviceTypeId: flightScheduleTemplates.serviceTypeId,
+        serviceTypeLabel: flightServiceTypes.label,
         defaultAircraftId: flightScheduleTemplates.defaultAircraftId,
+        defaultAircraftRegistration: aircraft.registrationNumber,
         capacityProfileId: flightScheduleTemplates.capacityProfileId,
         operatingDays: flightScheduleTemplates.operatingDays,
         departureTimeLocal: flightScheduleTemplates.departureTimeLocal,
@@ -358,6 +363,14 @@ export class FlightScheduleTemplateRepository {
         scheduleNote: flightScheduleTemplates.scheduleNote
       })
       .from(flightScheduleTemplates)
+      .innerJoin(routes, eq(flightScheduleTemplates.routeId, routes.id))
+      .innerJoin(origin, eq(routes.originStationId, origin.id))
+      .innerJoin(destination, eq(routes.destinationStationId, destination.id))
+      .innerJoin(
+        flightServiceTypes,
+        eq(flightScheduleTemplates.serviceTypeId, flightServiceTypes.id)
+      )
+      .leftJoin(aircraft, eq(flightScheduleTemplates.defaultAircraftId, aircraft.id))
       .where(eq(flightScheduleTemplates.isActive, true))
       .orderBy(asc(flightScheduleTemplates.templateCode));
     return rows.map((row) => {
