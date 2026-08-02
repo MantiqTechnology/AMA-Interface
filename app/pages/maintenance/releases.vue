@@ -76,7 +76,7 @@ const releases = computed(() => {
 
 function releaseSignerName(release: MaintenanceCommandCenterDto['technicalReleases'][number]) {
   const name = release.signerAuthorizationSnapshot?.personnelName;
-  return typeof name === 'string' ? name : 'Certifying staff';
+  return typeof name === 'string' ? name : 'Certifying Staff';
 }
 
 function linkedPackage(release: MaintenanceCommandCenterDto['technicalReleases'][number]) {
@@ -91,7 +91,7 @@ function linkedDefectDisposition(
   const defects = (data.value?.defects ?? []).filter((defect) =>
     release.defectIds.includes(defect.id)
   );
-  if (!defects.length) return 'No linked defect in current register scope.';
+  if (!defects.length) return 'Tidak ada temuan terkait pada register saat ini.';
   return defects.map((defect) => `${defect.defectNumber}: ${ui.label(defect.status)}`).join(', ');
 }
 
@@ -100,7 +100,7 @@ function snapshotValue(
   key: string
 ) {
   if (!release.signerAuthorizationSnapshot && key === 'companyAuthorizationNumber') {
-    return 'Legacy record — company authorization snapshot unavailable.';
+    return 'Catatan lama - snapshot wewenang PT AMA tidak tersedia.';
   }
   const value = release.signerAuthorizationSnapshot?.[key];
   if (value === null || value === undefined) return '-';
@@ -118,9 +118,10 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
   <VContainer fluid>
     <div class="d-flex flex-wrap align-center ga-3 mb-4">
       <div>
-        <h1 class="text-h4 font-weight-bold">Technical Releases</h1>
+        <h1 class="text-h4 font-weight-bold">Rilis Teknis Pesawat</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Signed aircraft maintenance releases with immutable signer-authorization snapshots.
+          Catatan rilis teknis dengan snapshot lisensi dan Wewenang PT AMA.
+          <span class="text-caption">Technical Releases</span>
         </p>
       </div>
       <VSpacer />
@@ -128,18 +129,18 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
     </div>
 
     <VAlert v-if="accessRestricted" type="warning" variant="tonal" class="mb-4">
-      <strong>Access restricted.</strong>
-      <div>Operational impact: release records cannot be displayed for this role.</div>
-      <div>Required action: switch to a role with maintenance read permission.</div>
+      <strong>Akses dibatasi.</strong>
+      <div>Dampak: catatan rilis tidak dapat ditampilkan untuk role ini.</div>
+      <div>Langkah berikutnya: gunakan role dengan izin membaca maintenance.</div>
     </VAlert>
     <VAlert v-else-if="error" type="error" variant="tonal" class="mb-4">
-      <strong>Unable to load technical release records.</strong>
+      <strong>Catatan rilis teknis belum dapat dimuat.</strong>
       <div>
-        Operational impact: signed release and authorization snapshot review is unavailable.
+        Dampak: rilis yang sudah ditandatangani dan snapshot wewenang belum dapat diperiksa.
       </div>
-      <div>Required action: retry the authoritative maintenance query.</div>
+      <div>Langkah berikutnya: coba muat ulang data maintenance.</div>
       <template #append>
-        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Retry</VBtn>
+        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Coba lagi</VBtn>
       </template>
     </VAlert>
 
@@ -148,7 +149,7 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
         <div class="d-flex flex-wrap align-center ga-3 mb-4">
           <VTextField
             v-model="filters.search"
-            label="Search release, aircraft, signer, or work package"
+            label="Cari rilis, pesawat, signer, atau paket"
             prepend-inner-icon="mdi-magnify"
             clearable
             density="compact"
@@ -157,7 +158,7 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
           />
           <VSelect
             v-model="filters.aircraft"
-            label="Aircraft"
+            label="Pesawat"
             :items="aircraftItems"
             clearable
             density="compact"
@@ -175,7 +176,7 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
           />
           <VSelect
             v-model="filters.result"
-            label="Result"
+            label="Hasil"
             :items="resultItems"
             clearable
             density="compact"
@@ -184,43 +185,41 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
           />
           <VTextField
             v-model="filters.dateFrom"
-            label="Date from"
+            label="Tanggal dari"
             density="compact"
             hide-details
             max-width="160"
           />
           <VTextField
             v-model="filters.dateTo"
-            label="Date to"
+            label="Tanggal sampai"
             density="compact"
             hide-details
             max-width="160"
           />
           <VSpacer />
-          <VChip variant="tonal" size="small">{{ releases.length }} result(s)</VChip>
+          <VChip variant="tonal" size="small">{{ releases.length }} hasil</VChip>
         </div>
         <div class="maintenance-table-wrap">
           <VTable class="maintenance-table maintenance-table--releases">
             <thead>
               <tr>
-                <th>Release</th>
-                <th>Aircraft / work package</th>
-                <th>Resulting Technical State</th>
-                <th>Signer / licence</th>
-                <th>Snapshot / released</th>
+                <th>Rilis</th>
+                <th>Pesawat / paket</th>
+                <th>Status teknis hasil rilis</th>
+                <th>Signer / lisensi</th>
+                <th>Snapshot / waktu rilis</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="pending">
-                <td colspan="5">Loading technical releases...</td>
+                <td colspan="5">Memuat rilis teknis...</td>
               </tr>
               <tr v-else-if="accessRestricted">
-                <td colspan="5">Access restricted for the active role.</td>
+                <td colspan="5">Akses dibatasi untuk role aktif.</td>
               </tr>
               <tr v-else-if="error">
-                <td colspan="5">
-                  Technical release data is unavailable until the API request succeeds.
-                </td>
+                <td colspan="5">Data rilis teknis belum tersedia sampai permintaan berhasil.</td>
               </tr>
               <template v-else>
                 <tr v-for="release in releases" :key="release.id">
@@ -259,8 +258,8 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
                     </div>
                   </td>
                   <td>
-                    <span v-if="release.signerAuthorizationSnapshot">Captured</span>
-                    <span v-else>Legacy record - authorization snapshot unavailable.</span>
+                    <span v-if="release.signerAuthorizationSnapshot">Snapshot tersimpan</span>
+                    <span v-else>Catatan lama - snapshot wewenang PT AMA tidak tersedia.</span>
                     <div class="text-caption text-medium-emphasis">
                       {{ format.dateTime(release.releasedAt) }}
                     </div>
@@ -270,8 +269,8 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
                   <td colspan="5">
                     {{
                       hasFilters
-                        ? 'No technical releases match the current filters.'
-                        : 'No technical releases recorded.'
+                        ? 'Tidak ada rilis teknis sesuai filter.'
+                        : 'Belum ada rilis teknis tercatat.'
                     }}
                   </td>
                 </tr>
@@ -296,23 +295,25 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
             <VSpacer />
             <VBtn icon="mdi-close" variant="text" @click="releaseDrawer = false" />
           </div>
-          <VAlert type="info" variant="tonal" class="mb-4">{{ authorizationWording }}</VAlert>
+          <VAlert type="info" variant="tonal" class="mb-4">
+            Lisensi dan Wewenang PT AMA dicatat sebagai snapshot saat rilis diterbitkan.
+          </VAlert>
           <VList density="compact" border rounded class="mb-4">
             <VListItem
-              title="Released at"
+              title="Waktu rilis"
               :subtitle="format.dateTime(selectedRelease.releasedAt)"
             />
             <VListItem title="Signer" :subtitle="releaseSignerName(selectedRelease)" />
             <VListItem
-              title="Selected licence"
+              title="Lisensi dipilih"
               :subtitle="selectedRelease.certifyingLicenseNumber"
             />
             <VListItem
-              title="Resulting technical state"
+              title="Status teknis hasil rilis"
               :subtitle="ui.label(selectedRelease.resultingStatus)"
             />
             <VListItem
-              title="Linked defect disposition"
+              title="Disposisi temuan terkait"
               :subtitle="linkedDefectDisposition(selectedRelease)"
             />
           </VList>
@@ -322,27 +323,27 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
             variant="tonal"
             class="mb-4"
           >
-            Legacy record — company authorization snapshot unavailable.
+            Catatan lama - snapshot wewenang PT AMA tidak tersedia.
           </VAlert>
           <VList v-else density="compact" border rounded class="mb-4">
-            <VListSubheader>Authorization snapshot</VListSubheader>
+            <VListSubheader>Snapshot wewenang</VListSubheader>
             <VListItem
-              title="Personnel"
+              title="Personel"
               :subtitle="snapshotValue(selectedRelease, 'personnelName')"
             />
             <VListItem
-              title="Licence status"
+              title="Status lisensi"
               :subtitle="snapshotValue(selectedRelease, 'licenseStatus')"
             />
             <VListItem
-              title="Aircraft scope"
+              title="Scope pesawat"
               :subtitle="snapshotValue(selectedRelease, 'aircraftScope')"
             />
             <VListItem
-              title="Company authorization"
+              title="Wewenang PT AMA"
               :subtitle="snapshotValue(selectedRelease, 'companyAuthorizationNumber')"
             />
-            <VListItem title="Verification" :subtitle="snapshotValue(selectedRelease, 'basis')" />
+            <VListItem title="Verifikasi" :subtitle="snapshotValue(selectedRelease, 'basis')" />
           </VList>
           <div class="d-flex flex-wrap ga-2">
             <VBtn
@@ -351,13 +352,13 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
               color="primary"
               variant="tonal"
             >
-              Open Work Package
+              Buka Paket Pekerjaan
             </VBtn>
             <VBtn
               :to="`/maintenance/records?package=${selectedRelease.workOrderReference}`"
               variant="text"
             >
-              View Audit
+              Lihat Riwayat
             </VBtn>
           </div>
         </div>

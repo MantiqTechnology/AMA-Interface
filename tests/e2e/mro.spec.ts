@@ -11,9 +11,9 @@ test('MRO work package list loads without conflicting error and empty states', a
   ]);
 
   await page.goto('/maintenance/work-packages', { waitUntil: 'networkidle' });
-  await expect(page.getByRole('heading', { name: 'Work Packages' })).toBeVisible();
-  await expect(page.getByText('Unable to load work packages')).toHaveCount(0);
-  await expect(page.getByText('No work packages match the current filters.')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Paket Pekerjaan' })).toBeVisible();
+  await expect(page.getByText('Paket pekerjaan belum dapat dimuat')).toHaveCount(0);
+  await expect(page.getByText('Tidak ada paket pekerjaan sesuai filter.')).toHaveCount(0);
   await expect(page.getByText('Starter-generator indication rectification')).toBeVisible();
   await expect(page.getByText('MWP-MROV1-RTS')).toBeVisible();
 });
@@ -45,12 +45,12 @@ test('MRO work package list renders API failure without empty state', async ({
       })
     });
   });
-  await page.getByRole('button', { name: 'Refresh work packages' }).click();
+  await page.getByRole('button', { name: 'Muat ulang paket pekerjaan' }).click();
 
-  await expect(page.getByText('Unable to load work packages.')).toBeVisible();
-  await expect(page.getByText('Operational impact: package progress')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
-  await expect(page.getByText('No work packages match the current filters.')).toHaveCount(0);
+  await expect(page.getByText('Paket pekerjaan belum dapat dimuat.')).toBeVisible();
+  await expect(page.getByText('Dampak: progres pekerjaan')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Coba lagi' })).toBeVisible();
+  await expect(page.getByText('Tidak ada paket pekerjaan sesuai filter.')).toHaveCount(0);
 });
 
 test('MRO golden path issues technical release from authoritative work-package detail', async ({
@@ -62,7 +62,7 @@ test('MRO golden path issues technical release from authoritative work-package d
   await context.addCookies([{ name: 'ama_demo_role', value: 'Certifying Staff', url: cookieUrl }]);
 
   await page.goto('/maintenance', { waitUntil: 'networkidle' });
-  await expect(page.getByRole('heading', { name: 'Maintenance Command Center' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ringkasan Maintenance' })).toBeVisible();
   await expect(
     page.getByRole('link', { name: /Starter-generator indication rectification/u })
   ).toBeVisible();
@@ -78,18 +78,20 @@ test('MRO golden path issues technical release from authoritative work-package d
     page.getByText('Starter-generator indication rectification', { exact: true }).first()
   ).toBeVisible();
   await page.getByRole('button', { name: /Rectify starter-generator indication wiring/u }).click();
-  await expect(page.getByText('Independent inspection passed').first()).toBeVisible();
-  await expect(page.getByText('Mandatory work complete')).toBeVisible();
+  await expect(page.getByText('Pemeriksaan independen lulus').first()).toBeVisible();
+  await expect(page.getByText('Seluruh pekerjaan wajib selesai')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Issue technical release' }).click();
-  await expect(page.getByRole('heading', { name: 'Technical release confirmation' })).toBeVisible();
+  await page.getByRole('button', { name: 'Terbitkan rilis teknis' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Konfirmasi rilis teknis pesawat' })
+  ).toBeVisible();
   await expect(page.getByText('AME-CERT-MRO-001').first()).toBeVisible();
-  await expect(page.getByText('Licence and PT AMA authorization verified').first()).toBeVisible();
+  await expect(page.getByText('Lisensi dan wewenang PT AMA terverifikasi').first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'Issue technical release' }).last().click();
-  await expect(page.getByText('Technical release completed')).toBeVisible();
-  await page.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('button', { name: 'Terbitkan rilis teknis' }).last().click();
+  await expect(page.getByText('Rilis teknis selesai')).toBeVisible();
+  await page.getByRole('button', { name: 'Tutup' }).click();
 
-  await expect(page.getByText('Signer authorization snapshot')).toBeVisible();
+  await expect(page.getByText('Snapshot wewenang signer')).toBeVisible();
   await expect(page.getByText('Serviceable', { exact: true }).first()).toBeVisible();
 });

@@ -93,9 +93,9 @@ const hasFilters = computed(() =>
 
 function ageText(value: string) {
   const days = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000));
-  if (days === 0) return 'Today';
-  if (days === 1) return '1 day';
-  return `${days} days`;
+  if (days === 0) return 'Hari ini';
+  if (days === 1) return '1 hari';
+  return `${days} hari`;
 }
 
 function linkedPackage(defect: MaintenanceCommandCenterDto['defects'][number]) {
@@ -103,20 +103,20 @@ function linkedPackage(defect: MaintenanceCommandCenterDto['defects'][number]) {
 }
 
 function assessmentLabel(defect: MaintenanceCommandCenterDto['defects'][number]) {
-  return defect.assessmentDecision ? ui.label(defect.assessmentDecision) : 'Assessment required';
+  return defect.assessmentDecision ? ui.label(defect.assessmentDecision) : 'Perlu penilaian';
 }
 
 function groundingImpact(defect: MaintenanceCommandCenterDto['defects'][number]) {
-  if (defect.assessmentDecision === 'GROUND') return 'Grounding defect';
-  if (defect.assessmentDecision === 'DEFER') return 'Deferred technical control';
-  if (defect.assessmentDecision === 'NO_IMPACT') return 'No MRO package required';
-  return 'Awaiting assessment';
+  if (defect.assessmentDecision === 'GROUND') return 'Pesawat ditahan sampai diperbaiki';
+  if (defect.assessmentDecision === 'DEFER') return 'Ditunda dengan kontrol teknis';
+  if (defect.assessmentDecision === 'NO_IMPACT') return 'Tidak perlu paket MRO';
+  return 'Menunggu penilaian';
 }
 
 function defermentState(defect: MaintenanceCommandCenterDto['defects'][number]) {
-  if (defect.status === 'DEFERRED') return 'Deferred record';
-  if (defect.assessmentDecision === 'DEFER') return 'Deferred assessment';
-  return 'No deferment recorded';
+  if (defect.status === 'DEFERRED') return 'Catatan ditunda';
+  if (defect.assessmentDecision === 'DEFER') return 'Penilaian ditunda';
+  return 'Tidak ada deferment tercatat';
 }
 
 function packageCreationAvailable(defect: MaintenanceCommandCenterDto['defects'][number]) {
@@ -126,17 +126,17 @@ function packageCreationAvailable(defect: MaintenanceCommandCenterDto['defects']
 }
 
 function currentBlocker(defect: MaintenanceCommandCenterDto['defects'][number]) {
-  if (defect.activeWorkPackageId) return 'Active package controls the rectification.';
-  if (!defect.assessmentDecision) return 'Maintenance assessment is required.';
-  if (defect.assessmentDecision === 'NO_IMPACT') return 'Assessment does not require MRO package.';
-  return 'No work package has been created.';
+  if (defect.activeWorkPackageId) return 'Perbaikan dikontrol oleh paket pekerjaan aktif.';
+  if (!defect.assessmentDecision) return 'Temuan perlu dinilai oleh Maintenance Control.';
+  if (defect.assessmentDecision === 'NO_IMPACT') return 'Penilaian tidak memerlukan paket MRO.';
+  return 'Paket pekerjaan belum dibuat.';
 }
 
 function requiredAction(defect: MaintenanceCommandCenterDto['defects'][number]) {
-  if (defect.activeWorkPackageId) return 'Open the linked work package.';
-  if (!defect.assessmentDecision) return 'Assess the defect before planning work.';
-  if (packageCreationAvailable(defect)) return 'Create a contextual work package.';
-  return 'Review the assessment note and audit trail.';
+  if (defect.activeWorkPackageId) return 'Buka paket pekerjaan terkait.';
+  if (!defect.assessmentDecision) return 'Nilai temuan sebelum membuat rencana kerja.';
+  if (packageCreationAvailable(defect)) return 'Buat paket pekerjaan dari temuan ini.';
+  return 'Periksa catatan penilaian dan riwayat aktivitas.';
 }
 
 function owner(defect: MaintenanceCommandCenterDto['defects'][number]) {
@@ -182,9 +182,10 @@ async function submitAssessment() {
   <VContainer fluid>
     <div class="d-flex flex-wrap align-center ga-3 mb-4">
       <div>
-        <h1 class="text-h4 font-weight-bold">Defects</h1>
+        <h1 class="text-h4 font-weight-bold">Temuan</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Open and deferred technical defects with maintenance assessment and package linkage.
+          Temuan teknis terbuka, penilaian dampak, dan kaitannya dengan paket pekerjaan.
+          <span class="text-caption">Defects</span>
         </p>
       </div>
       <VSpacer />
@@ -192,16 +193,16 @@ async function submitAssessment() {
     </div>
 
     <VAlert v-if="accessRestricted" type="warning" variant="tonal" class="mb-4">
-      <strong>Access restricted.</strong>
-      <div>Operational impact: defect queue cannot be displayed for this role.</div>
-      <div>Required action: switch to a role with maintenance read permission.</div>
+      <strong>Akses dibatasi.</strong>
+      <div>Dampak: antrean temuan tidak dapat ditampilkan untuk role ini.</div>
+      <div>Langkah berikutnya: gunakan role dengan izin membaca maintenance.</div>
     </VAlert>
     <VAlert v-else-if="error" type="error" variant="tonal" class="mb-4">
-      <strong>Unable to load defect queue.</strong>
-      <div>Operational impact: assessment and package linkage cannot be confirmed.</div>
-      <div>Required action: retry the authoritative maintenance query.</div>
+      <strong>Antrean temuan belum dapat dimuat.</strong>
+      <div>Dampak: penilaian dan paket pekerjaan terkait belum dapat dipastikan.</div>
+      <div>Langkah berikutnya: coba muat ulang data maintenance.</div>
       <template #append>
-        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Retry</VBtn>
+        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Coba lagi</VBtn>
       </template>
     </VAlert>
 
@@ -210,7 +211,7 @@ async function submitAssessment() {
         <div class="d-flex flex-wrap align-center ga-3 mb-4">
           <VTextField
             v-model="filters.search"
-            label="Search defect, aircraft, source, or summary"
+            label="Cari temuan, pesawat, sumber, atau ringkasan"
             prepend-inner-icon="mdi-magnify"
             clearable
             density="compact"
@@ -223,7 +224,7 @@ async function submitAssessment() {
             clearable
             hide-details
             density="compact"
-            label="Aircraft"
+            label="Pesawat"
             max-width="200"
           />
           <VSelect
@@ -234,7 +235,7 @@ async function submitAssessment() {
             clearable
             hide-details
             density="compact"
-            label="Assessment"
+            label="Penilaian"
             max-width="220"
           />
           <VSelect
@@ -243,32 +244,32 @@ async function submitAssessment() {
             clearable
             hide-details
             density="compact"
-            label="Package state"
+            label="Status paket"
             max-width="230"
           />
           <VSpacer />
-          <VChip variant="tonal" size="small">{{ defects.length }} result(s)</VChip>
+          <VChip variant="tonal" size="small">{{ defects.length }} hasil</VChip>
         </div>
         <div class="maintenance-table-wrap">
           <VTable class="maintenance-table maintenance-table--defects">
             <thead>
               <tr>
-                <th>Defect</th>
-                <th>Aircraft, source, age</th>
+                <th>Temuan</th>
+                <th>Pesawat, sumber, umur</th>
                 <th>Summary</th>
-                <th>Status and impact</th>
-                <th>Package, blocker, action</th>
+                <th>Status dan dampak</th>
+                <th>Paket, penghambat, tindakan</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="pending">
-                <td colspan="5">Loading defects...</td>
+                <td colspan="5">Memuat temuan...</td>
               </tr>
               <tr v-else-if="accessRestricted">
-                <td colspan="5">Access restricted for the active role.</td>
+                <td colspan="5">Akses dibatasi untuk role aktif.</td>
               </tr>
               <tr v-else-if="error">
-                <td colspan="5">Defect data is unavailable until the API request succeeds.</td>
+                <td colspan="5">Data temuan belum tersedia sampai permintaan berhasil.</td>
               </tr>
               <template v-else>
                 <tr v-for="defect in defects" :key="defect.id">
@@ -314,7 +315,7 @@ async function submitAssessment() {
                     <div class="text-caption text-medium-emphasis">{{ owner(defect) }}</div>
                     <div class="mt-1">{{ currentBlocker(defect) }}</div>
                     <div class="text-caption text-medium-emphasis">
-                      Required action: {{ requiredAction(defect) }}
+                      Langkah berikutnya: {{ requiredAction(defect) }}
                     </div>
                     <div class="d-flex flex-wrap ga-1 mt-2">
                       <VBtn
@@ -323,7 +324,7 @@ async function submitAssessment() {
                         size="small"
                         @click="openAssessment(defect)"
                       >
-                        Assess
+                        Nilai
                       </VBtn>
                       <VBtn
                         v-if="canPlan && packageCreationAvailable(defect)"
@@ -331,7 +332,7 @@ async function submitAssessment() {
                         variant="text"
                         size="small"
                       >
-                        Create Work Package
+                        Buat Paket Pekerjaan
                       </VBtn>
                       <VBtn
                         v-if="defect.activeWorkPackageId"
@@ -339,14 +340,14 @@ async function submitAssessment() {
                         variant="text"
                         size="small"
                       >
-                        Open Work Package
+                        Buka Paket Pekerjaan
                       </VBtn>
                       <VBtn
                         :to="`/master-data/aircraft/${defect.aircraftId}`"
                         variant="text"
                         size="small"
                       >
-                        View Aircraft
+                        Lihat Pesawat
                       </VBtn>
                       <VBtn
                         :to="
@@ -357,14 +358,16 @@ async function submitAssessment() {
                         variant="text"
                         size="small"
                       >
-                        View Audit
+                        Lihat Riwayat
                       </VBtn>
                     </div>
                   </td>
                 </tr>
                 <tr v-if="!defects.length">
                   <td colspan="5">
-                    {{ hasFilters ? 'No defects match the current filters.' : 'No open defects.' }}
+                    {{
+                      hasFilters ? 'Tidak ada temuan sesuai filter.' : 'Tidak ada temuan terbuka.'
+                    }}
                   </td>
                 </tr>
               </template>
@@ -376,38 +379,38 @@ async function submitAssessment() {
 
     <VDialog v-model="assessmentDialog" max-width="680" persistent>
       <VCard>
-        <VCardTitle>Assess Defect</VCardTitle>
+        <VCardTitle>Nilai Temuan</VCardTitle>
         <VCardText>
           <VAlert v-if="assessmentError" type="error" variant="tonal" class="mb-4">
             <strong>{{ assessmentError.title }}</strong>
             <div>{{ assessmentError.impact }}</div>
-            <div class="text-caption">Required action: {{ assessmentError.requiredAction }}</div>
+            <div class="text-caption">Langkah berikutnya: {{ assessmentError.requiredAction }}</div>
           </VAlert>
           <VAlert v-if="assessmentTarget" type="info" variant="tonal" class="mb-4">
             {{ assessmentTarget.defectNumber }} / {{ assessmentTarget.aircraftRegistrationNumber }}
           </VAlert>
           <VSelect
             v-model="assessmentForm.assessmentDecision"
-            label="Assessment decision"
+            label="Keputusan penilaian"
             :items="[
-              { title: 'Ground until rectified', value: 'GROUND' },
-              { title: 'Defer under technical control', value: 'DEFER' },
-              { title: 'No maintenance impact', value: 'NO_IMPACT' }
+              { title: 'Tahan pesawat sampai diperbaiki', value: 'GROUND' },
+              { title: 'Tunda dengan kontrol teknis', value: 'DEFER' },
+              { title: 'Tidak berdampak maintenance', value: 'NO_IMPACT' }
             ]"
             item-title="title"
             item-value="value"
           />
           <VTextarea
             v-model="assessmentForm.assessmentNote"
-            label="Assessment note"
+            label="Catatan penilaian"
             rows="4"
-            hint="Minimum 10 characters. Stored by the backend audit trail."
+            hint="Minimal 10 karakter. Disimpan pada riwayat aktivitas backend."
             persistent-hint
           />
         </VCardText>
         <VCardActions>
           <VBtn variant="text" :disabled="assessmentLoading" @click="assessmentDialog = false">
-            Cancel
+            Batal
           </VBtn>
           <VSpacer />
           <VBtn
@@ -416,7 +419,7 @@ async function submitAssessment() {
             :disabled="assessmentForm.assessmentNote.trim().length < 10"
             @click="submitAssessment"
           >
-            Save assessment
+            Simpan penilaian
           </VBtn>
         </VCardActions>
       </VCard>

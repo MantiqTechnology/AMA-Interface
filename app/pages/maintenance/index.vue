@@ -8,7 +8,7 @@ import type {
 import type { MaintenanceErrorPresentation } from '../../composables/useMaintenanceUi';
 
 const authorizationWording =
-  'Licence and PT AMA authorization verified for controlled MRO actions.';
+  'Lisensi personel dan Wewenang PT AMA diverifikasi untuk setiap tindakan MRO terkendali.';
 
 const format = useLocaleFormat();
 const session = useDemoSession();
@@ -58,8 +58,8 @@ const createForm = reactive({
   evidenceNote: ''
 });
 
-const sourceTypes = [{ title: 'Assessed technical defect', value: 'TECHNICAL_DEFECT' }];
-const createStepLabels = ['Source', 'Aircraft Context', 'Execution Planning', 'Scope', 'Review'];
+const sourceTypes = [{ title: 'Temuan teknis yang sudah dinilai', value: 'TECHNICAL_DEFECT' }];
+const createStepLabels = ['Sumber', 'Konteks pesawat', 'Rencana pelaksanaan', 'Lingkup', 'Review'];
 
 const aircraftOptions = computed(() => selectorData.value?.aircraft ?? []);
 const selectedAircraft = computed(() =>
@@ -105,34 +105,34 @@ const stages = computed(() => [
 
 const flowMetrics = computed(() => [
   {
-    label: 'Defects',
+    label: 'Temuan',
     value: data.value?.defects.length ?? '-',
-    helper: 'Assessed technical findings'
+    helper: 'Temuan teknis yang sudah dikontrol'
   },
   {
-    label: 'Work packages',
+    label: 'Paket pekerjaan',
     value: data.value?.summary.activeWorkPackages ?? '-',
-    helper: 'Controlled maintenance scope'
+    helper: 'Lingkup pekerjaan terkendali'
   },
   {
-    label: 'Job cards',
+    label: 'Kartu kerja',
     value: data.value?.summary.jobCardsAwaitingExecution ?? '-',
-    helper: 'Execution queue'
+    helper: 'Menunggu pekerjaan teknisi'
   },
   {
-    label: 'Inspections',
+    label: 'Pemeriksaan',
     value: data.value?.summary.inspectionsAwaitingAction ?? '-',
-    helper: 'Independent review'
+    helper: 'Menunggu pemeriksaan independen'
   },
   {
-    label: 'Releases',
+    label: 'Rilis',
     value: data.value?.technicalReleases.length ?? '-',
-    helper: 'Signed technical records'
+    helper: 'Catatan rilis teknis'
   },
   {
     label: 'Audit',
     value: data.value?.recentAuditRecords.length ?? '-',
-    helper: 'Traceable actions'
+    helper: 'Riwayat tindakan'
   }
 ]);
 
@@ -143,19 +143,19 @@ const stale = computed(() => {
 
 const creationWarnings = computed(() => {
   const warnings: string[] = [];
-  if (!selectedAircraft.value) warnings.push('Select an aircraft.');
-  if (!selectedDefect.value) warnings.push('Select an eligible open defect for this aircraft.');
+  if (!selectedAircraft.value) warnings.push('Pilih pesawat.');
+  if (!selectedDefect.value) warnings.push('Pilih temuan terbuka yang dapat dipaketkan.');
   if (selectedDefect.value && selectedDefect.value.assessmentDecision !== 'GROUND') {
-    warnings.push('Selected defect is not assessed as grounding; confirm planning context.');
+    warnings.push('Temuan ini tidak ditandai grounding; pastikan konteks planning sudah benar.');
   }
   if (createForm.executionMode === 'EXTERNAL_AMO_VENDOR' && !selectedVendor.value) {
-    warnings.push('External execution requires a maintenance provider.');
+    warnings.push('Pekerjaan eksternal perlu provider maintenance.');
   }
   if (!createForm.maintenanceDataRef.trim() || !createForm.maintenanceDataRevision.trim()) {
-    warnings.push('Initial mandatory job card requires approved-data reference and revision.');
+    warnings.push('Kartu kerja wajib perlu referensi approved maintenance data dan revisi.');
   }
   if (!createForm.evidenceNote.trim()) {
-    warnings.push('Record planning evidence in the package note before creation.');
+    warnings.push('Isi bukti/catatan planning sebelum membuat paket pekerjaan.');
   }
   return warnings;
 });
@@ -193,7 +193,7 @@ watch(
     if (!createForm.title.trim()) createForm.title = `${defect.defectNumber} rectification`;
     if (!createForm.jobCardTitle.trim()) createForm.jobCardTitle = defect.title;
     if (!createForm.planningNote.trim()) {
-      createForm.planningNote = `Source defect ${defect.defectNumber}: ${defect.assessmentNote ?? defect.title}`;
+      createForm.planningNote = `Temuan sumber ${defect.defectNumber}: ${defect.assessmentNote ?? defect.title}`;
     }
   }
 );
@@ -245,7 +245,7 @@ function seedCreateFormFromDefect(defectNumber: string) {
   createForm.defectId = defect.id;
   createForm.title = `${defect.defectNumber} rectification`;
   createForm.jobCardTitle = defect.title;
-  createForm.planningNote = `Source defect ${defect.defectNumber}: ${defect.assessmentNote ?? defect.title}`;
+  createForm.planningNote = `Temuan sumber ${defect.defectNumber}: ${defect.assessmentNote ?? defect.title}`;
 }
 
 function openCreateDialog(defectNumber?: string) {
@@ -324,7 +324,7 @@ async function createPackage() {
         priority: createForm.priority,
         executionMode: createForm.executionMode,
         vendorId: createForm.executionMode === 'EXTERNAL_AMO_VENDOR' ? createForm.vendorId : null,
-        planningNote: [createForm.planningNote, `Planning evidence: ${createForm.evidenceNote}`]
+        planningNote: [createForm.planningNote, `Bukti perencanaan: ${createForm.evidenceNote}`]
           .filter(Boolean)
           .join('\n'),
         initialJobCard: {
@@ -353,10 +353,10 @@ async function createPackage() {
   <VContainer fluid class="maintenance-command-center">
     <div class="d-flex flex-wrap align-start ga-4 mb-4">
       <div>
-        <h1 class="text-h4 font-weight-bold">Maintenance Command Center</h1>
+        <h1 class="text-h4 font-weight-bold">Ringkasan Maintenance</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Standards-aligned maintenance control and technical-record workflow with traceable
-          Defect-to-Technical-Release integration.
+          Ringkasan pekerjaan maintenance dari temuan sampai rilis teknis pesawat.
+          <span class="text-caption">Maintenance Command Center</span>
         </p>
       </div>
       <VSpacer />
@@ -367,7 +367,7 @@ async function createPackage() {
         :disabled="selectorsPending || Boolean(selectorsError)"
         @click="openCreateDialog"
       >
-        Create work package
+        Buat paket pekerjaan
       </VBtn>
       <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
     </div>
@@ -376,18 +376,17 @@ async function createPackage() {
       {{ authorizationWording }}
     </VAlert>
     <VAlert v-if="stale" type="warning" variant="tonal" class="mb-4">
-      Command Center data is older than 10 minutes. Refresh before issuing any technical command.
+      Data ringkasan lebih lama dari 10 menit. Muat ulang sebelum melakukan tindakan teknis.
     </VAlert>
     <VAlert v-if="error" type="error" variant="tonal" class="mb-4">
-      Unable to load authoritative maintenance command-center data.
+      Data maintenance dari backend belum dapat dimuat.
     </VAlert>
 
     <VCard border class="mb-4">
       <VCardTitle>
-        <div class="text-h6">Operational release path</div>
+        <div class="text-h6">Alur kerja maintenance</div>
         <div class="text-body-2 text-medium-emphasis">
-          Live backend counts across defect control, package execution, technical release,
-          readiness, and audit.
+          Jumlah aktual dari backend untuk temuan, paket pekerjaan, pemeriksaan, rilis, dan audit.
         </div>
       </VCardTitle>
       <VCardText>
@@ -403,7 +402,7 @@ async function createPackage() {
 
     <VRow>
       <VCol cols="12" sm="6" lg="3">
-        <DsStatCard label="Fleet Total" :value="data?.summary.fleetTotal ?? '-'" tone="info" />
+        <DsStatCard label="Total Pesawat" :value="data?.summary.fleetTotal ?? '-'" tone="info" />
       </VCol>
       <VCol cols="12" sm="6" lg="3">
         <DsStatCard
@@ -414,14 +413,14 @@ async function createPackage() {
       </VCol>
       <VCol cols="12" sm="6" lg="3">
         <DsStatCard
-          label="Inspections Awaiting Action"
+          label="Menunggu Pemeriksaan"
           :value="data?.summary.inspectionsAwaitingAction ?? '-'"
           tone="warning"
         />
       </VCol>
       <VCol cols="12" sm="6" lg="3">
         <DsStatCard
-          label="Ready For Release"
+          label="Menunggu Rilis"
           :value="data?.summary.readyForRelease ?? '-'"
           tone="success"
         />
@@ -433,9 +432,9 @@ async function createPackage() {
         <VCard border>
           <VCardTitle class="d-flex flex-wrap align-center ga-3">
             <div>
-              <div class="text-h6">Operational attention</div>
+              <div class="text-h6">Perlu perhatian</div>
               <div class="text-body-2 text-medium-emphasis">
-                Backend-derived technical state, package stage, blocker, and owner.
+                Pesawat, temuan, penghambat, penanggung jawab, dan langkah berikutnya.
               </div>
             </div>
             <VSpacer />
@@ -444,7 +443,7 @@ async function createPackage() {
               density="compact"
               hide-details
               clearable
-              label="Search attention"
+              label="Cari pesawat, paket, atau penghambat"
               prepend-inner-icon="mdi-magnify"
               max-width="280"
             />
@@ -453,7 +452,7 @@ async function createPackage() {
               density="compact"
               hide-details
               clearable
-              label="Stage"
+              label="Tahap"
               :items="stages"
               max-width="240"
             />
@@ -463,16 +462,16 @@ async function createPackage() {
               <VTable class="maintenance-table maintenance-table--attention">
                 <thead>
                   <tr>
-                    <th>Aircraft</th>
-                    <th>Technical item</th>
-                    <th>Package and stage</th>
-                    <th>Blocker and required action</th>
-                    <th>Owner and updated</th>
+                    <th>Pesawat</th>
+                    <th>Item teknis</th>
+                    <th>Paket dan tahap</th>
+                    <th>Penghambat dan langkah berikutnya</th>
+                    <th>Penanggung jawab</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="pending">
-                    <td colspan="5">Loading authoritative MRO status...</td>
+                    <td colspan="5">Memuat status MRO...</td>
                   </tr>
                   <tr
                     v-for="item in filteredAttention"
@@ -507,7 +506,7 @@ async function createPackage() {
                     <td>
                       <div>{{ formatOperationalText(item.blocker) }}</div>
                       <div class="text-caption text-medium-emphasis">
-                        Required action: {{ formatOperationalText(item.requiredAction) }}
+                        Langkah berikutnya: {{ formatOperationalText(item.requiredAction) }}
                       </div>
                     </td>
                     <td>
@@ -521,8 +520,8 @@ async function createPackage() {
                     <td colspan="5">
                       {{
                         search || stageFilter
-                          ? 'No attention rows match the current filters.'
-                          : 'No aircraft currently require maintenance-control attention.'
+                          ? 'Tidak ada pekerjaan yang sesuai filter.'
+                          : 'Tidak ada pesawat yang memerlukan perhatian maintenance saat ini.'
                       }}
                     </td>
                   </tr>
@@ -535,7 +534,7 @@ async function createPackage() {
 
       <VCol cols="12" lg="4">
         <VCard border class="mb-4">
-          <VCardTitle>Release queue</VCardTitle>
+          <VCardTitle>Menunggu rilis teknis</VCardTitle>
           <VCardText>
             <VList density="compact">
               <VListItem
@@ -546,14 +545,14 @@ async function createPackage() {
                 :subtitle="packageSubtitle(item)"
               >
                 <template #append>
-                  <VChip color="success" size="small" variant="tonal">Ready</VChip>
+                  <VChip color="success" size="small" variant="tonal">Siap</VChip>
                 </template>
               </VListItem>
             </VList>
             <VEmptyState
               v-if="!pending && !error && data && !(data?.readyForRelease.length ?? 0)"
-              title="No release-ready package"
-              text="Complete mandatory job cards and inspections before release review."
+              title="Belum ada paket menunggu rilis"
+              text="Selesaikan kartu kerja wajib dan pemeriksaan sebelum pengajuan rilis."
             />
             <VDivider class="my-4" />
             <VAlert v-if="!canIssueRelease" type="info" variant="tonal" density="compact">
@@ -563,7 +562,7 @@ async function createPackage() {
         </VCard>
 
         <VCard border>
-          <VCardTitle>Recent technical activity</VCardTitle>
+          <VCardTitle>Aktivitas teknis terakhir</VCardTitle>
           <VCardText>
             <VTimeline density="compact" side="end">
               <VTimelineItem
@@ -580,7 +579,7 @@ async function createPackage() {
             </VTimeline>
             <VEmptyState
               v-if="!pending && !error && data && !(data?.recentAuditRecords.length ?? 0)"
-              title="No technical audit activity"
+              title="Belum ada aktivitas teknis"
             />
           </VCardText>
         </VCard>
@@ -590,7 +589,7 @@ async function createPackage() {
     <VRow class="mt-2">
       <VCol cols="12" md="4">
         <VCard border height="100%">
-          <VCardTitle>Job cards awaiting execution</VCardTitle>
+          <VCardTitle>Kartu kerja menunggu teknisi</VCardTitle>
           <VCardText>
             <VList density="compact">
               <VListItem
@@ -603,14 +602,14 @@ async function createPackage() {
             </VList>
             <VEmptyState
               v-if="!pending && !error && data && !(data?.jobCardsAwaitingExecution.length ?? 0)"
-              title="No job cards awaiting work"
+              title="Tidak ada kartu kerja menunggu tindakan"
             />
           </VCardText>
         </VCard>
       </VCol>
       <VCol cols="12" md="4">
         <VCard border height="100%">
-          <VCardTitle>Independent inspections</VCardTitle>
+          <VCardTitle>Pemeriksaan independen</VCardTitle>
           <VCardText>
             <VList density="compact">
               <VListItem
@@ -621,33 +620,37 @@ async function createPackage() {
                 :subtitle="jobCardSubtitle(card)"
               >
                 <template #append>
-                  <VChip color="warning" size="small" variant="tonal">Inspection</VChip>
+                  <VChip color="warning" size="small" variant="tonal">Pemeriksaan</VChip>
                 </template>
               </VListItem>
             </VList>
             <VEmptyState
               v-if="!pending && !error && data && !(data?.inspectionsAwaitingAction.length ?? 0)"
-              title="No inspection waiting"
+              title="Tidak ada pemeriksaan menunggu"
             />
           </VCardText>
         </VCard>
       </VCol>
       <VCol cols="12" md="4">
         <VCard border height="100%">
-          <VCardTitle>Release blockers</VCardTitle>
+          <VCardTitle>Penghambat rilis</VCardTitle>
           <VCardText>
             <VList density="compact">
               <VListItem
                 v-for="item in data?.releaseBlockers.slice(0, 6) ?? []"
                 :key="item.workPackageId"
                 :to="`/maintenance/work-packages/${item.workPackageId}`"
-                :title="item.blockers[0]?.message ?? 'Release prerequisite not satisfied.'"
+                :title="
+                  ui.operationalAction(
+                    item.blockers[0]?.message ?? 'Release prerequisite not satisfied.'
+                  )
+                "
                 :subtitle="`${item.aircraftRegistrationNumber} / ${item.packageNumber}`"
               />
             </VList>
             <VEmptyState
               v-if="!pending && !error && data && !(data?.releaseBlockers.length ?? 0)"
-              title="No release blockers"
+              title="Tidak ada penghambat rilis"
             />
           </VCardText>
         </VCard>
@@ -658,9 +661,9 @@ async function createPackage() {
       <VCard>
         <VCardTitle class="d-flex align-center ga-3">
           <div>
-            <h2 class="text-h6 mb-0">Create Work Package</h2>
+            <h2 class="text-h6 mb-0">Buat Paket Pekerjaan</h2>
             <div class="text-body-2 text-medium-emphasis">
-              Contextual creation from source, aircraft, planning, scope, and review.
+              Buat paket dari temuan, pesawat, rencana kerja, lingkup, dan review akhir.
             </div>
           </div>
           <VSpacer />
@@ -698,42 +701,42 @@ async function createPackage() {
             </VCol>
             <VCol cols="12" md="9">
               <div class="text-caption text-medium-emphasis mb-2">
-                Step {{ createStep + 1 }} of {{ createStepLabels.length }}
+                Langkah {{ createStep + 1 }} dari {{ createStepLabels.length }}
               </div>
               <VAlert v-if="createError" type="error" variant="tonal" class="mb-4">
                 <strong>{{ createError.title }}</strong>
                 <div>{{ createError.impact }}</div>
-                <div class="text-caption">Required action: {{ createError.requiredAction }}</div>
+                <div class="text-caption">Langkah berikutnya: {{ createError.requiredAction }}</div>
                 <div v-if="createError.referenceId" class="text-caption">
-                  Reference: {{ createError.referenceId }}
+                  Referensi: {{ createError.referenceId }}
                 </div>
               </VAlert>
 
               <div v-if="createStep === 0" class="create-step">
-                <h2 class="text-h6 mb-3">Source</h2>
+                <h2 class="text-h6 mb-3">Sumber</h2>
                 <VSelect
                   v-model="createForm.sourceType"
-                  label="Source type"
+                  label="Tipe sumber"
                   :items="sourceTypes"
                   item-title="title"
                   item-value="value"
                 />
                 <VAlert type="info" variant="tonal">
-                  Create packages from assessed technical defects. Other source types remain outside
-                  Demo-v1 package creation.
+                  Paket dibuat dari temuan teknis yang sudah dinilai. Sumber lain belum digunakan
+                  pada demo ini.
                 </VAlert>
               </div>
 
               <div v-else-if="createStep === 1" class="create-step">
-                <h2 class="text-h6 mb-3">Aircraft context</h2>
+                <h2 class="text-h6 mb-3">Konteks pesawat</h2>
                 <VAutocomplete
                   v-model="createForm.aircraftId"
-                  label="Aircraft"
+                  label="Pesawat"
                   :items="aircraftOptions"
                   item-value="id"
                   item-title="registrationNumber"
                   :loading="selectorsPending"
-                  no-data-text="No aircraft available from selector API"
+                  no-data-text="Tidak ada pesawat tersedia"
                 />
                 <VAlert
                   v-if="!selectedAircraft"
@@ -742,16 +745,16 @@ async function createPackage() {
                   density="compact"
                   class="mb-4"
                 >
-                  Select the aircraft before choosing a defect.
+                  Pilih pesawat sebelum memilih temuan.
                 </VAlert>
                 <VAutocomplete
                   v-model="createForm.defectId"
-                  label="Eligible assessed defect"
+                  label="Temuan yang dapat dibuat paket"
                   :items="defectsForAircraft"
                   item-value="id"
                   item-title="defectNumber"
                   :disabled="!createForm.aircraftId"
-                  no-data-text="No eligible open defect for selected aircraft"
+                  no-data-text="Tidak ada temuan terbuka untuk pesawat ini"
                 />
                 <VAlert
                   v-if="createForm.aircraftId && !selectedDefect"
@@ -760,11 +763,11 @@ async function createPackage() {
                   density="compact"
                   class="mb-4"
                 >
-                  Select an assessed open defect linked to this aircraft.
+                  Pilih temuan terbuka yang sudah dinilai dan terkait dengan pesawat ini.
                 </VAlert>
                 <VTextField
                   :model-value="sourceFlightText(selectedDefect)"
-                  label="Derived source flight / technical-log reference"
+                  label="Referensi flight / technical log dari sistem"
                   readonly
                 />
                 <VAlert v-if="selectedAircraft" type="info" variant="tonal">
@@ -775,13 +778,13 @@ async function createPackage() {
               </div>
 
               <div v-else-if="createStep === 2" class="create-step">
-                <h2 class="text-h6 mb-3">Execution planning</h2>
+                <h2 class="text-h6 mb-3">Rencana pelaksanaan</h2>
                 <VSelect
                   v-model="createForm.executionMode"
-                  label="Execution mode"
+                  label="Mode pelaksanaan"
                   :items="[
-                    { title: 'Internal maintenance execution', value: 'INTERNAL' },
-                    { title: 'External AMO/vendor execution', value: 'EXTERNAL_AMO_VENDOR' }
+                    { title: 'Maintenance internal', value: 'INTERNAL' },
+                    { title: 'Provider eksternal / AMO', value: 'EXTERNAL_AMO_VENDOR' }
                   ]"
                   item-title="title"
                   item-value="value"
@@ -789,15 +792,14 @@ async function createPackage() {
                 <VAutocomplete
                   v-if="createForm.executionMode === 'EXTERNAL_AMO_VENDOR'"
                   v-model="createForm.vendorId"
-                  label="Maintenance provider"
+                  label="Provider maintenance"
                   :items="selectorData?.vendors ?? []"
                   item-value="id"
                   item-title="vendorName"
-                  no-data-text="No active provider found"
+                  no-data-text="Tidak ada provider aktif"
                 />
                 <VAlert type="info" variant="tonal">
-                  Use the planning note for station, access, or date instructions required by
-                  Maintenance Control.
+                  Gunakan catatan rencana untuk instruksi station, akses pesawat, atau waktu kerja.
                 </VAlert>
                 <VAlert
                   v-if="createForm.executionMode === 'EXTERNAL_AMO_VENDOR' && !selectedVendor"
@@ -806,13 +808,13 @@ async function createPackage() {
                   density="compact"
                   class="mt-4"
                 >
-                  Select an active maintenance provider for external execution.
+                  Pilih provider maintenance aktif untuk pelaksanaan eksternal.
                 </VAlert>
               </div>
 
               <div v-else-if="createStep === 3" class="create-step">
-                <h2 class="text-h6 mb-3">Scope</h2>
-                <VTextField v-model="createForm.title" label="Work package title" />
+                <h2 class="text-h6 mb-3">Lingkup</h2>
+                <VTextField v-model="createForm.title" label="Judul paket pekerjaan" />
                 <VAlert
                   v-if="createForm.title.trim().length < 5"
                   type="warning"
@@ -820,19 +822,19 @@ async function createPackage() {
                   density="compact"
                   class="mb-4"
                 >
-                  Enter a work-package title.
+                  Isi judul paket pekerjaan.
                 </VAlert>
                 <VSelect
                   v-model="createForm.priority"
-                  label="Priority"
+                  label="Prioritas"
                   :items="['LOW', 'NORMAL', 'HIGH']"
                 />
-                <VTextarea v-model="createForm.planningNote" label="Planning note" rows="3" />
+                <VTextarea v-model="createForm.planningNote" label="Catatan rencana" rows="3" />
                 <VTextarea
                   v-model="createForm.evidenceNote"
-                  label="Planning evidence / reason"
+                  label="Bukti atau alasan perencanaan"
                   rows="2"
-                  hint="Stored in the package planning note and maintenance audit trail."
+                  hint="Disimpan sebagai catatan paket dan riwayat aktivitas maintenance."
                   persistent-hint
                 />
                 <VAlert
@@ -842,11 +844,11 @@ async function createPackage() {
                   density="compact"
                   class="mb-4"
                 >
-                  Record the planning evidence or reason.
+                  Catat bukti atau alasan perencanaan.
                 </VAlert>
                 <VDivider class="my-4" />
-                <div class="text-subtitle-2 mb-2">Initial mandatory job card</div>
-                <VTextField v-model="createForm.jobCardTitle" label="Job card title" />
+                <div class="text-subtitle-2 mb-2">Kartu kerja wajib pertama</div>
+                <VTextField v-model="createForm.jobCardTitle" label="Judul kartu kerja" />
                 <VTextField
                   v-model="createForm.maintenanceDataRef"
                   label="Approved maintenance data reference"
@@ -866,12 +868,12 @@ async function createPackage() {
                   density="compact"
                   class="mb-4"
                 >
-                  Complete the job-card title and approved-data reference.
+                  Lengkapi judul kartu kerja dan approved-data reference.
                 </VAlert>
                 <VSwitch
                   v-model="createForm.requiresIndependentInspection"
                   color="primary"
-                  label="Independent inspection required"
+                  label="Wajib pemeriksaan independen"
                 />
               </div>
 
@@ -879,15 +881,15 @@ async function createPackage() {
                 <h2 class="text-h6 mb-3">Review</h2>
                 <VList density="compact" border rounded class="mb-4">
                   <VListItem
-                    title="Aircraft"
+                    title="Pesawat"
                     :subtitle="selectedAircraft?.registrationNumber ?? '-'"
                   >
                     <template #append>
-                      <VBtn variant="text" size="small" @click="createStep = 1">Edit</VBtn>
+                      <VBtn variant="text" size="small" @click="createStep = 1">Ubah</VBtn>
                     </template>
                   </VListItem>
                   <VListItem
-                    title="Source defect"
+                    title="Temuan sumber"
                     :subtitle="
                       selectedDefect
                         ? `${selectedDefect.title} / ${selectedDefect.defectNumber}`
@@ -895,12 +897,12 @@ async function createPackage() {
                     "
                   >
                     <template #append>
-                      <VBtn variant="text" size="small" @click="createStep = 1">Edit</VBtn>
+                      <VBtn variant="text" size="small" @click="createStep = 1">Ubah</VBtn>
                     </template>
                   </VListItem>
-                  <VListItem title="Execution" :subtitle="ui.label(createForm.executionMode)">
+                  <VListItem title="Pelaksanaan" :subtitle="ui.label(createForm.executionMode)">
                     <template #append>
-                      <VBtn variant="text" size="small" @click="createStep = 2">Edit</VBtn>
+                      <VBtn variant="text" size="small" @click="createStep = 2">Ubah</VBtn>
                     </template>
                   </VListItem>
                   <VListItem
@@ -908,16 +910,16 @@ async function createPackage() {
                     :subtitle="
                       createForm.executionMode === 'EXTERNAL_AMO_VENDOR'
                         ? (selectedVendor?.vendorName ?? '-')
-                        : 'Internal execution'
+                        : 'Pelaksanaan internal'
                     "
                   >
                     <template #append>
-                      <VBtn variant="text" size="small" @click="createStep = 2">Edit</VBtn>
+                      <VBtn variant="text" size="small" @click="createStep = 2">Ubah</VBtn>
                     </template>
                   </VListItem>
-                  <VListItem title="Mandatory job card" :subtitle="createForm.jobCardTitle || '-'">
+                  <VListItem title="Kartu kerja wajib" :subtitle="createForm.jobCardTitle || '-'">
                     <template #append>
-                      <VBtn variant="text" size="small" @click="createStep = 3">Edit</VBtn>
+                      <VBtn variant="text" size="small" @click="createStep = 3">Ubah</VBtn>
                     </template>
                   </VListItem>
                   <VListItem
@@ -925,22 +927,22 @@ async function createPackage() {
                     :subtitle="
                       createForm.maintenanceDataRef
                         ? `${createForm.maintenanceDataRef} / ${createForm.maintenanceDataRevision || '-'}`
-                        : 'Not selected'
+                        : 'Belum dipilih'
                     "
                   >
                     <template #append>
-                      <VBtn variant="text" size="small" @click="createStep = 3">Edit</VBtn>
+                      <VBtn variant="text" size="small" @click="createStep = 3">Ubah</VBtn>
                     </template>
                   </VListItem>
                 </VList>
                 <VAlert v-if="creationWarnings.length" type="warning" variant="tonal" class="mb-4">
-                  <div class="font-weight-bold mb-2">Review blockers and warnings</div>
+                  <div class="font-weight-bold mb-2">Penghambat dan peringatan review</div>
                   <ul class="mb-0">
                     <li v-for="warning in creationWarnings" :key="warning">{{ warning }}</li>
                   </ul>
                 </VAlert>
                 <VAlert v-else type="success" variant="tonal">
-                  The work package and initial mandatory job card can be submitted.
+                  Paket pekerjaan dan kartu kerja wajib pertama siap dikirim.
                 </VAlert>
               </div>
             </VCol>
@@ -949,17 +951,17 @@ async function createPackage() {
         <VDivider />
         <VCardActions>
           <VBtn variant="text" :disabled="createStep === 0 || creating" @click="previousStep">
-            Back
+            Kembali
           </VBtn>
           <VSpacer />
-          <VBtn variant="text" :disabled="creating" @click="createDialog = false">Cancel</VBtn>
+          <VBtn variant="text" :disabled="creating" @click="createDialog = false">Batal</VBtn>
           <VBtn
             v-if="createStep < 4"
             color="primary"
             :disabled="creating || !currentStepValid"
             @click="nextStep"
           >
-            Next
+            Lanjut
           </VBtn>
           <VBtn
             v-else
@@ -968,7 +970,7 @@ async function createPackage() {
             :disabled="!canCreatePackage"
             @click="createPackage"
           >
-            Create package
+            Buat paket
           </VBtn>
         </VCardActions>
       </VCard>

@@ -143,8 +143,8 @@ function entityReference(record: MaintenanceAuditRecordDto) {
 
 function description(record: MaintenanceAuditRecordDto) {
   const packageRecord = packageForRecord(record);
-  const packageText = packageRecord ? ` for ${packageRecord.packageNumber}` : '';
-  return `${ui.label(record.action)} ${ui.label(record.entityType)}${packageText}.`;
+  const packageText = packageRecord ? ` untuk ${packageRecord.packageNumber}` : '';
+  return `${ui.label(record.action)} - ${ui.label(record.entityType)}${packageText}.`;
 }
 
 function metadataJson(record: MaintenanceAuditRecordDto) {
@@ -161,9 +161,10 @@ function openRecord(record: MaintenanceAuditRecordDto) {
   <VContainer fluid>
     <div class="d-flex flex-wrap align-center ga-3 mb-4">
       <div>
-        <h1 class="text-h4 font-weight-bold">Records & Audit</h1>
+        <h1 class="text-h4 font-weight-bold">Riwayat Aktivitas</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Maintenance audit explorer with package, aircraft, actor, action, and reference filters.
+          Jejak aktivitas maintenance berdasarkan pesawat, paket, aktor, tindakan, dan referensi.
+          <span class="text-caption">Records & Audit</span>
         </p>
       </div>
       <VSpacer />
@@ -171,17 +172,17 @@ function openRecord(record: MaintenanceAuditRecordDto) {
     </div>
 
     <VAlert v-if="accessRestricted" type="warning" variant="tonal" class="mb-4">
-      <strong>Access restricted.</strong>
-      <div>Operational impact: audit records cannot be displayed for this role.</div>
-      <div>Required action: switch to a role with maintenance audit read permission.</div>
+      <strong>Akses dibatasi.</strong>
+      <div>Dampak: riwayat aktivitas tidak dapat ditampilkan untuk role ini.</div>
+      <div>Langkah berikutnya: gunakan role dengan izin membaca audit maintenance.</div>
     </VAlert>
     <VAlert v-else-if="error" type="error" variant="tonal" class="mb-4">
-      <strong>Unable to load maintenance audit records.</strong>
-      <div>Operational impact: traceability cannot be confirmed from the UI.</div>
-      <div>Required action: preserve the filters and retry the audit query.</div>
-      <div v-if="apiError?.requestId" class="text-caption">Reference: {{ apiError.requestId }}</div>
+      <strong>Riwayat aktivitas belum dapat dimuat.</strong>
+      <div>Dampak: traceability belum dapat dikonfirmasi dari UI.</div>
+      <div>Langkah berikutnya: pertahankan filter dan coba muat ulang audit.</div>
+      <div v-if="apiError?.requestId" class="text-caption">Referensi: {{ apiError.requestId }}</div>
       <template #append>
-        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Retry</VBtn>
+        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Coba lagi</VBtn>
       </template>
     </VAlert>
 
@@ -190,7 +191,7 @@ function openRecord(record: MaintenanceAuditRecordDto) {
         <div class="d-flex flex-wrap align-center ga-3 mb-4">
           <VSelect
             v-model="filters.aircraft"
-            label="Aircraft"
+            label="Pesawat"
             :items="aircraftItems"
             clearable
             density="compact"
@@ -199,7 +200,7 @@ function openRecord(record: MaintenanceAuditRecordDto) {
           />
           <VSelect
             v-model="filters.package"
-            label="Package"
+            label="Paket"
             :items="packageItems"
             clearable
             density="compact"
@@ -208,7 +209,7 @@ function openRecord(record: MaintenanceAuditRecordDto) {
           />
           <VSelect
             v-model="filters.entityType"
-            label="Entity type"
+            label="Jenis catatan"
             :items="entityItems"
             clearable
             density="compact"
@@ -217,7 +218,7 @@ function openRecord(record: MaintenanceAuditRecordDto) {
           />
           <VSelect
             v-model="filters.action"
-            label="Action"
+            label="Tindakan"
             :items="actionItems"
             clearable
             density="compact"
@@ -226,7 +227,7 @@ function openRecord(record: MaintenanceAuditRecordDto) {
           />
           <VSelect
             v-model="filters.actorRole"
-            label="Actor"
+            label="Aktor"
             :items="actorItems"
             clearable
             density="compact"
@@ -235,21 +236,21 @@ function openRecord(record: MaintenanceAuditRecordDto) {
           />
           <VTextField
             v-model="filters.dateFrom"
-            label="Date from"
+            label="Tanggal dari"
             density="compact"
             hide-details
             max-width="160"
           />
           <VTextField
             v-model="filters.dateTo"
-            label="Date to"
+            label="Tanggal sampai"
             density="compact"
             hide-details
             max-width="160"
           />
           <VTextField
             v-model="filters.search"
-            label="Correlation or reference"
+            label="Korelasi atau referensi"
             prepend-inner-icon="mdi-magnify"
             clearable
             density="compact"
@@ -257,30 +258,30 @@ function openRecord(record: MaintenanceAuditRecordDto) {
             max-width="280"
           />
           <VSpacer />
-          <VChip variant="tonal" size="small">{{ data?.total ?? 0 }} result(s)</VChip>
+          <VChip variant="tonal" size="small">{{ data?.total ?? 0 }} hasil</VChip>
         </div>
 
         <div class="maintenance-table-wrap">
           <VTable class="maintenance-table maintenance-table--audit">
             <thead>
               <tr>
-                <th>Timestamp</th>
-                <th>Actor / action</th>
-                <th>Entity</th>
-                <th>Related context</th>
-                <th>Description</th>
+                <th>Waktu</th>
+                <th>Aktor / tindakan</th>
+                <th>Catatan</th>
+                <th>Konteks terkait</th>
+                <th>Penjelasan</th>
                 <th>Record</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="pending">
-                <td colspan="6">Loading audit records...</td>
+                <td colspan="6">Memuat riwayat aktivitas...</td>
               </tr>
               <tr v-else-if="accessRestricted">
-                <td colspan="6">Access restricted for the active role.</td>
+                <td colspan="6">Akses dibatasi untuk role aktif.</td>
               </tr>
               <tr v-else-if="error">
-                <td colspan="6">Audit data is unavailable until the API request succeeds.</td>
+                <td colspan="6">Data audit belum tersedia sampai permintaan berhasil.</td>
               </tr>
               <template v-else>
                 <tr v-for="record in records" :key="record.id">
@@ -305,9 +306,9 @@ function openRecord(record: MaintenanceAuditRecordDto) {
                   </td>
                   <td>{{ description(record) }}</td>
                   <td>
-                    <VChip size="small" color="success" variant="tonal">Immutable record</VChip>
+                    <VChip size="small" color="success" variant="tonal">Catatan permanen</VChip>
                     <div>
-                      <VBtn size="small" variant="text" @click="openRecord(record)">Open</VBtn>
+                      <VBtn size="small" variant="text" @click="openRecord(record)">Buka</VBtn>
                     </div>
                   </td>
                 </tr>
@@ -315,8 +316,8 @@ function openRecord(record: MaintenanceAuditRecordDto) {
                   <td colspan="6">
                     {{
                       hasFilters
-                        ? 'No audit records match the current filters.'
-                        : 'No maintenance audit records.'
+                        ? 'Tidak ada riwayat sesuai filter.'
+                        : 'Belum ada riwayat aktivitas maintenance.'
                     }}
                   </td>
                 </tr>
@@ -342,31 +343,31 @@ function openRecord(record: MaintenanceAuditRecordDto) {
             <VBtn icon="mdi-close" variant="text" @click="detailDrawer = false" />
           </div>
           <VList density="compact" border rounded class="mb-4">
-            <VListItem title="Event reference" :subtitle="selectedRecord.id" />
+            <VListItem title="Referensi event" :subtitle="selectedRecord.id" />
             <VListItem title="Correlation ID" :subtitle="selectedRecord.requestId ?? '-'" />
-            <VListItem title="Actor" :subtitle="selectedRecord.actorRole" />
-            <VListItem title="Source" subtitle="Maintenance API" />
-            <VListItem title="Entity type" :subtitle="ui.label(selectedRecord.entityType)" />
-            <VListItem title="Entity reference" :subtitle="entityReference(selectedRecord)" />
+            <VListItem title="Aktor" :subtitle="selectedRecord.actorRole" />
+            <VListItem title="Sumber" subtitle="Maintenance API" />
+            <VListItem title="Jenis catatan" :subtitle="ui.label(selectedRecord.entityType)" />
+            <VListItem title="Referensi catatan" :subtitle="entityReference(selectedRecord)" />
             <VListItem
-              title="Entity version"
+              title="Versi catatan"
               :subtitle="
                 selectedRecord.afterVersion === null
-                  ? 'Version unchanged'
-                  : `Version ${selectedRecord.afterVersion}`
+                  ? 'Versi tidak berubah'
+                  : `Versi ${selectedRecord.afterVersion}`
               "
             />
             <VListItem
               title="Before / after"
               :subtitle="`${selectedRecord.beforeVersion ?? '-'} / ${selectedRecord.afterVersion ?? '-'}`"
             />
-            <VListItem title="Related aircraft" :subtitle="aircraftForRecord(selectedRecord)" />
+            <VListItem title="Pesawat terkait" :subtitle="aircraftForRecord(selectedRecord)" />
             <VListItem
-              title="Related package"
+              title="Paket terkait"
               :subtitle="packageForRecord(selectedRecord)?.packageNumber ?? '-'"
             />
           </VList>
-          <div class="text-subtitle-2 mb-2">Technical metadata</div>
+          <div class="text-subtitle-2 mb-2">Detail teknis</div>
           <pre class="audit-metadata">{{ metadataJson(selectedRecord) }}</pre>
           <div class="d-flex flex-wrap ga-2 mt-4">
             <VBtn
@@ -375,7 +376,7 @@ function openRecord(record: MaintenanceAuditRecordDto) {
               color="primary"
               variant="tonal"
             >
-              Open Work Package
+              Buka Paket Pekerjaan
             </VBtn>
           </div>
         </div>

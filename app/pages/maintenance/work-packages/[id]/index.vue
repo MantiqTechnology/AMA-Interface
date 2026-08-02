@@ -8,7 +8,7 @@ import type {
 } from '#shared/features/maintenance';
 import { demoRoleActorIds } from '#shared/types/roles';
 
-const authorizationWording = 'Licence and PT AMA authorization verified.';
+const authorizationWording = 'Lisensi dan wewenang PT AMA terverifikasi.';
 
 const route = useRoute();
 const id = computed(() => String(route.params.id));
@@ -74,7 +74,7 @@ const releaseForm = reactive({
 });
 const releaseStatusItems = [
   { title: 'Serviceable', value: 'SERVICEABLE' },
-  { title: 'Serviceable With Restrictions', value: 'SERVICEABLE_WITH_RESTRICTIONS' }
+  { title: 'Serviceable dengan pembatasan', value: 'SERVICEABLE_WITH_RESTRICTIONS' }
 ];
 
 const { data, pending, error, refresh } = await useAsyncData(
@@ -141,55 +141,55 @@ const releasePathSteps = computed(() => {
   const inspection = card ? signoff(card, 'INDEPENDENT_INSPECTION') : undefined;
   return [
     {
-      label: 'Defect',
-      title: item?.primaryDefect?.title ?? 'No primary defect linked',
+      label: 'Temuan',
+      title: item?.primaryDefect?.title ?? 'Tidak ada temuan utama',
       meta: item?.primaryDefectNumber ?? item?.primaryDefect?.sourceReference ?? '-',
-      badge: item?.primaryDefect ? ui.label(item.primaryDefect.status) : 'Missing',
+      badge: item?.primaryDefect ? ui.label(item.primaryDefect.status) : 'Belum ada',
       tone: item?.primaryDefect ? 'success' : 'warning'
     },
     {
-      label: 'Work package',
+      label: 'Paket kerja',
       title: item?.title ?? '-',
       meta: item?.packageNumber ?? '-',
-      badge: item?.status ? ui.label(item.status) : 'Missing',
+      badge: item?.status ? ui.label(item.status) : 'Belum ada',
       tone: item ? ui.workPackageStatusColor(item.status) : 'secondary'
     },
     {
-      label: 'Job card',
-      title: card?.title ?? 'No job card',
+      label: 'Kartu kerja',
+      title: card?.title ?? 'Belum ada kartu kerja',
       meta: card?.cardNumber ?? '-',
-      badge: card ? ui.label(card.status) : 'Missing',
+      badge: card ? ui.label(card.status) : 'Belum ada',
       tone: card ? ui.jobCardStatusColor(card.status) : 'warning'
     },
     {
-      label: 'Sign-off',
-      title: mechanic ? 'Mechanic work signed' : 'Mechanic sign-off pending',
+      label: 'Pengesahan',
+      title: mechanic ? 'Pekerjaan teknisi sudah disahkan' : 'Menunggu pengesahan teknisi',
       meta: mechanic ? `${mechanic.actorRole} / ${format.dateTime(mechanic.signedAt)}` : '-',
-      badge: mechanic ? 'Signed' : 'Pending',
+      badge: mechanic ? 'Selesai' : 'Menunggu',
       tone: mechanic ? 'success' : 'warning'
     },
     {
-      label: 'Inspection',
-      title: inspection ? 'Independent inspection passed' : 'Inspection pending',
+      label: 'Pemeriksaan',
+      title: inspection ? 'Pemeriksaan independen lulus' : 'Menunggu pemeriksaan',
       meta: inspection ? `${inspection.actorRole} / ${format.dateTime(inspection.signedAt)}` : '-',
       badge: inspection
-        ? 'Passed'
+        ? 'Lulus'
         : card?.requiresIndependentInspection
-          ? 'Pending'
-          : 'Not required',
+          ? 'Menunggu'
+          : 'Tidak wajib',
       tone: inspection ? 'success' : card?.requiresIndependentInspection ? 'warning' : 'secondary'
     },
     {
-      label: 'Technical release',
+      label: 'Rilis teknis',
       title:
         item?.release?.releaseNumber ??
-        (item?.status === 'READY_FOR_RELEASE' ? 'Ready to issue' : 'Not issued'),
+        (item?.status === 'READY_FOR_RELEASE' ? 'Siap diterbitkan' : 'Belum diterbitkan'),
       meta: item?.releasedAt
         ? format.dateTime(item.releasedAt)
         : item?.status
           ? ui.label(item.status)
           : '-',
-      badge: item?.release ? 'Issued' : item?.status === 'READY_FOR_RELEASE' ? 'Ready' : 'Pending',
+      badge: item?.release ? 'Terbit' : item?.status === 'READY_FOR_RELEASE' ? 'Siap' : 'Menunggu',
       tone: item?.release
         ? 'success'
         : item?.status === 'READY_FOR_RELEASE'
@@ -197,17 +197,17 @@ const releasePathSteps = computed(() => {
           : 'secondary'
     },
     {
-      label: 'Readiness',
+      label: 'Kesiapan',
       title: ui.label(item?.aircraftTechnicalState),
       meta: ui.label(item?.aircraftTechnicalEligibility),
       badge: ui.label(item?.aircraftTechnicalState),
       tone: ui.technicalStateColor(item?.aircraftTechnicalState)
     },
     {
-      label: 'Audit trail',
-      title: `${item?.auditRecords?.length ?? 0} recorded action(s)`,
+      label: 'Riwayat',
+      title: `${item?.auditRecords?.length ?? 0} tindakan tercatat`,
       meta: item?.auditRecords?.[0] ? format.dateTime(item.auditRecords[0].occurredAt) : '-',
-      badge: item?.auditRecords?.length ? 'Recorded' : 'Pending',
+      badge: item?.auditRecords?.length ? 'Tercatat' : 'Menunggu',
       tone: item?.auditRecords?.length ? 'success' : 'warning'
     }
   ];
@@ -318,8 +318,10 @@ function signoff(card: MaintenanceJobCardDto, type: 'MECHANIC' | 'INDEPENDENT_IN
 
 function authorizationSummary(action: string, licenseNumber: string) {
   const license = signerLicenses.value.find((item) => item.licenseNumber === licenseNumber);
-  if (!license) return 'Select a valid licence. Backend authorization is checked again on submit.';
-  return `${authorizationWording} Action: ${action}. Scope: ${license.scopeSummary}`;
+  if (!license) {
+    return 'Pilih lisensi personel yang valid. Sistem akan memeriksa ulang lisensi dan wewenang saat tindakan dikirim.';
+  }
+  return `${authorizationWording} Tindakan: ${action}. Scope: ${license.scopeSummary}`;
 }
 
 function latestInspectionAttempt(card: MaintenanceJobCardDto) {
@@ -380,7 +382,7 @@ function selfInspectionBlocked(card: MaintenanceJobCardDto) {
 function releaseSnapshotValue(key: string) {
   const snapshot = workPackage.value?.release?.signerAuthorizationSnapshot;
   if (!snapshot && key === 'companyAuthorizationNumber') {
-    return 'Legacy record — company authorization snapshot unavailable.';
+    return 'Catatan lama - snapshot wewenang PT AMA tidak tersedia.';
   }
   const value = snapshot?.[key];
   if (value === null || value === undefined) return '-';
@@ -399,33 +401,35 @@ function releaseSignerName(release: NonNullable<MaintenanceWorkPackageDto['relea
 
 function auditEntityLabel(record: { entityType: string; afterVersion: number | null }) {
   const version =
-    record.afterVersion === null ? 'Version unchanged' : `Version ${record.afterVersion}`;
+    record.afterVersion === null ? 'Versi tidak berubah' : `Versi ${record.afterVersion}`;
   return `${ui.label(record.entityType)} / ${version}`;
 }
 
 function jobCardBlocker(card: MaintenanceJobCardDto) {
-  if (card.status === 'READY') return 'Work not started.';
-  if (card.status === 'IN_PROGRESS') return 'Mechanic sign-off pending.';
-  if (card.status === 'REJECTED_FOR_REWORK') return 'Failed inspection requires corrective work.';
-  if (card.status === 'INSPECTION_REQUIRED') return 'Independent inspection pending.';
-  if (card.status === 'READY_FOR_RELEASE_REVIEW') return 'No job-card blocker.';
+  if (card.status === 'READY') return 'Pekerjaan belum dimulai.';
+  if (card.status === 'IN_PROGRESS') return 'Menunggu pengesahan teknisi.';
+  if (card.status === 'REJECTED_FOR_REWORK') {
+    return 'Pemeriksaan tidak lulus dan membutuhkan perbaikan ulang.';
+  }
+  if (card.status === 'INSPECTION_REQUIRED') return 'Menunggu pemeriksaan independen.';
+  if (card.status === 'READY_FOR_RELEASE_REVIEW') return 'Tidak ada penghambat kartu kerja.';
   return ui.label(card.status);
 }
 
 function jobCardRequiredAction(card: MaintenanceJobCardDto) {
-  if (card.status === 'READY') return 'Start work and complete the mechanic statement.';
-  if (card.status === 'IN_PROGRESS') return 'Complete mechanic sign-off with evidence.';
-  if (card.status === 'REJECTED_FOR_REWORK') return 'Complete the linked rework action.';
+  if (card.status === 'READY') return 'Mulai pekerjaan dan isi pernyataan teknisi.';
+  if (card.status === 'IN_PROGRESS') return 'Selesaikan pengesahan teknisi dengan bukti.';
+  if (card.status === 'REJECTED_FOR_REWORK') return 'Selesaikan perbaikan ulang yang terkait.';
   if (card.status === 'INSPECTION_REQUIRED') {
-    return 'Assign an independent inspector who did not sign the mechanic work.';
+    return 'Tugaskan inspector independen yang bukan teknisi pengesah pekerjaan.';
   }
-  if (card.status === 'READY_FOR_RELEASE_REVIEW') return 'Include in release readiness review.';
-  return 'Open audit trail before any further action.';
+  if (card.status === 'READY_FOR_RELEASE_REVIEW') return 'Masukkan ke pemeriksaan kesiapan rilis.';
+  return 'Buka riwayat aktivitas sebelum tindakan lanjutan.';
 }
 
 function linkedDefectDisposition() {
   const defect = workPackage.value?.primaryDefect;
-  if (!defect) return 'No linked defect.';
+  if (!defect) return 'Tidak ada temuan terkait.';
   return `${defect.defectNumber}: ${ui.label(defect.status)}`;
 }
 
@@ -492,7 +496,7 @@ function openInspectionDialog(card: MaintenanceJobCardDto, result: 'PASSED' | 'F
   inspectionForm.statement =
     result === 'FAILED'
       ? ''
-      : `Independent inspection passed for ${card.cardNumber} with required evidence.`;
+      : `Pemeriksaan independen lulus untuk ${card.cardNumber} dengan bukti yang diperlukan.`;
   inspectionForm.certifyingLicenseNumber =
     inspectionForm.certifyingLicenseNumber ||
     signerLicenses.value.find((license) => license.isUsableNow)?.licenseNumber ||
@@ -535,8 +539,8 @@ async function submitInspection() {
     } else {
       actionSuccess.value =
         activeRework(card) === null
-          ? 'Independent inspection passed. Release readiness was refreshed from backend state.'
-          : 'Re-inspection passed. Release readiness was refreshed from backend state.';
+          ? 'Pemeriksaan independen lulus. Kesiapan rilis diperbarui dari status backend.'
+          : 'Pemeriksaan ulang lulus. Kesiapan rilis diperbarui dari status backend.';
       inspectionDialog.value = false;
     }
     await refreshSelectors();
@@ -588,7 +592,7 @@ function openReleaseDialog() {
   releaseForm.releasedAt = releaseForm.releasedAt || defaultReleaseTimestamp();
   releaseForm.releaseStatement =
     releaseForm.releaseStatement ||
-    `Technical release issued for ${workPackage.value.packageNumber} after review of mandatory work, evidence, and independent inspection records.`;
+    `Rilis teknis diterbitkan untuk ${workPackage.value.packageNumber} setelah pekerjaan wajib, bukti, dan catatan pemeriksaan independen diperiksa.`;
   releaseForm.certifyingLicenseNumber =
     releaseForm.certifyingLicenseNumber ||
     signerLicenses.value.find((license) => license.isUsableNow)?.licenseNumber ||
@@ -621,8 +625,7 @@ async function issueRelease() {
       }
     );
     releaseCompleted.value = true;
-    actionSuccess.value =
-      'Technical release accepted. Aircraft readiness is refreshed from backend state.';
+    actionSuccess.value = 'Rilis teknis diterima. Kesiapan pesawat diperbarui dari status backend.';
     await Promise.all([refresh(), refreshSelectors()]);
   } catch (errorValue) {
     actionError.value = ui.presentError(errorValue);
@@ -636,21 +639,23 @@ async function issueRelease() {
 <template>
   <VContainer fluid class="maintenance-detail">
     <div class="d-flex flex-wrap align-center ga-3 mb-4">
-      <VBtn to="/maintenance" prepend-icon="mdi-arrow-left" variant="text"> Command Center </VBtn>
+      <VBtn to="/maintenance" prepend-icon="mdi-arrow-left" variant="text">
+        Ringkasan Maintenance
+      </VBtn>
       <VSpacer />
-      <VBtn to="/maintenance/work-packages" variant="text">Work Packages</VBtn>
+      <VBtn to="/maintenance/work-packages" variant="text">Paket Pekerjaan</VBtn>
       <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
     </div>
 
     <VAlert v-if="error" type="error" variant="tonal" class="mb-4">
-      Unable to load work package.
+      Paket pekerjaan belum dapat dimuat.
     </VAlert>
     <VAlert v-if="actionError" type="error" variant="tonal" class="mb-4">
       <strong>{{ actionError.title }}</strong>
       <div>{{ actionError.impact }}</div>
-      <div class="text-caption">Required action: {{ actionError.requiredAction }}</div>
+      <div class="text-caption">Langkah berikutnya: {{ actionError.requiredAction }}</div>
       <div v-if="actionError.referenceId" class="text-caption">
-        Reference: {{ actionError.referenceId }}
+        Referensi: {{ actionError.referenceId }}
       </div>
       <div v-if="actionError.requestId" class="text-caption">
         Request: {{ actionError.requestId }}
@@ -660,10 +665,10 @@ async function issueRelease() {
       {{ actionSuccess }}
     </VAlert>
     <VAlert v-if="failedInspectionResult" type="warning" variant="tonal" class="mb-4">
-      <div class="font-weight-bold">Inspection failed — rework required</div>
+      <div class="font-weight-bold">Pemeriksaan tidak lulus - perbaikan ulang diperlukan</div>
       <div>
-        The finding has been recorded and technical release is blocked until corrective work is
-        completed and the required re-inspection passes.
+        Temuan pemeriksaan sudah dicatat. Rilis teknis diblokir sampai perbaikan ulang selesai dan
+        pemeriksaan ulang dinyatakan lulus.
       </div>
       <div class="d-flex flex-wrap ga-2 mt-3">
         <VBtn
@@ -672,21 +677,21 @@ async function issueRelease() {
           variant="tonal"
           :href="`#${failedInspectionResult.reworkActionId}`"
         >
-          Open Rework Action
+          Buka Perbaikan Ulang
         </VBtn>
         <VBtn
           size="small"
           variant="tonal"
           :to="`/maintenance/records?package=${failedInspectionResult.packageNumber}&search=${failedInspectionResult.attemptId}`"
         >
-          View Inspection Record
+          Lihat Catatan Pemeriksaan
         </VBtn>
         <VBtn
           size="small"
           variant="tonal"
           :to="`/maintenance/records?package=${failedInspectionResult.packageNumber}`"
         >
-          View Audit Trail
+          Lihat Riwayat Aktivitas
         </VBtn>
       </div>
     </VAlert>
@@ -716,7 +721,7 @@ async function issueRelease() {
         <VCardText>
           <VRow>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Aircraft</div>
+              <div class="text-caption text-medium-emphasis">Pesawat</div>
               <div class="text-subtitle-1 font-weight-bold">
                 {{ workPackage.aircraftRegistrationNumber }}
               </div>
@@ -725,9 +730,9 @@ async function issueRelease() {
               </div>
             </VCol>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Source defect</div>
+              <div class="text-caption text-medium-emphasis">Sumber temuan</div>
               <div class="text-subtitle-1 font-weight-bold">
-                {{ workPackage.primaryDefect?.title ?? 'No primary defect linked' }}
+                {{ workPackage.primaryDefect?.title ?? 'Tidak ada temuan utama' }}
               </div>
               <div class="text-caption">
                 {{
@@ -736,42 +741,42 @@ async function issueRelease() {
               </div>
             </VCol>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Source flight / technical log</div>
+              <div class="text-caption text-medium-emphasis">Sumber flight / technical log</div>
               <div class="text-subtitle-1 font-weight-bold">
                 {{ sourceContextLabel }}
               </div>
-              <div class="text-caption">Derived read-only context</div>
+              <div class="text-caption">Konteks read-only dari sistem</div>
             </VCol>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Execution</div>
+              <div class="text-caption text-medium-emphasis">Pelaksanaan</div>
               <div class="text-subtitle-1 font-weight-bold">
                 {{ ui.label(workPackage.executionMode) }}
               </div>
               <div class="text-caption">
-                {{ workPackage.vendorName ?? 'Internal execution' }}
+                {{ workPackage.vendorName ?? 'Pelaksanaan internal' }}
               </div>
             </VCol>
           </VRow>
           <VDivider class="my-4" />
           <VRow>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Priority</div>
+              <div class="text-caption text-medium-emphasis">Prioritas</div>
               <strong>{{ ui.label(workPackage.priority) }}</strong>
             </VCol>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Technical impact</div>
+              <div class="text-caption text-medium-emphasis">Dampak teknis</div>
               <strong>{{ ui.label(workPackage.aircraftTechnicalState) }}</strong>
               <div class="text-caption">
                 {{ ui.label(workPackage.aircraftTechnicalEligibility) }}
               </div>
             </VCol>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Version / updated</div>
-              <strong>Version {{ workPackage.version }}</strong>
+              <div class="text-caption text-medium-emphasis">Versi / diperbarui</div>
+              <strong>Versi {{ workPackage.version }}</strong>
               <div class="text-caption">{{ format.dateTime(workPackage.updatedAt) }}</div>
             </VCol>
             <VCol cols="12" md="3">
-              <div class="text-caption text-medium-emphasis">Owner</div>
+              <div class="text-caption text-medium-emphasis">Penanggung jawab</div>
               <strong>{{ packageOwner }}</strong>
             </VCol>
           </VRow>
@@ -780,10 +785,10 @@ async function issueRelease() {
 
       <VCard border class="mb-4">
         <VCardTitle>
-          <div class="text-h6">Defect to release path</div>
+          <div class="text-h6">Alur temuan sampai rilis</div>
           <div class="text-body-2 text-medium-emphasis">
-            Backend-derived evidence across job card, sign-off, inspection, release, readiness, and
-            audit.
+            Bukti dari backend untuk kartu kerja, pengesahan, pemeriksaan, rilis, kesiapan, dan
+            riwayat aktivitas.
           </div>
         </VCardTitle>
         <VCardText>
@@ -805,24 +810,24 @@ async function issueRelease() {
       <VRow>
         <VCol cols="12" lg="8">
           <VCard border class="mb-4">
-            <VCardTitle>Defect, assessment, and work package</VCardTitle>
+            <VCardTitle>Temuan, penilaian, dan paket pekerjaan</VCardTitle>
             <VCardText>
               <VRow>
                 <VCol cols="12" md="4">
-                  <div class="text-caption text-medium-emphasis">Defect</div>
+                  <div class="text-caption text-medium-emphasis">Temuan</div>
                   <strong>{{
-                    workPackage.primaryDefect?.title ?? 'No primary defect linked'
+                    workPackage.primaryDefect?.title ?? 'Tidak ada temuan utama'
                   }}</strong>
                   <div class="text-caption text-medium-emphasis">
                     {{ workPackage.primaryDefectNumber ?? '-' }}
                   </div>
                 </VCol>
                 <VCol cols="12" md="4">
-                  <div class="text-caption text-medium-emphasis">Assessment</div>
+                  <div class="text-caption text-medium-emphasis">Penilaian</div>
                   <strong>{{ ui.label(workPackage.primaryDefect?.assessmentDecision) }}</strong>
                 </VCol>
                 <VCol cols="12" md="4">
-                  <div class="text-caption text-medium-emphasis">Package version</div>
+                  <div class="text-caption text-medium-emphasis">Versi paket</div>
                   <strong>{{ workPackage.version }}</strong>
                 </VCol>
               </VRow>
@@ -838,7 +843,7 @@ async function issueRelease() {
           </VCard>
 
           <VCard border class="mb-4">
-            <VCardTitle>Job cards and immutable sign-offs</VCardTitle>
+            <VCardTitle>Kartu kerja dan pengesahan permanen</VCardTitle>
             <VCardText>
               <VExpansionPanels>
                 <VExpansionPanel v-for="card in workPackage.jobCards" :key="card.id">
@@ -861,45 +866,49 @@ async function issueRelease() {
                   <VExpansionPanelText>
                     <VRow>
                       <VCol cols="12" md="6">
-                        <div class="text-caption text-medium-emphasis">Approved data</div>
+                        <div class="text-caption text-medium-emphasis">
+                          Approved maintenance data
+                        </div>
                         <div class="font-weight-medium">
                           {{ card.maintenanceDataRef }} / {{ card.maintenanceDataRevision }}
                         </div>
                       </VCol>
                       <VCol cols="12" md="3">
-                        <div class="text-caption text-medium-emphasis">Mandatory</div>
-                        <div>{{ card.mandatoryFlag ? 'Yes' : 'No' }}</div>
+                        <div class="text-caption text-medium-emphasis">Wajib</div>
+                        <div>{{ card.mandatoryFlag ? 'Ya' : 'Tidak' }}</div>
                       </VCol>
                       <VCol cols="12" md="3">
-                        <div class="text-caption text-medium-emphasis">Independent inspection</div>
+                        <div class="text-caption text-medium-emphasis">Pemeriksaan independen</div>
                         <div>
-                          {{ card.requiresIndependentInspection ? 'Required' : 'Not required' }}
+                          {{ card.requiresIndependentInspection ? 'Wajib' : 'Tidak wajib' }}
                         </div>
                       </VCol>
                     </VRow>
                     <VRow class="mt-2">
                       <VCol cols="12" md="3">
-                        <div class="text-caption text-medium-emphasis">Performer</div>
-                        <div>{{ signoff(card, 'MECHANIC')?.actorRole ?? 'Mechanic pending' }}</div>
+                        <div class="text-caption text-medium-emphasis">Pelaksana</div>
+                        <div>
+                          {{ signoff(card, 'MECHANIC')?.actorRole ?? 'Menunggu teknisi' }}
+                        </div>
                       </VCol>
                       <VCol cols="12" md="3">
-                        <div class="text-caption text-medium-emphasis">Execution state</div>
+                        <div class="text-caption text-medium-emphasis">Status pekerjaan</div>
                         <div>{{ ui.label(card.status) }}</div>
                       </VCol>
                       <VCol cols="12" md="3">
-                        <div class="text-caption text-medium-emphasis">Blocker</div>
+                        <div class="text-caption text-medium-emphasis">Penghambat</div>
                         <div>{{ jobCardBlocker(card) }}</div>
                       </VCol>
                       <VCol cols="12" md="3">
-                        <div class="text-caption text-medium-emphasis">Required action</div>
+                        <div class="text-caption text-medium-emphasis">Langkah berikutnya</div>
                         <div>{{ jobCardRequiredAction(card) }}</div>
                       </VCol>
                       <VCol cols="12" md="6">
-                        <div class="text-caption text-medium-emphasis">Created</div>
+                        <div class="text-caption text-medium-emphasis">Dibuat</div>
                         <div>{{ format.dateTime(card.createdAt) }}</div>
                       </VCol>
                       <VCol cols="12" md="6">
-                        <div class="text-caption text-medium-emphasis">Updated</div>
+                        <div class="text-caption text-medium-emphasis">Diperbarui</div>
                         <div>{{ format.dateTime(card.updatedAt) }}</div>
                       </VCol>
                     </VRow>
@@ -907,7 +916,7 @@ async function issueRelease() {
                     <VRow class="mt-2">
                       <VCol cols="12" md="6">
                         <div class="signoff-panel">
-                          <div class="text-subtitle-2">Mechanic sign-off</div>
+                          <div class="text-subtitle-2">Pengesahan teknisi</div>
                           <template v-if="signoff(card, 'MECHANIC')">
                             <div>{{ signoff(card, 'MECHANIC')?.statement }}</div>
                             <div class="text-caption text-medium-emphasis mt-2">
@@ -915,12 +924,12 @@ async function issueRelease() {
                               {{ format.dateTime(signoff(card, 'MECHANIC')?.signedAt) }}
                             </div>
                           </template>
-                          <div v-else class="text-medium-emphasis">Not signed.</div>
+                          <div v-else class="text-medium-emphasis">Belum disahkan.</div>
                         </div>
                       </VCol>
                       <VCol cols="12" md="6">
                         <div class="signoff-panel">
-                          <div class="text-subtitle-2">Independent inspection</div>
+                          <div class="text-subtitle-2">Pemeriksaan independen</div>
                           <template v-if="signoff(card, 'INDEPENDENT_INSPECTION')">
                             <div>{{ signoff(card, 'INDEPENDENT_INSPECTION')?.statement }}</div>
                             <div class="text-caption text-medium-emphasis mt-2">
@@ -930,24 +939,24 @@ async function issueRelease() {
                               }}
                             </div>
                           </template>
-                          <div v-else class="text-medium-emphasis">Not completed.</div>
+                          <div v-else class="text-medium-emphasis">Belum selesai.</div>
                         </div>
                       </VCol>
                     </VRow>
 
                     <div v-if="card.inspectionAttempts.length" class="mt-4">
-                      <div class="text-subtitle-2 mb-2">Inspection attempts</div>
+                      <div class="text-subtitle-2 mb-2">Riwayat pemeriksaan</div>
                       <VTable density="compact" class="inspection-table">
                         <thead>
                           <tr>
                             <th>Attempt</th>
-                            <th>Cycle</th>
-                            <th>Result</th>
-                            <th>Finding</th>
+                            <th>Siklus</th>
+                            <th>Hasil</th>
+                            <th>Temuan</th>
                             <th>Inspector</th>
-                            <th>Licence</th>
-                            <th>Recorded</th>
-                            <th>Record</th>
+                            <th>Lisensi</th>
+                            <th>Dicatat</th>
+                            <th>Catatan</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -968,7 +977,7 @@ async function issueRelease() {
                             <td>{{ attempt.inspectorLicenseNumber }}</td>
                             <td>{{ format.dateTime(attempt.inspectedAt) }}</td>
                             <td>
-                              <VChip size="x-small" variant="tonal">Immutable</VChip>
+                              <VChip size="x-small" variant="tonal">Permanen</VChip>
                             </td>
                           </tr>
                         </tbody>
@@ -976,7 +985,7 @@ async function issueRelease() {
                     </div>
 
                     <div v-if="card.reworkActions.length" class="mt-4">
-                      <div class="text-subtitle-2 mb-2">Rework actions</div>
+                      <div class="text-subtitle-2 mb-2">Perbaikan ulang</div>
                       <VCard
                         v-for="rework in card.reworkActions"
                         :id="rework.id"
@@ -988,7 +997,7 @@ async function issueRelease() {
                           <div class="d-flex flex-wrap align-center ga-2 mb-3">
                             <strong>{{ rework.reworkNumber }}</strong>
                             <VChip size="x-small" variant="tonal">
-                              Cycle {{ rework.cycleNumber }}
+                              Siklus {{ rework.cycleNumber }}
                             </VChip>
                             <VChip
                               :color="
@@ -999,29 +1008,35 @@ async function issueRelease() {
                             >
                               {{ ui.label(rework.status) }}
                             </VChip>
-                            <VChip size="x-small" variant="tonal">Immutable source</VChip>
+                            <VChip size="x-small" variant="tonal">Sumber permanen</VChip>
                           </div>
                           <VRow>
                             <VCol cols="12" md="6">
-                              <div class="text-caption text-medium-emphasis">Failed finding</div>
+                              <div class="text-caption text-medium-emphasis">
+                                Temuan tidak lulus
+                              </div>
                               <div>{{ rework.finding }}</div>
                             </VCol>
                             <VCol cols="12" md="6">
-                              <div class="text-caption text-medium-emphasis">Corrective action</div>
+                              <div class="text-caption text-medium-emphasis">
+                                Tindakan perbaikan
+                              </div>
                               <div>
                                 {{
                                   rework.correctiveActionDescription ||
-                                    'Corrective work not signed.'
+                                    'Perbaikan ulang belum disahkan.'
                                 }}
                               </div>
                             </VCol>
                             <VCol cols="12" md="4">
-                              <div class="text-caption text-medium-emphasis">Approved data</div>
-                              <div>{{ rework.approvedDataRef || 'Pending' }}</div>
+                              <div class="text-caption text-medium-emphasis">
+                                Approved maintenance data
+                              </div>
+                              <div>{{ rework.approvedDataRef || 'Menunggu' }}</div>
                             </VCol>
                             <VCol cols="12" md="4">
                               <div class="text-caption text-medium-emphasis">
-                                Corrective sign-off
+                                Pengesahan perbaikan
                               </div>
                               <div>
                                 {{
@@ -1029,19 +1044,19 @@ async function issueRelease() {
                                     ? `${rework.mechanicSignoffRole} / ${format.dateTime(
                                       rework.mechanicSignoffAt
                                     )}`
-                                    : 'Pending'
+                                    : 'Menunggu'
                                 }}
                               </div>
                             </VCol>
                             <VCol cols="12" md="4">
                               <div class="text-caption text-medium-emphasis">
-                                Re-inspection result
+                                Hasil pemeriksaan ulang
                               </div>
                               <div>
                                 {{
                                   rework.reinspectionAttemptId
                                     ? ui.label(rework.status)
-                                    : 'Required after corrective sign-off'
+                                    : 'Wajib setelah pengesahan perbaikan'
                                 }}
                               </div>
                             </VCol>
@@ -1062,7 +1077,7 @@ async function issueRelease() {
                               <VCol cols="12">
                                 <VTextarea
                                   v-model="reworkForms[rework.id].correctiveActionDescription"
-                                  label="Corrective action description"
+                                  label="Deskripsi tindakan perbaikan"
                                   rows="2"
                                   density="compact"
                                   variant="outlined"
@@ -1071,19 +1086,19 @@ async function issueRelease() {
                               <VCol cols="12" md="6">
                                 <VSelect
                                   v-model="reworkForms[rework.id].certifyingLicenseNumber"
-                                  label="Mechanic licence"
+                                  label="Lisensi teknisi"
                                   :items="signerLicenses"
                                   item-value="licenseNumber"
                                   :item-title="signerLicenseTitle"
                                   density="compact"
                                   :loading="selectorsPending"
-                                  no-data-text="No licence mapped to the active actor"
+                                  no-data-text="Tidak ada lisensi untuk aktor aktif"
                                   variant="outlined"
                                 />
                                 <div class="text-caption text-medium-emphasis mt-1">
                                   {{
                                     authorizationSummary(
-                                      'Corrective work sign-off',
+                                      'Pengesahan perbaikan ulang',
                                       reworkForms[rework.id].certifyingLicenseNumber
                                     )
                                   }}
@@ -1100,7 +1115,7 @@ async function issueRelease() {
                               <VCol cols="12" md="6">
                                 <VTextField
                                   v-model="reworkForms[rework.id].evidenceReferences"
-                                  label="Evidence references"
+                                  label="Referensi bukti"
                                   density="compact"
                                   variant="outlined"
                                 />
@@ -1108,7 +1123,7 @@ async function issueRelease() {
                               <VCol cols="12">
                                 <VTextarea
                                   v-model="reworkForms[rework.id].statement"
-                                  label="Mechanic sign-off statement"
+                                  label="Pernyataan pengesahan teknisi"
                                   rows="2"
                                   density="compact"
                                   variant="outlined"
@@ -1127,7 +1142,7 @@ async function issueRelease() {
                               "
                               @click="signCorrectiveWork(rework)"
                             >
-                              Sign corrective work
+                              Sahkan perbaikan ulang
                             </VBtn>
                           </div>
                         </VCardText>
@@ -1143,7 +1158,7 @@ async function issueRelease() {
                         :disabled="immutablePackage"
                         @click="start(card)"
                       >
-                        Start work
+                        Mulai pekerjaan
                       </VBtn>
                       <VBtn
                         v-if="canSignCard(card)"
@@ -1153,7 +1168,7 @@ async function issueRelease() {
                         :loading="actionLoading === `sign-${card.id}`"
                         @click="signWork(card)"
                       >
-                        Mechanic sign-off
+                        Sahkan pekerjaan
                       </VBtn>
                       <VBtn
                         v-if="canInspectCard(card)"
@@ -1167,8 +1182,8 @@ async function issueRelease() {
                       >
                         {{
                           activeRework(card)
-                            ? 'Record re-inspection'
-                            : 'Record independent inspection'
+                            ? 'Catat pemeriksaan ulang'
+                            : 'Catat pemeriksaan independen'
                         }}
                       </VBtn>
                       <VAlert
@@ -1177,32 +1192,36 @@ async function issueRelease() {
                         variant="tonal"
                         density="compact"
                       >
-                        This actor signed the mechanic work, so independent inspection must be
-                        performed by another authorized user.
+                        Aktor ini mengesahkan pekerjaan teknisi, sehingga pemeriksaan independen
+                        harus dilakukan oleh personel berwenang yang berbeda.
                       </VAlert>
                     </div>
                   </VExpansionPanelText>
                 </VExpansionPanel>
               </VExpansionPanels>
-              <VEmptyState v-if="!workPackage.jobCards.length" title="No job cards yet" />
+              <VEmptyState v-if="!workPackage.jobCards.length" title="Belum ada kartu kerja" />
             </VCardText>
           </VCard>
         </VCol>
 
         <VCol cols="12" lg="4">
           <VCard v-if="canAddJobCard" border class="mb-4">
-            <VCardTitle>Add job card</VCardTitle>
+            <VCardTitle>Tambah kartu kerja</VCardTitle>
             <VCardText>
-              <VTextField v-model="jobCardForm.title" label="Title" />
+              <VTextField v-model="jobCardForm.title" label="Judul" />
               <VTextField
                 v-model="jobCardForm.maintenanceDataRef"
                 label="Approved maintenance data reference"
               />
               <VTextField v-model="jobCardForm.maintenanceDataRevision" label="Revision snapshot" />
-              <VSwitch v-model="jobCardForm.mandatoryFlag" label="Mandatory task" color="primary" />
+              <VSwitch
+                v-model="jobCardForm.mandatoryFlag"
+                label="Pekerjaan wajib"
+                color="primary"
+              />
               <VSwitch
                 v-model="jobCardForm.requiresIndependentInspection"
-                label="Requires independent inspection"
+                label="Wajib pemeriksaan independen"
                 color="primary"
               />
               <VBtn
@@ -1213,41 +1232,41 @@ async function issueRelease() {
                 :loading="actionLoading === 'add-card'"
                 @click="addJobCard"
               >
-                Add job card
+                Tambah kartu kerja
               </VBtn>
             </VCardText>
           </VCard>
 
           <VCard border class="mb-4">
-            <VCardTitle>Action statements</VCardTitle>
+            <VCardTitle>Pernyataan tindakan</VCardTitle>
             <VCardText>
               <VSelect
                 v-model="workLicenseNumber"
-                label="Mechanic licence"
+                label="Lisensi teknisi"
                 :items="signerLicenses"
                 item-value="licenseNumber"
                 :item-title="signerLicenseTitle"
                 density="compact"
                 :loading="selectorsPending"
-                no-data-text="No licence mapped to the active actor"
+                no-data-text="Tidak ada lisensi untuk aktor aktif"
                 variant="outlined"
               />
               <VAlert type="success" variant="tonal" density="compact" class="mb-3">
-                {{ authorizationSummary('Mechanic sign-off', workLicenseNumber) }}
+                {{ authorizationSummary('Pengesahan pekerjaan teknisi', workLicenseNumber) }}
               </VAlert>
-              <VTextarea v-model="workStatement" label="Mechanic statement" rows="3" />
+              <VTextarea v-model="workStatement" label="Pernyataan teknisi" rows="3" />
               <VAlert type="info" variant="tonal" density="compact">
-                Independent inspection is blocked server-side if performed by the mechanic who
-                signed the work.
+                Pemeriksaan independen akan ditolak oleh backend bila dilakukan oleh teknisi yang
+                mengesahkan pekerjaan.
               </VAlert>
             </VCardText>
           </VCard>
 
           <VCard border class="mb-4">
-            <VCardTitle>Release checklist</VCardTitle>
+            <VCardTitle>Kesiapan rilis</VCardTitle>
             <VCardText>
               <VList density="compact">
-                <VListItem title="Mandatory work complete">
+                <VListItem title="Seluruh pekerjaan wajib selesai">
                   <template #append>
                     <VIcon :color="checklist?.mandatoryWorkComplete ? 'success' : 'error'">
                       {{
@@ -1256,7 +1275,7 @@ async function issueRelease() {
                     </VIcon>
                   </template>
                 </VListItem>
-                <VListItem title="Independent inspections complete">
+                <VListItem title="Pemeriksaan independen selesai">
                   <template #append>
                     <VIcon :color="checklist?.independentInspectionsComplete ? 'success' : 'error'">
                       {{
@@ -1267,7 +1286,7 @@ async function issueRelease() {
                     </VIcon>
                   </template>
                 </VListItem>
-                <VListItem title="Approved data available">
+                <VListItem title="Approved data tersedia">
                   <template #append>
                     <VIcon :color="checklist?.approvedDataAvailable ? 'success' : 'error'">
                       {{
@@ -1276,7 +1295,7 @@ async function issueRelease() {
                     </VIcon>
                   </template>
                 </VListItem>
-                <VListItem title="Mechanic evidence complete">
+                <VListItem title="Bukti teknisi lengkap">
                   <template #append>
                     <VIcon :color="checklist?.mechanicEvidenceComplete ? 'success' : 'error'">
                       {{
@@ -1287,48 +1306,50 @@ async function issueRelease() {
                     </VIcon>
                   </template>
                 </VListItem>
-                <VListItem title="Linked grounding defect">
+                <VListItem title="Temuan grounding terkait">
                   <template #subtitle>{{ linkedDefectDisposition() }}</template>
                 </VListItem>
-                <VListItem title="Open failed inspection/rework result">
+                <VListItem title="Pemeriksaan tidak lulus / rework terbuka">
                   <template #subtitle>
                     {{
                       hasOpenReworkBlocker(workPackage)
-                        ? 'Release blocked until corrective work and re-inspection are complete.'
-                        : 'No open failed-inspection rework blocker.'
+                        ? 'Rilis diblokir sampai perbaikan ulang dan pemeriksaan ulang selesai.'
+                        : 'Tidak ada blocker rework dari pemeriksaan tidak lulus.'
                     }}
                   </template>
                 </VListItem>
-                <VListItem title="Signer licence required">
-                  <template #subtitle>Selected during technical release confirmation.</template>
+                <VListItem title="Lisensi signer wajib">
+                  <template #subtitle>Dipilih saat konfirmasi rilis teknis.</template>
                 </VListItem>
-                <VListItem title="Current package version">
-                  <template #subtitle>Version {{ workPackage.version }}</template>
+                <VListItem title="Versi paket saat ini">
+                  <template #subtitle>Versi {{ workPackage.version }}</template>
                 </VListItem>
-                <VListItem title="Linked requirement scope">
+                <VListItem title="Scope requirement terkait">
                   <template #subtitle>
                     {{
                       workPackage.requirementScope?.length
-                        ? `${workPackage.requirementScope.length} scoped requirement(s)`
-                        : 'No scoped requirement links'
+                        ? `${workPackage.requirementScope.length} requirement terkait`
+                        : 'Tidak ada requirement terkait'
                     }}
                   </template>
                 </VListItem>
-                <VListItem title="Release eligibility">
+                <VListItem title="Kelayakan rilis">
                   <template #subtitle>
-                    {{ releaseBlockers.length ? 'Release blocked' : 'Eligible for release review' }}
+                    {{ releaseBlockers.length ? 'Rilis terblokir' : 'Layak untuk review rilis' }}
                   </template>
                 </VListItem>
               </VList>
               <VAlert v-if="releaseBlockers.length" type="warning" variant="tonal" class="mt-3">
-                <div class="font-weight-bold mb-2">Backend blockers</div>
+                <div class="font-weight-bold mb-2">Penghambat dari sistem</div>
                 <ul class="mb-0">
                   <li
                     v-for="blocker in releaseBlockers"
                     :key="`${blocker.code}-${blocker.referenceId}`"
                   >
                     <strong>{{ blocker.message }}</strong>
-                    <div class="text-caption">Required action: {{ blocker.requiredAction }}</div>
+                    <div class="text-caption">
+                      Langkah berikutnya: {{ ui.operationalAction(blocker.requiredAction) }}
+                    </div>
                   </li>
                 </ul>
               </VAlert>
@@ -1336,11 +1357,11 @@ async function issueRelease() {
           </VCard>
 
           <VCard border class="mb-4">
-            <VCardTitle>Technical release command</VCardTitle>
+            <VCardTitle>Perintah rilis teknis</VCardTitle>
             <VCardText>
               <VAlert type="warning" variant="tonal" class="mb-4">
-                Release is never automatic. Aircraft readiness is refreshed from backend state only
-                after the command returns.
+                Rilis tidak pernah otomatis. Kesiapan pesawat hanya diperbarui dari backend setelah
+                perintah berhasil.
               </VAlert>
               <VBtn
                 v-if="canRequestRelease && !immutablePackage"
@@ -1351,7 +1372,7 @@ async function issueRelease() {
                 :loading="actionLoading === 'request-release'"
                 @click="requestRelease"
               >
-                Request release review
+                Ajukan review rilis
               </VBtn>
               <VBtn
                 v-if="canIssueRelease && workPackage.status === 'READY_FOR_RELEASE'"
@@ -1360,7 +1381,7 @@ async function issueRelease() {
                 :disabled="selectorsPending"
                 @click="openReleaseDialog"
               >
-                Issue technical release
+                Terbitkan rilis teknis
               </VBtn>
               <VAlert v-if="!canIssueRelease" type="info" variant="tonal" density="compact">
                 {{ ui.permissionHint(false, 'maintenance.release.issue', session.role.value) }}
@@ -1369,21 +1390,21 @@ async function issueRelease() {
           </VCard>
 
           <VCard v-if="workPackage.release" border class="mb-4">
-            <VCardTitle>Signer authorization snapshot</VCardTitle>
+            <VCardTitle>Snapshot wewenang signer</VCardTitle>
             <VCardText>
               <VList density="compact">
-                <VListItem title="Release" :subtitle="workPackage.release.releaseNumber" />
+                <VListItem title="Rilis" :subtitle="workPackage.release.releaseNumber" />
                 <VListItem title="Signer" :subtitle="releaseSignerName(workPackage.release)" />
-                <VListItem title="Licence" :subtitle="releaseSnapshotValue('licenseNumber')" />
+                <VListItem title="Lisensi" :subtitle="releaseSnapshotValue('licenseNumber')" />
                 <VListItem
-                  title="Licence status"
+                  title="Status lisensi"
                   :subtitle="releaseSnapshotValue('licenseStatus')"
                 />
                 <VListItem
-                  title="Company authorization"
+                  title="Wewenang PT AMA"
                   :subtitle="releaseSnapshotValue('companyAuthorizationNumber')"
                 />
-                <VListItem title="Verification" :subtitle="releaseSnapshotValue('basis')" />
+                <VListItem title="Verifikasi" :subtitle="releaseSnapshotValue('basis')" />
               </VList>
             </VCardText>
           </VCard>
@@ -1391,7 +1412,7 @@ async function issueRelease() {
       </VRow>
 
       <VCard border>
-        <VCardTitle>Audit trail</VCardTitle>
+        <VCardTitle>Riwayat aktivitas</VCardTitle>
         <VCardText>
           <VTimeline density="compact" side="end">
             <VTimelineItem
@@ -1411,7 +1432,7 @@ async function issueRelease() {
           </VTimeline>
           <VEmptyState
             v-if="!(workPackage.auditRecords?.length ?? 0)"
-            title="No package audit records"
+            title="Belum ada riwayat paket"
           />
         </VCardText>
       </VCard>
@@ -1420,9 +1441,9 @@ async function issueRelease() {
         <VCard>
           <VCardTitle class="d-flex align-start ga-3">
             <div>
-              <h2 class="text-h6 mb-0">Independent inspection confirmation</h2>
+              <h2 class="text-h6 mb-0">Konfirmasi pemeriksaan independen</h2>
               <div class="text-body-2 text-medium-emphasis">
-                Record a passed inspection or a failed finding that opens corrective rework.
+                Catat pemeriksaan lulus, atau temuan tidak lulus yang membuka perbaikan ulang.
               </div>
             </div>
             <VSpacer />
@@ -1446,17 +1467,19 @@ async function issueRelease() {
               }}
             </VAlert>
             <VAlert v-if="failedInspectionResult" type="warning" variant="tonal" class="mb-4">
-              <div class="font-weight-bold">Inspection failed — rework required</div>
+              <div class="font-weight-bold">
+                Pemeriksaan tidak lulus - perbaikan ulang diperlukan
+              </div>
               <div>
-                The finding has been recorded and technical release is blocked until corrective work
-                is completed and the required re-inspection passes.
+                Temuan sudah dicatat. Rilis teknis diblokir sampai perbaikan ulang selesai dan
+                pemeriksaan ulang lulus.
               </div>
             </VAlert>
             <VRow>
               <VCol cols="12" md="6">
                 <VTextField
                   :model-value="inspectionCard?.cardNumber"
-                  label="Job card"
+                  label="Kartu kerja"
                   readonly
                   density="compact"
                   variant="outlined"
@@ -1465,7 +1488,7 @@ async function issueRelease() {
               <VCol cols="12" md="6">
                 <VTextField
                   :model-value="inspectionIdempotencyKey"
-                  label="Idempotency key"
+                  label="Referensi teknis perintah"
                   readonly
                   density="compact"
                   variant="outlined"
@@ -1479,27 +1502,27 @@ async function issueRelease() {
                   variant="outlined"
                   color="primary"
                 >
-                  <VBtn value="PASSED">Passed</VBtn>
-                  <VBtn value="FAILED">Failed</VBtn>
+                  <VBtn value="PASSED">Lulus</VBtn>
+                  <VBtn value="FAILED">Tidak lulus</VBtn>
                 </VBtnToggle>
               </VCol>
               <VCol cols="12" md="6">
                 <VSelect
                   v-model="inspectionForm.certifyingLicenseNumber"
-                  label="Selected inspector licence"
+                  label="Lisensi inspector"
                   :items="signerLicenses"
                   item-value="licenseNumber"
                   :item-title="signerLicenseTitle"
                   density="compact"
                   :loading="selectorsPending"
-                  no-data-text="No licence mapped to the active actor"
+                  no-data-text="Tidak ada lisensi untuk aktor aktif"
                   variant="outlined"
                 />
               </VCol>
               <VCol cols="12" md="6">
                 <VTextField
                   v-model="inspectionForm.inspectedAt"
-                  label="Inspection timestamp"
+                  label="Waktu pemeriksaan"
                   density="compact"
                   variant="outlined"
                 />
@@ -1509,8 +1532,8 @@ async function issueRelease() {
                   v-model="inspectionForm.statement"
                   :label="
                     inspectionResult === 'FAILED'
-                      ? 'Finding / inspection statement'
-                      : 'Inspection statement'
+                      ? 'Temuan / pernyataan pemeriksaan'
+                      : 'Pernyataan pemeriksaan'
                   "
                   rows="4"
                   auto-grow
@@ -1518,8 +1541,8 @@ async function issueRelease() {
                   variant="outlined"
                   :hint="
                     inspectionResult === 'FAILED'
-                      ? 'Required. A failed result creates or opens a linked rework action.'
-                      : 'Required. A passed result closes the inspection blocker.'
+                      ? 'Wajib. Hasil tidak lulus akan membuat atau membuka perbaikan ulang terkait.'
+                      : 'Wajib. Hasil lulus menutup blocker pemeriksaan.'
                   "
                   persistent-hint
                 />
@@ -1527,7 +1550,7 @@ async function issueRelease() {
               <VCol cols="12">
                 <VTextField
                   v-model="inspectionForm.evidenceReferences"
-                  label="Evidence references, comma separated"
+                  label="Referensi bukti, pisahkan dengan koma"
                   density="compact"
                   variant="outlined"
                 />
@@ -1536,7 +1559,7 @@ async function issueRelease() {
                 <VCheckbox
                   v-model="inspectionConfirmed"
                   color="primary"
-                  label="I confirm this inspection result is intentional and will be recorded as an immutable maintenance record."
+                  label="Saya mengonfirmasi hasil pemeriksaan ini benar dan akan dicatat permanen."
                 />
               </VCol>
             </VRow>
@@ -1549,7 +1572,7 @@ async function issueRelease() {
               :disabled="actionLoading.startsWith('inspect-')"
               @click="inspectionDialog = false"
             >
-              Close
+              Tutup
             </VBtn>
             <VBtn
               color="primary"
@@ -1557,7 +1580,7 @@ async function issueRelease() {
               :disabled="!canSubmitInspection"
               @click="submitInspection"
             >
-              Record inspection
+              Catat pemeriksaan
             </VBtn>
           </VCardActions>
         </VCard>
@@ -1567,9 +1590,9 @@ async function issueRelease() {
         <VCard class="release-dialog-card">
           <VCardTitle class="d-flex align-start ga-3 release-dialog-title">
             <div>
-              <h2 class="text-h6 mb-0">Technical release confirmation</h2>
+              <h2 class="text-h6 mb-0">Konfirmasi rilis teknis pesawat</h2>
               <div class="text-body-2 text-medium-emphasis">
-                Review backend-derived prerequisites before issuing the technical release.
+                Periksa prasyarat dari backend sebelum menerbitkan rilis teknis.
               </div>
             </div>
             <VSpacer />
@@ -1586,34 +1609,34 @@ async function issueRelease() {
               {{ authorizationWording }}
             </VAlert>
             <VAlert v-if="releaseCompleted" type="success" variant="tonal" class="mb-4">
-              Technical release completed. Readiness and signer snapshot below are backend-derived
-              after refresh.
+              Rilis teknis selesai. Kesiapan pesawat dan snapshot signer di bawah ini berasal dari
+              backend setelah refresh.
             </VAlert>
             <div v-if="releaseCompleted" class="release-result mb-4">
               <div>
-                <div class="text-caption text-medium-emphasis">Release</div>
+                <div class="text-caption text-medium-emphasis">Rilis</div>
                 <strong>{{
                   workPackage.release?.releaseNumber ?? releaseForm.releaseNumber
                 }}</strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Aircraft</div>
+                <div class="text-caption text-medium-emphasis">Pesawat</div>
                 <strong>{{ workPackage.aircraftRegistrationNumber }}</strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Work package</div>
+                <div class="text-caption text-medium-emphasis">Paket pekerjaan</div>
                 <strong>{{ workPackage.packageNumber }}</strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Aircraft readiness</div>
+                <div class="text-caption text-medium-emphasis">Kesiapan pesawat</div>
                 <strong>{{ ui.label(workPackage.aircraftTechnicalState) }}</strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Released at</div>
+                <div class="text-caption text-medium-emphasis">Waktu rilis</div>
                 <strong>{{ format.dateTime(workPackage.releasedAt) }}</strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Signer snapshot</div>
+                <div class="text-caption text-medium-emphasis">Snapshot signer</div>
                 <strong>
                   {{
                     workPackage.release
@@ -1623,7 +1646,7 @@ async function issueRelease() {
                 </strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Selected licence</div>
+                <div class="text-caption text-medium-emphasis">Lisensi dipilih</div>
                 <strong>
                   {{
                     workPackage.release?.certifyingLicenseNumber ??
@@ -1632,34 +1655,34 @@ async function issueRelease() {
                 </strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Linked defect disposition</div>
+                <div class="text-caption text-medium-emphasis">Status temuan terkait</div>
                 <strong>{{ linkedDefectDisposition() }}</strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Requirement scope</div>
+                <div class="text-caption text-medium-emphasis">Scope requirement</div>
                 <strong>
                   {{
                     workPackage.requirementScope?.length
-                      ? `${workPackage.requirementScope.length} scoped`
-                      : 'No scoped links'
+                      ? `${workPackage.requirementScope.length} terkait`
+                      : 'Tidak ada scope terkait'
                   }}
                 </strong>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Audit reference</div>
+                <div class="text-caption text-medium-emphasis">Referensi audit</div>
                 <strong>{{ workPackage.auditRecords?.[0]?.id ?? '-' }}</strong>
               </div>
             </div>
             <VAlert v-if="releaseUncertain" type="warning" variant="tonal" class="mb-4">
-              Network/API response was uncertain. Retry only with the same idempotency key or
-              refresh before sending a materially different command.
+              Respons jaringan/API belum pasti. Ulangi hanya dengan referensi teknis perintah yang
+              sama, atau refresh sebelum mengirim perintah yang berbeda.
             </VAlert>
             <VAlert v-if="actionError" type="error" variant="tonal" class="mb-4">
               <strong>{{ actionError.title }}</strong>
               <div>{{ actionError.impact }}</div>
-              <div class="text-caption">Required action: {{ actionError.requiredAction }}</div>
+              <div class="text-caption">Langkah berikutnya: {{ actionError.requiredAction }}</div>
               <div v-if="actionError.referenceId" class="text-caption">
-                Reference: {{ actionError.referenceId }}
+                Referensi: {{ actionError.referenceId }}
               </div>
             </VAlert>
 
@@ -1667,7 +1690,7 @@ async function issueRelease() {
               <VCol cols="12" md="6">
                 <VTextField
                   :model-value="workPackage.version"
-                  label="Work-package version"
+                  label="Versi paket pekerjaan"
                   density="compact"
                   hide-details
                   readonly
@@ -1677,7 +1700,7 @@ async function issueRelease() {
               <VCol cols="12" md="6">
                 <VTextField
                   :model-value="releaseIdempotencyKey"
-                  label="Idempotency key for this command"
+                  label="Referensi teknis perintah"
                   density="compact"
                   hide-details
                   readonly
@@ -1687,7 +1710,7 @@ async function issueRelease() {
               <VCol cols="12" md="6">
                 <VTextField
                   v-model="releaseForm.releaseNumber"
-                  label="Release number"
+                  label="Nomor rilis"
                   density="compact"
                   hide-details
                   variant="outlined"
@@ -1696,7 +1719,7 @@ async function issueRelease() {
               <VCol cols="12" md="6">
                 <VSelect
                   v-model="releaseForm.resultingStatus"
-                  label="Resulting technical status"
+                  label="Status teknis setelah rilis"
                   :items="releaseStatusItems"
                   density="compact"
                   hide-details
@@ -1708,7 +1731,7 @@ async function issueRelease() {
               <VCol cols="12" md="6">
                 <VTextField
                   v-model="releaseForm.releasedAt"
-                  label="Released at"
+                  label="Waktu rilis"
                   density="compact"
                   hide-details
                   variant="outlined"
@@ -1717,21 +1740,21 @@ async function issueRelease() {
               <VCol cols="12" md="6">
                 <VSelect
                   v-model="releaseForm.certifyingLicenseNumber"
-                  label="Selected signer licence"
+                  label="Lisensi signer"
                   :items="signerLicenses"
                   item-value="licenseNumber"
                   :item-title="signerLicenseTitle"
                   density="compact"
                   hide-details
                   :loading="selectorsPending"
-                  no-data-text="No licence mapped to the active actor"
+                  no-data-text="Tidak ada lisensi untuk aktor aktif"
                   variant="outlined"
                 />
               </VCol>
               <VCol cols="12">
                 <VTextarea
                   v-model="releaseForm.releaseStatement"
-                  label="Release statement"
+                  label="Pernyataan rilis"
                   auto-grow
                   density="compact"
                   hide-details
@@ -1742,7 +1765,7 @@ async function issueRelease() {
               <VCol cols="12">
                 <VTextField
                   v-model="releaseForm.evidenceReferences"
-                  label="Evidence references, comma separated"
+                  label="Referensi bukti, pisahkan dengan koma"
                   density="compact"
                   hide-details
                   variant="outlined"
@@ -1753,40 +1776,40 @@ async function issueRelease() {
             <VRow>
               <VCol cols="12" md="6">
                 <VCard variant="tonal">
-                  <VCardTitle class="text-subtitle-2">Release prerequisites</VCardTitle>
+                  <VCardTitle class="text-subtitle-2">Prasyarat rilis</VCardTitle>
                   <VCardText>
                     <VList density="compact">
                       <VListItem
-                        title="Aircraft"
+                        title="Pesawat"
                         :subtitle="workPackage.aircraftRegistrationNumber"
                       />
-                      <VListItem title="Work package" :subtitle="workPackage.packageNumber" />
-                      <VListItem title="Package version" :subtitle="String(workPackage.version)" />
-                      <VListItem title="Linked defects" :subtitle="linkedDefectDisposition()" />
+                      <VListItem title="Paket pekerjaan" :subtitle="workPackage.packageNumber" />
+                      <VListItem title="Versi paket" :subtitle="String(workPackage.version)" />
+                      <VListItem title="Temuan terkait" :subtitle="linkedDefectDisposition()" />
                       <VListItem
-                        title="Mandatory work completion"
-                        :subtitle="checklist?.mandatoryWorkComplete ? 'Complete' : 'Blocked'"
+                        title="Pekerjaan wajib"
+                        :subtitle="checklist?.mandatoryWorkComplete ? 'Lengkap' : 'Terblokir'"
                       />
                       <VListItem
-                        title="Inspection completion"
+                        title="Pemeriksaan"
                         :subtitle="
-                          checklist?.independentInspectionsComplete ? 'Complete' : 'Blocked'
+                          checklist?.independentInspectionsComplete ? 'Lengkap' : 'Terblokir'
                         "
                       />
                       <VListItem
-                        title="Approved-data availability"
-                        :subtitle="checklist?.approvedDataAvailable ? 'Available' : 'Missing'"
+                        title="Approved-data"
+                        :subtitle="checklist?.approvedDataAvailable ? 'Tersedia' : 'Belum lengkap'"
                       />
                       <VListItem
-                        title="Linked defect state"
+                        title="Status temuan"
                         :subtitle="ui.label(workPackage.primaryDefect?.status)"
                       />
                       <VListItem
-                        title="Linked requirement scope"
+                        title="Scope requirement"
                         :subtitle="
                           workPackage.requirementScope?.length
-                            ? `${workPackage.requirementScope.length} scoped requirement(s)`
-                            : 'No scoped requirement links'
+                            ? `${workPackage.requirementScope.length} requirement terkait`
+                            : 'Tidak ada requirement terkait'
                         "
                       />
                     </VList>
@@ -1795,20 +1818,20 @@ async function issueRelease() {
               </VCol>
               <VCol cols="12" md="6">
                 <VCard variant="tonal">
-                  <VCardTitle class="text-subtitle-2">Signer licence</VCardTitle>
+                  <VCardTitle class="text-subtitle-2">Lisensi signer</VCardTitle>
                   <VCardText>
                     <template v-if="selectedSignerLicense">
                       <div class="font-weight-bold">{{ selectedSignerLicense.personnelName }}</div>
                       <div>{{ selectedSignerLicense.licenseNumber }}</div>
                       <div class="text-caption">
-                        {{ selectedSignerLicense.status }} / valid until
+                        {{ selectedSignerLicense.status }} / berlaku sampai
                         {{ selectedSignerLicense.expiryDate ?? '-' }}
                       </div>
                       <div class="text-caption">{{ selectedSignerLicense.scopeSummary }}</div>
                       <VAlert type="success" variant="tonal" density="compact" class="mt-3">
                         {{
                           authorizationSummary(
-                            'Technical Release',
+                            'Rilis teknis pesawat',
                             releaseForm.certifyingLicenseNumber
                           )
                         }}
@@ -1820,12 +1843,12 @@ async function issueRelease() {
                         density="compact"
                         class="mt-3"
                       >
-                        This licence is not usable at the selected release time. The release command
-                        will be rejected.
+                        Lisensi ini tidak dapat digunakan pada waktu rilis yang dipilih. Perintah
+                        rilis akan ditolak.
                       </VAlert>
                     </template>
                     <div v-else class="text-medium-emphasis">
-                      Select a licence mapped to the active actor.
+                      Pilih lisensi yang terhubung dengan aktor aktif.
                     </div>
                   </VCardText>
                 </VCard>
@@ -1839,7 +1862,7 @@ async function issueRelease() {
               :disabled="actionLoading === 'issue-release'"
               @click="releaseDialog = false"
             >
-              Close
+              Tutup
             </VBtn>
             <VSpacer />
             <VBtn
@@ -1848,7 +1871,7 @@ async function issueRelease() {
               :disabled="!canSubmitRelease || releaseCompleted"
               @click="issueRelease"
             >
-              {{ releaseCompleted ? 'Release completed' : 'Issue technical release' }}
+              {{ releaseCompleted ? 'Rilis selesai' : 'Terbitkan rilis teknis' }}
             </VBtn>
           </VCardActions>
         </VCard>

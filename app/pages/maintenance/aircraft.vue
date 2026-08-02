@@ -29,8 +29,8 @@ const eligibilityItems = computed(() => [
   ...new Set((data.value?.fleet ?? []).map((aircraft) => aircraft.technicalEligibility))
 ]);
 const dueStateItems = [
-  { title: 'Due or blocked', value: 'DUE' },
-  { title: 'No due blocker', value: 'CLEAR' }
+  { title: 'Ada due atau blocker', value: 'DUE' },
+  { title: 'Tidak ada due blocker', value: 'CLEAR' }
 ];
 const hasFilters = computed(() =>
   Boolean(
@@ -65,21 +65,21 @@ const filteredAircraft = computed(() => {
 });
 
 function eligibilityLabel(value: string) {
-  if (value === 'ELIGIBLE') return 'Serviceable';
-  if (value === 'RESTRICTED') return 'Restricted';
-  if (value === 'BLOCKED') return 'Release blocked';
+  if (value === 'ELIGIBLE') return 'Dapat dirilis';
+  if (value === 'RESTRICTED') return 'Terbatas';
+  if (value === 'BLOCKED') return 'Rilis terblokir';
   return ui.label(value);
 }
 
 function dueSummary(aircraft: MaintenanceCommandCenterDto['fleet'][number]) {
-  if (!aircraft.maintenanceDue) return 'No due blocker';
+  if (!aircraft.maintenanceDue) return 'Tidak ada due blocker';
   const reason = aircraft.dueReasons[0] ?? 'Maintenance due';
   return reason.replaceAll(/([A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+)/gu, (token) => ui.label(token));
 }
 
 function dueAction(aircraft: MaintenanceCommandCenterDto['fleet'][number]) {
-  if (!aircraft.maintenanceDue) return 'No due action required.';
-  return 'Review the aircraft technical profile and scope an authoritative maintenance action.';
+  if (!aircraft.maintenanceDue) return 'Tidak ada tindakan due yang diperlukan.';
+  return 'Periksa profil teknis pesawat dan tentukan tindakan maintenance yang berwenang.';
 }
 
 function groundingDefect(aircraftId: string) {
@@ -97,28 +97,31 @@ function latestRelease(aircraftId: string) {
   <VContainer fluid>
     <div class="d-flex flex-wrap align-center ga-3 mb-4">
       <div>
-        <h1 class="text-h4 font-weight-bold">Aircraft Technical Status</h1>
+        <h1 class="text-h4 font-weight-bold">Status Teknis Pesawat</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Authoritative aircraft serviceability, due state, restrictions, and active MRO package.
+          Serviceability, due state, pembatasan, dan paket MRO aktif dari backend.
+          <span class="text-caption">Aircraft Technical Status</span>
         </p>
       </div>
       <VSpacer />
-      <VBtn to="/maintenance" variant="text" prepend-icon="mdi-arrow-left">Command Center</VBtn>
+      <VBtn to="/maintenance" variant="text" prepend-icon="mdi-arrow-left">
+        Ringkasan Maintenance
+      </VBtn>
       <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
     </div>
 
     <VAlert v-if="accessRestricted" type="warning" variant="tonal" class="mb-4">
-      <strong>Access restricted.</strong>
-      <div>Operational impact: aircraft technical status cannot be displayed for this role.</div>
-      <div>Required action: switch to a role with maintenance read permission.</div>
-      <div v-if="apiError?.requestId" class="text-caption">Reference: {{ apiError.requestId }}</div>
+      <strong>Akses dibatasi.</strong>
+      <div>Dampak: status teknis pesawat tidak dapat ditampilkan untuk role ini.</div>
+      <div>Langkah berikutnya: gunakan role dengan izin membaca maintenance.</div>
+      <div v-if="apiError?.requestId" class="text-caption">Referensi: {{ apiError.requestId }}</div>
     </VAlert>
     <VAlert v-else-if="error" type="error" variant="tonal" class="mb-4">
-      <strong>Unable to load aircraft technical status.</strong>
-      <div>Operational impact: release eligibility and due blockers cannot be confirmed.</div>
-      <div>Required action: retry the authoritative maintenance status query.</div>
+      <strong>Status teknis pesawat belum dapat dimuat.</strong>
+      <div>Dampak: eligibility rilis dan due blocker belum dapat dipastikan.</div>
+      <div>Langkah berikutnya: coba muat ulang status maintenance.</div>
       <template #append>
-        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Retry</VBtn>
+        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Coba lagi</VBtn>
       </template>
     </VAlert>
 
@@ -127,7 +130,7 @@ function latestRelease(aircraftId: string) {
         <div class="d-flex flex-wrap align-center ga-3 mb-4">
           <VTextField
             v-model="filters.search"
-            label="Search registration, type, or fleet"
+            label="Cari registrasi, tipe, atau fleet"
             prepend-inner-icon="mdi-magnify"
             clearable
             density="compact"
@@ -154,7 +157,7 @@ function latestRelease(aircraftId: string) {
           />
           <VSelect
             v-model="filters.eligibility"
-            label="Release eligibility"
+            label="Kesiapan rilis"
             :items="eligibilityItems"
             clearable
             density="compact"
@@ -163,7 +166,7 @@ function latestRelease(aircraftId: string) {
           />
           <VSelect
             v-model="filters.dueState"
-            label="Due state"
+            label="Status due"
             :items="dueStateItems"
             clearable
             density="compact"
@@ -171,30 +174,28 @@ function latestRelease(aircraftId: string) {
             max-width="190"
           />
           <VSpacer />
-          <VChip variant="tonal" size="small">{{ filteredAircraft.length }} result(s)</VChip>
+          <VChip variant="tonal" size="small">{{ filteredAircraft.length }} hasil</VChip>
         </div>
         <div class="maintenance-table-wrap">
           <VTable class="maintenance-table maintenance-table--aircraft">
             <thead>
               <tr>
-                <th>Aircraft</th>
-                <th>Station and technical state</th>
-                <th>Defects / restrictions</th>
-                <th>Due and required action</th>
-                <th>Package, grounding, release</th>
+                <th>Pesawat</th>
+                <th>Station dan status teknis</th>
+                <th>Temuan / pembatasan</th>
+                <th>Due dan langkah berikutnya</th>
+                <th>Paket, grounding, rilis</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="pending">
-                <td colspan="5">Loading aircraft technical status...</td>
+                <td colspan="5">Memuat status teknis pesawat...</td>
               </tr>
               <tr v-else-if="accessRestricted">
-                <td colspan="5">Access restricted for the active role.</td>
+                <td colspan="5">Akses dibatasi untuk role aktif.</td>
               </tr>
               <tr v-else-if="error">
-                <td colspan="5">
-                  Aircraft technical data is unavailable until the API request succeeds.
-                </td>
+                <td colspan="5">Data teknis pesawat belum tersedia sampai permintaan berhasil.</td>
               </tr>
               <template v-else>
                 <tr v-for="aircraft in filteredAircraft" :key="aircraft.aircraftId">
@@ -232,20 +233,20 @@ function latestRelease(aircraftId: string) {
                     </VChip>
                   </td>
                   <td>
-                    <div>{{ aircraft.openDefectCount }} open defect(s)</div>
+                    <div>{{ aircraft.openDefectCount }} temuan terbuka</div>
                     <div class="text-caption text-medium-emphasis">
-                      {{ aircraft.activeRestrictionCount }} active restriction(s)
+                      {{ aircraft.activeRestrictionCount }} pembatasan aktif
                     </div>
                   </td>
                   <td>
                     <div>{{ dueSummary(aircraft) }}</div>
                     <div class="text-caption text-medium-emphasis">
-                      Required action: {{ dueAction(aircraft) }}
+                      Langkah berikutnya: {{ dueAction(aircraft) }}
                     </div>
                   </td>
                   <td>
                     <div>
-                      Active:
+                      Aktif:
                       <VBtn
                         v-if="aircraft.activeWorkPackageId"
                         :to="`/maintenance/work-packages/${aircraft.activeWorkPackageId}`"
@@ -271,7 +272,7 @@ function latestRelease(aircraftId: string) {
                       </span>
                     </div>
                     <div>
-                      Release:
+                      Rilis:
                       <VBtn
                         v-if="latestRelease(aircraft.aircraftId)"
                         :to="`/maintenance/releases?search=${latestRelease(aircraft.aircraftId)?.releaseNumber}`"
@@ -283,7 +284,7 @@ function latestRelease(aircraftId: string) {
                       <span v-else>-</span>
                     </div>
                     <div class="text-caption text-medium-emphasis">
-                      Updated: {{ format.dateTime(aircraft.updatedAt) }}
+                      Diperbarui: {{ format.dateTime(aircraft.updatedAt) }}
                     </div>
                   </td>
                 </tr>
@@ -291,8 +292,8 @@ function latestRelease(aircraftId: string) {
                   <td colspan="5">
                     {{
                       hasFilters
-                        ? 'No aircraft match the current filters.'
-                        : 'No aircraft returned by the authoritative query.'
+                        ? 'Tidak ada pesawat sesuai filter.'
+                        : 'Tidak ada pesawat dari query backend.'
                     }}
                   </td>
                 </tr>

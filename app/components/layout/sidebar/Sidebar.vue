@@ -441,42 +441,48 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'MRO Foundation',
+      label: 'Maintenance Pesawat',
       icon: 'mdi-airplane-cog',
       visible: can('maintenance.package.read').allowed,
       children: [
         {
-          label: 'Command Center',
+          label: 'Ringkasan Maintenance',
           to: '/maintenance',
           icon: 'mdi-view-dashboard-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Aircraft Technical Status',
+          label: 'Pekerjaan Saya',
+          to: '/maintenance/my-work',
+          icon: 'mdi-account-hard-hat',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Pesawat',
           to: '/maintenance/aircraft',
           icon: 'mdi-airplane-check',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Defects',
+          label: 'Temuan',
           to: '/maintenance/defects',
           icon: 'mdi-alert-octagon-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Work Packages',
+          label: 'Paket Pekerjaan',
           to: '/maintenance/work-packages',
           icon: 'mdi-clipboard-list-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Technical Releases',
+          label: 'Rilis Teknis',
           to: '/maintenance/releases',
           icon: 'mdi-certificate-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Records & Audit',
+          label: 'Riwayat Aktivitas',
           to: '/maintenance/records',
           icon: 'mdi-history',
           visible: can('maintenance.audit.read').allowed

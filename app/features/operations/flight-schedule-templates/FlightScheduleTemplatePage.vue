@@ -139,6 +139,7 @@ async function toggle(record: FlightScheduleTemplateDto) {
                     :title="record.isActive ? 'Deactivate record?' : 'Activate record?'"
                     :tone="record.isActive ? 'warning' : 'success'"
                     :tooltip="record.isActive ? 'Deactivate' : 'Activate'"
+                    gam
                     variant="text"
                   />
                 </td>
