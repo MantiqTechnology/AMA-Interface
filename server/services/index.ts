@@ -12,6 +12,7 @@ import { AircraftAirworthinessService } from './aircraft-airworthiness.service';
 import { AircraftTrackingService } from './aircraft-tracking.service';
 import { createAccountingService } from '../features/finance/accounting';
 import { createInvoiceService } from '../features/finance/invoices';
+import { HrisService } from '../features/hris/service';
 import { createFinanceReportingService } from '../features/finance/reporting';
 import { createMaintenanceService } from '../features/maintenance';
 
@@ -31,7 +32,8 @@ export function createServices(sqlite: Database.Database) {
     financeReporting: createFinanceReportingService(sqlite),
     invoices: createInvoiceService(sqlite),
     dashboard: new DashboardService(sqlite),
-    operationsMonitoring: new OperationsMonitoringService(sqlite)
+    operationsMonitoring: new OperationsMonitoringService(sqlite),
+    hris: new HrisService(sqlite)
   };
 }
 

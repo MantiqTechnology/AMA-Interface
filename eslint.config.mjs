@@ -9,6 +9,7 @@ export default [
       '.output/**',
       'node_modules/**',
       'data/**',
+      'reload/**',
       '--port/**'
     ]
   },
@@ -25,6 +26,7 @@ export default [
       'vue/multi-word-component-names': 'off',
       'vue/max-attributes-per-line': 'off',
       'vue/singleline-html-element-content-newline': 'off',
+      'vue/valid-v-slot': 'off',
       '@typescript-eslint/no-explicit-any': 'warn'
     }
   }

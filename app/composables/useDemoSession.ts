@@ -44,6 +44,26 @@ const personaDetails: Record<DemoRole, { name: string; label: string; stationSco
     name: 'AMA Inventory Controller',
     label: 'Inventory and procurement control',
     stationScope: [...demoRoleStationScopes['Inventory Controller']]
+  },
+  'HR Staff': {
+    name: 'AMA HR Staff',
+    label: 'Human resources administration',
+    stationScope: ['ALL']
+  },
+  'HR Manager': {
+    name: 'AMA HR Manager',
+    label: 'HR management and payroll approval',
+    stationScope: ['ALL']
+  },
+  'Chief of Pilot': {
+    name: 'AMA Chief of Pilot',
+    label: 'Pilot certifications and roster',
+    stationScope: ['ALL']
+  },
+  Employee: {
+    name: 'Budi Santoso',
+    label: 'Employee self-service',
+    stationScope: ['ALL']
   }
 };
 

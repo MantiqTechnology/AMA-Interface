@@ -315,7 +315,7 @@ describe('database migrations', () => {
     const sqlite = new Database(':memory:');
     runMigrations(sqlite);
     const station = sqlite.prepare(`INSERT INTO stations (
-      id, station_code, station_name, city_or_region, province, airport_type, created_at, updated_at
+      id, station_code, station_name, city, province, airport_type, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     station.run('origin', 'ORG', 'Origin', 'Origin', 'Papua', 'AIRPORT', 'now', 'now');
     station.run(
@@ -569,7 +569,7 @@ describe('manifest assurance migration', () => {
 
   function insertStationAndRoute(sqlite: Database.Database) {
     const station = sqlite.prepare(`INSERT INTO stations (
-      id, station_code, station_name, city_or_region, province, airport_type, created_at, updated_at
+      id, station_code, station_name, city, province, airport_type, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, 'now', 'now')`);
     station.run('sta-org', 'ORG', 'Origin', 'Origin', 'Papua', 'AIRPORT');
     station.run('sta-dst', 'DST', 'Destination', 'Destination', 'Papua', 'AIRPORT');

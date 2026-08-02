@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { ApiResponse } from '#shared/contracts/api';
-import QRCode from 'qrcode';
 import DocumentPanel from '../../../components/documents/DocumentPanel.vue';
 import AssetStatusBadge from '../../../features/corporate-assets/components/AssetStatusBadge.vue';
 
@@ -228,10 +227,12 @@ async function showQr() {
     `/asset-management/assets/${id.value}`,
     window.location.origin
   ).toString();
-  qrDataUrl.value = await QRCode.toDataURL(
-    JSON.stringify({ id: asset.value.id, code: asset.value.assetCode, url: detailUrl }),
-    { width: 280, margin: 2 }
-  );
+  const payload = JSON.stringify({
+    id: asset.value.id,
+    code: asset.value.assetCode,
+    url: detailUrl
+  });
+  qrDataUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(payload)}`;
   qrOpen.value = true;
 }
 </script>

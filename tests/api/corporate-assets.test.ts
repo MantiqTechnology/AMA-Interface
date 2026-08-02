@@ -20,6 +20,8 @@ await setup({
   setupTimeout: 300_000
 });
 
+type AssetRecord = Record<string, unknown>;
+
 describe('Corporate Assets APIs', () => {
   it('hides the module from OCC and applies Station Admin scope', async () => {
     const denied = await $fetch<ApiResponse<unknown>>('/api/asset-management/assets', {
@@ -28,19 +30,22 @@ describe('Corporate Assets APIs', () => {
     });
     expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
 
-    const scoped = await $fetch<ApiResponse<any>>('/api/asset-management/assets', {
-      headers: role('Station Admin')
-    });
-    expect(scoped.ok && scoped.data.items.map((item: any) => item.stationCode)).toEqual(['WMX']);
+    const scoped = await $fetch<ApiResponse<{ items: AssetRecord[] }>>(
+      '/api/asset-management/assets',
+      {
+        headers: role('Station Admin')
+      }
+    );
+    expect(scoped.ok && scoped.data.items.map((item) => item.stationCode)).toEqual(['WMX']);
   });
 
   it('keeps financial projection read-only and permission-gated', async () => {
-    const director = await $fetch<ApiResponse<any>>(
+    const director = await $fetch<ApiResponse<{ financial: { assetNumber: string } }>>(
       '/api/asset-management/assets/asset-gse-gpu-01',
       { headers: role('Director') }
     );
     expect(director.ok && director.data.financial.assetNumber).toBe('FA-GSE-00001');
-    const maintenance = await $fetch<ApiResponse<any>>(
+    const maintenance = await $fetch<ApiResponse<{ financial: unknown }>>(
       '/api/asset-management/assets/asset-gse-gpu-01',
       { headers: role('Maintenance Manager') }
     );
@@ -56,11 +61,11 @@ describe('Corporate Assets APIs', () => {
     );
     expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
 
-    const vehicle = await $fetch<ApiResponse<any>>(
+    const vehicle = await $fetch<ApiResponse<{ version: number }>>(
       '/api/asset-management/assets/asset-vehicle-wmx-01',
       { headers: role('Station Admin') }
     );
-    const moved = await $fetch<ApiResponse<any>>(
+    const moved = await $fetch<ApiResponse<{ financial: unknown }>>(
       '/api/asset-management/assets/asset-vehicle-wmx-01/actions/move',
       {
         method: 'POST',
@@ -81,7 +86,7 @@ describe('Corporate Assets APIs', () => {
   });
 
   it('returns current concurrency tokens on stale mutations', async () => {
-    const result = await $fetch<ApiResponse<any>>(
+    const result = await $fetch<ApiResponse<unknown>>(
       '/api/asset-management/assets/asset-it-laptop-01/actions/assign',
       {
         method: 'POST',
@@ -106,12 +111,18 @@ describe('Corporate Assets APIs', () => {
   });
 
   it('exposes Employee and Department master options to asset readers', async () => {
-    const departments = await $fetch<ApiResponse<any[]>>('/api/master-data/departments/options', {
-      headers: role('Maintenance Manager')
-    });
-    const employees = await $fetch<ApiResponse<any[]>>('/api/master-data/employees/options', {
-      headers: role('Maintenance Manager')
-    });
+    const departments = await $fetch<ApiResponse<Array<{ departmentCode: string }>>>(
+      '/api/master-data/departments/options',
+      {
+        headers: role('Maintenance Manager')
+      }
+    );
+    const employees = await $fetch<ApiResponse<Array<{ employeeCode: string }>>>(
+      '/api/master-data/employees/options',
+      {
+        headers: role('Maintenance Manager')
+      }
+    );
     expect(departments.ok && departments.data.some((item) => item.departmentCode === 'OPS')).toBe(
       true
     );
