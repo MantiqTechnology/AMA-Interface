@@ -343,7 +343,8 @@ export const payrollRunCreateSchema = z.object({
   periodYear: z.coerce.number().int().min(2020).max(2040),
   runType: z.enum(['MONTHLY', 'THR']).optional().default('MONTHLY'),
   employeeIds: z.array(z.string()).optional(),
-  notes: z.string().trim().max(500).nullable().default(null)
+  notes: z.string().trim().max(500).nullable().default(null),
+  saveAsDraft: z.boolean().optional().default(false)
 });
 
 export const payrollRunQuerySchema = z.object({
