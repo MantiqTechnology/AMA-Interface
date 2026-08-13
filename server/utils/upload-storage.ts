@@ -1,5 +1,6 @@
 import {
   deleteLocalUpload,
+  getLocalUpload,
   getLocalUploadFile,
   listLocalUploads,
   saveLocalUpload,
@@ -7,6 +8,7 @@ import {
 } from './local-upload-storage';
 import {
   deleteS3Upload,
+  getS3Upload,
   getS3UploadFile,
   isS3UploadConfigured,
   listS3Uploads,
@@ -21,6 +23,10 @@ export function getUploadStorageDriver() {
 
 export async function listUploads() {
   return getUploadStorageDriver() === 's3' ? await listS3Uploads() : await listLocalUploads();
+}
+
+export async function getUpload(id: string) {
+  return getUploadStorageDriver() === 's3' ? await getS3Upload(id) : await getLocalUpload(id);
 }
 
 export async function saveUpload(input: SaveUploadInput) {

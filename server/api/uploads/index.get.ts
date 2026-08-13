@@ -1,6 +1,6 @@
 import { defineApiEventHandler } from '../../utils/api-response';
-import { listLocalUploads } from '../../utils/local-upload-storage';
+import { listUploads } from '../../utils/upload-storage';
 
 export default defineApiEventHandler(async () => {
-  return await listLocalUploads();
+  return await listUploads();
 });

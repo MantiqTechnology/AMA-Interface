@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDocumentLifecycleStatus } from '../../shared/contracts/documents';
 import {
   createDocument,
@@ -9,6 +9,7 @@ import {
   getDocument,
   isUploadReferenced,
   listDocuments,
+  resetAndSeedLocalDocuments,
   supersedeDocument,
   verifyDocument
 } from '../../server/utils/local-document-storage';
@@ -30,7 +31,50 @@ afterEach(async () => {
   delete process.env.AMA_UPLOAD_MANIFEST;
   delete process.env.AMA_DOCUMENT_MANIFEST;
   delete process.env.VERCEL;
+  delete process.env.S3_UPLOAD_BUCKET;
+  delete process.env.S3_UPLOAD_ENDPOINT;
+  delete process.env.S3_UPLOAD_REGION;
+  delete process.env.S3_UPLOAD_MANIFEST_KEY;
+  delete process.env.S3_UPLOAD_ACCESS_KEY_ID;
+  delete process.env.S3_UPLOAD_SECRET_ACCESS_KEY;
+  delete process.env.S3_UPLOAD_PUBLIC_BASE_URL;
+  vi.unstubAllGlobals();
 });
+
+function installS3FetchMock() {
+  const objects = new Map<string, string | Buffer>();
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const key = decodeURIComponent(url.pathname.replace(/^\/ama-test-bucket\//u, ''));
+      const method = init?.method ?? 'GET';
+
+      if (method === 'GET') {
+        const body = objects.get(key);
+        return body === undefined
+          ? new Response('', { status: 404 })
+          : new Response(typeof body === 'string' ? body : new Uint8Array(body));
+      }
+
+      if (method === 'PUT') {
+        const body = init?.body;
+        objects.set(key, typeof body === 'string' ? body : Buffer.from(body as Uint8Array));
+        return new Response('', { status: 200 });
+      }
+
+      if (method === 'DELETE') {
+        objects.delete(key);
+        return new Response('', { status: 200 });
+      }
+
+      return new Response('', { status: 405 });
+    })
+  );
+
+  return objects;
+}
 
 describe('local document storage', () => {
   it('creates and filters documents by owner', async () => {
@@ -175,5 +219,24 @@ describe('local document storage', () => {
     } finally {
       await rm(runtimePath, { recursive: true, force: true });
     }
+  });
+
+  it('seeds demo document uploads through the active S3 driver', async () => {
+    const objects = installS3FetchMock();
+    process.env.S3_UPLOAD_BUCKET = 'ama-test-bucket';
+    process.env.S3_UPLOAD_ENDPOINT = 'https://r2.example.test';
+    process.env.S3_UPLOAD_REGION = 'auto';
+    process.env.S3_UPLOAD_MANIFEST_KEY = '_manifests/test-uploads.json';
+    process.env.S3_UPLOAD_ACCESS_KEY_ID = 'test-access-key';
+    process.env.S3_UPLOAD_SECRET_ACCESS_KEY = 'test-secret-key';
+    process.env.S3_UPLOAD_PUBLIC_BASE_URL = '';
+
+    await resetAndSeedLocalDocuments();
+
+    const documents = await listDocuments({ search: '' });
+    expect(documents.length).toBeGreaterThan(0);
+    expect(documents[0].upload?.viewUrl).toMatch(/^\/api\/uploads\/.+\/file$/u);
+    expect([...objects.keys()].some((key) => key.startsWith('s3/'))).toBe(true);
+    expect(objects.has('_manifests/test-uploads.json')).toBe(true);
   });
 });

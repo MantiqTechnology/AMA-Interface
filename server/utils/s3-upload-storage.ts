@@ -277,10 +277,15 @@ async function readManifest(config: S3UploadConfig): Promise<UploadManifest> {
   }
 
   if (!response.ok) {
+    const body = await response.text().catch(() => '');
     throw new DomainError(
       'S3_UPLOAD_MANIFEST_READ_FAILED',
       `S3 upload manifest read failed: ${response.status}`,
-      502
+      502,
+      {
+        status: response.status,
+        body: body.slice(0, 500)
+      }
     );
   }
 
@@ -381,7 +386,9 @@ export async function saveS3Upload(input: SaveS3UploadInput) {
   };
 
   const manifest = await readManifest(config);
-  await writeManifest(config, { uploads: [upload, ...manifest.uploads] });
+  await writeManifest(config, {
+    uploads: [upload, ...manifest.uploads.filter((item) => item.id !== id)]
+  });
 
   return upload;
 }

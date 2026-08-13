@@ -2,7 +2,7 @@ import { defineApiEventHandler } from '#server/utils/api-response';
 import { getDemoActorContext, requireDemoPermission } from '#server/utils/auth';
 import { getServices } from '#server/utils/services';
 import { parseBody, parseParams } from '#server/utils/validation';
-import { getLocalUpload } from '#server/utils/local-upload-storage';
+import { getUpload } from '#server/utils/upload-storage';
 import {
   addStationTaskEvidenceBodySchema,
   stationTaskIdParamsSchema
@@ -13,7 +13,7 @@ export default defineApiEventHandler(async (event) => {
   const body = await parseBody(event, addStationTaskEvidenceBodySchema);
   await requireDemoPermission(event, 'station.evidence.add');
   if (body.uploadId) {
-    await getLocalUpload(body.uploadId);
+    await getUpload(body.uploadId);
   }
 
   const services = getServices();

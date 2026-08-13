@@ -16,8 +16,8 @@ import {
 } from '../../shared/contracts/documents';
 import { getDocumentTypeConfig } from '../../shared/constants/document-types';
 import { DomainError, notFound } from './errors';
-import { getLocalUpload, saveLocalUpload } from './local-upload-storage';
 import { resetLocalUploadStorage } from './local-upload-storage';
+import { getUpload, getUploadStorageDriver, saveUpload } from './upload-storage';
 import { createDemoSeedContext, type DemoSeedContext } from '../db/seeds/context';
 
 const DEFAULT_MANIFEST_PATH = join(process.cwd(), 'data', 'local-documents.json');
@@ -124,7 +124,7 @@ async function toDto(document: MasterDocument): Promise<MasterDocumentDto> {
   let upload: MasterDocumentDto['upload'];
 
   try {
-    upload = await getLocalUpload(document.uploadId);
+    upload = await getUpload(document.uploadId);
   } catch {
     upload = undefined;
   }
@@ -464,7 +464,7 @@ async function ensureDemoDocuments(
     const seedKey = `${seed.ownerType}:${seed.ownerId}:${seed.documentType}`;
     if (existingSeeds.has(seedKey)) continue;
     const type = getDocumentTypeConfig(seed.documentType);
-    const upload = await saveLocalUpload({
+    const upload = await saveUpload({
       id: `seed-evidence-${String(index + 1).padStart(3, '0')}`,
       uploadedAt: timestamp,
       originalName: `${seed.documentNumber}.pdf`,
@@ -523,7 +523,9 @@ export async function resetLocalDocumentStorage() {
 export async function resetAndSeedLocalDocuments(
   context: DemoSeedContext = createDemoSeedContext()
 ) {
-  await resetLocalUploadStorage();
+  if (getUploadStorageDriver() === 'local') {
+    await resetLocalUploadStorage();
+  }
   await resetLocalDocumentStorage();
   await ensureDemoDocuments({ documents: [] }, true, context);
 }
@@ -559,7 +561,7 @@ export async function getDocument(id: string) {
 }
 
 export async function createDocument(input: CreateDocumentBody) {
-  await getLocalUpload(input.uploadId);
+  await getUpload(input.uploadId);
 
   const timestamp = new Date().toISOString();
   const manifest = await readSeededManifest();
@@ -645,7 +647,7 @@ export async function rejectDocument(id: string, rejectionReason: string) {
 }
 
 export async function supersedeDocument(id: string, input: SupersedeDocumentBody) {
-  await getLocalUpload(input.uploadId);
+  await getUpload(input.uploadId);
 
   const manifest = await readSeededManifest();
   const index = manifest.documents.findIndex((item) => item.id === id);

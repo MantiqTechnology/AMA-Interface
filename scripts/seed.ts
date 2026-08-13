@@ -1,7 +1,10 @@
+import { loadLocalEnv } from './load-env';
 import { createDbClient } from '../server/db/client';
 import { runMigrations } from '../server/db/migrate';
 import { createDemoSeedContext } from '../server/db/seeds/context';
 import { seedScenarioDatabase } from '../server/db/seeds/scenario-database';
+
+loadLocalEnv();
 
 const dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite';
 const { db, sqlite } = createDbClient(dbPath);

@@ -1,7 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { loadLocalEnv } from './load-env';
 import { createDbClient } from '../server/db/client';
 import { runMigrations } from '../server/db/migrate';
+
+loadLocalEnv();
 
 const dbPath = process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite';
 const exportPath =
