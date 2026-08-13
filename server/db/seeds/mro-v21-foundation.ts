@@ -15,6 +15,10 @@ function insertIgnore(sqlite: Database.Database, table: string, row: Row) {
     .run(row);
 }
 
+function rowExists(sqlite: Database.Database, table: string, id: string) {
+  return Boolean(sqlite.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id));
+}
+
 export function seedMroV21Foundation(sqlite: Database.Database, context: DemoSeedContext) {
   const seedNow = context.now;
   const seed = sqlite.transaction(() => {
@@ -894,26 +898,28 @@ export function seedMroV21Foundation(sqlite: Database.Database, context: DemoSee
       createdAt: context.at(-1, '13:45')
     });
 
-    insertIgnore(sqlite, 'inventory_movement_lines', {
-      id: 'inv-move-line-mro-release-filter',
-      movementId: 'inv-move-mro-release-filter',
-      partId: 'inv-part-filter-c208-reserve',
-      fromBinId: 'inv-bin-bik-mro-usable',
-      toBinId: null,
-      lotId: 'inv-lot-filter-c208-reserve',
-      serialId: null,
-      conditionFrom: 'SERVICEABLE',
-      conditionTo: null,
-      quantity: 1,
-      sourceUnitCostMinor: 0,
-      currencyId: 'cur-idr',
-      exchangeRateToIdrMicros: 1_000_000,
-      baseUnitCostIdr: 0,
-      baseValueIdr: 0
-    });
+    if (!rowExists(sqlite, 'inventory_movement_lines', 'inv-move-line-mro-release-filter')) {
+      insertIgnore(sqlite, 'inventory_movement_lines', {
+        id: 'inv-move-line-mro-release-filter',
+        movementId: 'inv-move-mro-release-filter',
+        partId: 'inv-part-filter-c208-reserve',
+        fromBinId: 'inv-bin-bik-mro-usable',
+        toBinId: null,
+        lotId: 'inv-lot-filter-c208-reserve',
+        serialId: null,
+        conditionFrom: 'SERVICEABLE',
+        conditionTo: null,
+        quantity: 1,
+        sourceUnitCostMinor: 0,
+        currencyId: 'cur-idr',
+        exchangeRateToIdrMicros: 1_000_000,
+        baseUnitCostIdr: 0,
+        baseValueIdr: 0
+      });
+    }
 
     sqlite
-      .prepare(`UPDATE inventory_movements SET is_finalized = 1 WHERE id = ?`)
+      .prepare(`UPDATE inventory_movements SET is_finalized = 1 WHERE id = ? AND is_finalized = 0`)
       .run('inv-move-mro-release-filter');
 
     insertIgnore(sqlite, 'maintenance_part_issues', {

@@ -246,7 +246,7 @@ describe('realistic scenario seed', () => {
     sqlite.close();
   });
 
-  it('keeps reserve flight and MRO master data free from seeded operational usage', () => {
+  it('keeps reserve flight data unused and limits reserve MRO part usage to seeded resource lifecycle', () => {
     const sqlite = createDbClient(dbPath).sqlite;
 
     expect(
@@ -343,14 +343,20 @@ describe('realistic scenario seed', () => {
     expect(
       sqlite
         .prepare(
-          `SELECT COUNT(*) AS count
+          `SELECT id, part_id
            FROM maintenance_part_issue_lines
            WHERE part_id IN (
              'inv-part-filter-c208-reserve', 'inv-part-tire-c208-reserve'
-           )`
+           )
+           ORDER BY id`
         )
-        .get()
-    ).toEqual({ count: 0 });
+        .all()
+    ).toEqual([
+      {
+        id: 'inv-issue-line-mro-release-filter',
+        part_id: 'inv-part-filter-c208-reserve'
+      }
+    ]);
 
     sqlite.close();
   });
