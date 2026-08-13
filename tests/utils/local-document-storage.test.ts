@@ -14,6 +14,7 @@ import {
   verifyDocument
 } from '../../server/utils/local-document-storage';
 import { saveLocalUpload } from '../../server/utils/local-upload-storage';
+import { listUploads } from '../../server/utils/upload-storage';
 
 let tempRoot: string;
 
@@ -238,5 +239,40 @@ describe('local document storage', () => {
     expect(documents[0].upload?.viewUrl).toMatch(/^\/api\/uploads\/.+\/file$/u);
     expect([...objects.keys()].some((key) => key.startsWith('s3/'))).toBe(true);
     expect(objects.has('_manifests/test-uploads.json')).toBe(true);
+  });
+
+  it('normalizes stale S3 manifest URLs to the active private upload proxy', async () => {
+    const objects = installS3FetchMock();
+    process.env.S3_UPLOAD_BUCKET = 'ama-test-bucket';
+    process.env.S3_UPLOAD_ENDPOINT = 'https://r2.example.test';
+    process.env.S3_UPLOAD_REGION = 'auto';
+    process.env.S3_UPLOAD_MANIFEST_KEY = '_manifests/test-uploads.json';
+    process.env.S3_UPLOAD_ACCESS_KEY_ID = 'test-access-key';
+    process.env.S3_UPLOAD_SECRET_ACCESS_KEY = 'test-secret-key';
+    process.env.S3_UPLOAD_PUBLIC_BASE_URL = '';
+    objects.set(
+      '_manifests/test-uploads.json',
+      JSON.stringify({
+        uploads: [
+          {
+            id: 'stale-upload',
+            originalName: 'stale.pdf',
+            filename: 'stale.pdf',
+            path: 's3/stale.pdf',
+            viewUrl: 'https://bad-r2-host.invalid/s3/stale.pdf',
+            downloadUrl: 'https://bad-r2-host.invalid/s3/stale.pdf',
+            size: 123,
+            contentType: 'application/pdf',
+            isImage: false,
+            uploadedAt: '2026-08-13T00:00:00.000Z'
+          }
+        ]
+      })
+    );
+
+    const uploads = await listUploads();
+
+    expect(uploads[0].viewUrl).toBe('/api/uploads/stale-upload/file');
+    expect(uploads[0].downloadUrl).toBe('/api/uploads/stale-upload/file?download=1');
   });
 });

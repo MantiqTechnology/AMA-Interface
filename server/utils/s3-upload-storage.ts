@@ -105,6 +105,7 @@ function getS3UploadConfig(): S3UploadConfig | null {
     : endpointValue
       ? new URL(endpointValue)
       : null;
+  const publicBaseUrlValue = process.env.S3_UPLOAD_PUBLIC_BASE_URL?.trim().replace(/\/+$/u, '');
 
   if (!endpoint) {
     throw new DomainError(
@@ -125,10 +126,7 @@ function getS3UploadConfig(): S3UploadConfig | null {
       process.env.S3_UPLOAD_REGION?.trim() || process.env.AWS_REGION?.trim() || DEFAULT_REGION,
     accessKeyId,
     secretAccessKey,
-    publicBaseUrl:
-      process.env.S3_UPLOAD_PUBLIC_BASE_URL?.trim().replace(/\/+$/u, '') ??
-      bucketFromUrl?.publicBaseUrl ??
-      null
+    publicBaseUrl: publicBaseUrlValue || null
   };
 }
 
@@ -242,6 +240,15 @@ function publicUrlFor(config: S3UploadConfig, key: string) {
   return `${config.publicBaseUrl}/${key.split('/').map(encodePathSegment).join('/')}`;
 }
 
+function withConfiguredUrls(config: S3UploadConfig, upload: LocalUploadDto): LocalUploadDto {
+  const publicUrl = publicUrlFor(config, upload.path);
+  return {
+    ...upload,
+    viewUrl: publicUrl ?? viewUrlFor(upload.id),
+    downloadUrl: publicUrl ?? downloadUrlFor(upload.id)
+  };
+}
+
 function manifestKey() {
   return process.env.S3_UPLOAD_MANIFEST_KEY?.trim() || '_manifests/ama-uploads.json';
 }
@@ -300,7 +307,10 @@ async function readManifest(config: S3UploadConfig): Promise<UploadManifest> {
   }
 
   try {
-    return uploadManifestSchema.parse(await response.json());
+    const manifest = uploadManifestSchema.parse(await response.json());
+    return {
+      uploads: manifest.uploads.map((upload) => withConfiguredUrls(config, upload))
+    };
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof z.ZodError) {
       throw new DomainError(
