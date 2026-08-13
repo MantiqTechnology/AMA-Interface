@@ -289,7 +289,17 @@ function ownerForBlocker(code: string | undefined) {
                     <div class="text-caption text-medium-emphasis">{{ task.location }}</div>
                   </td>
                   <td>
-                    <NuxtLink class="font-weight-bold" :to="task.route">{{ task.title }}</NuxtLink>
+                    <div class="font-weight-bold">{{ task.title }}</div>
+                    <VBtn
+                      :to="task.route"
+                      class="mt-1 mro-action-btn"
+                      color="primary"
+                      size="small"
+                      variant="tonal"
+                      prepend-icon="mdi-briefcase-eye-outline"
+                    >
+                      Buka pekerjaan
+                    </VBtn>
                     <div class="text-caption text-medium-emphasis">{{ task.reference }}</div>
                   </td>
                   <td>
@@ -306,7 +316,14 @@ function ownerForBlocker(code: string | undefined) {
                   </td>
                   <td>
                     <div>{{ task.owner }}</div>
-                    <VBtn class="mt-2" size="small" variant="text" :to="task.route">
+                    <VBtn
+                      class="mt-2 mro-action-btn"
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      prepend-icon="mdi-arrow-right-circle-outline"
+                      :to="task.route"
+                    >
                       Buka pekerjaan
                     </VBtn>
                   </td>
@@ -374,5 +391,11 @@ function ownerForBlocker(code: string | undefined) {
 .maintenance-table--my-work :deep(th:nth-child(5)),
 .maintenance-table--my-work :deep(td:nth-child(5)) {
   width: 180px;
+}
+
+.mro-action-btn {
+  min-width: max-content;
+  max-width: 100%;
+  font-weight: 700;
 }
 </style>

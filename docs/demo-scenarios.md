@@ -56,6 +56,119 @@ coordination/handoff demonstration, not full MRO.
 7. **Inventory Controller:** open `/inventory/purchase-requests` and `/inventory/purchase-orders` for submitted, pending-approval, and partially received procurement records.
 8. **OCC / Finance:** finish with `/flights/actual-closure`, the closed charter, cancellation, and reopened correction states.
 
+## MRO Demo-v2.1: Operational Resource Control
+
+Demo-v2.1 extiende las capacidades MRO con gestión completa de recursos operacionales. Esta funcionalidad permite planificar, reservar y rastrear materiales, herramientas y personal para work packages de mantenimiento.
+
+### Escenarios Seeded
+
+Cinco escenarios de demostración están precargados:
+
+#### Escenario A: Fully Ready Package (`mwp-mrov1-release-ready`)
+
+Work package con todos los recursos planificados y listos para liberación técnica:
+
+- ✅ Declaraciones de recursos: MATERIAL, TOOL, PERSONNEL = REQUIRED
+- ✅ Material reservado y emitido (inventory reservations activas)
+- ✅ Herramientas asignadas con custodia (calibración vigente)
+- ✅ Personal asignado y confirmado (elegibilidad ELIGIBLE)
+- ✅ Validación AMO scope exitosa
+- ✅ Flight-MRO link establecido
+
+**Flujo de demostración:**
+
+1. Como **Maintenance Manager**, abrir `/maintenance/work-packages/mwp-mrov1-release-ready`
+2. Navegar a las tabs: Material, Tool, Personnel, AMO Scope, MRO Eligibility
+3. Verificar que todos los recursos están en estado "ready"
+4. En tab "MRO Eligibility", confirmar que no hay blockers
+5. Ejecutar Technical Release (botón "Release Work Package")
+
+#### Escenario B: Double Reservation Conflict (`mwp-mrov21-conflict`)
+
+Dos work packages compiten por el mismo inventario limitado:
+
+- ⚠️ Material requirement para `inv-part-filter-c208-reserve` (solo 2 unidades disponibles)
+- ⚠️ `mwp-mrov1-release-ready` ya reservó 2 unidades
+- ⚠️ Este package no puede reservar → blocker MATERIAL_NOT_RESERVED
+
+**Flujo de demostración:**
+
+1. Como **Maintenance Manager**, abrir `/maintenance/work-packages/mwp-mrov21-conflict`
+2. En tab "Material", intentar crear una reserva para el filter
+3. El sistema rechaza la reserva con error ATP (Available-to-Promise insuficiente)
+4. En tab "MRO Eligibility", ver blocker: "MATERIAL_NOT_RESERVED"
+
+#### Escenario C: Tool Calibration Expired (`mwp-mrov1-active`)
+
+Tool requirement para herramienta con calibración vencida:
+
+- ⚠️ Tool requirement para `mtool-mrov2-expired` (calibración vencida 2024-12-01)
+- ⚠️ El sistema bloquea la asignación de esta herramienta
+- ⚠️ Blocker: TOOL_CALIBRATION_EXPIRED
+
+**Flujo de demostración:**
+
+1. Como **Maintenance Manager**, abrir `/maintenance/work-packages/mwp-mrov1-active`
+2. En tab "Tool", ver tool requirement para torque wrench
+3. Intentar asignar la herramienta → sistema rechaza por calibración vencida
+4. En tab "MRO Eligibility", ver blocker: "TOOL_CALIBRATION_EXPIRED"
+
+#### Escenario D: Personnel Authorization Expired (`mwp-mrov21-expired-auth`)
+
+Personnel requirement con autorización de compañía vencida:
+
+- ⚠️ Personnel requirement para INSPECTOR role
+- ⚠️ Assignment a `crew-mrov21-inspector-expired` (authorization vencida)
+- ⚠️ Eligibility snapshot muestra: authorization expired
+- ⚠️ Blocker: PERSONNEL_ASSIGNMENT_INELIGIBLE
+
+**Flujo de demostración:**
+
+1. Como **Maintenance Manager**, abrir `/maintenance/work-packages/mwp-mrov21-expired-auth`
+2. En tab "Personnel", ver assignment con estado INELIGIBLE
+3. Expandir eligibility snapshot → ver "Authorization expired"
+4. En tab "MRO Eligibility", ver blocker: "PERSONNEL_ASSIGNMENT_INELIGIBLE"
+
+#### Escenario E: Return and Cancellation (`mwp-mrov1-history`)
+
+Work package completado con devoluciones y cancelaciones:
+
+- ✅ Status: RELEASED (liberación técnica completada)
+- ✅ Tools devueltas (status RETURNED, condition GOOD)
+- ✅ Personal liberado (status RELEASED)
+- ✅ Flight-MRO link cancelado con razón de desvinculación
+
+**Flujo de demostración:**
+
+1. Como **Maintenance Manager**, abrir `/maintenance/work-packages/mwp-mrov1-history`
+2. En tab "Tool", ver allocations con status RETURNED
+3. En tab "Personnel", ver assignments con status RELEASED
+4. Verificar audit trail completo de devoluciones
+
+### Navegación UI
+
+Las nuevas funcionalidades están disponibles en:
+
+- **Work Package Detail** (`/maintenance/work-packages/[id]`): tabs Material, Tool, Personnel, AMO Scope, MRO Eligibility
+- **Flight Detail** (`/flights/[id]`): sección "MRO Readiness" con linked packages y blockers
+
+### Roles y Permisos
+
+- **Maintenance Manager**: puede crear/ver declaraciones, requisitos, reservas, asignaciones
+- **Maintenance Technician**: puede ver recursos asignados a sus work packages
+- **Certifying Staff**: puede ejecutar Technical Release si MRO Eligibility = true
+- **Demo Admin**: acceso completo a todas las funcionalidades
+
+### Limitaciones Demo
+
+- Las reservas de inventario son simuladas (no afectan stock real de inventory_parts)
+- ATP (Available-to-Promise) es calculado pero no bloquea movimientos de inventario externos
+- Las validaciones de calibración usan fechas estáticas del seed data
+- Los Flight-MRO links son solo referenciales (no bloquean flight operations)
+- No hay integración con sistemas externos (ERP, procurement, etc.)
+
+---
+
 ## Finance Accounting Rehearsal
 
 Open `/finance/accounting` as Finance Reviewer or Director. The baseline is created through the

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { MaintenanceCommandCenterDto } from '#shared/features/maintenance';
+import type { AircraftDto } from '#shared/features/operations/aircraft';
 import type { MaintenanceErrorPresentation } from '../../composables/useMaintenanceUi';
 
 const format = useLocaleFormat();
 const ui = useMaintenanceUi();
 const { can } = useAuthorization();
+const { resolveAircraftImageUrl } = useAircraftImageUrl();
 const filters = reactive({
   search: '',
   aircraft: '',
@@ -15,9 +17,41 @@ const assessmentDialog = ref(false);
 const assessmentLoading = ref(false);
 const assessmentError = ref<MaintenanceErrorPresentation | null>(null);
 const assessmentTarget = ref<MaintenanceCommandCenterDto['defects'][number] | null>(null);
+const reportDialog = ref(false);
+const reportLoading = ref(false);
+const reportError = ref<MaintenanceErrorPresentation | null>(null);
+const closeLoadingId = ref('');
 const assessmentForm = reactive({
   assessmentDecision: 'GROUND' as 'GROUND' | 'DEFER' | 'NO_IMPACT',
-  assessmentNote: ''
+  assessmentNote: '',
+  defermentType: 'MEL' as 'MEL' | 'CDL',
+  referenceCode: '',
+  category: '',
+  operationalLimitations: '',
+  maintenanceProcedure: '',
+  operationsProcedure: '',
+  effectiveAt: '',
+  expiresAt: '',
+  targetRectificationAt: '',
+  authorizationReference: '',
+  applicableServiceTypeCodes: [] as string[]
+});
+const reportForm = reactive({
+  aircraftId: '',
+  title: '',
+  description: '',
+  detectedAt: '',
+  reporterObservation: 'UNKNOWN' as
+    | 'NO_SIGNIFICANT_IMPACT_OBSERVED'
+    | 'MAY_AFFECT_OPERATION'
+    | 'ATTENTION_BEFORE_NEXT_FLIGHT'
+    | 'APPEARS_CRITICAL'
+    | 'UNKNOWN',
+  initialSeverity: 'UNKNOWN' as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'UNKNOWN',
+  operationalImpact: '',
+  flightPhase: '',
+  sourceReference: '',
+  evidenceReferences: ''
 });
 
 const { data, pending, error, refresh } = await useAsyncData('maintenance-defects', () =>
@@ -26,6 +60,7 @@ const { data, pending, error, refresh } = await useAsyncData('maintenance-defect
 
 const canAssess = computed(() => can('maintenance.defect.assess').allowed);
 const canPlan = computed(() => can('maintenance.package.plan').allowed);
+const canReport = computed(() => can('aircraft.defect.report').allowed);
 const apiError = computed(() => (error.value ? ui.presentError(error.value) : null));
 const accessRestricted = computed(() => apiError.value?.code === 'FORBIDDEN');
 const aircraftItems = computed(() => [
@@ -47,6 +82,36 @@ const packageStateItems = [
   { title: 'Linked to package', value: 'LINKED' },
   { title: 'Package action available', value: 'AVAILABLE' },
   { title: 'Package action blocked', value: 'BLOCKED' }
+];
+const aircraftOptions = computed(() =>
+  (data.value?.fleet ?? []).map((aircraft) => ({
+    title: aircraft.registrationNumber,
+    value: aircraft.aircraftId
+  }))
+);
+const reporterObservationItems = [
+  { title: 'Tidak terlihat berdampak signifikan', value: 'NO_SIGNIFICANT_IMPACT_OBSERVED' },
+  { title: 'Dapat memengaruhi operasi', value: 'MAY_AFFECT_OPERATION' },
+  {
+    title: 'Perlu perhatian sebelum penerbangan berikutnya',
+    value: 'ATTENTION_BEFORE_NEXT_FLIGHT'
+  },
+  { title: 'Kondisi tampak kritis', value: 'APPEARS_CRITICAL' },
+  { title: 'Tidak diketahui', value: 'UNKNOWN' }
+];
+const severityItems = [
+  { title: 'Low', value: 'LOW' },
+  { title: 'Medium', value: 'MEDIUM' },
+  { title: 'High', value: 'HIGH' },
+  { title: 'Critical', value: 'CRITICAL' },
+  { title: 'Unknown', value: 'UNKNOWN' }
+];
+const serviceTypes = [
+  'CHARTER_CARGO',
+  'CHARTER_PASSENGER',
+  'SCHEDULED_PASSENGER',
+  'MEDEVAC',
+  'POSITIONING'
 ];
 const defects = computed(() =>
   (data.value?.defects ?? []).filter((defect) => {
@@ -114,7 +179,10 @@ function groundingImpact(defect: MaintenanceCommandCenterDto['defects'][number])
 }
 
 function defermentState(defect: MaintenanceCommandCenterDto['defects'][number]) {
-  if (defect.status === 'DEFERRED') return 'Catatan ditunda';
+  if (defect.defermentStatus === 'EXPIRED') return 'Deferred kedaluwarsa';
+  if (defect.defermentStatus === 'ACTIVE') return 'Deferred aktif';
+  if (defect.defermentStatus === 'CLOSED') return 'Deferred ditutup';
+  if (defect.status === 'DEFERRED') return 'Menunggu catatan deferred';
   if (defect.assessmentDecision === 'DEFER') return 'Penilaian ditunda';
   return 'Tidak ada deferment tercatat';
 }
@@ -125,8 +193,17 @@ function packageCreationAvailable(defect: MaintenanceCommandCenterDto['defects']
   );
 }
 
+function canCloseDeferred(defect: MaintenanceCommandCenterDto['defects'][number]) {
+  return (
+    canAssess.value &&
+    Boolean(defect.defermentId) &&
+    ['ACTIVE', 'EXPIRED'].includes(defect.defermentStatus ?? '')
+  );
+}
+
 function currentBlocker(defect: MaintenanceCommandCenterDto['defects'][number]) {
   if (defect.activeWorkPackageId) return 'Perbaikan dikontrol oleh paket pekerjaan aktif.';
+  if (defect.defermentStatus === 'EXPIRED') return 'Deferred sudah melewati batas.';
   if (!defect.assessmentDecision) return 'Temuan perlu dinilai oleh Maintenance Control.';
   if (defect.assessmentDecision === 'NO_IMPACT') return 'Penilaian tidak memerlukan paket MRO.';
   return 'Paket pekerjaan belum dibuat.';
@@ -134,9 +211,24 @@ function currentBlocker(defect: MaintenanceCommandCenterDto['defects'][number]) 
 
 function requiredAction(defect: MaintenanceCommandCenterDto['defects'][number]) {
   if (defect.activeWorkPackageId) return 'Buka paket pekerjaan terkait.';
+  if (defect.defermentStatus === 'EXPIRED') return 'Selesaikan rectification dan tutup deferred.';
   if (!defect.assessmentDecision) return 'Nilai temuan sebelum membuat rencana kerja.';
   if (packageCreationAvailable(defect)) return 'Buat paket pekerjaan dari temuan ini.';
   return 'Periksa catatan penilaian dan riwayat aktivitas.';
+}
+
+function nowLocal() {
+  const date = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000);
+  return date.toISOString().slice(0, 16);
+}
+
+function plusDaysLocal(days: number) {
+  const date = new Date(Date.now() + days * 86_400_000 - new Date().getTimezoneOffset() * 60_000);
+  return date.toISOString().slice(0, 16);
+}
+
+function toIso(value: string) {
+  return new Date(value).toISOString();
 }
 
 function owner(defect: MaintenanceCommandCenterDto['defects'][number]) {
@@ -153,7 +245,42 @@ function openAssessment(defect: MaintenanceCommandCenterDto['defects'][number]) 
   assessmentError.value = null;
   assessmentForm.assessmentDecision = 'GROUND';
   assessmentForm.assessmentNote = `Maintenance assessment for ${defect.defectNumber}: `;
+  assessmentForm.defermentType = 'MEL';
+  assessmentForm.referenceCode = '';
+  assessmentForm.category = '';
+  assessmentForm.operationalLimitations = '';
+  assessmentForm.maintenanceProcedure = '';
+  assessmentForm.operationsProcedure = '';
+  assessmentForm.effectiveAt = nowLocal();
+  assessmentForm.expiresAt = plusDaysLocal(10);
+  assessmentForm.targetRectificationAt = plusDaysLocal(7);
+  assessmentForm.authorizationReference = '';
+  assessmentForm.applicableServiceTypeCodes = [];
   assessmentDialog.value = true;
+}
+
+function openReport() {
+  reportError.value = null;
+  Object.assign(reportForm, {
+    aircraftId: aircraftOptions.value[0]?.value ?? '',
+    title: '',
+    description: '',
+    detectedAt: nowLocal(),
+    reporterObservation: 'UNKNOWN',
+    initialSeverity: 'UNKNOWN',
+    operationalImpact: '',
+    flightPhase: '',
+    sourceReference: '',
+    evidenceReferences: ''
+  });
+  reportDialog.value = true;
+}
+
+function references(value: string) {
+  return value
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function submitAssessment() {
@@ -161,12 +288,35 @@ async function submitAssessment() {
   assessmentLoading.value = true;
   assessmentError.value = null;
   try {
+    const body =
+      assessmentForm.assessmentDecision === 'DEFER'
+        ? {
+            assessmentDecision: assessmentForm.assessmentDecision,
+            assessmentNote: assessmentForm.assessmentNote,
+            deferment: {
+              defermentType: assessmentForm.defermentType,
+              referenceCode: assessmentForm.referenceCode,
+              category: assessmentForm.category || null,
+              operationalLimitations: assessmentForm.operationalLimitations,
+              maintenanceProcedure: assessmentForm.maintenanceProcedure || null,
+              operationsProcedure: assessmentForm.operationsProcedure || null,
+              effectiveAt: toIso(assessmentForm.effectiveAt),
+              expiresAt: toIso(assessmentForm.expiresAt),
+              targetRectificationAt: assessmentForm.targetRectificationAt
+                ? toIso(assessmentForm.targetRectificationAt)
+                : null,
+              authorizationReference: assessmentForm.authorizationReference,
+              applicableRouteIds: [],
+              applicableServiceTypeCodes: assessmentForm.applicableServiceTypeCodes
+            }
+          }
+        : {
+            assessmentDecision: assessmentForm.assessmentDecision,
+            assessmentNote: assessmentForm.assessmentNote
+          };
     await fetchApi(`/api/maintenance/defects/${assessmentTarget.value.id}/actions/assess`, {
       method: 'POST',
-      body: {
-        assessmentDecision: assessmentForm.assessmentDecision,
-        assessmentNote: assessmentForm.assessmentNote
-      }
+      body
     });
     assessmentDialog.value = false;
     await refresh();
@@ -174,6 +324,56 @@ async function submitAssessment() {
     assessmentError.value = ui.presentError(errorValue);
   } finally {
     assessmentLoading.value = false;
+  }
+}
+
+async function submitReport() {
+  if (!reportForm.aircraftId || reportForm.title.trim().length < 3) return;
+  reportLoading.value = true;
+  reportError.value = null;
+  try {
+    const aircraft = await fetchApi<AircraftDto>(
+      `/api/master-data/aircraft/${reportForm.aircraftId}`
+    );
+    await fetchApi(`/api/master-data/aircraft/${reportForm.aircraftId}/defects`, {
+      method: 'POST',
+      body: {
+        title: reportForm.title,
+        description: reportForm.description,
+        detectedAt: toIso(reportForm.detectedAt),
+        reporterObservation: reportForm.reporterObservation,
+        initialSeverity: reportForm.initialSeverity,
+        operationalImpact: reportForm.operationalImpact || null,
+        flightPhase: reportForm.flightPhase || null,
+        sourceReference: reportForm.sourceReference || null,
+        evidenceReferences: references(reportForm.evidenceReferences),
+        expectedVersion: aircraft.version
+      }
+    });
+    reportDialog.value = false;
+    await refresh();
+  } catch (errorValue) {
+    reportError.value = ui.presentError(errorValue);
+  } finally {
+    reportLoading.value = false;
+  }
+}
+
+async function closeDeferred(defect: MaintenanceCommandCenterDto['defects'][number]) {
+  closeLoadingId.value = defect.id;
+  try {
+    await fetchApi(`/api/maintenance/defects/${defect.id}/actions/close-deferred`, {
+      method: 'POST',
+      body: {
+        closureNote: `Deferred defect ${defect.defectNumber} closed after released rectification work package.`,
+        evidenceReferences: [defect.activeWorkPackageNumber ?? defect.defectNumber]
+      }
+    });
+    await refresh();
+  } catch (errorValue) {
+    assessmentError.value = ui.presentError(errorValue);
+  } finally {
+    closeLoadingId.value = '';
   }
 }
 </script>
@@ -189,6 +389,15 @@ async function submitAssessment() {
         </p>
       </div>
       <VSpacer />
+      <VBtn
+        v-if="canReport"
+        color="primary"
+        prepend-icon="mdi-alert-plus-outline"
+        variant="tonal"
+        @click="openReport"
+      >
+        Laporkan Defect
+      </VBtn>
       <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
     </div>
 
@@ -204,6 +413,18 @@ async function submitAssessment() {
       <template #append>
         <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Coba lagi</VBtn>
       </template>
+    </VAlert>
+    <VAlert
+      v-if="assessmentError && !assessmentDialog"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      closable
+      @click:close="assessmentError = null"
+    >
+      <strong>{{ assessmentError.title }}</strong>
+      <div>{{ assessmentError.impact }}</div>
+      <div class="text-caption">Langkah berikutnya: {{ assessmentError.requiredAction }}</div>
     </VAlert>
 
     <VCard border>
@@ -278,12 +499,26 @@ async function submitAssessment() {
                     <div class="text-caption text-medium-emphasis">{{ defect.title }}</div>
                   </td>
                   <td>
-                    <NuxtLink
-                      class="font-weight-medium"
-                      :to="`/master-data/aircraft/${defect.aircraftId}`"
-                    >
-                      {{ defect.aircraftRegistrationNumber }}
-                    </NuxtLink>
+                    <div class="d-flex align-center ga-2">
+                      <VAvatar rounded="lg" size="40">
+                        <VImg
+                          v-if="resolveAircraftImageUrl(defect.aircraftImageUrl)"
+                          :alt="`${defect.aircraftRegistrationNumber} aircraft image`"
+                          cover
+                          :src="resolveAircraftImageUrl(defect.aircraftImageUrl) ?? undefined"
+                        />
+                        <VIcon v-else icon="mdi-airplane" size="22" />
+                      </VAvatar>
+                      <VBtn
+                        :to="`/master-data/aircraft/${defect.aircraftId}`"
+                        class="mro-action-btn"
+                        color="secondary"
+                        size="small"
+                        variant="outlined"
+                      >
+                        {{ defect.aircraftRegistrationNumber }}
+                      </VBtn>
+                    </div>
                     <div class="text-caption text-medium-emphasis">
                       {{ defect.derivedSourceFlightNumber ?? defect.sourceReference ?? '-' }}
                     </div>
@@ -301,15 +536,30 @@ async function submitAssessment() {
                     <div class="text-caption text-medium-emphasis">
                       {{ defermentState(defect) }}
                     </div>
+                    <div v-if="defect.defermentId" class="text-caption mt-1">
+                      {{ defect.defermentReferenceCode ?? 'Reference recorded' }}
+                      <span v-if="defect.defermentExpiresAt">
+                        / expiry {{ format.dateTime(defect.defermentExpiresAt) }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="defect.defermentOperationalLimitations"
+                      class="text-caption text-medium-emphasis"
+                    >
+                      {{ defect.defermentOperationalLimitations }}
+                    </div>
                   </td>
                   <td>
                     <VBtn
                       v-if="defect.activeWorkPackageId"
                       :to="`/maintenance/work-packages/${defect.activeWorkPackageId}`"
-                      variant="text"
+                      class="mro-action-btn"
+                      color="primary"
+                      variant="tonal"
                       size="small"
+                      prepend-icon="mdi-briefcase-eye-outline"
                     >
-                      {{ defect.activeWorkPackageNumber }}
+                      Buka {{ defect.activeWorkPackageNumber }}
                     </VBtn>
                     <span v-else>-</span>
                     <div class="text-caption text-medium-emphasis">{{ owner(defect) }}</div>
@@ -320,8 +570,10 @@ async function submitAssessment() {
                     <div class="d-flex flex-wrap ga-1 mt-2">
                       <VBtn
                         v-if="canAssess && !defect.assessmentDecision"
-                        variant="text"
+                        color="primary"
+                        variant="tonal"
                         size="small"
+                        prepend-icon="mdi-clipboard-edit-outline"
                         @click="openAssessment(defect)"
                       >
                         Nilai
@@ -329,23 +581,40 @@ async function submitAssessment() {
                       <VBtn
                         v-if="canPlan && packageCreationAvailable(defect)"
                         :to="{ path: '/maintenance', query: { defect: defect.defectNumber } }"
-                        variant="text"
+                        color="primary"
+                        variant="tonal"
                         size="small"
+                        prepend-icon="mdi-plus-box-outline"
                       >
                         Buat Paket Pekerjaan
                       </VBtn>
                       <VBtn
                         v-if="defect.activeWorkPackageId"
                         :to="`/maintenance/work-packages/${defect.activeWorkPackageId}`"
-                        variant="text"
+                        color="primary"
+                        variant="outlined"
                         size="small"
+                        prepend-icon="mdi-briefcase-arrow-right"
                       >
                         Buka Paket Pekerjaan
                       </VBtn>
                       <VBtn
-                        :to="`/master-data/aircraft/${defect.aircraftId}`"
-                        variant="text"
+                        v-if="canCloseDeferred(defect)"
+                        color="success"
+                        variant="tonal"
                         size="small"
+                        prepend-icon="mdi-check-decagram-outline"
+                        :loading="closeLoadingId === defect.id"
+                        @click="closeDeferred(defect)"
+                      >
+                        Tutup Deferred
+                      </VBtn>
+                      <VBtn
+                        :to="`/master-data/aircraft/${defect.aircraftId}`"
+                        color="secondary"
+                        variant="outlined"
+                        size="small"
+                        prepend-icon="mdi-airplane"
                       >
                         Lihat Pesawat
                       </VBtn>
@@ -355,8 +624,10 @@ async function submitAssessment() {
                             ? `/maintenance/records?package=${defect.activeWorkPackageNumber}`
                             : `/maintenance/records?aircraft=${defect.aircraftRegistrationNumber}`
                         "
-                        variant="text"
+                        color="secondary"
+                        variant="outlined"
                         size="small"
+                        prepend-icon="mdi-history"
                       >
                         Lihat Riwayat
                       </VBtn>
@@ -407,6 +678,90 @@ async function submitAssessment() {
             hint="Minimal 10 karakter. Disimpan pada riwayat aktivitas backend."
             persistent-hint
           />
+          <template v-if="assessmentForm.assessmentDecision === 'DEFER'">
+            <VAlert type="warning" variant="tonal" class="mb-4">
+              Deferred mencatat pembatasan operasional demo dan target rectification. Ini bukan
+              klaim compliance regulatori.
+            </VAlert>
+            <VRow>
+              <VCol cols="12" md="4">
+                <VSelect
+                  v-model="assessmentForm.defermentType"
+                  :items="['MEL', 'CDL']"
+                  label="Tipe referensi demo"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="5">
+                <VTextField
+                  v-model="assessmentForm.referenceCode"
+                  label="Referensi deferment / maintenance data"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="3">
+                <VTextField v-model="assessmentForm.category" label="Kategori" variant="outlined" />
+              </VCol>
+            </VRow>
+            <VTextarea
+              v-model="assessmentForm.operationalLimitations"
+              label="Pembatasan operasional"
+              rows="3"
+              variant="outlined"
+            />
+            <VTextarea
+              v-model="assessmentForm.maintenanceProcedure"
+              label="Instruksi maintenance"
+              rows="2"
+              variant="outlined"
+            />
+            <VTextarea
+              v-model="assessmentForm.operationsProcedure"
+              label="Instruksi operasi"
+              rows="2"
+              variant="outlined"
+            />
+            <VRow>
+              <VCol cols="12" md="4">
+                <VTextField
+                  v-model="assessmentForm.effectiveAt"
+                  label="Efektif"
+                  type="datetime-local"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="4">
+                <VTextField
+                  v-model="assessmentForm.targetRectificationAt"
+                  label="Target rectification"
+                  type="datetime-local"
+                  variant="outlined"
+                />
+              </VCol>
+              <VCol cols="12" md="4">
+                <VTextField
+                  v-model="assessmentForm.expiresAt"
+                  label="Expiry"
+                  type="datetime-local"
+                  variant="outlined"
+                />
+              </VCol>
+            </VRow>
+            <VTextField
+              v-model="assessmentForm.authorizationReference"
+              label="Referensi approval internal"
+              variant="outlined"
+            />
+            <VSelect
+              v-model="assessmentForm.applicableServiceTypeCodes"
+              :items="serviceTypes"
+              chips
+              clearable
+              multiple
+              label="Service type dibatasi"
+              variant="outlined"
+            />
+          </template>
         </VCardText>
         <VCardActions>
           <VBtn variant="text" :disabled="assessmentLoading" @click="assessmentDialog = false">
@@ -420,6 +775,107 @@ async function submitAssessment() {
             @click="submitAssessment"
           >
             Simpan penilaian
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="reportDialog" max-width="760" persistent>
+      <VCard>
+        <VCardTitle>Laporkan Defect</VCardTitle>
+        <VCardText>
+          <VAlert v-if="reportError" type="error" variant="tonal" class="mb-4">
+            <strong>{{ reportError.title }}</strong>
+            <div>{{ reportError.impact }}</div>
+            <div class="text-caption">Langkah berikutnya: {{ reportError.requiredAction }}</div>
+          </VAlert>
+          <VSelect
+            v-model="reportForm.aircraftId"
+            :items="aircraftOptions"
+            item-title="title"
+            item-value="value"
+            label="Aircraft"
+            variant="outlined"
+          />
+          <VTextField v-model="reportForm.title" label="Judul defect" variant="outlined" />
+          <VTextarea
+            v-model="reportForm.description"
+            label="Deskripsi pengamatan"
+            rows="4"
+            variant="outlined"
+          />
+          <VRow>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="reportForm.detectedAt"
+                label="Waktu kejadian lokal"
+                type="datetime-local"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSelect
+                v-model="reportForm.reporterObservation"
+                :items="reporterObservationItems"
+                item-title="title"
+                item-value="value"
+                label="Menurut pengamatan pelapor"
+                variant="outlined"
+              />
+            </VCol>
+          </VRow>
+          <VRow>
+            <VCol cols="12" md="6">
+              <VSelect
+                v-model="reportForm.initialSeverity"
+                :items="severityItems"
+                item-title="title"
+                item-value="value"
+                label="Initial severity"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="reportForm.flightPhase"
+                label="Flight phase"
+                variant="outlined"
+              />
+            </VCol>
+          </VRow>
+          <VTextarea
+            v-model="reportForm.operationalImpact"
+            label="Dampak operasional menurut pelapor"
+            rows="2"
+            variant="outlined"
+          />
+          <VTextField
+            v-model="reportForm.sourceReference"
+            label="Tech log / source reference"
+            variant="outlined"
+          />
+          <VTextarea
+            v-model="reportForm.evidenceReferences"
+            hint="Satu reference per baris"
+            label="Evidence references"
+            rows="2"
+            variant="outlined"
+          />
+        </VCardText>
+        <VCardActions>
+          <VBtn variant="text" :disabled="reportLoading" @click="reportDialog = false">
+            Batal
+          </VBtn>
+          <VSpacer />
+          <VBtn
+            color="primary"
+            :loading="reportLoading"
+            :disabled="
+              reportForm.title.trim().length < 3 || reportForm.description.trim().length < 10
+            "
+            @click="submitReport"
+          >
+            Simpan laporan
           </VBtn>
         </VCardActions>
       </VCard>
@@ -472,5 +928,10 @@ async function submitAssessment() {
 .maintenance-table--defects :deep(th:nth-child(5)),
 .maintenance-table--defects :deep(td:nth-child(5)) {
   width: 330px;
+}
+
+.mro-action-btn {
+  min-width: max-content;
+  font-weight: 700;
 }
 </style>

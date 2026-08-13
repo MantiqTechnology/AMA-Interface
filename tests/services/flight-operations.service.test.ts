@@ -4,10 +4,10 @@ import { createSeededTestServices } from '../helpers/demo-db';
 const occActor = 'USR-001';
 const occCheckerActor = 'USR-OCC-CHECKER';
 const adminActor = 'USR-ADMIN';
+type TestServices = Awaited<ReturnType<typeof createSeededTestServices>>['services'];
+type CreateFlightInput = Parameters<TestServices['flightOperations']['create']>[0];
 
-function createReadinessDraft(
-  services: Awaited<ReturnType<typeof createSeededTestServices>>['services']
-) {
+function createReadinessDraft(services: TestServices, overrides: Partial<CreateFlightInput> = {}) {
   return services.flightOperations.create(
     {
       flightDate: '2026-07-14',
@@ -21,7 +21,8 @@ function createReadinessDraft(
       coPilotId: 'crew-cop-valid',
       scheduledDepartureAt: '2026-07-14T01:00:00.000Z',
       scheduledArrivalAt: '2026-07-14T02:05:00.000Z',
-      remarks: 'Readiness regression test'
+      remarks: 'Readiness regression test',
+      ...overrides
     },
     occActor
   );
@@ -1421,6 +1422,81 @@ describe('FlightOperationsService', () => {
     expect(evaluated.currentStatus).toBe('BLOCKED');
     expect(serviceability?.status).toBe('FAIL');
     expect(serviceability?.resultNote).toContain('maintenance is due on 2026-07-13');
+
+    sqlite.close();
+  });
+
+  it('uses canonical MRO technical eligibility for Flight readiness and ignores legacy handoff override', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    const created = createReadinessDraft(services, {
+      aircraftId: 'ac-pk-amd'
+    });
+    const withHandoff = services.flightOperations.createMaintenance(
+      {
+        flightId: created.id,
+        aircraftId: 'ac-pk-amd',
+        serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+        workOrderReference: 'WO-M8-LEGACY-HANDOFF',
+        maintenanceNote: 'Legacy handoff cannot override canonical MRO blocked status.',
+        sparePartReference: null,
+        maintenanceCost: 0,
+        currencyId: 'cur-idr'
+      },
+      adminActor
+    );
+    const handoff = Array.isArray(withHandoff)
+      ? null
+      : withHandoff.maintenanceHandoffs.find(
+          (item) => item.workOrderReference === 'WO-M8-LEGACY-HANDOFF'
+        );
+    services.flightOperations.approveMaintenance(handoff!.id, adminActor);
+
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
+    const serviceability = evaluated.readinessChecks.find(
+      (check) => check.checkCode === 'AIRCRAFT_SERVICEABILITY'
+    );
+
+    expect(evaluated.currentStatus).toBe('BLOCKED');
+    expect(serviceability).toMatchObject({
+      status: 'FAIL',
+      effectiveStatus: 'BLOCKED',
+      sourceReference: expect.stringContaining('mro_aircraft_technical_eligibility')
+    });
+    expect(serviceability?.resultNote).toMatch(
+      /unserviceable|Maintenance-due|Maintenance requirement/u
+    );
+
+    sqlite.close();
+  });
+
+  it('propagates active MRO deferred restrictions without treating MRO as full Flight readiness', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    const created = createReadinessDraft(services, {
+      aircraftId: 'ac-pk-ame',
+      flightDate: '2026-07-18',
+      scheduledDepartureAt: '2026-07-18T01:00:00.000Z',
+      scheduledArrivalAt: '2026-07-18T02:05:00.000Z'
+    });
+    const evaluated = services.flightOperations.evaluate(created.id, occActor);
+    const serviceability = evaluated.readinessChecks.find(
+      (check) => check.checkCode === 'AIRCRAFT_SERVICEABILITY'
+    );
+    expect(serviceability).toMatchObject({
+      status: 'PASS',
+      effectiveStatus: 'PASSED'
+    });
+    expect(serviceability?.resultNote).toContain('maintenance restriction');
+    expect(evaluated.aircraftTechnicalEligibility).toMatchObject({
+      status: 'ELIGIBLE_WITH_RESTRICTIONS',
+      restrictions: [
+        expect.objectContaining({
+          restriction: expect.stringContaining('Maximum payload')
+        })
+      ]
+    });
+    expect(evaluated.currentStatus).not.toBe('READY_FOR_APPROVAL');
 
     sqlite.close();
   });

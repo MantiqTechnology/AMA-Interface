@@ -10,6 +10,7 @@ type WorkPackageListResponse = {
 
 const ui = useMaintenanceUi();
 const format = useLocaleFormat();
+const { resolveAircraftImageUrl } = useAircraftImageUrl();
 const filters = reactive({
   search: '',
   status: ''
@@ -232,21 +233,39 @@ function providerLabel(item: MaintenanceWorkPackageDto) {
               <template v-else>
                 <tr v-for="item in workPackages" :key="item.id">
                   <td class="sticky-identifier">
-                    <NuxtLink
-                      class="font-weight-bold"
+                    <VBtn
                       :to="`/maintenance/work-packages/${item.id}`"
+                      class="mro-action-btn"
+                      color="primary"
+                      size="small"
+                      variant="tonal"
+                      prepend-icon="mdi-briefcase-eye-outline"
                     >
-                      {{ item.packageNumber }}
-                    </NuxtLink>
+                      Buka {{ item.packageNumber }}
+                    </VBtn>
                     <div class="text-caption text-medium-emphasis">{{ item.title }}</div>
                   </td>
                   <td>
-                    <NuxtLink
-                      class="font-weight-medium"
-                      :to="`/master-data/aircraft/${item.aircraftId}`"
-                    >
-                      {{ item.aircraftRegistrationNumber }}
-                    </NuxtLink>
+                    <div class="d-flex align-center ga-2">
+                      <VAvatar rounded="lg" size="40">
+                        <VImg
+                          v-if="resolveAircraftImageUrl(item.aircraftImageUrl)"
+                          :alt="`${item.aircraftRegistrationNumber} aircraft image`"
+                          cover
+                          :src="resolveAircraftImageUrl(item.aircraftImageUrl) ?? undefined"
+                        />
+                        <VIcon v-else icon="mdi-airplane" size="22" />
+                      </VAvatar>
+                      <VBtn
+                        :to="`/master-data/aircraft/${item.aircraftId}`"
+                        class="mro-action-btn"
+                        color="secondary"
+                        size="small"
+                        variant="outlined"
+                      >
+                        {{ item.aircraftRegistrationNumber }}
+                      </VBtn>
+                    </div>
                     <div>{{ sourceLabel(item) }}</div>
                     <div class="text-caption text-medium-emphasis">{{ providerLabel(item) }}</div>
                   </td>
@@ -289,6 +308,16 @@ function providerLabel(item: MaintenanceWorkPackageDto) {
                     <div class="text-caption text-medium-emphasis">
                       Diperbarui: {{ format.dateTime(item.updatedAt) }}
                     </div>
+                    <VBtn
+                      :to="`/maintenance/work-packages/${item.id}`"
+                      class="mt-2 mro-action-btn"
+                      color="primary"
+                      size="small"
+                      variant="outlined"
+                      prepend-icon="mdi-arrow-right-circle-outline"
+                    >
+                      Buka detail
+                    </VBtn>
                   </td>
                 </tr>
                 <tr v-if="!workPackages.length">
@@ -354,5 +383,10 @@ function providerLabel(item: MaintenanceWorkPackageDto) {
 .maintenance-table--packages :deep(th:nth-child(5)),
 .maintenance-table--packages :deep(td:nth-child(5)) {
   width: 190px;
+}
+
+.mro-action-btn {
+  min-width: max-content;
+  font-weight: 700;
 }
 </style>

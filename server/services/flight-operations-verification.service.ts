@@ -23,6 +23,7 @@ import type {
 import { demoRolePermissions, type DemoRole } from '#shared/types/roles';
 import { DomainError } from '../utils/errors';
 import { getApplicationNow } from '../utils/time';
+import { evaluateMaintenanceOperationalAvailability } from './maintenance-facility-operations.service';
 
 type SqlValue = string | number | boolean | null;
 type SqlRow = Record<string, SqlValue>;
@@ -687,6 +688,11 @@ export class FlightOperationsVerificationService extends FlightOperationsService
     > = {
       AIRCRAFT_ASSIGNMENT: [
         ['AIRCRAFT_SERVICEABILITY', 'Aircraft serviceability', 'AIRCRAFT'],
+        [
+          'MAINTENANCE_OPERATIONAL_AVAILABILITY',
+          'Maintenance operational availability',
+          'MAINTENANCE'
+        ],
         ['AIRCRAFT_LOCATION', 'Aircraft location', 'AIRCRAFT'],
         ['AIRCRAFT_CAPACITY', 'Aircraft capacity', 'AIRCRAFT'],
         ['MAINTENANCE_RELEASE', 'Maintenance release', 'MAINTENANCE']
@@ -3142,6 +3148,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
     const criticalChecks = [
       'ROUTE_AVAILABILITY',
       'AIRCRAFT_SERVICEABILITY',
+      'MAINTENANCE_OPERATIONAL_AVAILABILITY',
       'AIRCRAFT_LOCATION',
       'AIRCRAFT_SCHEDULE',
       'AIRCRAFT_CAPACITY',
@@ -3881,6 +3888,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       case 'AIRCRAFT_SERVICEABILITY':
         // Check if aircraft is serviceable
         return await this.evaluateAircraftServiceability(flightId);
+      case 'MAINTENANCE_OPERATIONAL_AVAILABILITY':
+        return await this.evaluateMaintenanceOperationalAvailability(flightId);
       case 'AIRCRAFT_LOCATION':
         // Check if aircraft is at the origin station
         return await this.evaluateAircraftLocation(flightId);
@@ -3943,6 +3952,18 @@ export class FlightOperationsVerificationService extends FlightOperationsService
     if (!aircraft) return 'PENDING';
 
     return aircraft.serviceability_status === 'SERVICEABLE' ? 'PASS' : 'FAIL';
+  }
+
+  private async evaluateMaintenanceOperationalAvailability(
+    flightId: string
+  ): Promise<'PASS' | 'FAIL' | 'PENDING'> {
+    const flight = this.getFlightById(flightId);
+    if (!flight || !flight.aircraft_id) return 'PENDING';
+    const availability = evaluateMaintenanceOperationalAvailability(
+      this.sqlite,
+      String(flight.aircraft_id)
+    );
+    return availability.available ? 'PASS' : 'FAIL';
   }
 
   private async evaluateAircraftLocation(flightId: string): Promise<'PASS' | 'FAIL' | 'PENDING'> {

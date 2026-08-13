@@ -53,8 +53,22 @@ export default defineNuxtConfig({
   runtimeConfig: {
     dbPath: defaultDbPath,
     demoMode: process.env.DEMO_MODE ?? 'true',
+    s3Upload: {
+      bucket: process.env.S3_UPLOAD_BUCKET ?? '',
+      endpoint: process.env.S3_UPLOAD_ENDPOINT ?? '',
+      region: process.env.S3_UPLOAD_REGION ?? process.env.AWS_REGION ?? 'auto',
+      publicBaseUrl: process.env.S3_UPLOAD_PUBLIC_BASE_URL ?? '',
+      manifestKey: process.env.S3_UPLOAD_MANIFEST_KEY ?? '_manifests/ama-uploads.json',
+      isConfigured: Boolean(
+        process.env.S3_UPLOAD_BUCKET &&
+        (process.env.S3_UPLOAD_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID) &&
+        (process.env.S3_UPLOAD_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY)
+      )
+    },
     public: {
-      demoMode: process.env.DEMO_MODE ?? 'true'
+      demoMode: process.env.DEMO_MODE ?? 'true',
+      aircraftImageBaseUrl:
+        process.env.AIRCRAFT_IMAGE_BASE_URL ?? process.env.S3_UPLOAD_PUBLIC_BASE_URL ?? ''
     }
   },
   nitro: {
@@ -143,6 +157,6 @@ export default defineNuxtConfig({
   },
   typescript: {
     strict: true,
-    typeCheck: true
+    typeCheck: process.env.NODE_ENV !== 'test'
   }
 });

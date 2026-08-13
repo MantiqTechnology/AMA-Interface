@@ -1364,6 +1364,7 @@ export function runMigrations(sqlite: Database.Database) {
     for (const statement of createStatements) {
       sqlite.exec(statement);
     }
+    ensureColumn(sqlite, 'aircraft', 'image_url', 'TEXT');
     ensureColumn(sqlite, 'customers', 'lifecycle_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");
     ensureColumn(sqlite, 'customers', 'credit_status', "TEXT NOT NULL DEFAULT 'NORMAL'");
     ensureColumn(sqlite, 'customers', 'default_currency_code', "TEXT NOT NULL DEFAULT 'IDR'");
@@ -1683,6 +1684,32 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'aircraft', 'version', 'INTEGER NOT NULL DEFAULT 1');
     ensureColumn(
       sqlite,
+      'aircraft_defects',
+      'reporter_observation',
+      "TEXT NOT NULL DEFAULT 'UNKNOWN'"
+    );
+    ensureColumn(sqlite, 'aircraft_defects', 'initial_severity', "TEXT NOT NULL DEFAULT 'UNKNOWN'");
+    ensureColumn(sqlite, 'aircraft_defects', 'operational_impact', 'TEXT');
+    ensureColumn(sqlite, 'aircraft_defects', 'flight_phase', 'TEXT');
+    ensureColumn(sqlite, 'aircraft_defects', 'station_id', 'TEXT REFERENCES stations(id)');
+    ensureColumn(sqlite, 'aircraft_deferments', 'target_rectification_at', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'aircraft_deferments',
+      'assessment_id',
+      'TEXT REFERENCES maintenance_defect_assessments(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'aircraft_deferments',
+      'follow_up_work_package_id',
+      'TEXT REFERENCES maintenance_work_packages(id)'
+    );
+    ensureColumn(sqlite, 'aircraft_deferments', 'closed_at', 'TEXT');
+    ensureColumn(sqlite, 'aircraft_deferments', 'closed_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'aircraft_deferments', 'closure_note', 'TEXT');
+    ensureColumn(
+      sqlite,
       'aircraft_maintenance_releases',
       'signer_authorization_snapshot_json',
       'TEXT'
@@ -1706,6 +1733,506 @@ export function runMigrations(sqlite: Database.Database) {
       'maintenance_rework_actions',
       'company_authorization_snapshot_json',
       'TEXT'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_job_cards',
+      'source_non_routine_finding_id',
+      'TEXT REFERENCES maintenance_non_routine_findings(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_work_packages',
+      'source_due_requirement_id',
+      'TEXT REFERENCES maintenance_due_requirements(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_work_packages',
+      'source_due_status_id',
+      'TEXT REFERENCES maintenance_aircraft_requirement_statuses(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_aircraft_requirement_statuses',
+      'planned_work_package_id',
+      'TEXT REFERENCES maintenance_work_packages(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_aircraft_requirement_statuses',
+      'last_compliance_record_id',
+      'TEXT'
+    );
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_due_compliance_records (
+      id TEXT PRIMARY KEY,
+      requirement_id TEXT NOT NULL REFERENCES maintenance_due_requirements(id),
+      aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
+      status_id TEXT NOT NULL REFERENCES maintenance_aircraft_requirement_statuses(id),
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      release_id TEXT NOT NULL REFERENCES aircraft_maintenance_releases(id),
+      complied_at TEXT NOT NULL,
+      complied_by_user_id TEXT NOT NULL,
+      complied_flight_hours REAL NOT NULL,
+      complied_flight_cycles INTEGER NOT NULL,
+      previous_next_due_at TEXT,
+      previous_next_due_flight_hours REAL,
+      previous_next_due_flight_cycles INTEGER,
+      next_due_at TEXT,
+      next_due_flight_hours REAL,
+      next_due_flight_cycles INTEGER,
+      created_at TEXT NOT NULL,
+      UNIQUE (requirement_id, aircraft_id, release_id),
+      UNIQUE (status_id, release_id)
+    )`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_due_status_planned_wp
+      ON maintenance_aircraft_requirement_statuses(planned_work_package_id)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_due_compliance_requirement
+      ON maintenance_due_compliance_records(requirement_id, aircraft_id)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_due_compliance_package
+      ON maintenance_due_compliance_records(work_package_id)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_wp_source_due
+      ON maintenance_work_packages(source_due_status_id)`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_facilities (
+      id TEXT PRIMARY KEY,
+      station_id TEXT NOT NULL REFERENCES stations(id),
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      facility_type TEXT NOT NULL CHECK (facility_type IN ('LINE_MAINTENANCE', 'BASE_MAINTENANCE', 'MIXED')),
+      timezone TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_facility_areas (
+      id TEXT PRIMARY KEY,
+      facility_id TEXT NOT NULL REFERENCES maintenance_facilities(id),
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      area_type TEXT NOT NULL CHECK (area_type IN ('HANGAR', 'MAINTENANCE_APRON', 'WORKSHOP_AREA')),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (facility_id, code)
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_facility_bays (
+      id TEXT PRIMARY KEY,
+      area_id TEXT NOT NULL REFERENCES maintenance_facility_areas(id),
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      capacity INTEGER NOT NULL DEFAULT 1 CHECK (capacity = 1),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (area_id, code)
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_slots (
+      id TEXT PRIMARY KEY,
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
+      station_id TEXT NOT NULL REFERENCES stations(id),
+      facility_id TEXT NOT NULL REFERENCES maintenance_facilities(id),
+      area_id TEXT NOT NULL REFERENCES maintenance_facility_areas(id),
+      bay_id TEXT NOT NULL REFERENCES maintenance_facility_bays(id),
+      planned_start_at TEXT NOT NULL,
+      planned_end_at TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('BOOKED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+      create_idempotency_key TEXT,
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_by_user_id TEXT,
+      updated_at TEXT NOT NULL,
+      cancelled_by_user_id TEXT,
+      cancelled_at TEXT,
+      cancellation_reason TEXT,
+      actual_start_at TEXT,
+      actual_end_at TEXT,
+      CHECK (planned_start_at < planned_end_at)
+    )`);
+    ensureColumn(sqlite, 'maintenance_slots', 'actual_start_at', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_slots', 'actual_end_at', 'TEXT');
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_slot_events (
+      id TEXT PRIMARY KEY,
+      slot_id TEXT NOT NULL REFERENCES maintenance_slots(id),
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
+      event_type TEXT NOT NULL CHECK (event_type IN ('BOOKED', 'RESCHEDULED', 'CANCELLED')),
+      actor_user_id TEXT NOT NULL,
+      actor_role TEXT NOT NULL,
+      old_facility_id TEXT,
+      old_area_id TEXT,
+      old_bay_id TEXT,
+      old_planned_start_at TEXT,
+      old_planned_end_at TEXT,
+      new_facility_id TEXT,
+      new_area_id TEXT,
+      new_bay_id TEXT,
+      new_planned_start_at TEXT,
+      new_planned_end_at TEXT,
+      reason TEXT,
+      occurred_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_gse_requirements (
+      id TEXT PRIMARY KEY,
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      job_card_id TEXT REFERENCES maintenance_job_cards(id),
+      equipment_type TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+      mandatory INTEGER NOT NULL DEFAULT 1 CHECK (mandatory IN (0, 1)),
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'SATISFIED', 'CANCELLED')),
+      notes TEXT,
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_gse_allocations (
+      id TEXT PRIMARY KEY,
+      requirement_id TEXT NOT NULL REFERENCES maintenance_gse_requirements(id),
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      slot_id TEXT REFERENCES maintenance_slots(id),
+      asset_id TEXT NOT NULL REFERENCES managed_assets(id),
+      status TEXT NOT NULL CHECK (status IN ('ALLOCATED', 'STAGED', 'IN_USE', 'RELEASED', 'CANCELLED')),
+      idempotency_key TEXT,
+      allocated_by_user_id TEXT NOT NULL,
+      allocated_at TEXT NOT NULL,
+      released_by_user_id TEXT,
+      released_at TEXT,
+      updated_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_facility_resource_staging (
+      id TEXT PRIMARY KEY,
+      resource_type TEXT NOT NULL CHECK (resource_type IN ('TOOL', 'GSE')),
+      allocation_id TEXT NOT NULL,
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      slot_id TEXT NOT NULL REFERENCES maintenance_slots(id),
+      bay_id TEXT NOT NULL REFERENCES maintenance_facility_bays(id),
+      resource_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('STAGED', 'IN_USE', 'RELEASED', 'CANCELLED')),
+      idempotency_key TEXT,
+      staged_by_user_id TEXT NOT NULL,
+      staged_at TEXT NOT NULL,
+      released_by_user_id TEXT,
+      released_at TEXT,
+      note TEXT,
+      updated_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_aircraft_custodies (
+      id TEXT PRIMARY KEY,
+      slot_id TEXT NOT NULL REFERENCES maintenance_slots(id),
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
+      facility_id TEXT NOT NULL REFERENCES maintenance_facilities(id),
+      area_id TEXT NOT NULL REFERENCES maintenance_facility_areas(id),
+      bay_id TEXT NOT NULL REFERENCES maintenance_facility_bays(id),
+      status TEXT NOT NULL CHECK (status IN ('MOVING_IN', 'IN_BAY', 'READY_FOR_MOVE_OUT', 'MOVING_OUT', 'HANDBACK_PENDING', 'HANDED_BACK', 'CANCELLED')),
+      request_idempotency_key TEXT,
+      handback_idempotency_key TEXT,
+      actual_start_at TEXT,
+      in_bay_at TEXT,
+      ready_for_move_out_at TEXT,
+      moving_out_at TEXT,
+      handed_back_at TEXT,
+      handed_back_by_user_id TEXT,
+      received_by_user_id TEXT,
+      note TEXT,
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_by_user_id TEXT,
+      updated_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_aircraft_custody_events (
+      id TEXT PRIMARY KEY,
+      custody_id TEXT NOT NULL REFERENCES maintenance_aircraft_custodies(id),
+      slot_id TEXT NOT NULL REFERENCES maintenance_slots(id),
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
+      event_type TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      actor_role TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT NOT NULL,
+      note TEXT,
+      occurred_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_facility_shifts (
+      id TEXT PRIMARY KEY,
+      facility_id TEXT NOT NULL REFERENCES maintenance_facilities(id),
+      shift_date TEXT NOT NULL,
+      name TEXT NOT NULL,
+      start_at TEXT NOT NULL,
+      end_at TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('PLANNED', 'ACTIVE', 'COMPLETED', 'CANCELLED')),
+      supervisor_personnel_id TEXT REFERENCES crews(id),
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK (start_at < end_at)
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_facility_shift_roster (
+      id TEXT PRIMARY KEY,
+      shift_id TEXT NOT NULL REFERENCES maintenance_facility_shifts(id),
+      personnel_id TEXT NOT NULL REFERENCES crews(id),
+      role_type TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (shift_id, personnel_id, role_type)
+    )`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS maintenance_shift_handovers (
+      id TEXT PRIMARY KEY,
+      slot_id TEXT NOT NULL REFERENCES maintenance_slots(id),
+      work_package_id TEXT NOT NULL REFERENCES maintenance_work_packages(id),
+      aircraft_id TEXT NOT NULL REFERENCES aircraft(id),
+      outgoing_shift_id TEXT NOT NULL REFERENCES maintenance_facility_shifts(id),
+      incoming_shift_id TEXT NOT NULL REFERENCES maintenance_facility_shifts(id),
+      status TEXT NOT NULL CHECK (status IN ('PREPARED', 'ACKNOWLEDGED', 'CANCELLED')),
+      notes TEXT NOT NULL,
+      safety_notes_json TEXT NOT NULL DEFAULT '[]',
+      outstanding_refs_json TEXT NOT NULL DEFAULT '[]',
+      prepared_by_user_id TEXT NOT NULL,
+      prepared_at TEXT NOT NULL,
+      acknowledged_by_user_id TEXT,
+      acknowledged_at TEXT,
+      updated_at TEXT NOT NULL
+    )`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_facilities_station
+      ON maintenance_facilities(station_id, active)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_facility_areas_facility
+      ON maintenance_facility_areas(facility_id, active)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_facility_bays_area
+      ON maintenance_facility_bays(area_id, active)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_slots_bay_time
+      ON maintenance_slots(bay_id, planned_start_at, planned_end_at, status)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_slots_aircraft_time
+      ON maintenance_slots(aircraft_id, planned_start_at, planned_end_at, status)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_slots_facility_time
+      ON maintenance_slots(facility_id, planned_start_at, planned_end_at, status)`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_slots_active_wp
+      ON maintenance_slots(work_package_id)
+      WHERE status IN ('BOOKED', 'IN_PROGRESS')`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_slots_idempotency
+      ON maintenance_slots(work_package_id, create_idempotency_key)
+      WHERE create_idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_slot_events_slot
+      ON maintenance_slot_events(slot_id, occurred_at DESC)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_gse_req_package
+      ON maintenance_gse_requirements(work_package_id, status)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_gse_alloc_asset
+      ON maintenance_gse_allocations(asset_id, status)`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_gse_alloc_idempotency
+      ON maintenance_gse_allocations(work_package_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_gse_alloc_requirement_asset_active
+      ON maintenance_gse_allocations(requirement_id, asset_id)
+      WHERE status IN ('ALLOCATED', 'STAGED', 'IN_USE')`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_resource_staging_slot
+      ON maintenance_facility_resource_staging(slot_id, status)`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_resource_staging_active
+      ON maintenance_facility_resource_staging(resource_type, allocation_id)
+      WHERE status IN ('STAGED', 'IN_USE')`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_resource_staging_idempotency
+      ON maintenance_facility_resource_staging(resource_type, allocation_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_aircraft_custody_aircraft
+      ON maintenance_aircraft_custodies(aircraft_id, status)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_aircraft_custody_bay
+      ON maintenance_aircraft_custodies(bay_id, status)`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_aircraft_custody_active_aircraft
+      ON maintenance_aircraft_custodies(aircraft_id)
+      WHERE status IN ('MOVING_IN', 'IN_BAY', 'READY_FOR_MOVE_OUT', 'MOVING_OUT', 'HANDBACK_PENDING')`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_aircraft_custody_active_slot
+      ON maintenance_aircraft_custodies(slot_id)
+      WHERE status IN ('MOVING_IN', 'IN_BAY', 'READY_FOR_MOVE_OUT', 'MOVING_OUT', 'HANDBACK_PENDING')`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_aircraft_custody_request_idem
+      ON maintenance_aircraft_custodies(slot_id, request_idempotency_key)
+      WHERE request_idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_aircraft_custody_handback_idem
+      ON maintenance_aircraft_custodies(slot_id, handback_idempotency_key)
+      WHERE handback_idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_custody_events_custody
+      ON maintenance_aircraft_custody_events(custody_id, occurred_at DESC)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_facility_shifts_facility
+      ON maintenance_facility_shifts(facility_id, start_at, end_at, status)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_shift_roster_shift
+      ON maintenance_facility_shift_roster(shift_id, active)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_shift_handover_slot
+      ON maintenance_shift_handovers(slot_id, status)`);
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'aircraft_id',
+      'TEXT REFERENCES aircraft(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'corrective_job_card_id',
+      'TEXT REFERENCES maintenance_job_cards(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'severity',
+      "TEXT NOT NULL DEFAULT 'NORMAL'"
+    );
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'location', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'ata_chapter', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'immediate_safety_concern',
+      'INTEGER NOT NULL DEFAULT 0'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'evidence_references_json',
+      "TEXT NOT NULL DEFAULT '[]'"
+    );
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'disposition', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'assessment_note', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'assessed_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'assessed_at', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'requires_independent_inspection',
+      'INTEGER NOT NULL DEFAULT 1'
+    );
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'approved_data_ref', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'resolved_at', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'resolved_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'resolution_note', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'closed_at', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'closed_by_user_id', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'closure_note', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'version',
+      'INTEGER NOT NULL DEFAULT 1'
+    );
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'create_idempotency_key', 'TEXT');
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_non_routine_package
+      ON maintenance_non_routine_findings(work_package_id, status)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_non_routine_source_card
+      ON maintenance_non_routine_findings(job_card_id)`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_non_routine_corrective_card
+      ON maintenance_non_routine_findings(corrective_job_card_id)
+      WHERE corrective_job_card_id IS NOT NULL`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_non_routine_create_idempotency
+      ON maintenance_non_routine_findings(create_idempotency_key)
+      WHERE create_idempotency_key IS NOT NULL`);
+    // ===== Demo-v2.1: Extend existing tables =====
+    ensureColumn(
+      sqlite,
+      'maintenance_part_issues',
+      'work_package_id',
+      'TEXT REFERENCES maintenance_work_packages(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_part_issues',
+      'job_card_id',
+      'TEXT REFERENCES maintenance_job_cards(id)'
+    );
+    ensureColumn(sqlite, 'maintenance_tool_masters', 'station_id', 'TEXT REFERENCES stations(id)');
+    ensureColumn(sqlite, 'maintenance_tool_masters', 'last_calibrated_at', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_tool_masters', 'calibration_expires_at', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_tool_masters', 'certificate_reference', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_tool_masters', 'certificate_document_id', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_tool_allocations_v2', 'create_idempotency_key', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_personnel_assignments', 'create_idempotency_key', 'TEXT');
+    sqlite.exec('DROP INDEX IF EXISTS idx_mro_tool_alloc_active');
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_tool_alloc_active_requirement
+          ON maintenance_tool_allocations_v2(tool_requirement_id, tool_id)
+          WHERE status IN ('REQUESTED', 'ALLOCATED', 'IN_USE')`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_tool_alloc_idempotency
+          ON maintenance_tool_allocations_v2(work_package_id, create_idempotency_key)
+          WHERE create_idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_tool_alloc_active_lookup
+          ON maintenance_tool_allocations_v2(tool_id, work_package_id, status)`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_tool_alloc_active_custody
+          ON maintenance_tool_allocations_v2(tool_id)
+          WHERE status = 'IN_USE'`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_personnel_assign_active_requirement
+          ON maintenance_personnel_assignments(personnel_requirement_id, personnel_id)
+          WHERE status IN ('ASSIGNED', 'CONFIRMED')`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_personnel_assign_idempotency
+          ON maintenance_personnel_assignments(work_package_id, create_idempotency_key)
+          WHERE create_idempotency_key IS NOT NULL`);
+    ensureColumn(
+      sqlite,
+      'maintenance_work_package_tool_allocations',
+      'status',
+      "TEXT NOT NULL DEFAULT 'ALLOCATED'"
+    );
+    ensureColumn(sqlite, 'maintenance_work_package_tool_allocations', 'custodian_user_id', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_work_package_tool_allocations', 'custody_started_at', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_work_package_tool_allocations', 'return_condition', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_work_package_tool_allocations', 'return_note', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_work_package_material_requirements',
+      'unit',
+      "TEXT NOT NULL DEFAULT 'EA'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_work_package_material_requirements',
+      'job_card_id',
+      'TEXT REFERENCES maintenance_job_cards(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_work_package_material_requirements',
+      'requested_station_id',
+      'TEXT REFERENCES stations(id)'
+    );
+    ensureColumn(sqlite, 'maintenance_work_package_material_requirements', 'required_by', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_work_package_material_requirements', 'reason', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_work_package_material_requirements', 'created_by', 'TEXT');
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mro_material_req_job_card
+          ON maintenance_work_package_material_requirements(job_card_id)`);
+    ensureColumn(sqlite, 'maintenance_inventory_reservations', 'reserve_idempotency_key', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_inventory_reservations',
+      'issue_id',
+      'TEXT REFERENCES maintenance_part_issues(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_inventory_reservations',
+      'issue_movement_id',
+      'TEXT REFERENCES inventory_movements(id)'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_inventory_reservations',
+      'issued_quantity',
+      'REAL NOT NULL DEFAULT 0'
+    );
+    ensureColumn(sqlite, 'maintenance_inventory_reservations', 'issued_by', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_inventory_reservations', 'issued_at', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_inventory_reservations', 'issue_idempotency_key', 'TEXT');
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_reservation_reserve_idempotency
+          ON maintenance_inventory_reservations(reserve_idempotency_key)
+          WHERE reserve_idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_reservation_issue_idempotency
+          ON maintenance_inventory_reservations(issue_idempotency_key)
+          WHERE issue_idempotency_key IS NOT NULL`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mro_reservation_serial_owned
+          ON maintenance_inventory_reservations(serialized_part_id)
+          WHERE serialized_part_id IS NOT NULL AND status IN ('ACTIVE', 'PARTIALLY_ISSUED', 'ISSUED')`);
+    ensureColumn(
+      sqlite,
+      'maintenance_work_packages',
+      'amo_organization_id',
+      'TEXT REFERENCES maintenance_amo_organizations(id)'
     );
     sqlite.exec(`UPDATE aircraft
 	      SET operational_status = 'SUSPENDED'

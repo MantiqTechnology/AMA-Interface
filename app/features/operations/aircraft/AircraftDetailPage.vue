@@ -154,18 +154,27 @@ const normalizedAircraftType = computed(
 const normalizedManufacturer = computed(
   () => record.value?.manufacturer.trim().toLowerCase() ?? ''
 );
+const { resolveAircraftImageUrl } = useAircraftImageUrl();
 const aircraftImage = computed(() => {
-  const registrationImages: Record<string, string> = {};
   const typeImages: Record<string, string> = {
-    'pilatus pc-6': '/images/aircraft/pilatus-pc6.webp'
+    'cessna caravan 208b': 'aircraft/Cessna-208-Caravan-PNC-0219-1.jpg',
+    'pac 750xl': 'aircraft/pac-p-750-xstol-985cf660-67bb-409a-a3d9-8ee17deff38-resize-750.webp',
+    'pilatus pc-6':
+      'aircraft/pk-rka-associated-mission-aviation-ama-papua-pilatus-pc-6-b2-h4-turbo-porter_PlanespottersNet_1738497_f4e6bb222f_o.webp'
   };
-  const manufacturerImages: Record<string, string> = {};
+  const manufacturerImages: Record<string, string> = {
+    cessna: 'aircraft/Cessna-208-Caravan-PNC-0219-1.jpg',
+    pilatus:
+      'aircraft/pk-rka-associated-mission-aviation-ama-papua-pilatus-pc-6-b2-h4-turbo-porter_PlanespottersNet_1738497_f4e6bb222f_o.webp',
+    'pacific aerospace':
+      'aircraft/pac-p-750-xstol-985cf660-67bb-409a-a3d9-8ee17deff38-resize-750.webp'
+  };
 
-  return (
-    registrationImages[record.value?.registrationNumber.toLowerCase() ?? ''] ??
-    typeImages[normalizedAircraftType.value] ??
-    manufacturerImages[normalizedManufacturer.value] ??
-    null
+  return resolveAircraftImageUrl(
+    record.value?.imageUrl ??
+      typeImages[normalizedAircraftType.value] ??
+      manufacturerImages[normalizedManufacturer.value] ??
+      null
   );
 });
 
@@ -425,14 +434,7 @@ function readinessItemColor(state: ReadinessState) {
             <VIcon icon="mdi-airplane" size="72" />
           </div>
           <span v-if="aircraftImage && imageAvailable" class="aircraft-profile__image-label">
-            Representative aircraft image ·
-            <a
-              href="https://commons.wikimedia.org/wiki/File:Pilatus_PC-6_(4872152588).jpg"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              Yannick Bammert / CC BY 2.0
-            </a>
+            Representative aircraft image · AMA demo R2 bucket
           </span>
         </div>
 

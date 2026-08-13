@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { MaintenanceCommandCenterDto } from '#shared/features/maintenance';
+import type { StationOption } from '#shared/features/operations/stations';
+import StationSelect from '../../features/operations/stations/StationSelect.vue';
 
-const format = useLocaleFormat();
 const ui = useMaintenanceUi();
+
 const filters = reactive({
   search: '',
-  station: '',
+  stationId: '' as string | null,
   serviceability: '',
   eligibility: '',
   dueState: ''
@@ -15,42 +17,61 @@ const { data, pending, error, refresh } = await useAsyncData('maintenance-aircra
   fetchApi<MaintenanceCommandCenterDto>('/api/maintenance/command-center')
 );
 
+// Fetch ringan khusus untuk mapping id -> kode station (StationSelect bind by id,
+// sedangkan data aircraft di fleet hanya punya currentStationCode).
+const { data: stationOptions } = await useAsyncData(
+  'station-options-for-aircraft-status-filter',
+  () => fetchApi<StationOption[]>('/api/master-data/stations/options'),
+  { default: () => [] }
+);
+
+const stationCodeById = computed(() => {
+  const map = new Map<string, string>();
+  for (const option of stationOptions.value ?? []) map.set(option.id, option.stationCode);
+  return map;
+});
+
 const apiError = computed(() => (error.value ? ui.presentError(error.value) : null));
 const accessRestricted = computed(() => apiError.value?.code === 'FORBIDDEN');
-const stationItems = computed(() => [
-  ...new Set(
-    (data.value?.fleet ?? []).map((aircraft) => aircraft.currentStationCode).filter(Boolean)
-  )
-]);
+
+const fleet = computed(() => data.value?.fleet ?? []);
+
 const serviceabilityItems = computed(() => [
-  ...new Set((data.value?.fleet ?? []).map((aircraft) => aircraft.serviceabilityStatus))
+  ...new Set(fleet.value.map((aircraft) => aircraft.serviceabilityStatus))
 ]);
 const eligibilityItems = computed(() => [
-  ...new Set((data.value?.fleet ?? []).map((aircraft) => aircraft.technicalEligibility))
+  ...new Set(fleet.value.map((aircraft) => aircraft.technicalEligibility))
 ]);
 const dueStateItems = [
   { title: 'Ada due atau blocker', value: 'DUE' },
   { title: 'Tidak ada due blocker', value: 'CLEAR' }
 ];
+
 const hasFilters = computed(() =>
   Boolean(
     filters.search.trim() ||
-    filters.station ||
+    filters.stationId ||
     filters.serviceability ||
     filters.eligibility ||
     filters.dueState
   )
 );
-const filteredAircraft = computed(() => {
+
+const filteredFleet = computed(() => {
   const query = filters.search.trim().toLowerCase();
-  return (data.value?.fleet ?? []).filter((aircraft) => {
+  const selectedStationCode = filters.stationId
+    ? stationCodeById.value.get(filters.stationId)
+    : null;
+
+  return fleet.value.filter((aircraft) => {
     const matchesQuery =
       !query ||
       [aircraft.registrationNumber, aircraft.aircraftType, aircraft.model]
         .join(' ')
         .toLowerCase()
         .includes(query);
-    const matchesStation = !filters.station || aircraft.currentStationCode === filters.station;
+    const matchesStation =
+      !filters.stationId || aircraft.currentStationCode === selectedStationCode;
     const matchesServiceability =
       !filters.serviceability || aircraft.serviceabilityStatus === filters.serviceability;
     const matchesEligibility =
@@ -63,34 +84,6 @@ const filteredAircraft = computed(() => {
     );
   });
 });
-
-function eligibilityLabel(value: string) {
-  if (value === 'ELIGIBLE') return 'Dapat dirilis';
-  if (value === 'RESTRICTED') return 'Terbatas';
-  if (value === 'BLOCKED') return 'Rilis terblokir';
-  return ui.label(value);
-}
-
-function dueSummary(aircraft: MaintenanceCommandCenterDto['fleet'][number]) {
-  if (!aircraft.maintenanceDue) return 'Tidak ada due blocker';
-  const reason = aircraft.dueReasons[0] ?? 'Maintenance due';
-  return reason.replaceAll(/([A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+)/gu, (token) => ui.label(token));
-}
-
-function dueAction(aircraft: MaintenanceCommandCenterDto['fleet'][number]) {
-  if (!aircraft.maintenanceDue) return 'Tidak ada tindakan due yang diperlukan.';
-  return 'Periksa profil teknis pesawat dan tentukan tindakan maintenance yang berwenang.';
-}
-
-function groundingDefect(aircraftId: string) {
-  return (data.value?.defects ?? []).find(
-    (defect) => defect.aircraftId === aircraftId && defect.assessmentDecision === 'GROUND'
-  );
-}
-
-function latestRelease(aircraftId: string) {
-  return (data.value?.technicalReleases ?? []).find((release) => release.aircraftId === aircraftId);
-}
 </script>
 
 <template>
@@ -107,7 +100,13 @@ function latestRelease(aircraftId: string) {
       <VBtn to="/maintenance" variant="text" prepend-icon="mdi-arrow-left">
         Ringkasan Maintenance
       </VBtn>
-      <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
+      <VBtn
+        icon="mdi-refresh"
+        variant="text"
+        :loading="pending"
+        aria-label="Muat ulang status maintenance"
+        @click="refresh()"
+      />
     </div>
 
     <VAlert v-if="accessRestricted" type="warning" variant="tonal" class="mb-4">
@@ -120,6 +119,7 @@ function latestRelease(aircraftId: string) {
       <strong>Status teknis pesawat belum dapat dimuat.</strong>
       <div>Dampak: eligibility rilis dan due blocker belum dapat dipastikan.</div>
       <div>Langkah berikutnya: coba muat ulang status maintenance.</div>
+      <div v-if="apiError?.requestId" class="text-caption">Referensi: {{ apiError.requestId }}</div>
       <template #append>
         <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Coba lagi</VBtn>
       </template>
@@ -135,17 +135,18 @@ function latestRelease(aircraftId: string) {
             clearable
             density="compact"
             hide-details
-            max-width="320"
+            style="max-width: 320px"
           />
-          <VSelect
-            v-model="filters.station"
-            label="Station"
-            :items="stationItems"
-            clearable
-            density="compact"
-            hide-details
-            max-width="180"
-          />
+
+          <div style="width: 220px">
+            <StationSelect
+              v-model="filters.stationId"
+              label="Station"
+              :allow-create="false"
+              hide-details
+            />
+          </div>
+
           <VSelect
             v-model="filters.serviceability"
             label="Serviceability"
@@ -153,7 +154,7 @@ function latestRelease(aircraftId: string) {
             clearable
             density="compact"
             hide-details
-            max-width="220"
+            style="max-width: 220px"
           />
           <VSelect
             v-model="filters.eligibility"
@@ -162,7 +163,7 @@ function latestRelease(aircraftId: string) {
             clearable
             density="compact"
             hide-details
-            max-width="220"
+            style="max-width: 220px"
           />
           <VSelect
             v-model="filters.dueState"
@@ -171,185 +172,31 @@ function latestRelease(aircraftId: string) {
             clearable
             density="compact"
             hide-details
-            max-width="190"
+            style="max-width: 190px"
           />
           <VSpacer />
-          <VChip variant="tonal" size="small">{{ filteredAircraft.length }} hasil</VChip>
+          <VChip variant="tonal" size="small">{{ filteredFleet.length }} hasil</VChip>
         </div>
-        <div class="maintenance-table-wrap">
-          <VTable class="maintenance-table maintenance-table--aircraft">
-            <thead>
-              <tr>
-                <th>Pesawat</th>
-                <th>Station dan status teknis</th>
-                <th>Temuan / pembatasan</th>
-                <th>Due dan langkah berikutnya</th>
-                <th>Paket, grounding, rilis</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="pending">
-                <td colspan="5">Memuat status teknis pesawat...</td>
-              </tr>
-              <tr v-else-if="accessRestricted">
-                <td colspan="5">Akses dibatasi untuk role aktif.</td>
-              </tr>
-              <tr v-else-if="error">
-                <td colspan="5">Data teknis pesawat belum tersedia sampai permintaan berhasil.</td>
-              </tr>
-              <template v-else>
-                <tr v-for="aircraft in filteredAircraft" :key="aircraft.aircraftId">
-                  <td class="sticky-identifier">
-                    <NuxtLink
-                      class="font-weight-bold"
-                      :to="`/master-data/aircraft/${aircraft.aircraftId}`"
-                    >
-                      {{ aircraft.registrationNumber }}
-                    </NuxtLink>
-                    <div class="text-caption text-medium-emphasis">
-                      {{ aircraft.aircraftType }} / {{ aircraft.model }}
-                    </div>
-                  </td>
-                  <td>
-                    <div>{{ aircraft.currentStationCode ?? '-' }}</div>
-                    <div class="text-caption text-medium-emphasis">
-                      {{ ui.label(aircraft.operationalStatus) }}
-                    </div>
-                    <div class="mt-2 mb-1">
-                      <VChip
-                        :color="ui.technicalStateColor(aircraft.serviceabilityStatus)"
-                        size="small"
-                        variant="tonal"
-                      >
-                        {{ ui.label(aircraft.serviceabilityStatus) }}
-                      </VChip>
-                    </div>
-                    <VChip
-                      :color="ui.technicalStateColor(aircraft.technicalEligibility)"
-                      size="small"
-                      variant="tonal"
-                    >
-                      {{ eligibilityLabel(aircraft.technicalEligibility) }}
-                    </VChip>
-                  </td>
-                  <td>
-                    <div>{{ aircraft.openDefectCount }} temuan terbuka</div>
-                    <div class="text-caption text-medium-emphasis">
-                      {{ aircraft.activeRestrictionCount }} pembatasan aktif
-                    </div>
-                  </td>
-                  <td>
-                    <div>{{ dueSummary(aircraft) }}</div>
-                    <div class="text-caption text-medium-emphasis">
-                      Langkah berikutnya: {{ dueAction(aircraft) }}
-                    </div>
-                  </td>
-                  <td>
-                    <div>
-                      Aktif:
-                      <VBtn
-                        v-if="aircraft.activeWorkPackageId"
-                        :to="`/maintenance/work-packages/${aircraft.activeWorkPackageId}`"
-                        variant="text"
-                        size="small"
-                      >
-                        {{ aircraft.activeWorkPackageNumber }}
-                      </VBtn>
-                      <span v-else>-</span>
-                    </div>
-                    <div>
-                      Grounding:
-                      <VBtn
-                        v-if="groundingDefect(aircraft.aircraftId)?.activeWorkPackageId"
-                        :to="`/maintenance/work-packages/${groundingDefect(aircraft.aircraftId)?.activeWorkPackageId}`"
-                        variant="text"
-                        size="small"
-                      >
-                        {{ groundingDefect(aircraft.aircraftId)?.defectNumber }}
-                      </VBtn>
-                      <span v-else>
-                        {{ groundingDefect(aircraft.aircraftId)?.defectNumber ?? '-' }}
-                      </span>
-                    </div>
-                    <div>
-                      Rilis:
-                      <VBtn
-                        v-if="latestRelease(aircraft.aircraftId)"
-                        :to="`/maintenance/releases?search=${latestRelease(aircraft.aircraftId)?.releaseNumber}`"
-                        variant="text"
-                        size="small"
-                      >
-                        {{ latestRelease(aircraft.aircraftId)?.releaseNumber }}
-                      </VBtn>
-                      <span v-else>-</span>
-                    </div>
-                    <div class="text-caption text-medium-emphasis">
-                      Diperbarui: {{ format.dateTime(aircraft.updatedAt) }}
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="data && !filteredAircraft.length">
-                  <td colspan="5">
-                    {{
-                      hasFilters
-                        ? 'Tidak ada pesawat sesuai filter.'
-                        : 'Tidak ada pesawat dari query backend.'
-                    }}
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </VTable>
+
+        <MaintenanceAircraftStatusTable
+          v-if="!accessRestricted"
+          :fleet="filteredFleet"
+          :defects="data?.defects ?? []"
+          :releases="data?.technicalReleases ?? []"
+          :loading="pending"
+        />
+
+        <div
+          v-if="!pending && data && !filteredFleet.length"
+          class="text-body-2 text-medium-emphasis pa-4"
+        >
+          {{
+            hasFilters
+              ? 'Tidak ada pesawat sesuai filter.'
+              : 'Tidak ada pesawat dari query backend.'
+          }}
         </div>
       </VCardText>
     </VCard>
   </VContainer>
 </template>
-
-<style scoped>
-.maintenance-table-wrap {
-  overflow-x: auto;
-}
-
-.maintenance-table :deep(table) {
-  min-width: 1100px;
-  table-layout: fixed;
-}
-
-.maintenance-table :deep(th),
-.maintenance-table :deep(td) {
-  vertical-align: top;
-}
-
-.maintenance-table--aircraft :deep(th:nth-child(1)),
-.maintenance-table--aircraft :deep(td:nth-child(1)) {
-  width: 220px;
-}
-
-.sticky-identifier {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: rgb(var(--v-theme-surface));
-}
-
-.maintenance-table--aircraft :deep(th:nth-child(2)),
-.maintenance-table--aircraft :deep(td:nth-child(2)) {
-  width: 220px;
-}
-
-.maintenance-table--aircraft :deep(th:nth-child(3)),
-.maintenance-table--aircraft :deep(td:nth-child(3)) {
-  width: 170px;
-}
-
-.maintenance-table--aircraft :deep(th:nth-child(4)),
-.maintenance-table--aircraft :deep(td:nth-child(4)) {
-  width: 260px;
-}
-
-.maintenance-table--aircraft :deep(th:nth-child(5)),
-.maintenance-table--aircraft :deep(td:nth-child(5)) {
-  width: 230px;
-}
-</style>

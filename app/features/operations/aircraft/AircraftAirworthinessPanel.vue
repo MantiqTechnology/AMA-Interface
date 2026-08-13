@@ -48,6 +48,10 @@ const defect = reactive({
   title: '',
   description: '',
   detectedAt: nowLocal(),
+  reporterObservation: 'UNKNOWN' as AircraftDefectInput['reporterObservation'],
+  initialSeverity: 'UNKNOWN' as AircraftDefectInput['initialSeverity'],
+  operationalImpact: '',
+  flightPhase: '',
   sourceReference: '',
   evidenceReferences: ''
 });
@@ -61,6 +65,7 @@ const deferment = reactive({
   operationsProcedure: '',
   effectiveAt: nowLocal(),
   expiresAt: plusDaysLocal(10),
+  targetRectificationAt: plusDaysLocal(7),
   authorizationReference: '',
   applicableRouteIds: '',
   applicableServiceTypeCodes: [] as string[]
@@ -117,6 +122,10 @@ watch(defectOpen, (open) => {
     title: '',
     description: '',
     detectedAt: nowLocal(),
+    reporterObservation: 'UNKNOWN',
+    initialSeverity: 'UNKNOWN',
+    operationalImpact: '',
+    flightPhase: '',
     sourceReference: '',
     evidenceReferences: ''
   });
@@ -193,6 +202,11 @@ async function reportDefect() {
     title: defect.title,
     description: defect.description,
     detectedAt: toIso(defect.detectedAt),
+    reporterObservation: defect.reporterObservation,
+    initialSeverity: defect.initialSeverity,
+    operationalImpact: defect.operationalImpact || null,
+    flightPhase: defect.flightPhase || null,
+    stationId: null,
     sourceReference: defect.sourceReference || null,
     evidenceReferences: references(defect.evidenceReferences),
     expectedVersion: aircraft.version
@@ -220,6 +234,9 @@ async function deferDefect() {
     operationsProcedure: deferment.operationsProcedure || null,
     effectiveAt: toIso(deferment.effectiveAt),
     expiresAt: toIso(deferment.expiresAt),
+    targetRectificationAt: deferment.targetRectificationAt
+      ? toIso(deferment.targetRectificationAt)
+      : null,
     authorizationReference: deferment.authorizationReference,
     applicableRouteIds: references(deferment.applicableRouteIds),
     applicableServiceTypeCodes:
@@ -295,7 +312,7 @@ function statusColor(value: string) {
       <div>
         <h2 id="airworthiness-heading" class="text-h6 font-weight-bold">Airworthiness control</h2>
         <div class="text-caption text-medium-emphasis">
-          Controlled aircraft status, defects, MEL/CDL, and maintenance release
+          Controlled aircraft status, defects, deferment references, and maintenance release
         </div>
       </div>
       <VSpacer />
@@ -321,14 +338,6 @@ function statusColor(value: string) {
         @click="defectOpen = true"
       >
         Report defect
-      </VBtn>
-      <VBtn
-        v-if="can('aircraft.deferment.manage').allowed && openDefects.length"
-        prepend-icon="mdi-file-clock-outline"
-        variant="tonal"
-        @click="defermentOpen = true"
-      >
-        Assess / defer
       </VBtn>
       <VBtn
         v-if="can('aircraft.defect.manage').allowed"
@@ -541,6 +550,39 @@ function statusColor(value: string) {
           type="datetime-local"
           variant="outlined"
         />
+        <VSelect
+          v-model="defect.reporterObservation"
+          :items="[
+            {
+              title: 'Tidak terlihat berdampak signifikan',
+              value: 'NO_SIGNIFICANT_IMPACT_OBSERVED'
+            },
+            { title: 'Dapat memengaruhi operasi', value: 'MAY_AFFECT_OPERATION' },
+            {
+              title: 'Perlu perhatian sebelum penerbangan berikutnya',
+              value: 'ATTENTION_BEFORE_NEXT_FLIGHT'
+            },
+            { title: 'Kondisi tampak kritis', value: 'APPEARS_CRITICAL' },
+            { title: 'Tidak diketahui', value: 'UNKNOWN' }
+          ]"
+          item-title="title"
+          item-value="value"
+          label="Reporter observation"
+          variant="outlined"
+        />
+        <VSelect
+          v-model="defect.initialSeverity"
+          :items="['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'UNKNOWN']"
+          label="Initial severity"
+          variant="outlined"
+        />
+        <VTextField v-model="defect.flightPhase" label="Flight phase" variant="outlined" />
+        <VTextarea
+          v-model="defect.operationalImpact"
+          label="Reporter operational impact note"
+          rows="2"
+          variant="outlined"
+        />
         <VTextField
           v-model="defect.sourceReference"
           label="Tech log / source reference"
@@ -558,7 +600,7 @@ function statusColor(value: string) {
         <VSpacer />
         <VBtn variant="text" @click="defectOpen = false">Cancel</VBtn>
         <VBtn :loading="submitting" color="error" @click="reportDefect">
-          Ground and record defect
+          Record defect report
         </VBtn>
       </VCardActions>
     </VCard>
@@ -566,7 +608,7 @@ function statusColor(value: string) {
 
   <VDialog v-model="defermentOpen" max-width="760">
     <VCard>
-      <VCardTitle>Assess defect under MEL / CDL</VCardTitle>
+      <VCardTitle>Record controlled deferment</VCardTitle>
       <VCardText>
         <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
           {{ actionError }}
@@ -591,7 +633,7 @@ function statusColor(value: string) {
           <VCol cols="12" md="5">
             <VTextField
               v-model="deferment.referenceCode"
-              label="Approved reference"
+              label="Deferment / maintenance data reference"
               variant="outlined"
             />
           </VCol>
@@ -636,8 +678,14 @@ function statusColor(value: string) {
           </VCol>
         </VRow>
         <VTextField
+          v-model="deferment.targetRectificationAt"
+          label="Target rectification"
+          type="datetime-local"
+          variant="outlined"
+        />
+        <VTextField
           v-model="deferment.authorizationReference"
-          label="MEL authorization reference"
+          label="Internal approval reference"
           variant="outlined"
         />
         <VSelect

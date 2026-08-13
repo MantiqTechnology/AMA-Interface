@@ -12,6 +12,7 @@ const props = defineProps<{
   flights: FlightOperationRecord[];
   loading?: boolean;
 }>();
+const { resolveAircraftImageUrl } = useAircraftImageUrl();
 
 const headers: DataTableHeader[] = [
   { title: '', key: 'data-table-expand', width: 48, sortable: false },
@@ -67,6 +68,8 @@ function detailRecord(detail: unknown, item: FlightOperationRecord): FlightOpera
 
   return {
     ...item,
+    aircraftTechnicalEligibility: null,
+    maintenanceOperationalAvailability: null,
     approvals: [],
     attachments: [],
     cargoItems: [],
@@ -121,9 +124,22 @@ function fetchDetail(flight: FlightOperationRecord) {
     </template>
 
     <template #[`item.aircraft`]="{ item }">
-      <div class="font-weight-medium">{{ item.aircraftRegistration ?? '-' }}</div>
-      <div class="text-xs text-text-secondary">
-        Station {{ item.aircraftCurrentStationCode ?? 'unknown' }}
+      <div class="d-flex align-center ga-2">
+        <VAvatar rounded="lg" size="40">
+          <VImg
+            v-if="resolveAircraftImageUrl(item.aircraftImageUrl)"
+            :alt="`${item.aircraftRegistration ?? item.flightNumber} aircraft image`"
+            cover
+            :src="resolveAircraftImageUrl(item.aircraftImageUrl) ?? undefined"
+          />
+          <VIcon v-else icon="mdi-airplane" size="22" />
+        </VAvatar>
+        <div>
+          <div class="font-weight-medium">{{ item.aircraftRegistration ?? '-' }}</div>
+          <div class="text-xs text-text-secondary">
+            Station {{ item.aircraftCurrentStationCode ?? 'unknown' }}
+          </div>
+        </div>
       </div>
       <div class="text-xs text-text-secondary">
         Maint. due {{ item.aircraftNextMaintenanceDueAt ?? '-' }}

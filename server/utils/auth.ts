@@ -11,6 +11,25 @@ import { DomainError } from './errors';
 
 const roleCookieName = 'ama_demo_role';
 
+export function isExplicitDemoRuntime() {
+  let runtimeDemoMode: unknown;
+  try {
+    runtimeDemoMode = useRuntimeConfig().demoMode;
+  } catch {
+    runtimeDemoMode = process.env.DEMO_MODE;
+  }
+  return runtimeDemoMode === true || String(runtimeDemoMode) === 'true';
+}
+
+export function requireExplicitDemoRuntime(action = 'demo helper') {
+  if (!isExplicitDemoRuntime()) {
+    throw new DomainError('DEMO_MODE_REQUIRED', `${action} is available only in demo mode.`, 403, {
+      requiredAction: 'Set DEMO_MODE=true only for the controlled local demo environment.',
+      impact: 'The demo helper request was rejected.'
+    });
+  }
+}
+
 export function getDemoRole(event: H3Event): DemoRole {
   const role = getCookie(event, roleCookieName);
   const parsed = demoRoleSchema.safeParse(role);

@@ -36,6 +36,10 @@ export const aircraftInputSchema = z.object({
     )
     .optional()
     .default(null),
+  imageUrl: z
+    .preprocess(emptyToNull, z.string().trim().max(1000).nullable())
+    .optional()
+    .default(null),
   passengerCapacity: z.coerce.number().int().min(0),
   cargoCapacityKg: z.coerce.number().int().min(0),
   fuelType: z.enum(['AVTUR', 'AVGAS']),
@@ -100,6 +104,28 @@ export const aircraftDefectInputSchema = z.object({
   title: z.string().trim().min(3).max(160),
   description: z.string().trim().min(10).max(3000),
   detectedAt: z.string().datetime(),
+  reporterObservation: z
+    .enum([
+      'NO_SIGNIFICANT_IMPACT_OBSERVED',
+      'MAY_AFFECT_OPERATION',
+      'ATTENTION_BEFORE_NEXT_FLIGHT',
+      'APPEARS_CRITICAL',
+      'UNKNOWN'
+    ])
+    .optional()
+    .default('UNKNOWN'),
+  initialSeverity: z
+    .enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'UNKNOWN'])
+    .optional()
+    .default('UNKNOWN'),
+  operationalImpact: z
+    .preprocess(emptyToNull, z.string().trim().max(1000).nullable())
+    .default(null),
+  flightPhase: z.preprocess(emptyToNull, z.string().trim().max(80).nullable()).default(null),
+  stationId: z
+    .preprocess(emptyToNull, z.string().trim().min(1).nullable())
+    .optional()
+    .default(null),
   sourceReference: z.preprocess(emptyToNull, z.string().trim().max(240).nullable()).default(null),
   evidenceReferences: evidenceReferencesSchema,
   expectedVersion: z.coerce.number().int().positive()
@@ -120,6 +146,9 @@ export const aircraftDefermentInputSchema = z
       .default(null),
     effectiveAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
+    targetRectificationAt: z
+      .preprocess(emptyToNull, z.string().datetime().nullable())
+      .default(null),
     authorizationReference: z.string().trim().min(2).max(240),
     applicableRouteIds: z.array(z.string().trim().min(1)).max(50).optional().default([]),
     applicableServiceTypeCodes: z
@@ -195,8 +224,8 @@ export type AircraftInput = z.infer<typeof aircraftInputSchema>;
 export type AircraftOperationalStatus = z.infer<typeof aircraftOperationalStatusSchema>;
 export type AircraftTechnicalStatus = z.infer<typeof aircraftTechnicalStatusSchema>;
 export type AircraftOperationalTransition = z.infer<typeof aircraftOperationalTransitionSchema>;
-export type AircraftDefectInput = z.infer<typeof aircraftDefectInputSchema>;
-export type AircraftDefermentInput = z.infer<typeof aircraftDefermentInputSchema>;
+export type AircraftDefectInput = z.input<typeof aircraftDefectInputSchema>;
+export type AircraftDefermentInput = z.input<typeof aircraftDefermentInputSchema>;
 export type AircraftMaintenanceReleaseInput = z.infer<typeof aircraftMaintenanceReleaseInputSchema>;
 export type AircraftMaintenanceRequirementInput = z.infer<
   typeof aircraftMaintenanceRequirementInputSchema
@@ -209,6 +238,7 @@ export type AircraftDto = {
   manufacturer: string;
   model: string;
   fleetCode: string | null;
+  imageUrl: string | null;
   passengerCapacity: number;
   cargoCapacityKg: number;
   fuelType: string;
@@ -243,12 +273,61 @@ export type AircraftDto = {
   updatedAt: string;
 };
 
+export type AircraftTechnicalEligibilityStatus =
+  'ELIGIBLE' | 'ELIGIBLE_WITH_RESTRICTIONS' | 'BLOCKED' | 'UNKNOWN';
+
+export type AircraftTechnicalEligibilityBlockerDto = {
+  code: string;
+  category:
+    | 'AIRCRAFT'
+    | 'DEFECT'
+    | 'DEFERMENT'
+    | 'DUE_CONTROL'
+    | 'MAINTENANCE_RELEASE'
+    | 'TECHNICAL_STATUS';
+  sourceEntityType: string;
+  sourceEntityId: string | null;
+  reason: string;
+  remediation: string;
+  isBlocking: boolean;
+};
+
+export type AircraftTechnicalRestrictionDto = {
+  sourceType: 'DEFERRED_DEFECT';
+  sourceId: string;
+  defectId: string;
+  title: string;
+  restriction: string;
+  validUntil: string;
+  status: 'ACTIVE';
+};
+
+export type AircraftTechnicalEligibilityDto = {
+  aircraftId: string;
+  status: AircraftTechnicalEligibilityStatus;
+  eligible: boolean;
+  evaluatedAt: string;
+  blockers: AircraftTechnicalEligibilityBlockerDto[];
+  restrictions: AircraftTechnicalRestrictionDto[];
+  warnings: AircraftTechnicalEligibilityBlockerDto[];
+  sourceReferences: Array<{
+    sourceType: string;
+    sourceId: string | null;
+    label: string;
+  }>;
+};
+
 export type AircraftDefectDto = {
   id: string;
   defectNumber: string;
   title: string;
   description: string;
   detectedAt: string;
+  reporterObservation: string;
+  initialSeverity: string;
+  operationalImpact: string | null;
+  flightPhase: string | null;
+  stationId: string | null;
   sourceReference: string | null;
   evidenceReferences: string[];
   status: 'OPEN' | 'DEFERRED' | 'RECTIFIED' | 'CLOSED';
@@ -263,6 +342,14 @@ export type AircraftDefermentDto = {
   referenceCode: string;
   category: string | null;
   operationalLimitations: string;
+  maintenanceProcedure: string | null;
+  operationsProcedure: string | null;
+  targetRectificationAt: string | null;
+  assessmentId: string | null;
+  followUpWorkPackageId: string | null;
+  closedAt: string | null;
+  closedByUserId: string | null;
+  closureNote: string | null;
   applicableRouteIds: string[];
   applicableServiceTypeCodes: string[];
   effectiveAt: string;
@@ -324,6 +411,7 @@ export type AircraftOption = {
   aircraftType: string;
   manufacturer: string;
   model: string;
+  imageUrl: string | null;
   passengerCapacity: number;
   cargoCapacityKg: number;
   fuelType: string;

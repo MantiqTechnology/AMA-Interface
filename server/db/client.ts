@@ -55,6 +55,7 @@ export function createDbClient(dbPath = getDefaultDbPath()): DbClient {
 
   const sqlite = new Database(resolvedPath);
   sqlite.pragma('foreign_keys = ON');
+  sqlite.pragma('busy_timeout = 5000');
 
   if (resolvedPath !== ':memory:') {
     sqlite.pragma('journal_mode = WAL');

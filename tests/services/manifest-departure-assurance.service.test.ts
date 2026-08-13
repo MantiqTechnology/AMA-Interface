@@ -11,6 +11,10 @@ const occ = {
   role: 'OCC',
   stationCodes: ['ALL']
 };
+const maintenance = {
+  userId: 'USR-MAINTENANCE-MANAGER',
+  role: 'Maintenance Manager'
+};
 
 function satisfyOriginAssurance(
   sqlite: Awaited<ReturnType<typeof createSeededTestServices>>['sqlite']
@@ -219,13 +223,36 @@ describe('manifest and departure assurance', () => {
     );
     expect(ready.currentStatus).toBe('READY_FOR_DEPARTURE');
 
-    sqlite
-      .prepare(
-        `UPDATE aircraft
-         SET serviceability_status = 'UNSERVICEABLE'
-         WHERE id = ?`
-      )
-      .run(ready.aircraftId);
+    const aircraft = services.aircraftAirworthiness.detail(ready.aircraftId!).aircraft;
+    const reported = services.aircraftAirworthiness.reportDefect(
+      ready.aircraftId!,
+      {
+        title: 'Hydraulic pressure warning',
+        description:
+          'Hydraulic pressure warning appeared after Flight Release and before departure.',
+        detectedAt: new Date().toISOString(),
+        reporterObservation: 'APPEARS_CRITICAL',
+        initialSeverity: 'CRITICAL',
+        operationalImpact: 'Aircraft must not depart before maintenance assessment.',
+        flightPhase: 'PRE_DEPARTURE',
+        stationId: ready.originStationId,
+        sourceReference: 'M8-PRE-DEPARTURE-NOGO',
+        evidenceReferences: ['M8-PRE-DEPARTURE-NOGO'],
+        expectedVersion: aircraft.version
+      },
+      { userId: occ.userId, role: occ.role }
+    );
+    const defect = reported.defects.find(
+      (item) => item.sourceReference === 'M8-PRE-DEPARTURE-NOGO'
+    );
+    services.maintenance.assessDefect(
+      defect!.id,
+      {
+        assessmentDecision: 'GROUND',
+        assessmentNote: 'Maintenance Control confirms NO-GO before departure.'
+      },
+      maintenance
+    );
     expect(() =>
       services.flightOperations.departWithCriticalRevalidation(
         initial.id,

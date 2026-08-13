@@ -2,7 +2,7 @@ import { idParamSchema } from '../../../shared/contracts/common';
 import { defineApiEventHandler } from '../../utils/api-response';
 import { DomainError } from '../../utils/errors';
 import { isUploadReferenced } from '../../utils/local-document-storage';
-import { deleteLocalUpload } from '../../utils/local-upload-storage';
+import { deleteUpload } from '../../utils/upload-storage';
 import { parseParams } from '../../utils/validation';
 
 export default defineApiEventHandler(async (event) => {
@@ -16,5 +16,5 @@ export default defineApiEventHandler(async (event) => {
     );
   }
 
-  return await deleteLocalUpload(id);
+  return await deleteUpload(id);
 });

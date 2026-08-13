@@ -2,7 +2,7 @@ import { createError, defineEventHandler, getQuery, sendStream, setHeader } from
 import { ZodError } from 'zod';
 import { idParamSchema } from '../../../../shared/contracts/common';
 import { DomainError } from '../../../utils/errors';
-import { getLocalUploadFile } from '../../../utils/local-upload-storage';
+import { getUploadFile } from '../../../utils/upload-storage';
 import { parseParams } from '../../../utils/validation';
 
 function contentDisposition(disposition: 'attachment' | 'inline', filename: string) {
@@ -36,7 +36,7 @@ function throwHttpError(error: unknown): never {
 export default defineEventHandler(async (event) => {
   try {
     const { id } = parseParams(event, idParamSchema);
-    const { upload, stream } = await getLocalUploadFile(id);
+    const { upload, stream } = await getUploadFile(id);
     const query = getQuery(event);
     const disposition =
       query.download === '1' || query.download === 'true' ? 'attachment' : 'inline';

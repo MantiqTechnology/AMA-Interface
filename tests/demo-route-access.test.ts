@@ -25,8 +25,12 @@ describe('demo route access', () => {
 
   it('keeps MRO routes read-scoped and role-change redirect safe', () => {
     expect(safeDemoRoleRedirectPath('Maintenance Manager', '/maintenance')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Maintenance Technician', '/maintenance/my-work')).toBeNull();
     expect(safeDemoRoleRedirectPath('Certifying Staff', '/maintenance/releases')).toBeNull();
     expect(safeDemoRoleRedirectPath('Finance Reviewer', '/maintenance/records')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Maintenance Technician', '/admin/access-demo')).toBe(
+      '/dashboard'
+    );
     expect(safeDemoRoleRedirectPath('OCC', '/maintenance/work-packages')).toBe('/dashboard');
     expect(safeDemoRoleRedirectPath('Inventory Controller', '/maintenance')).toBe('/dashboard');
   });

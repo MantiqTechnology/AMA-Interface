@@ -15,6 +15,7 @@ const session = useDemoSession();
 const route = useRoute();
 const { can } = useAuthorization();
 const ui = useMaintenanceUi();
+const { resolveAircraftImageUrl } = useAircraftImageUrl();
 
 const createDialog = ref(false);
 const createStep = ref(0);
@@ -133,6 +134,26 @@ const flowMetrics = computed(() => [
     label: 'Audit',
     value: data.value?.recentAuditRecords.length ?? '-',
     helper: 'Riwayat tindakan'
+  },
+  {
+    label: 'Overdue',
+    value: data.value?.summary.overdue ?? '-',
+    helper: 'Due control demo'
+  },
+  {
+    label: 'Material',
+    value: data.value?.summary.partsBlockers ?? '-',
+    helper: 'Blocker kesiapan material'
+  },
+  {
+    label: 'Peralatan',
+    value: data.value?.summary.toolingBlockers ?? '-',
+    helper: 'Blocker kalibrasi/alloc'
+  },
+  {
+    label: 'Data',
+    value: data.value?.summary.approvedDataBlockers ?? '-',
+    helper: 'Blocker revisi controlled'
   }
 ]);
 
@@ -425,6 +446,30 @@ async function createPackage() {
           tone="success"
         />
       </VCol>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard label="Overdue Demo" :value="data?.summary.overdue ?? '-'" tone="danger" />
+      </VCol>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard
+          label="Blocker Material"
+          :value="data?.summary.partsBlockers ?? '-'"
+          tone="warning"
+        />
+      </VCol>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard
+          label="Blocker Peralatan"
+          :value="data?.summary.toolingBlockers ?? '-'"
+          tone="warning"
+        />
+      </VCol>
+      <VCol cols="12" sm="6" lg="3">
+        <DsStatCard
+          label="Blocker Data"
+          :value="data?.summary.approvedDataBlockers ?? '-'"
+          tone="warning"
+        />
+      </VCol>
     </VRow>
 
     <VRow class="mt-2">
@@ -477,7 +522,20 @@ async function createPackage() {
                     v-for="item in filteredAttention"
                     :key="`${item.aircraftId}-${item.updatedAt}`"
                   >
-                    <td class="font-weight-bold">{{ item.aircraftRegistrationNumber }}</td>
+                    <td>
+                      <div class="d-flex align-center ga-2">
+                        <VAvatar rounded="lg" size="40">
+                          <VImg
+                            v-if="resolveAircraftImageUrl(item.aircraftImageUrl)"
+                            :alt="`${item.aircraftRegistrationNumber} aircraft image`"
+                            cover
+                            :src="resolveAircraftImageUrl(item.aircraftImageUrl) ?? undefined"
+                          />
+                          <VIcon v-else icon="mdi-airplane" size="22" />
+                        </VAvatar>
+                        <strong>{{ item.aircraftRegistrationNumber }}</strong>
+                      </div>
+                    </td>
                     <td>
                       <VChip
                         :color="ui.technicalStateColor(item.technicalState)"
@@ -492,11 +550,13 @@ async function createPackage() {
                       <VBtn
                         v-if="item.activePackageId"
                         :to="`/maintenance/work-packages/${item.activePackageId}`"
-                        variant="text"
+                        class="mro-action-btn"
+                        color="primary"
+                        variant="tonal"
                         size="small"
-                        append-icon="mdi-arrow-right"
+                        prepend-icon="mdi-briefcase-arrow-right"
                       >
-                        {{ item.activePackageNumber }}
+                        Buka {{ item.activePackageNumber }}
                       </VBtn>
                       <span v-else>-</span>
                       <div class="text-caption text-medium-emphasis">
@@ -540,12 +600,23 @@ async function createPackage() {
               <VListItem
                 v-for="item in data?.readyForRelease ?? []"
                 :key="item.id"
-                :to="`/maintenance/work-packages/${item.id}`"
                 :title="item.title"
                 :subtitle="packageSubtitle(item)"
               >
                 <template #append>
-                  <VChip color="success" size="small" variant="tonal">Siap</VChip>
+                  <div class="d-flex align-center ga-2">
+                    <VChip color="success" size="small" variant="tonal">Siap</VChip>
+                    <VBtn
+                      :to="`/maintenance/work-packages/${item.id}`"
+                      class="mro-action-btn"
+                      color="success"
+                      size="small"
+                      variant="tonal"
+                      prepend-icon="mdi-certificate-outline"
+                    >
+                      Buka rilis
+                    </VBtn>
+                  </div>
                 </template>
               </VListItem>
             </VList>
@@ -595,10 +666,22 @@ async function createPackage() {
               <VListItem
                 v-for="card in data?.jobCardsAwaitingExecution.slice(0, 6) ?? []"
                 :key="card.id"
-                :to="`/maintenance/work-packages/${card.workPackageId}`"
                 :title="card.title"
                 :subtitle="jobCardSubtitle(card)"
-              />
+              >
+                <template #append>
+                  <VBtn
+                    :to="`/maintenance/work-packages/${card.workPackageId}`"
+                    class="mro-action-btn"
+                    color="primary"
+                    size="small"
+                    variant="tonal"
+                    prepend-icon="mdi-briefcase-eye-outline"
+                  >
+                    Buka pekerjaan
+                  </VBtn>
+                </template>
+              </VListItem>
             </VList>
             <VEmptyState
               v-if="!pending && !error && data && !(data?.jobCardsAwaitingExecution.length ?? 0)"
@@ -615,12 +698,23 @@ async function createPackage() {
               <VListItem
                 v-for="card in data?.inspectionsAwaitingAction.slice(0, 6) ?? []"
                 :key="card.id"
-                :to="`/maintenance/work-packages/${card.workPackageId}`"
                 :title="card.title"
                 :subtitle="jobCardSubtitle(card)"
               >
                 <template #append>
-                  <VChip color="warning" size="small" variant="tonal">Pemeriksaan</VChip>
+                  <div class="d-flex align-center ga-2">
+                    <VChip color="warning" size="small" variant="tonal">Pemeriksaan</VChip>
+                    <VBtn
+                      :to="`/maintenance/work-packages/${card.workPackageId}`"
+                      class="mro-action-btn"
+                      color="warning"
+                      size="small"
+                      variant="tonal"
+                      prepend-icon="mdi-clipboard-search-outline"
+                    >
+                      Buka inspeksi
+                    </VBtn>
+                  </div>
                 </template>
               </VListItem>
             </VList>
@@ -639,14 +733,26 @@ async function createPackage() {
               <VListItem
                 v-for="item in data?.releaseBlockers.slice(0, 6) ?? []"
                 :key="item.workPackageId"
-                :to="`/maintenance/work-packages/${item.workPackageId}`"
                 :title="
                   ui.operationalAction(
                     item.blockers[0]?.message ?? 'Release prerequisite not satisfied.'
                   )
                 "
                 :subtitle="`${item.aircraftRegistrationNumber} / ${item.packageNumber}`"
-              />
+              >
+                <template #append>
+                  <VBtn
+                    :to="`/maintenance/work-packages/${item.workPackageId}`"
+                    class="mro-action-btn"
+                    color="warning"
+                    size="small"
+                    variant="tonal"
+                    prepend-icon="mdi-alert-circle-outline"
+                  >
+                    Buka blocker
+                  </VBtn>
+                </template>
+              </VListItem>
             </VList>
             <VEmptyState
               v-if="!pending && !error && data && !(data?.releaseBlockers.length ?? 0)"
@@ -1057,6 +1163,11 @@ async function createPackage() {
   color: rgba(var(--v-theme-on-surface), 0.68);
   font-size: 0.75rem;
   line-height: 1.3;
+}
+
+.mro-action-btn {
+  min-width: max-content;
+  font-weight: 700;
 }
 
 .create-step {

@@ -5,6 +5,7 @@ const active = ref<'active' | 'inactive' | 'all'>('active');
 const search = ref('');
 const dialog = ref(false);
 const editing = ref<AircraftDto | null>(null);
+const { resolveAircraftImageUrl } = useAircraftImageUrl();
 const {
   data: records,
   pending,
@@ -72,6 +73,7 @@ function edit(record: AircraftDto) {
             <thead>
               <tr>
                 <th>Registration number</th>
+                <th>Image</th>
                 <th>Serial number / MSN</th>
                 <th>Aircraft type</th>
                 <th>Manufacturer</th>
@@ -85,6 +87,17 @@ function edit(record: AircraftDto) {
             <tbody>
               <tr v-for="record in records" :key="record.id">
                 <td>{{ display(record.registrationNumber) }}</td>
+                <td>
+                  <VAvatar rounded="lg" size="56">
+                    <VImg
+                      v-if="resolveAircraftImageUrl(record.imageUrl)"
+                      :alt="`${record.registrationNumber} aircraft image`"
+                      cover
+                      :src="resolveAircraftImageUrl(record.imageUrl) ?? undefined"
+                    />
+                    <VIcon v-else icon="mdi-airplane" />
+                  </VAvatar>
+                </td>
                 <td>{{ display(record.serialNumber) }}</td>
                 <td>{{ display(record.aircraftType) }}</td>
                 <td>{{ display(record.manufacturer) }}</td>

@@ -31,7 +31,7 @@ test('captures failed inspection and rework loop screens', async ({ baseURL, con
   await expect(page.getByText('Inspection failed — rework required').first()).toBeVisible();
   await page.screenshot({ path: output('02-package-rework-required.png'), fullPage: true });
 
-  await setRole(context, baseURL, 'Maintenance Manager');
+  await setRole(context, baseURL, 'Maintenance Technician');
   await page.reload({ waitUntil: 'networkidle' });
   await page
     .getByRole('button', { name: /Troubleshoot engine indication wiring and sensor reference/u })

@@ -1563,12 +1563,20 @@ describe('MaintenanceService MRO foundation', () => {
         'SELECT COUNT(*) AS count FROM aircraft_maintenance_releases WHERE release_number = ?'
       )
       .get('RTS-MRO-IDEMPOTENT') as { count: number };
+    const snapshotCount = sqlite
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM maintenance_release_eligibility_snapshots
+         WHERE release_id = ?`
+      )
+      .get(first.releaseId) as { count: number };
     expect(second).toMatchObject({
       id: first.id,
       status: 'RELEASED',
       releaseId: first.releaseId
     });
     expect(releaseCount.count).toBe(1);
+    expect(snapshotCount.count).toBe(1);
 
     sqlite.close();
   });
