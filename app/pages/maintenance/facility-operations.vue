@@ -6,6 +6,7 @@ import type {
 } from '#shared/features/maintenance';
 
 const ui = useMaintenanceUi();
+const { t } = useI18n();
 const selectedSlotId = ref<string | null>(null);
 const gseRequirementType = ref('Ground Power Unit');
 const gseCandidates = ref<MaintenanceGseCandidateDto[]>([]);
@@ -148,13 +149,13 @@ function slotLabel(slot: MaintenanceSlotDto) {
   <v-container fluid class="pa-4">
     <div class="d-flex flex-wrap align-center justify-space-between ga-3 mb-4">
       <div>
-        <h1 class="text-h5 font-weight-bold">Facility Operations</h1>
+        <h1 class="text-h5 font-weight-bold">{{ t('maintenance.facilityOperations.title') }}</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Maintenance custody, bay staging, shift handover, and handback.
+          {{ t('maintenance.facilityOperations.subtitle') }}
         </p>
       </div>
       <v-btn prepend-icon="mdi-refresh" :loading="pending" variant="tonal" @click="refresh">
-        Refresh
+        {{ t('maintenance.facilityOperations.refresh') }}
       </v-btn>
     </div>
 
@@ -165,7 +166,9 @@ function slotLabel(slot: MaintenanceSlotDto) {
     <v-row>
       <v-col cols="12" md="4" lg="3">
         <v-card variant="outlined">
-          <v-card-title class="text-subtitle-1">Slot Maintenance</v-card-title>
+          <v-card-title class="text-subtitle-1">
+            {{ t('maintenance.facilityOperations.slotMaintenance') }}
+          </v-card-title>
           <v-list density="compact">
             <v-list-item
               v-for="slot in slots"
@@ -203,20 +206,26 @@ function slotLabel(slot: MaintenanceSlotDto) {
           <v-card-text>
             <v-row dense>
               <v-col cols="12" md="4">
-                <div class="text-caption text-medium-emphasis">Facility</div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ t('maintenance.facilityOperations.facility') }}
+                </div>
                 <div>
                   {{ selectedSlot.facilityName }} / {{ selectedSlot.areaCode }} /
                   {{ selectedSlot.bayCode }}
                 </div>
               </v-col>
               <v-col cols="12" md="4">
-                <div class="text-caption text-medium-emphasis">Planned</div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ t('maintenance.facilityOperations.planned') }}
+                </div>
                 <div>
                   {{ time(selectedSlot.plannedStartAt) }} - {{ time(selectedSlot.plannedEndAt) }}
                 </div>
               </v-col>
               <v-col cols="12" md="4">
-                <div class="text-caption text-medium-emphasis">Actual</div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ t('maintenance.facilityOperations.actual') }}
+                </div>
                 <div>
                   {{ time(selectedSlot.actualStartAt) }} - {{ time(selectedSlot.actualEndAt) }}
                 </div>
@@ -228,14 +237,16 @@ function slotLabel(slot: MaintenanceSlotDto) {
         <v-row>
           <v-col cols="12" lg="6">
             <v-card variant="outlined" class="h-100">
-              <v-card-title class="text-subtitle-1">Facility Readiness</v-card-title>
+              <v-card-title class="text-subtitle-1">
+                {{ t('maintenance.facilityOperations.facilityReadiness') }}
+              </v-card-title>
               <v-card-text>
                 <v-chip
                   class="mb-3"
                   :color="statusColor(selectedReadiness?.status)"
                   variant="tonal"
                 >
-                  {{ selectedReadiness?.status ?? 'UNKNOWN' }}
+                  {{ selectedReadiness?.status ?? t('maintenance.facilityOperations.unknown') }}
                 </v-chip>
                 <v-table density="compact">
                   <tbody>
@@ -260,16 +271,18 @@ function slotLabel(slot: MaintenanceSlotDto) {
 
           <v-col cols="12" lg="6">
             <v-card variant="outlined" class="h-100">
-              <v-card-title class="text-subtitle-1">Manpower Capacity</v-card-title>
+              <v-card-title class="text-subtitle-1">
+                {{ t('maintenance.facilityOperations.manpowerCapacity') }}
+              </v-card-title>
               <v-card-text>
                 <v-table density="compact">
                   <thead>
                     <tr>
-                      <th>Role</th>
-                      <th>Required</th>
-                      <th>Available Eligible</th>
-                      <th>Assigned</th>
-                      <th>Status</th>
+                      <th>{{ t('maintenance.facilityOperations.role') }}</th>
+                      <th>{{ t('maintenance.facilityOperations.required') }}</th>
+                      <th>{{ t('maintenance.facilityOperations.availableEligible') }}</th>
+                      <th>{{ t('maintenance.facilityOperations.assigned') }}</th>
+                      <th>{{ t('maintenance.facilityOperations.status') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -292,7 +305,9 @@ function slotLabel(slot: MaintenanceSlotDto) {
                       </td>
                     </tr>
                     <tr v-if="(selectedReadiness?.manpowerCapacity ?? []).length === 0">
-                      <td colspan="5">No personnel requirement for this slot.</td>
+                      <td colspan="5">
+                        {{ t('maintenance.facilityOperations.noPersonnelRequirement') }}
+                      </td>
                     </tr>
                   </tbody>
                 </v-table>
@@ -302,16 +317,20 @@ function slotLabel(slot: MaintenanceSlotDto) {
 
           <v-col cols="12" lg="6">
             <v-card variant="outlined" class="h-100">
-              <v-card-title class="text-subtitle-1">GSE / Staging</v-card-title>
+              <v-card-title class="text-subtitle-1">
+                {{ t('maintenance.facilityOperations.gseStaging') }}
+              </v-card-title>
               <v-card-text>
                 <div class="d-flex ga-2 mb-3">
                   <v-text-field
                     v-model="gseRequirementType"
                     density="compact"
-                    label="GSE type"
+                    :label="t('maintenance.facilityOperations.gseType')"
                     hide-details
                   />
-                  <v-btn :loading="actionBusy" @click="createGseRequirement">Require</v-btn>
+                  <v-btn :loading="actionBusy" @click="createGseRequirement">
+                    {{ t('maintenance.facilityOperations.require') }}
+                  </v-btn>
                 </div>
                 <v-list density="compact">
                   <v-list-item v-for="requirement in selectedGseRequirements" :key="requirement.id">
@@ -326,7 +345,7 @@ function slotLabel(slot: MaintenanceSlotDto) {
                         variant="tonal"
                         @click="loadGseCandidates(requirement.id)"
                       >
-                        Candidates
+                        {{ t('maintenance.facilityOperations.candidates') }}
                       </v-btn>
                     </template>
                   </v-list-item>
@@ -338,7 +357,11 @@ function slotLabel(slot: MaintenanceSlotDto) {
                       {{ candidate.assetCode }} {{ candidate.name }}
                     </v-list-item-title>
                     <v-list-item-subtitle>
-                      {{ candidate.eligible ? 'Eligible' : candidate.reasons.join(', ') }}
+                      {{
+                        candidate.eligible
+                          ? t('maintenance.facilityOperations.eligible')
+                          : candidate.reasons.join(', ')
+                      }}
                     </v-list-item-subtitle>
                     <template #append>
                       <v-btn
@@ -346,7 +369,7 @@ function slotLabel(slot: MaintenanceSlotDto) {
                         :disabled="!candidate.eligible || !selectedGseRequirements[0]"
                         @click="allocateGse(selectedGseRequirements[0].id, candidate.assetId)"
                       >
-                        Allocate
+                        {{ t('maintenance.facilityOperations.allocate') }}
                       </v-btn>
                     </template>
                   </v-list-item>
@@ -359,13 +382,14 @@ function slotLabel(slot: MaintenanceSlotDto) {
                     </v-list-item-title>
                     <template #append>
                       <v-btn size="small" variant="tonal" @click="stageGse(allocation.id)">
-                        Stage
+                        {{ t('maintenance.facilityOperations.stage') }}
                       </v-btn>
                     </template>
                   </v-list-item>
                   <v-list-item v-for="item in selectedStaging" :key="item.id">
                     <v-list-item-title>
-                      {{ item.resourceCode }} staged at {{ item.bayCode }}
+                      {{ item.resourceCode }} {{ t('maintenance.facilityOperations.stagedAt') }}
+                      {{ item.bayCode }}
                     </v-list-item-title>
                     <v-list-item-subtitle>
                       {{ item.resourceType }} / {{ item.status }}
@@ -378,37 +402,48 @@ function slotLabel(slot: MaintenanceSlotDto) {
         </v-row>
 
         <v-card variant="outlined" class="mt-4">
-          <v-card-title class="text-subtitle-1">Movement / Handback</v-card-title>
+          <v-card-title class="text-subtitle-1">
+            {{ t('maintenance.facilityOperations.movementHandback') }}
+          </v-card-title>
           <v-card-text>
             <div class="d-flex flex-wrap ga-2">
-              <v-btn :loading="actionBusy" @click="move('move-in-request')">Request Move In</v-btn>
-              <v-btn :loading="actionBusy" @click="move('confirm-in-bay')">Confirm In Bay</v-btn>
-              <v-btn :loading="actionBusy" @click="move('ready-for-move-out')">
-                Ready Move Out
+              <v-btn :loading="actionBusy" @click="move('move-in-request')">
+                {{ t('maintenance.facilityOperations.requestMoveIn') }}
               </v-btn>
-              <v-btn :loading="actionBusy" @click="move('move-out')">Move Out</v-btn>
+              <v-btn :loading="actionBusy" @click="move('confirm-in-bay')">
+                {{ t('maintenance.facilityOperations.confirmInBay') }}
+              </v-btn>
+              <v-btn :loading="actionBusy" @click="move('ready-for-move-out')">
+                {{ t('maintenance.facilityOperations.readyMoveOut') }}
+              </v-btn>
+              <v-btn :loading="actionBusy" @click="move('move-out')">
+                {{ t('maintenance.facilityOperations.moveOut') }}
+              </v-btn>
               <v-btn :loading="actionBusy" color="success" @click="move('handback')">
-                Handback
+                {{ t('maintenance.facilityOperations.handback') }}
               </v-btn>
               <v-btn
                 v-if="selectedSlot"
                 :to="`/maintenance/work-packages/${selectedSlot.workPackageId}`"
                 variant="tonal"
               >
-                Open WP
+                {{ t('maintenance.facilityOperations.openWorkPackage') }}
               </v-btn>
             </div>
           </v-card-text>
         </v-card>
 
         <v-card variant="outlined" class="mt-4">
-          <v-card-title class="text-subtitle-1">Shift Handover</v-card-title>
+          <v-card-title class="text-subtitle-1">
+            {{ t('maintenance.facilityOperations.shiftHandover') }}
+          </v-card-title>
           <v-list density="compact">
             <v-list-item v-for="handover in selectedHandovers" :key="handover.id">
               <v-list-item-title>{{ handover.status }} / {{ handover.notes }}</v-list-item-title>
               <v-list-item-subtitle>
                 {{
-                  handover.outstandingReferences.join(', ') || 'No outstanding reference'
+                  handover.outstandingReferences.join(', ') ||
+                    t('maintenance.facilityOperations.noOutstandingReference')
                 }}
               </v-list-item-subtitle>
             </v-list-item>

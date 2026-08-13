@@ -44,6 +44,11 @@ const commercialVisible = computed(
   () => masterDataVisible.value || can('commercial.contract.read').allowed
 );
 
+// CRM & Marketing is demo/frontend-only for now, so it is always visible.
+// Swap `true` for a real permission check (e.g. can('crm.read').allowed) once
+// the backend/API for this module is wired up.
+const crmMarketingVisible = computed(() => true);
+
 const navItems = computed<NavItem[]>(() =>
   [
     {
@@ -258,19 +263,19 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: t('nav.corporateAssets'),
       icon: 'mdi-toolbox-outline',
-      visible: can('asset.read').allowed,
+      visible: true,
       children: [
         {
           label: t('nav.overview'),
           to: '/asset-management/overview',
           icon: 'mdi-view-dashboard-outline',
-          visible: can('asset.read').allowed
+          visible: true
         },
         {
           label: t('nav.assetRegister'),
           to: '/asset-management/register',
           icon: 'mdi-clipboard-list-outline',
-          visible: can('asset.read').allowed
+          visible: true
         },
         {
           label: t('nav.assignments'),
@@ -301,6 +306,55 @@ const navItems = computed<NavItem[]>(() =>
           to: '/asset-management/finance',
           icon: 'mdi-calculator-variant-outline',
           visible: can('asset.finance.read').allowed
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'CRM & Marketing',
+      icon: 'mdi-account-heart-outline',
+      visible: crmMarketingVisible.value,
+      children: [
+        {
+          label: 'Overview',
+          to: '/crm-marketing/dashboard-crm',
+          icon: 'mdi-view-dashboard-outline',
+          visible: true
+        },
+        {
+          label: 'Leads',
+          to: '/crm-marketing/leads',
+          icon: 'mdi-account-plus-outline',
+          visible: true
+        },
+        {
+          label: 'Customers',
+          to: '/crm-marketing/customers',
+          icon: 'mdi-domain',
+          visible: true
+        },
+        {
+          label: 'Tender',
+          to: '/crm-marketing/tender',
+          icon: 'mdi-gavel',
+          visible: true
+        },
+        {
+          label: 'Promotion',
+          to: '/crm-marketing/promotion',
+          icon: 'mdi-bullhorn-outline',
+          visible: true
+        },
+        {
+          label: 'Opportunities',
+          to: '/crm-marketing/opportunities',
+          icon: 'mdi-target',
+          visible: true
+        },
+        {
+          label: 'Activities',
+          to: '/crm-marketing/activities',
+          icon: 'mdi-calendar-check-outline',
+          visible: true
         }
       ].filter((child) => child.visible)
     },
@@ -579,9 +633,9 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Facility Operations',
+          label: t('nav.facilityOperations'),
           to: '/maintenance/facility-operations',
-          icon: 'mdi-hangar',
+          icon: 'mdi-garage-variant',
           visible: can('maintenance.package.read').allowed
         },
         {
@@ -822,5 +876,32 @@ function closeMobileOnNavigate() {
 
 .rotate-180 {
   transform: rotate(180deg);
+}
+
+/* --- MODIFIKASI SCROLLBAR --- */
+
+/* 1. Untuk Chrome, Safari, dan Edge (Webkit) */
+:deep(.v-navigation-drawer__content::-webkit-scrollbar) {
+  width: 6px;
+}
+
+:deep(.v-navigation-drawer__content::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+:deep(.v-navigation-drawer__content::-webkit-scrollbar-thumb) {
+  background-color: #607d8b;
+  border-radius: 20px;
+  border: 1px solid transparent;
+}
+
+:deep(.v-navigation-drawer__content::-webkit-scrollbar-thumb:hover) {
+  background-color: #455a64;
+}
+
+/* 2. Untuk Firefox */
+:deep(.v-navigation-drawer__content) {
+  scrollbar-width: thin;
+  scrollbar-color: #607d8b transparent;
 }
 </style>
