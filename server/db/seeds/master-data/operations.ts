@@ -26,16 +26,17 @@ export async function seedOperationsMasterData(
   context: DemoSeedContext = createDemoSeedContext()
 ) {
   const referenceNow = context.now;
-  const aircraftImageBasePath = 'aircraft';
+  const aircraftImageBasePath = '/images/aircraft';
+  const defaultAircraftImage = `${aircraftImageBasePath}/pilatus-pc6.webp`;
   const aircraftImageUrls = {
-    pkAma: `${aircraftImageBasePath}/pk-rka-associated-mission-aviation-ama-papua-pilatus-pc-6-b2-h4-turbo-porter_PlanespottersNet_1738497_f4e6bb222f_o.webp`,
-    pkAmb: `${aircraftImageBasePath}/Cessna-208-Caravan-PNC-0219-1.jpg`,
-    pkAmc: `${aircraftImageBasePath}/pac-p-750-xstol-985cf660-67bb-409a-a3d9-8ee17deff38-resize-750.webp`,
-    pkAmd: `${aircraftImageBasePath}/DSC05386-1024x682.webp`,
-    pkAme: `${aircraftImageBasePath}/pexels-rachel-claire-7276734-scaled.webp`,
-    pkAmf: `${aircraftImageBasePath}/img.webp`,
-    pkAmg: `${aircraftImageBasePath}/polar_airways_pilatus_pc-6_porter_n3603r.webp`,
-    pkAmh: `${aircraftImageBasePath}/pac-p-750-xstol-985cf660-67bb-409a-a3d9-8ee17deff38-resize-750.webp`
+    pkAma: defaultAircraftImage,
+    pkAmb: defaultAircraftImage,
+    pkAmc: defaultAircraftImage,
+    pkAmd: defaultAircraftImage,
+    pkAme: defaultAircraftImage,
+    pkAmf: defaultAircraftImage,
+    pkAmg: defaultAircraftImage,
+    pkAmh: defaultAircraftImage
   };
   await db
     .insert(stations)
