@@ -10,7 +10,7 @@ const DEFAULT_REGION = 'auto';
 const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const S3_UPLOAD_BASE_PATH = 's3';
 const API_UPLOAD_BASE_PATH = '/api/uploads';
-const UNSIGNED_PAYLOAD = 'UNSIGNED-PAYLOAD';
+const EMPTY_PAYLOAD_HASH = createHash('sha256').update('').digest('hex');
 
 const uploadManifestSchema = z.object({
   uploads: z.array(localUploadSchema)
@@ -144,6 +144,15 @@ function sha256(value: string) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function sha256Payload(body: BodyInit | null | undefined) {
+  if (!body) return EMPTY_PAYLOAD_HASH;
+  if (typeof body === 'string' || Buffer.isBuffer(body) || body instanceof Uint8Array) {
+    return createHash('sha256').update(body).digest('hex');
+  }
+
+  throw new DomainError('S3_UPLOAD_BODY_UNSUPPORTED', 'S3 upload body type cannot be signed.', 500);
+}
+
 function encodePathSegment(value: string) {
   return encodeURIComponent(value).replace(
     /[!'()*]/gu,
@@ -174,6 +183,7 @@ function signedHeaders(
   config: S3UploadConfig,
   method: string,
   key: string,
+  payloadHash: string,
   initHeaders: HeadersInit = {}
 ) {
   const now = new Date();
@@ -183,7 +193,7 @@ function signedHeaders(
   const headers = new Headers(initHeaders);
 
   headers.set('host', host);
-  headers.set('x-amz-content-sha256', UNSIGNED_PAYLOAD);
+  headers.set('x-amz-content-sha256', payloadHash);
   headers.set('x-amz-date', timestamp);
 
   const entries = [...headers.entries()]
@@ -198,7 +208,7 @@ function signedHeaders(
     '',
     canonicalHeaders,
     signedHeaderNames,
-    UNSIGNED_PAYLOAD
+    payloadHash
   ].join('\n');
   const stringToSign = ['AWS4-HMAC-SHA256', timestamp, scope, sha256(canonicalRequest)].join('\n');
   const signature = createHmac('sha256', signingKey(config.secretAccessKey, date, config.region))
@@ -242,7 +252,7 @@ async function s3Request(
   key: string,
   init: RequestInit = {}
 ) {
-  const headers = signedHeaders(config, method, key, init.headers);
+  const headers = signedHeaders(config, method, key, sha256Payload(init.body), init.headers);
   const response = await fetch(objectUrl(config, key), {
     ...init,
     method,
@@ -269,7 +279,7 @@ async function readManifest(config: S3UploadConfig): Promise<UploadManifest> {
   const key = manifestKey();
   const response = await fetch(objectUrl(config, key), {
     method: 'GET',
-    headers: signedHeaders(config, 'GET', key)
+    headers: signedHeaders(config, 'GET', key, EMPTY_PAYLOAD_HASH)
   });
 
   if (response.status === 404) {
