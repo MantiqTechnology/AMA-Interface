@@ -2,9 +2,56 @@
 const route = useRoute();
 const id = route.params.id as string;
 
+interface EmployeeDetail {
+  id?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountName?: string;
+  taxIdNumber?: string;
+  bpjsKesehatanNumber?: string;
+  bpjsTkNumber?: string;
+  maritalStatus?: string;
+  numberOfDependents?: number;
+  ptkpStatus?: string;
+  basicSalary?: number;
+  positionAllowance?: number;
+  flightRatePerHour?: number;
+  salaryDetails?: {
+    basicSalary?: number;
+    positionAllowance?: number;
+    flightRatePerHour?: number;
+  };
+  leaveBalances?: unknown[];
+  [key: string]: unknown;
+}
+
+interface LeaveBalanceItem {
+  id?: string;
+  leaveTypeId?: string;
+  leaveTypeName?: string;
+  allocatedDays?: number;
+  usedDays?: number;
+  remainingDays?: number;
+  [key: string]: unknown;
+}
+
 const { data: employee, refresh } = await useAsyncData(`employee-${id}`, () =>
-  fetchApi<any>(`/api/hris/employees/${id}`)
+  fetchApi<EmployeeDetail>(`/api/hris/employees/${id}`)
 );
+
+const { data: leaveBalancesData } = await useAsyncData(`employee-leave-${id}`, () =>
+  fetchApi<LeaveBalanceItem[]>(`/api/hris/leave/balances?employeeId=${id}`)
+);
+
+const leaveBalances = computed(() => {
+  if (leaveBalancesData.value && leaveBalancesData.value.length > 0) {
+    return leaveBalancesData.value;
+  }
+  return employee.value?.leaveBalances ?? [];
+});
 
 const activeTab = ref('biodata');
 
@@ -53,9 +100,9 @@ watch(
         maritalStatus: val.maritalStatus || 'SINGLE',
         numberOfDependents: val.numberOfDependents || 0,
         ptkpStatus: val.ptkpStatus || 'TK/0',
-        basicSalary: val.salaryDetails?.basicSalary || 0,
-        positionAllowance: val.salaryDetails?.positionAllowance || 0,
-        flightRatePerHour: val.salaryDetails?.flightRatePerHour || 0
+        basicSalary: val.basicSalary ?? val.salaryDetails?.basicSalary ?? 0,
+        positionAllowance: val.positionAllowance ?? val.salaryDetails?.positionAllowance ?? 0,
+        flightRatePerHour: val.flightRatePerHour ?? val.salaryDetails?.flightRatePerHour ?? 0
       });
     }
   },
@@ -398,8 +445,8 @@ async function savePin() {
               🌴 Hak & Kuota Saldo Cuti
             </h3>
 
-            <VRow v-if="employee.leaveBalances?.length">
-              <VCol v-for="b in employee.leaveBalances" :key="b.id" cols="12" sm="6" md="4">
+            <VRow v-if="leaveBalances?.length">
+              <VCol v-for="b in leaveBalances" :key="b.id || b.leaveTypeId" cols="12" sm="6" md="4">
                 <VCard
                   border
                   class="pa-4 bg-surface elevation-1 h-100 d-flex flex-column justify-space-between"
@@ -407,10 +454,10 @@ async function savePin() {
                   <div>
                     <div class="d-flex align-center justify-space-between mb-2">
                       <span class="text-subtitle-2 font-weight-bold text-primary">{{
-                        b.leaveName
+                        b.leaveName || b.leaveTypeName
                       }}</span>
                       <VChip size="x-small" color="primary" variant="outlined">
-                        {{ b.periodYear }}
+                        {{ b.periodYear || b.year || new Date().getFullYear() }}
                       </VChip>
                     </div>
                     <div class="text-h3 font-weight-bold text-success my-2">
@@ -422,11 +469,13 @@ async function savePin() {
                   <div class="border-t pt-2 mt-2">
                     <div class="d-flex justify-space-between text-caption text-secondary mb-1">
                       <span>Total Hak Cuti:</span>
-                      <span class="font-weight-bold text-high-emphasis">{{ b.entitledDays }} Hari</span>
+                      <span class="font-weight-bold text-high-emphasis">
+                        {{ b.entitledDays ?? b.quotaDays ?? 12 }} Hari
+                      </span>
                     </div>
                     <div class="d-flex justify-space-between text-caption text-secondary">
                       <span>Sudah Terpakai:</span>
-                      <span class="font-weight-bold text-warning">{{ b.usedDays }} Hari</span>
+                      <span class="font-weight-bold text-warning">{{ b.usedDays ?? 0 }} Hari</span>
                     </div>
                   </div>
                 </VCard>

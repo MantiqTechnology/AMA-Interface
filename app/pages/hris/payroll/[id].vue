@@ -2,30 +2,90 @@
 const route = useRoute();
 const id = route.params.id as string;
 
+interface PayrollRun {
+  id: string;
+  runNumber: string;
+  periodMonth: number;
+  periodYear: number;
+  runType: string;
+  status: string;
+  employeeCount?: number;
+  totalGross?: number;
+  totalDeductions?: number;
+  totalNet?: number;
+  [key: string]: unknown;
+}
+
+interface Payslip {
+  id: string;
+  payrollRunId?: string;
+  employeeId: string;
+  employeeName?: string;
+  employeeCode?: string;
+  departmentName?: string;
+  positionTitle?: string;
+  basicSalary?: number;
+  flightAllowance?: number;
+  overtimeAmount?: number;
+  grossSalary?: number;
+  totalDeductions?: number;
+  netSalary?: number;
+  [key: string]: unknown;
+}
+
+interface EmployeeItem {
+  id: string;
+  fullName?: string;
+  employeeCode?: string;
+  positionTitle?: string;
+  departmentId?: string;
+  departmentName?: string;
+  [key: string]: unknown;
+}
+
+interface DepartmentItem {
+  id: string;
+  departmentName: string;
+  [key: string]: unknown;
+}
+
 const { data: runsData, refresh } = await useAsyncData('payroll-runs-detail', () =>
-  fetchApi<any[]>('/api/hris/payroll/runs')
+  fetchApi<PayrollRun[]>('/api/hris/payroll/runs')
 );
 
-const run = computed(() =>
-  (runsData.value ?? []).find((r: any) => r.id === id || r.runNumber === id)
-);
+const run = computed(() => (runsData.value ?? []).find((r) => r.id === id || r.runNumber === id));
 
 const { data: payslipsData, refresh: refreshPayslips } = await useAsyncData(
   `payroll-payslips-${id}`,
-  () => fetchApi<any[]>(`/api/hris/payroll/runs/${id}/payslips`)
+  () => fetchApi<Payslip[]>(`/api/hris/payroll/runs/${id}/payslips`)
 );
 
 const { data: allEmployeesData } = await useAsyncData('all-active-employees', () =>
-  fetchApi<any[]>('/api/hris/employees?status=ACTIVE')
+  fetchApi<EmployeeItem[] | { items: EmployeeItem[] }>('/api/hris/employees?status=ACTIVE')
+);
+
+const { data: departmentsData } = await useAsyncData('payroll-departments-list-detail', () =>
+  fetchApi<DepartmentItem[] | { items: DepartmentItem[] }>('/api/hris/departments')
 );
 
 const payslips = computed(() => payslipsData.value ?? []);
 const allEmployeesList = computed(() => {
   if (Array.isArray(allEmployeesData.value)) return allEmployeesData.value;
-  if (allEmployeesData.value && Array.isArray((allEmployeesData.value as any).items))
-    return (allEmployeesData.value as any).items;
+  if (
+    allEmployeesData.value &&
+    'items' in allEmployeesData.value &&
+    Array.isArray(allEmployeesData.value.items)
+  )
+    return allEmployeesData.value.items;
   return [];
 });
+const departmentsList = computed(() =>
+  Array.isArray(departmentsData.value)
+    ? departmentsData.value
+    : departmentsData.value && 'items' in departmentsData.value
+      ? departmentsData.value.items
+      : []
+);
 
 const calculating = ref(false);
 const approving = ref(false);
@@ -34,28 +94,43 @@ const postingJournal = ref(false);
 // Add Staff Modal State
 const addStaffDialog = ref(false);
 const selectedStaffToAdd = ref<string[]>([]);
+const staffDepartmentFilter = ref<string>('ALL');
 const staffSearchQuery = ref('');
 const addingStaff = ref(false);
 
 // Filter out employees who are already in this payroll run
 const availableStaffToAdd = computed(() => {
-  const currentEmpIds = new Set(payslips.value.map((p: any) => String(p.employeeId)));
-  return allEmployeesList.value.filter((emp: any) => {
+  const currentEmpIds = new Set(payslips.value.map((p) => String(p.employeeId)));
+  return allEmployeesList.value.filter((emp) => {
     const isNotInRun = !currentEmpIds.has(String(emp.id));
+
+    const matchesDept =
+      staffDepartmentFilter.value === 'ALL' ||
+      emp.departmentId === staffDepartmentFilter.value ||
+      emp.departmentName === staffDepartmentFilter.value;
+
     const query = staffSearchQuery.value.toLowerCase().trim();
     const matchesSearch =
       !query ||
       emp.fullName?.toLowerCase().includes(query) ||
       emp.employeeCode?.toLowerCase().includes(query) ||
       emp.positionTitle?.toLowerCase().includes(query);
-    return isNotInRun && matchesSearch;
+
+    return isNotInRun && matchesDept && matchesSearch;
   });
 });
 
 watch(addStaffDialog, (isOpen) => {
   if (isOpen) {
     selectedStaffToAdd.value = [];
+    staffDepartmentFilter.value = 'ALL';
     staffSearchQuery.value = '';
+  }
+});
+
+watch(staffDepartmentFilter, (newDept) => {
+  if (newDept && newDept !== 'ALL') {
+    selectedStaffToAdd.value = availableStaffToAdd.value.map((e) => e.id);
   }
 });
 
@@ -67,8 +142,22 @@ function toggleStaffToAdd(empId: string) {
   }
 }
 
-function selectAllAvailableStaff() {
-  selectedStaffToAdd.value = availableStaffToAdd.value.map((e: any) => e.id);
+function toggleSelectAllFilteredStaff() {
+  const filteredIds: string[] = availableStaffToAdd.value.map((e) => e.id);
+  const allSelected = filteredIds.every((id: string) => selectedStaffToAdd.value.includes(id));
+
+  if (allSelected) {
+    selectedStaffToAdd.value = selectedStaffToAdd.value.filter(
+      (id: string) => !filteredIds.includes(id)
+    );
+  } else {
+    const newSet = new Set<string>([...selectedStaffToAdd.value, ...filteredIds]);
+    selectedStaffToAdd.value = Array.from(newSet);
+  }
+}
+
+function deselectAllStaff() {
+  selectedStaffToAdd.value = [];
 }
 
 async function handleAddStaffToRun() {
@@ -82,8 +171,8 @@ async function handleAddStaffToRun() {
     addStaffDialog.value = false;
     await refresh();
     await refreshPayslips();
-  } catch (err: any) {
-    alert(err.message || 'Failed to add staff to payroll run.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to add staff to payroll run.');
   } finally {
     addingStaff.value = false;
   }
@@ -91,25 +180,26 @@ async function handleAddStaffToRun() {
 
 // Adjust Component Modal State
 const adjustDialog = ref(false);
-const selectedPayslip = ref<any>(null);
+const selectedPayslip = ref<Payslip | null>(null);
 const selectedComponentCode = ref('BASIC_SALARY');
 const adjustAmount = ref(0);
 const adjustNotes = ref('');
 const adjusting = ref(false);
 
-function openAdjustModal(item: any) {
+function openAdjustModal(item: Payslip) {
   selectedPayslip.value = item;
   selectedComponentCode.value = 'BASIC_SALARY';
-  adjustAmount.value = item.basicSalary;
+  adjustAmount.value = item.basicSalary ?? 0;
   adjustNotes.value = '';
   adjustDialog.value = true;
 }
 
 watch(selectedComponentCode, (code) => {
   if (!selectedPayslip.value) return;
-  if (code === 'BASIC_SALARY') adjustAmount.value = selectedPayslip.value.basicSalary;
-  else if (code === 'FLIGHT_ALLOWANCE') adjustAmount.value = selectedPayslip.value.flightAllowance;
-  else if (code === 'OVERTIME') adjustAmount.value = selectedPayslip.value.overtimeAmount;
+  if (code === 'BASIC_SALARY') adjustAmount.value = selectedPayslip.value.basicSalary ?? 0;
+  else if (code === 'FLIGHT_ALLOWANCE')
+    adjustAmount.value = selectedPayslip.value.flightAllowance ?? 0;
+  else if (code === 'OVERTIME') adjustAmount.value = selectedPayslip.value.overtimeAmount ?? 0;
   else adjustAmount.value = 0;
 });
 
@@ -128,14 +218,14 @@ async function handleSaveAdjustment() {
     adjustDialog.value = false;
     await refresh();
     await refreshPayslips();
-  } catch (err: any) {
-    alert(err.message || 'Failed to adjust payslip component.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to adjust payslip component.');
   } finally {
     adjusting.value = false;
   }
 }
 
-async function handleRemoveEmployee(item: any) {
+async function handleRemoveEmployee(item: Payslip) {
   if (!confirm(`Are you sure you want to remove ${item.employeeName} from this draft payroll run?`))
     return;
   try {
@@ -144,8 +234,8 @@ async function handleRemoveEmployee(item: any) {
     });
     await refresh();
     await refreshPayslips();
-  } catch (err: any) {
-    alert(err.message || 'Failed to remove employee from payroll run.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to remove employee from payroll run.');
   }
 }
 
@@ -155,8 +245,8 @@ async function calculate() {
     await fetchApi(`/api/hris/payroll/runs/${id}/calculate`, { method: 'POST' });
     await refresh();
     await refreshPayslips();
-  } catch (err: any) {
-    alert(err.message || 'Failed to recalculate payroll run.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to recalculate payroll run.');
   } finally {
     calculating.value = false;
   }
@@ -167,8 +257,8 @@ async function approve() {
   try {
     await fetchApi(`/api/hris/payroll/runs/${id}/approve`, { method: 'POST' });
     await refresh();
-  } catch (err: any) {
-    alert(err.message || 'Failed to approve payroll run.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to approve payroll run.');
   } finally {
     approving.value = false;
   }
@@ -179,8 +269,8 @@ async function postJournal() {
   try {
     await fetchApi(`/api/hris/payroll/runs/${id}/journal`, { method: 'POST' });
     await refresh();
-  } catch (err: any) {
-    alert(err.message || 'Failed to post finance journal.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to post finance journal.');
   } finally {
     postingJournal.value = false;
   }
@@ -260,7 +350,7 @@ const headers = [
         </VBtn>
 
         <VBtn
-          v-if="run.status === 'CALCULATED'"
+          v-if="run.status === 'CALCULATED' || run.status === 'DRAFT'"
           prepend-icon="mdi-check-decagram"
           color="success"
           :loading="approving"
@@ -379,7 +469,7 @@ const headers = [
     </VCard>
 
     <!-- Add Staff Modal -->
-    <VDialog v-model="addStaffDialog" max-width="600" scrollable>
+    <VDialog v-model="addStaffDialog" max-width="750" scrollable>
       <VCard>
         <VCardTitle class="pa-4 font-weight-bold text-h6 d-flex align-center justify-space-between">
           <div>
@@ -396,25 +486,47 @@ const headers = [
         <VDivider />
 
         <VCardText class="pa-4">
-          <div class="d-flex align-center justify-space-between mb-3 ga-2">
-            <VTextField
-              v-model="staffSearchQuery"
-              prepend-inner-icon="mdi-magnify"
-              placeholder="Search staff name / code..."
-              variant="outlined"
-              density="compact"
-              hide-details
-              clearable
-              style="max-width: 320px"
-            />
-            <VBtn
-              size="small"
-              variant="outlined"
-              color="primary"
-              @click="selectAllAvailableStaff()"
-            >
-              Select All Available ({{ availableStaffToAdd.length }})
-            </VBtn>
+          <div class="d-flex align-center justify-space-between mb-3 ga-2 flex-wrap">
+            <div class="d-flex ga-2 align-center flex-grow-1" style="max-width: 480px">
+              <VSelect
+                v-model="staffDepartmentFilter"
+                label="Department Filter"
+                :items="[
+                  { title: 'All Departments', value: 'ALL' },
+                  ...departmentsList.map((d: DepartmentItem) => ({
+                    title: d.departmentName,
+                    value: d.id
+                  }))
+                ]"
+                variant="outlined"
+                density="compact"
+                hide-details
+                style="min-width: 200px"
+              />
+              <VTextField
+                v-model="staffSearchQuery"
+                prepend-inner-icon="mdi-magnify"
+                placeholder="Search staff name / code..."
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+              />
+            </div>
+
+            <div class="d-flex ga-2">
+              <VBtn
+                size="small"
+                variant="outlined"
+                color="primary"
+                @click="toggleSelectAllFilteredStaff()"
+              >
+                Select All Filtered
+              </VBtn>
+              <VBtn size="small" variant="text" color="error" @click="deselectAllStaff()">
+                Deselect All
+              </VBtn>
+            </div>
           </div>
 
           <VCard border max-height="300" style="overflow-y: auto">

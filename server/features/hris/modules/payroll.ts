@@ -244,6 +244,8 @@ export class PayrollModule {
       runType?: string;
       notes?: string | null;
       employeeIds?: string[];
+      saveAsDraft?: boolean;
+      status?: string;
     },
     createdBy: string = 'usr-admin'
   ) {
@@ -289,194 +291,50 @@ export class PayrollModule {
           timestamp
         );
 
-      const employees = this.sqlite
-        .prepare("SELECT * FROM employees WHERE employment_status = 'ACTIVE'")
-        .all() as Row[];
+      let employees: Row[];
+      if (input.employeeIds && input.employeeIds.length > 0) {
+        const placeholders = input.employeeIds.map(() => '?').join(',');
+        employees = this.sqlite
+          .prepare(
+            `SELECT * FROM employees WHERE id IN (${placeholders}) AND employment_status = 'ACTIVE'`
+          )
+          .all(...input.employeeIds) as Row[];
+      } else {
+        employees = this.sqlite
+          .prepare("SELECT * FROM employees WHERE employment_status = 'ACTIVE'")
+          .all() as Row[];
+      }
 
       let grandGross = 0;
       let grandDeductions = 0;
       let grandNet = 0;
 
-      const isThr = runType === 'THR';
-      const periodPrefix = `${input.periodYear}-${String(input.periodMonth).padStart(2, '0')}`;
-
       const allowanceRates = this.listAllowanceRates();
 
       for (const emp of employees) {
-        const empId = String(emp.id);
-        const customBasic =
-          emp.basic_salary !== null && emp.basic_salary !== undefined
-            ? num(emp.basic_salary)
-            : null;
-        const customPosAllow =
-          emp.position_allowance !== null && emp.position_allowance !== undefined
-            ? num(emp.position_allowance)
-            : null;
-        const customFlightRate =
-          emp.flight_rate_per_hour !== null && emp.flight_rate_per_hour !== undefined
-            ? num(emp.flight_rate_per_hour)
-            : null;
-
-        const posTitle = String(emp.position_title ?? '');
-        const ptkp = String(emp.ptkp_status ?? 'TK/0');
-
-        let basicSalary = 7500000;
-        let ratePerHour = 150000;
-
-        const matchedRate = allowanceRates.find((r) =>
-          posTitle.toLowerCase().includes(r.positionTitle.toLowerCase())
+        const res = this.generatePayslipForEmployee(
+          id,
+          emp,
+          input.periodMonth,
+          input.periodYear,
+          runType,
+          allowanceRates,
+          timestamp
         );
-        if (matchedRate) {
-          basicSalary = matchedRate.baseMonthlyAllowance || basicSalary;
-          ratePerHour = matchedRate.ratePerHour || ratePerHour;
-        }
-
-        if (customBasic !== null) basicSalary = customBasic;
-        if (customPosAllow !== null) basicSalary += customPosAllow;
-        if (customFlightRate !== null) ratePerHour = customFlightRate;
-
-        let flightAllowance = 0;
-        let overtimeAmount = 0;
-        const thrAmount = basicSalary;
-
-        if (!isThr) {
-          try {
-            const flightHoursRow = this.sqlite
-              .prepare(
-                `SELECT SUM(COALESCE(fo.block_time_minutes, fo.total_flight_time_minutes, 0)) total_mins
-                 FROM flight_operations fo
-                 JOIN flight_crew_assignments fca ON fca.flight_operation_id = fo.id
-                 WHERE fca.employee_id = ? AND strftime('%Y-%m', fo.flight_date) = ? AND fo.status = 'COMPLETED'`
-              )
-              .get(empId, periodPrefix) as Row | undefined;
-
-            const totalMins = flightHoursRow ? num(flightHoursRow.total_mins) : 0;
-            let blockHours = Math.round((totalMins / 60) * 10) / 10;
-            if (
-              blockHours === 0 &&
-              (posTitle.toLowerCase().includes('captain') ||
-                posTitle.toLowerCase().includes('first officer'))
-            ) {
-              blockHours = 45;
-            }
-
-            flightAllowance = Math.round(blockHours * ratePerHour);
-          } catch {
-            if (
-              posTitle.toLowerCase().includes('captain') ||
-              posTitle.toLowerCase().includes('first officer')
-            ) {
-              flightAllowance = Math.round(45 * ratePerHour);
-            }
-          }
-
-          try {
-            const overtimeRows = this.sqlite
-              .prepare(
-                `SELECT SUM(total_hours) hours FROM hris_overtime_requests
-                 WHERE employee_id = ? AND status = 'APPROVED' AND strftime('%Y-%m', overtime_date) = ?`
-              )
-              .get(empId, periodPrefix) as Row | undefined;
-
-            const overtimeHours = overtimeRows ? num(overtimeRows.hours) : 0;
-            const overtimeRatePerHour = Math.round(basicSalary / 173);
-            overtimeAmount = Math.round(overtimeHours * overtimeRatePerHour * 1.5);
-          } catch {}
-        }
-
-        const grossSalary = isThr ? thrAmount : basicSalary + flightAllowance + overtimeAmount;
-
-        const bpjsKesEmployee = isThr ? 0 : Math.round(basicSalary * 0.01);
-        const bpjsKesCompany = isThr ? 0 : Math.round(basicSalary * 0.04);
-        const bpjsTkEmployee = isThr ? 0 : Math.round(basicSalary * 0.03);
-        const bpjsTkCompany = isThr ? 0 : Math.round(basicSalary * 0.0624);
-
-        const pph21Amount = calculatePph21Ter(grossSalary, ptkp);
-
-        const totalDeductions = bpjsKesEmployee + bpjsTkEmployee + pph21Amount;
-        const netSalary = grossSalary - totalDeductions;
-
-        grandGross += grossSalary;
-        grandDeductions += totalDeductions;
-        grandNet += netSalary;
-
-        const payslipId = `ps-${nanoid(10)}`;
-        this.sqlite
-          .prepare(
-            `INSERT INTO hris_payslips
-             (id, payroll_run_id, employee_id, basic_salary, total_earnings, total_deductions, net_salary,
-              pph21_amount, bpjs_kes_employee, bpjs_kes_company, bpjs_tk_employee, bpjs_tk_company,
-              flight_allowance, overtime_amount, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          )
-          .run(
-            payslipId,
-            id,
-            empId,
-            isThr ? 0 : basicSalary,
-            grossSalary,
-            totalDeductions,
-            netSalary,
-            pph21Amount,
-            bpjsKesEmployee,
-            bpjsKesCompany,
-            bpjsTkEmployee,
-            bpjsTkCompany,
-            flightAllowance,
-            overtimeAmount,
-            timestamp
-          );
-
-        if (isThr) {
-          this.insertPayslipLine(
-            payslipId,
-            'THR',
-            'Tunjangan Hari Raya (THR)',
-            'EARNING',
-            thrAmount
-          );
-        } else {
-          this.insertPayslipLine(payslipId, 'BASIC_SALARY', 'Gaji Pokok', 'EARNING', basicSalary);
-          if (flightAllowance > 0)
-            this.insertPayslipLine(
-              payslipId,
-              'FLIGHT_ALLOWANCE',
-              'Tunjangan Terbang',
-              'EARNING',
-              flightAllowance
-            );
-          if (overtimeAmount > 0)
-            this.insertPayslipLine(payslipId, 'OVERTIME', 'Lembur', 'EARNING', overtimeAmount);
-        }
-
-        if (pph21Amount > 0)
-          this.insertPayslipLine(payslipId, 'PPH21', 'PPh 21 (TER 2024)', 'TAX', pph21Amount);
-        if (bpjsKesEmployee > 0)
-          this.insertPayslipLine(
-            payslipId,
-            'BPJS_KES',
-            'BPJS Kesehatan Employee',
-            'DEDUCTION',
-            bpjsKesEmployee
-          );
-        if (bpjsTkEmployee > 0)
-          this.insertPayslipLine(
-            payslipId,
-            'BPJS_TK',
-            'BPJS TK Employee',
-            'DEDUCTION',
-            bpjsTkEmployee
-          );
+        grandGross += res.grossSalary;
+        grandDeductions += res.totalDeductions;
+        grandNet += res.netSalary;
       }
 
+      const targetStatus = input.saveAsDraft || input.status === 'DRAFT' ? 'DRAFT' : 'CALCULATED';
       this.sqlite
         .prepare(
           `UPDATE hris_payroll_runs SET
-            status = 'CALCULATED', total_gross = ?, total_deductions = ?, total_net = ?,
+            status = ?, total_gross = ?, total_deductions = ?, total_net = ?,
             employee_count = ?, updated_at = ?
            WHERE id = ?`
         )
-        .run(grandGross, grandDeductions, grandNet, employees.length, timestamp, id);
+        .run(targetStatus, grandGross, grandDeductions, grandNet, employees.length, timestamp, id);
     });
 
     tx.immediate();
@@ -488,62 +346,311 @@ export class PayrollModule {
       .prepare('SELECT id, status FROM hris_payroll_runs WHERE id = ?')
       .get(id) as Row | undefined;
     if (!existing) throw notFound('Payroll Run', id);
-    if (String(existing.status) !== 'DRAFT') {
+    if (String(existing.status) !== 'DRAFT' && String(existing.status) !== 'CALCULATED') {
       throw new DomainError(
         'PAYROLL_RUN_NOT_EDITABLE',
-        'Hanya draf payroll yang dapat dihapus.',
+        'Hanya draf atau status kalkulasi payroll yang dapat dihapus.',
         400
       );
     }
-    this.sqlite.prepare('DELETE FROM hris_payroll_items WHERE payroll_run_id = ?').run(id);
-    this.sqlite.prepare('DELETE FROM hris_payroll_runs WHERE id = ?').run(id);
+
+    const tx = this.sqlite.transaction(() => {
+      this.sqlite
+        .prepare(
+          'DELETE FROM hris_payslip_lines WHERE payslip_id IN (SELECT id FROM hris_payslips WHERE payroll_run_id = ?)'
+        )
+        .run(id);
+      this.sqlite.prepare('DELETE FROM hris_payslips WHERE payroll_run_id = ?').run(id);
+      try {
+        this.sqlite.prepare('DELETE FROM hris_payroll_items WHERE payroll_run_id = ?').run(id);
+      } catch {}
+      this.sqlite.prepare('DELETE FROM hris_payroll_runs WHERE id = ?').run(id);
+    });
+
+    tx.immediate();
     return { success: true };
   }
 
   removeEmployeeFromPayrollRun(runId: string, employeeId: string) {
     const run = this.getPayrollRun(runId);
-    if (run.status !== 'DRAFT') {
+    if (run.status !== 'DRAFT' && run.status !== 'CALCULATED') {
       throw new DomainError(
         'PAYROLL_RUN_NOT_EDITABLE',
-        'Hanya draf payroll yang dapat diubah.',
+        'Hanya draf atau status kalkulasi payroll yang dapat diubah.',
         400
       );
     }
-    this.sqlite
-      .prepare('DELETE FROM hris_payroll_items WHERE payroll_run_id = ? AND employee_id = ?')
-      .run(runId, employeeId);
+    const timestamp = now();
+    const tx = this.sqlite.transaction(() => {
+      this.sqlite
+        .prepare(
+          'DELETE FROM hris_payslip_lines WHERE payslip_id IN (SELECT id FROM hris_payslips WHERE payroll_run_id = ? AND employee_id = ?)'
+        )
+        .run(runId, employeeId);
+      this.sqlite
+        .prepare('DELETE FROM hris_payslips WHERE payroll_run_id = ? AND employee_id = ?')
+        .run(runId, employeeId);
+
+      const stats = this.sqlite
+        .prepare(
+          `SELECT COUNT(*) emp_count, COALESCE(SUM(total_earnings), 0) gross, COALESCE(SUM(total_deductions), 0) ded, COALESCE(SUM(net_salary), 0) net
+           FROM hris_payslips WHERE payroll_run_id = ?`
+        )
+        .get(runId) as Row;
+
+      this.sqlite
+        .prepare(
+          `UPDATE hris_payroll_runs SET employee_count = ?, total_gross = ?, total_deductions = ?, total_net = ?, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(
+          num(stats.emp_count),
+          num(stats.gross),
+          num(stats.ded),
+          num(stats.net),
+          timestamp,
+          runId
+        );
+    });
+
+    tx.immediate();
     return this.getPayrollRun(runId);
   }
 
   addEmployeesToPayrollRun(runId: string, employeeIds: string[]) {
-    const run = this.getPayrollRun(runId);
-    if (run.status !== 'DRAFT') {
+    const runRow = this.sqlite
+      .prepare('SELECT * FROM hris_payroll_runs WHERE id = ?')
+      .get(runId) as Row | undefined;
+
+    if (!runRow) throw notFound('Payroll Run', runId);
+
+    const status = String(runRow.status);
+    if (status !== 'DRAFT' && status !== 'CALCULATED') {
       throw new DomainError(
         'PAYROLL_RUN_NOT_EDITABLE',
-        'Hanya draf payroll yang dapat diubah.',
+        'Hanya draf atau status kalkulasi payroll yang dapat diubah.',
         400
       );
     }
-    for (const empId of employeeIds) {
-      const existing = this.sqlite
-        .prepare('SELECT id FROM hris_payroll_items WHERE payroll_run_id = ? AND employee_id = ?')
-        .get(runId, empId);
-      if (!existing) {
-        const emp = this.sqlite.prepare('SELECT * FROM employees WHERE id = ?').get(empId) as
-          Row | undefined;
-        if (emp) {
-          const itemId = `pi-${nanoid(10)}`;
-          const basic = num(emp.basic_salary);
-          this.sqlite
-            .prepare(
-              `INSERT INTO hris_payroll_items (id, payroll_run_id, employee_id, basic_salary, gross_salary, net_salary, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-            )
-            .run(itemId, runId, empId, basic, basic, basic, now(), now());
+
+    const timestamp = now();
+    const periodMonth = num(runRow.period_month);
+    const periodYear = num(runRow.period_year);
+    const runType = String(runRow.run_type ?? 'MONTHLY');
+    const allowanceRates = this.listAllowanceRates();
+
+    const tx = this.sqlite.transaction(() => {
+      for (const empId of employeeIds) {
+        const existing = this.sqlite
+          .prepare('SELECT id FROM hris_payslips WHERE payroll_run_id = ? AND employee_id = ?')
+          .get(runId, empId);
+
+        if (!existing) {
+          const emp = this.sqlite.prepare('SELECT * FROM employees WHERE id = ?').get(empId) as
+            Row | undefined;
+          if (emp) {
+            this.generatePayslipForEmployee(
+              runId,
+              emp,
+              periodMonth,
+              periodYear,
+              runType,
+              allowanceRates,
+              timestamp
+            );
+          }
         }
       }
-    }
+
+      const stats = this.sqlite
+        .prepare(
+          `SELECT COUNT(*) emp_count, COALESCE(SUM(total_earnings), 0) gross, COALESCE(SUM(total_deductions), 0) ded, COALESCE(SUM(net_salary), 0) net
+           FROM hris_payslips WHERE payroll_run_id = ?`
+        )
+        .get(runId) as Row;
+
+      this.sqlite
+        .prepare(
+          `UPDATE hris_payroll_runs SET employee_count = ?, total_gross = ?, total_deductions = ?, total_net = ?, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(
+          num(stats.emp_count),
+          num(stats.gross),
+          num(stats.ded),
+          num(stats.net),
+          timestamp,
+          runId
+        );
+    });
+
+    tx.immediate();
     return this.getPayrollRun(runId);
+  }
+
+  private generatePayslipForEmployee(
+    runId: string,
+    emp: Row,
+    periodMonth: number,
+    periodYear: number,
+    runType: string,
+    allowanceRates: Array<{
+      positionTitle: string;
+      baseMonthlyAllowance: number;
+      ratePerHour: number;
+    }>,
+    timestamp: string
+  ) {
+    const empId = String(emp.id);
+    const customBasic =
+      emp.basic_salary !== null && emp.basic_salary !== undefined ? num(emp.basic_salary) : null;
+    const customPosAllow =
+      emp.position_allowance !== null && emp.position_allowance !== undefined
+        ? num(emp.position_allowance)
+        : null;
+    const customFlightRate =
+      emp.flight_rate_per_hour !== null && emp.flight_rate_per_hour !== undefined
+        ? num(emp.flight_rate_per_hour)
+        : null;
+
+    const posTitle = String(emp.position_title ?? '');
+    const ptkp = String(emp.ptkp_status ?? 'TK/0');
+
+    let basicSalary = 7500000;
+    let ratePerHour = 150000;
+
+    const matchedRate = allowanceRates.find((r) =>
+      posTitle.toLowerCase().includes(r.positionTitle.toLowerCase())
+    );
+    if (matchedRate) {
+      basicSalary = matchedRate.baseMonthlyAllowance || basicSalary;
+      ratePerHour = matchedRate.ratePerHour || ratePerHour;
+    }
+
+    if (customBasic !== null) basicSalary = customBasic;
+    if (customPosAllow !== null) basicSalary += customPosAllow;
+    if (customFlightRate !== null) ratePerHour = customFlightRate;
+
+    let flightAllowance = 0;
+    let overtimeAmount = 0;
+    const isThr = runType === 'THR';
+    const thrAmount = basicSalary;
+    const periodPrefix = `${periodYear}-${String(periodMonth).padStart(2, '0')}`;
+
+    if (!isThr) {
+      try {
+        const flightHoursRow = this.sqlite
+          .prepare(
+            `SELECT SUM(COALESCE(fo.block_time_minutes, fo.total_flight_time_minutes, 0)) total_mins
+             FROM flight_operations fo
+             JOIN flight_crew_assignments fca ON fca.flight_operation_id = fo.id
+             WHERE fca.employee_id = ? AND strftime('%Y-%m', fo.flight_date) = ? AND fo.status = 'COMPLETED'`
+          )
+          .get(empId, periodPrefix) as Row | undefined;
+
+        const totalMins = flightHoursRow ? num(flightHoursRow.total_mins) : 0;
+        let blockHours = Math.round((totalMins / 60) * 10) / 10;
+        if (
+          blockHours === 0 &&
+          (posTitle.toLowerCase().includes('captain') ||
+            posTitle.toLowerCase().includes('first officer'))
+        ) {
+          blockHours = 45;
+        }
+
+        flightAllowance = Math.round(blockHours * ratePerHour);
+      } catch {
+        if (
+          posTitle.toLowerCase().includes('captain') ||
+          posTitle.toLowerCase().includes('first officer')
+        ) {
+          flightAllowance = Math.round(45 * ratePerHour);
+        }
+      }
+
+      try {
+        const overtimeRows = this.sqlite
+          .prepare(
+            `SELECT SUM(total_hours) hours FROM hris_overtime_requests
+             WHERE employee_id = ? AND status = 'APPROVED' AND strftime('%Y-%m', overtime_date) = ?`
+          )
+          .get(empId, periodPrefix) as Row | undefined;
+
+        const overtimeHours = overtimeRows ? num(overtimeRows.hours) : 0;
+        const overtimeRatePerHour = Math.round(basicSalary / 173);
+        overtimeAmount = Math.round(overtimeHours * overtimeRatePerHour * 1.5);
+      } catch {}
+    }
+
+    const grossSalary = isThr ? thrAmount : basicSalary + flightAllowance + overtimeAmount;
+
+    const bpjsKesEmployee = isThr ? 0 : Math.round(basicSalary * 0.01);
+    const bpjsKesCompany = isThr ? 0 : Math.round(basicSalary * 0.04);
+    const bpjsTkEmployee = isThr ? 0 : Math.round(basicSalary * 0.03);
+    const bpjsTkCompany = isThr ? 0 : Math.round(basicSalary * 0.0624);
+
+    const pph21Amount = calculatePph21Ter(grossSalary, ptkp);
+
+    const totalDeductions = bpjsKesEmployee + bpjsTkEmployee + pph21Amount;
+    const netSalary = grossSalary - totalDeductions;
+
+    const payslipId = `ps-${nanoid(10)}`;
+    this.sqlite
+      .prepare(
+        `INSERT INTO hris_payslips
+         (id, payroll_run_id, employee_id, basic_salary, total_earnings, total_deductions, net_salary,
+          pph21_amount, bpjs_kes_employee, bpjs_kes_company, bpjs_tk_employee, bpjs_tk_company,
+          flight_allowance, overtime_amount, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        payslipId,
+        runId,
+        empId,
+        isThr ? 0 : basicSalary,
+        grossSalary,
+        totalDeductions,
+        netSalary,
+        pph21Amount,
+        bpjsKesEmployee,
+        bpjsKesCompany,
+        bpjsTkEmployee,
+        bpjsTkCompany,
+        flightAllowance,
+        overtimeAmount,
+        timestamp
+      );
+
+    if (isThr) {
+      this.insertPayslipLine(payslipId, 'THR', 'Tunjangan Hari Raya (THR)', 'EARNING', thrAmount);
+    } else {
+      this.insertPayslipLine(payslipId, 'BASIC_SALARY', 'Gaji Pokok', 'EARNING', basicSalary);
+      if (flightAllowance > 0)
+        this.insertPayslipLine(
+          payslipId,
+          'FLIGHT_ALLOWANCE',
+          'Tunjangan Terbang',
+          'EARNING',
+          flightAllowance
+        );
+      if (overtimeAmount > 0)
+        this.insertPayslipLine(payslipId, 'OVERTIME', 'Lembur', 'EARNING', overtimeAmount);
+    }
+
+    if (pph21Amount > 0)
+      this.insertPayslipLine(payslipId, 'PPH21', 'PPh 21 (TER 2024)', 'TAX', pph21Amount);
+    if (bpjsKesEmployee > 0)
+      this.insertPayslipLine(
+        payslipId,
+        'BPJS_KES',
+        'BPJS Kesehatan Employee',
+        'DEDUCTION',
+        bpjsKesEmployee
+      );
+    if (bpjsTkEmployee > 0)
+      this.insertPayslipLine(payslipId, 'BPJS_TK', 'BPJS TK Employee', 'DEDUCTION', bpjsTkEmployee);
+
+    return { grossSalary, totalDeductions, netSalary };
   }
 
   private insertPayslipLine(
@@ -672,10 +779,10 @@ export class PayrollModule {
 
   approvePayrollRun(id: string, approverId: string) {
     const run = this.getPayrollRun(id);
-    if (run.status !== 'CALCULATED') {
+    if (run.status !== 'CALCULATED' && run.status !== 'DRAFT') {
       throw new DomainError(
         'INVALID_STATE',
-        `Payroll run must be CALCULATED before approval (current: ${run.status}).`,
+        `Payroll run must be DRAFT or CALCULATED before approval (current: ${run.status}).`,
         400
       );
     }

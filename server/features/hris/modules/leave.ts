@@ -63,9 +63,11 @@ export class LeaveModule {
         leaveName: t.typeName || 'Cuti Tahunan',
         leaveTypeName: t.typeName || 'Cuti Tahunan',
         quotaDays: t.defaultQuotaDays || 12,
+        entitledDays: t.defaultQuotaDays || 12,
         usedDays: 0,
         remainingDays: t.defaultQuotaDays || 12,
-        isPaid: t.isPaid
+        isPaid: t.isPaid,
+        periodYear: year || new Date().getFullYear()
       }));
     }
 
@@ -87,9 +89,11 @@ export class LeaveModule {
         leaveName: name,
         leaveTypeName: name,
         quotaDays,
+        entitledDays: quotaDays,
         usedDays,
         remainingDays: quotaDays - usedDays,
-        isPaid: Boolean(r.is_paid)
+        isPaid: Boolean(r.is_paid),
+        periodYear: num(r.period_year) || num(r.year) || year || new Date().getFullYear()
       };
     });
   }

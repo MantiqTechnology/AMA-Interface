@@ -3,6 +3,36 @@ const searchQuery = ref('');
 const selectedStatus = ref<string>('ALL');
 const selectedRunType = ref<string>('ALL');
 
+interface PayrollRunItem {
+  id: string;
+  runNumber: string;
+  periodMonth: number;
+  periodYear: number;
+  runType: string;
+  status: string;
+  employeeCount?: number;
+  totalGross?: number;
+  totalDeductions?: number;
+  totalNet?: number;
+  [key: string]: unknown;
+}
+
+interface EmployeeItem {
+  id: string;
+  fullName?: string;
+  employeeCode?: string;
+  positionTitle?: string;
+  departmentId?: string;
+  departmentName?: string;
+  [key: string]: unknown;
+}
+
+interface DepartmentItem {
+  id: string;
+  departmentName: string;
+  [key: string]: unknown;
+}
+
 const { data: runsData, refresh } = await useAsyncData(
   'payroll-runs',
   () => {
@@ -10,31 +40,41 @@ const { data: runsData, refresh } = await useAsyncData(
     if (searchQuery.value) params.set('search', searchQuery.value);
     if (selectedStatus.value !== 'ALL') params.set('status', selectedStatus.value);
     if (selectedRunType.value !== 'ALL') params.set('runType', selectedRunType.value);
-    return fetchApi<any[]>(`/api/hris/payroll/runs?${params.toString()}`);
+    return fetchApi<PayrollRunItem[] | { items: PayrollRunItem[] }>(
+      `/api/hris/payroll/runs?${params.toString()}`
+    );
   },
   { watch: [searchQuery, selectedStatus, selectedRunType] }
 );
 
 const { data: employeesData } = await useAsyncData('payroll-employees-list', () =>
-  fetchApi<any[]>('/api/hris/employees?status=ACTIVE')
+  fetchApi<EmployeeItem[] | { items: EmployeeItem[] }>('/api/hris/employees?status=ACTIVE')
 );
 
 const { data: departmentsData } = await useAsyncData('payroll-departments-list', () =>
-  fetchApi<any[]>('/api/hris/departments')
+  fetchApi<DepartmentItem[] | { items: DepartmentItem[] }>('/api/hris/departments')
 );
 
 const runs = computed(() =>
-  Array.isArray(runsData.value) ? runsData.value : ((runsData.value as any)?.items ?? [])
+  Array.isArray(runsData.value)
+    ? runsData.value
+    : runsData.value && 'items' in runsData.value
+      ? runsData.value.items
+      : []
 );
 const employeesList = computed(() =>
   Array.isArray(employeesData.value)
     ? employeesData.value
-    : ((employeesData.value as any)?.items ?? [])
+    : employeesData.value && 'items' in employeesData.value
+      ? employeesData.value.items
+      : []
 );
 const departmentsList = computed(() =>
   Array.isArray(departmentsData.value)
     ? departmentsData.value
-    : ((departmentsData.value as any)?.items ?? [])
+    : departmentsData.value && 'items' in departmentsData.value
+      ? departmentsData.value.items
+      : []
 );
 
 const headers = [
@@ -61,17 +101,24 @@ const modalDepartmentFilter = ref<string>('ALL');
 const modalEmployeeSearch = ref('');
 const selectedEmployeeIds = ref<string[]>([]);
 
-// Initialize all employees selected when dialog opens
+// Reset employee selection when dialog opens
 watch(createDialog, (isOpen) => {
   if (isOpen) {
-    selectedEmployeeIds.value = employeesList.value.map((e: any) => e.id);
+    selectedEmployeeIds.value = [];
     modalDepartmentFilter.value = 'ALL';
     modalEmployeeSearch.value = '';
   }
 });
 
+// Automatically select employees of chosen department when department filter changes
+watch(modalDepartmentFilter, (newDept) => {
+  if (newDept && newDept !== 'ALL') {
+    selectedEmployeeIds.value = filteredModalEmployees.value.map((e) => e.id);
+  }
+});
+
 const filteredModalEmployees = computed(() => {
-  return employeesList.value.filter((emp: any) => {
+  return employeesList.value.filter((emp) => {
     const matchesDept =
       modalDepartmentFilter.value === 'ALL' ||
       emp.departmentId === modalDepartmentFilter.value ||
@@ -89,7 +136,7 @@ const filteredModalEmployees = computed(() => {
 });
 
 function toggleSelectAllFiltered() {
-  const filteredIds: string[] = filteredModalEmployees.value.map((e: any) => e.id);
+  const filteredIds: string[] = filteredModalEmployees.value.map((e) => e.id);
   const allSelected = filteredIds.every((id: string) => selectedEmployeeIds.value.includes(id));
 
   if (allSelected) {
@@ -106,7 +153,7 @@ function deselectAll() {
   selectedEmployeeIds.value = [];
 }
 
-async function handleCreateRun() {
+async function handleCreateRun(saveAsDraft = false) {
   if (selectedEmployeeIds.value.length === 0) {
     alert('Please select at least 1 employee to generate payroll.');
     return;
@@ -121,25 +168,26 @@ async function handleCreateRun() {
         periodYear: newYear.value,
         runType: runType.value,
         employeeIds: selectedEmployeeIds.value,
-        notes: notes.value
+        notes: notes.value,
+        saveAsDraft
       }
     });
     createDialog.value = false;
     refresh();
-  } catch (err: any) {
-    alert(err.message || 'Failed to generate & calculate payroll run.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to generate & calculate payroll run.');
   } finally {
     creating.value = false;
   }
 }
 
-async function handleDeleteRun(run: any) {
+async function handleDeleteRun(run: PayrollRunItem) {
   if (!confirm(`Are you sure you want to delete draft payroll run "${run.runNumber}"?`)) return;
   try {
     await fetchApi(`/api/hris/payroll/runs/${run.id}`, { method: 'DELETE' });
     refresh();
-  } catch (err: any) {
-    alert(err.message || 'Failed to delete payroll run.');
+  } catch (err: unknown) {
+    alert((err as Error).message || 'Failed to delete payroll run.');
   }
 }
 
@@ -372,7 +420,10 @@ function statusColor(s: string) {
                 label="Department Filter"
                 :items="[
                   { title: 'All Departments', value: 'ALL' },
-                  ...departmentsList.map((d: any) => ({ title: d.departmentName, value: d.id }))
+                  ...departmentsList.map((d: DepartmentItem) => ({
+                    title: d.departmentName,
+                    value: d.id
+                  }))
                 ]"
                 variant="outlined"
                 density="compact"
@@ -470,11 +521,21 @@ function statusColor(s: string) {
           <VSpacer />
           <VBtn variant="text" @click="createDialog = false">Cancel</VBtn>
           <VBtn
+            variant="outlined"
+            color="secondary"
+            prepend-icon="mdi-content-save-edit-outline"
+            :loading="creating"
+            :disabled="selectedEmployeeIds.length === 0"
+            @click="handleCreateRun(true)"
+          >
+            Save as Draft ({{ selectedEmployeeIds.length }})
+          </VBtn>
+          <VBtn
             color="primary"
             prepend-icon="mdi-calculator"
             :loading="creating"
             :disabled="selectedEmployeeIds.length === 0"
-            @click="handleCreateRun()"
+            @click="handleCreateRun(false)"
           >
             Generate & Calculate Payroll ({{ selectedEmployeeIds.length }})
           </VBtn>

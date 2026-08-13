@@ -7,6 +7,8 @@ import type {
   EmployeeListQuery
 } from '../../../../shared/features/hris';
 import { DomainError, notFound } from '../../../utils/errors';
+import { CertificationModule } from './certification';
+import { LeaveModule } from './leave';
 import { generateNextNumber, now, num, str, type Row } from './types';
 
 export class EmployeeModule {
@@ -189,7 +191,16 @@ export class EmployeeModule {
       .get(id, id) as Row | undefined;
 
     if (!row) throw notFound('Employee', id);
-    return this.mapEmployee(row);
+    const mapped = this.mapEmployee(row);
+    const leaveBalances = new LeaveModule(this.sqlite).getLeaveBalance(mapped.id);
+    const certifications = new CertificationModule(this.sqlite).listCertifications({
+      employeeId: mapped.id
+    });
+    return {
+      ...mapped,
+      leaveBalances,
+      certifications
+    };
   }
 
   createEmployee(
