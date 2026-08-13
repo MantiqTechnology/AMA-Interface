@@ -535,6 +535,7 @@ describe('Operational Verification and Readiness Assurance', () => {
     const criticalChecks = [
       'ROUTE_AVAILABILITY',
       'AIRCRAFT_SERVICEABILITY',
+      'MAINTENANCE_OPERATIONAL_AVAILABILITY',
       'AIRCRAFT_LOCATION',
       'AIRCRAFT_SCHEDULE',
       'AIRCRAFT_CAPACITY',
