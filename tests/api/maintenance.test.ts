@@ -7,6 +7,7 @@ import type { ApiResponse } from '../../shared/contracts/api';
 import type {
   MaintenanceCommandCenterDto,
   MaintenanceSelectorDataDto,
+  MaintenanceTechnicalRecordPackageDto,
   MaintenanceWorkPackageDto
 } from '../../shared/features/maintenance';
 import { resolveDbPath } from '../../server/db/client';
@@ -395,6 +396,110 @@ describe('maintenance command-center APIs', () => {
         )
         .get()
     ).toEqual({ count: 1 });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM maintenance_release_eligibility_snapshots
+           WHERE release_id = ?`
+        )
+        .get(released.data.releaseId)
+    ).toEqual({ count: 1 });
+    sqlite.close();
+
+    const technicalRecord = await $fetch<ApiResponse<MaintenanceTechnicalRecordPackageDto>>(
+      '/api/maintenance/work-packages/mwp-mrov1-release-ready/technical-record',
+      {
+        headers: { cookie: 'ama_demo_role=Certifying%20Staff' },
+        ignoreResponseError: true
+      }
+    );
+    if (!technicalRecord.ok) throw new Error(JSON.stringify(technicalRecord.error));
+    expect(technicalRecord.data).toMatchObject({
+      releaseId: released.data.releaseId,
+      releaseSnapshot: expect.objectContaining({
+        releaseId: released.data.releaseId,
+        eligible: true
+      }),
+      evidence: expect.objectContaining({
+        jobCards: expect.any(Array),
+        materialTraceability: expect.any(Array),
+        personnelEvidence: expect.any(Array),
+        toolEvidence: expect.any(Array),
+        approvedDataReferences: expect.any(Array)
+      })
+    });
+    expect(technicalRecord.data.evidence.jobCards.length).toBeGreaterThan(0);
+    expect(technicalRecord.data.evidence.materialTraceability.length).toBeGreaterThan(0);
+  });
+
+  it('serves technical records through API permissions and domain errors', async () => {
+    const authorized = await $fetch<ApiResponse<MaintenanceTechnicalRecordPackageDto>>(
+      '/api/maintenance/work-packages/mwp-mrov1-release-ready/technical-record',
+      {
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+        ignoreResponseError: true
+      }
+    );
+    expect(authorized.ok).toBe(true);
+    if (!authorized.ok) throw new Error(authorized.error.message);
+    expect(authorized.data.evidence.jobCards.length).toBeGreaterThan(0);
+    expect(authorized.data.releaseEligibility).toMatchObject({
+      workPackageId: 'mwp-mrov1-release-ready'
+    });
+
+    const denied = await $fetch<ApiResponse<unknown>>(
+      '/api/maintenance/work-packages/mwp-mrov1-release-ready/technical-record',
+      {
+        headers: { cookie: 'ama_demo_role=Employee' },
+        ignoreResponseError: true
+      }
+    );
+    expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+
+    const missing = await $fetch<ApiResponse<unknown>>(
+      '/api/maintenance/work-packages/mwp-does-not-exist/technical-record',
+      {
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+        ignoreResponseError: true
+      }
+    );
+    expect(!missing.ok && missing.error.code).toBe('MAINTENANCE_PACKAGE_NOT_FOUND');
+  });
+
+  it('rejects blocked technical-release API paths before mutating release evidence', async () => {
+    const active = await $fetch<ApiResponse<MaintenanceWorkPackageDto>>(
+      '/api/maintenance/work-packages/mwp-mrov1-active',
+      {
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+        ignoreResponseError: true
+      }
+    );
+    if (!active.ok) throw new Error(JSON.stringify(active.error));
+
+    const denied = await $fetch<ApiResponse<unknown>>(
+      '/api/maintenance/work-packages/mwp-mrov1-active/actions/request-release',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+        body: { expectedVersion: active.data.version },
+        ignoreResponseError: true
+      }
+    );
+    expect(denied.ok).toBe(false);
+    if (denied.ok) throw new Error('Blocked release unexpectedly succeeded.');
+    expect(denied.error.code).not.toBe('STALE_VERSION');
+
+    const sqlite = new Database(resolveDbPath(testDbPath));
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM aircraft_maintenance_releases
+           WHERE work_order_reference = 'MWP-MROV1-ACTIVE'`
+        )
+        .get()
+    ).toEqual({ count: 0 });
     sqlite.close();
   });
 

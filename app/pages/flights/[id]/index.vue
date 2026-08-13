@@ -248,6 +248,20 @@ const fuelPlanningComponents = computed(() => {
 const blockingIssues = computed(() =>
   (flight.value?.readinessChecks ?? []).filter((item) => item.blocking)
 );
+const aircraftTechnicalEligibility = computed(
+  () => flight.value?.aircraftTechnicalEligibility ?? null
+);
+const aircraftTechnicalStatusColor = computed(() => {
+  const status = aircraftTechnicalEligibility.value?.status;
+  if (status === 'ELIGIBLE') return 'success';
+  if (status === 'ELIGIBLE_WITH_RESTRICTIONS') return 'warning';
+  return 'error';
+});
+const aircraftTechnicalStatusLabel = computed(() => {
+  const status = aircraftTechnicalEligibility.value?.status;
+  if (status === 'ELIGIBLE_WITH_RESTRICTIONS') return 'RESTRICTED';
+  return status ?? 'UNKNOWN';
+});
 const activeOperationalBlockers = computed(() => flight.value?.commandCenter?.activeBlockers ?? []);
 const warningIssues = computed(() =>
   (flight.value?.crewAssignments ?? []).filter((item) => item.availabilityStatus === 'WARNING')
@@ -1194,6 +1208,67 @@ function historyActor(item: FlightStatusHistoryDto) {
                   <div v-for="member in flight.crewAssignments" :key="member.id">
                     <span>{{ member.assignmentRole.replaceAll('_', ' ') }}</span>
                     <strong>{{ member.crewName }}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section class="workspace-panel">
+                <div class="panel-title">
+                  <VIcon icon="mdi-airplane-cog" />
+                  <h2>Status Teknis Aircraft</h2>
+                  <VChip :color="aircraftTechnicalStatusColor" size="small" variant="tonal">
+                    {{ aircraftTechnicalStatusLabel }}
+                  </VChip>
+                </div>
+                <div v-if="aircraftTechnicalEligibility" class="space-y-3">
+                  <VAlert
+                    v-if="aircraftTechnicalEligibility.status === 'BLOCKED'"
+                    density="compact"
+                    type="error"
+                    variant="tonal"
+                  >
+                    {{
+                      aircraftTechnicalEligibility.blockers[0]?.reason ??
+                        'Aircraft belum memenuhi technical eligibility maintenance.'
+                    }}
+                  </VAlert>
+                  <VAlert
+                    v-else-if="aircraftTechnicalEligibility.status === 'ELIGIBLE_WITH_RESTRICTIONS'"
+                    density="compact"
+                    type="warning"
+                    variant="tonal"
+                  >
+                    Aircraft memiliki pembatasan maintenance aktif untuk review operasional.
+                  </VAlert>
+                  <VAlert v-else density="compact" type="success" variant="tonal">
+                    Aircraft memenuhi gate technical eligibility maintenance.
+                  </VAlert>
+
+                  <div
+                    v-for="restriction in aircraftTechnicalEligibility.restrictions"
+                    :key="restriction.sourceId"
+                    class="alert-row"
+                  >
+                    <VIcon color="warning" icon="mdi-alert-outline" />
+                    <span>
+                      <strong>{{ restriction.title }}</strong>
+                      <small>
+                        {{ restriction.restriction }} · valid until
+                        {{ formatDate(restriction.validUntil) }}
+                      </small>
+                    </span>
+                  </div>
+
+                  <div
+                    v-for="blocker in aircraftTechnicalEligibility.blockers.slice(0, 3)"
+                    :key="`${blocker.code}-${blocker.sourceEntityId}`"
+                    class="alert-row"
+                  >
+                    <VIcon color="error" icon="mdi-alert-circle-outline" />
+                    <span>
+                      <strong>{{ blocker.code.replaceAll('_', ' ') }}</strong>
+                      <small>{{ blocker.remediation }}</small>
+                    </span>
                   </div>
                 </div>
               </section>

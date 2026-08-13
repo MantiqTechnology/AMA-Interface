@@ -28,6 +28,7 @@ export type OperationalFlightMonitorDto = {
   destinationLongitude: number | null;
   aircraftId: string | null;
   aircraftRegistration: string | null;
+  aircraftImageUrl: string | null;
   pilotInCommandName: string | null;
   scheduledDepartureAt: string | null;
   scheduledArrivalAt: string | null;

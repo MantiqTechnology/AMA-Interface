@@ -101,21 +101,69 @@ export function seedMroFoundationData(
       updatedAt: seedNow
     });
 
-    for (const scope of ['Cessna Caravan 208B', 'Pilatus PC-6', 'PAC 750XL']) {
-      insertIgnore(sqlite, 'personnel_qualifications', {
-        id: `pqual-crew-maintenance-manager-${scope.toLowerCase().replaceAll(/[^a-z0-9]+/gu, '-')}`,
-        personnelId: 'crew-maintenance-manager',
-        qualificationType: 'AIRCRAFT_TYPE',
-        referenceType: 'AIRCRAFT_TYPE',
-        referenceId: scope,
-        issuedAt: context.date(-120),
-        expiresAt: context.date(245),
-        status: 'VALID',
-        notes: 'Aircraft/type scope for PT AMA MRO mechanic authorization.',
-        documentId: null,
-        createdAt: seedNow,
-        updatedAt: seedNow
-      });
+    insertIgnore(sqlite, 'crews', {
+      id: 'crew-maintenance-technician',
+      employeeCode: 'USR-MAINTENANCE-TECHNICIAN',
+      fullName: 'Dian Pratama',
+      crewRole: 'GROUND_CREW',
+      licenseType: 'AMEL',
+      licenseNumber: 'AME-TECH-MRO-001',
+      licenseExpiryDate: context.date(365),
+      medicalExpiryDate: context.date(365),
+      baseStationId: 'st-djj',
+      dutyStationId: 'st-djj',
+      unit: 'Line Maintenance',
+      availabilityStatus: 'AVAILABLE',
+      employmentStatus: 'PERMANENT',
+      isActive: 1,
+      readinessNote: 'MRO technician persona for mechanic work and corrective-work sign-off.',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'personnel_licenses', {
+      id: 'plic-crew-maintenance-technician',
+      personnelId: 'crew-maintenance-technician',
+      licenseType: 'AMEL',
+      licenseNumber: 'AME-TECH-MRO-001',
+      issuingAuthority: 'Directorate General of Civil Aviation',
+      issueDate: context.date(-180),
+      expiryDate: context.date(365),
+      isPrimary: 1,
+      status: 'ACTIVE',
+      documentId: null,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
+    for (const personnel of [
+      {
+        id: 'crew-maintenance-manager',
+        slug: 'maintenance-manager',
+        notes: 'Aircraft/type scope for PT AMA MRO mechanic authorization.'
+      },
+      {
+        id: 'crew-maintenance-technician',
+        slug: 'maintenance-technician',
+        notes: 'Aircraft/type scope for PT AMA MRO technician authorization.'
+      }
+    ] as const) {
+      for (const scope of ['Cessna Caravan 208B', 'Pilatus PC-6', 'PAC 750XL']) {
+        insertIgnore(sqlite, 'personnel_qualifications', {
+          id: `pqual-crew-${personnel.slug}-${scope.toLowerCase().replaceAll(/[^a-z0-9]+/gu, '-')}`,
+          personnelId: personnel.id,
+          qualificationType: 'AIRCRAFT_TYPE',
+          referenceType: 'AIRCRAFT_TYPE',
+          referenceId: scope,
+          issuedAt: context.date(-120),
+          expiresAt: context.date(245),
+          status: 'VALID',
+          notes: personnel.notes,
+          documentId: null,
+          createdAt: seedNow,
+          updatedAt: seedNow
+        });
+      }
     }
 
     for (const authorization of [
@@ -133,6 +181,25 @@ export function seedMroFoundationData(
         aircraftTypeScopeJson: JSON.stringify(['Cessna Caravan 208B', 'Pilatus PC-6', 'PAC 750XL']),
         aircraftRegistrationScopeJson: JSON.stringify([]),
         notes: 'PT AMA authorization for mechanic and corrective-work sign-off only.',
+        issuedBy: 'PT AMA Maintenance Control',
+        version: 1,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      },
+      {
+        id: 'mca-mrov1-technician-mechanic',
+        authorizationNumber: 'PTAMA-MRO-AUTH-TECH-001',
+        personnelId: 'crew-maintenance-technician',
+        actorUserId: 'USR-MAINTENANCE-TECHNICIAN',
+        licenseId: 'plic-crew-maintenance-technician',
+        licenseNumber: 'AME-TECH-MRO-001',
+        status: 'ACTIVE',
+        validFrom: context.date(-90),
+        validUntil: context.date(180),
+        permittedActionsJson: JSON.stringify(['MECHANIC_SIGN_OFF', 'REWORK_SIGN_OFF']),
+        aircraftTypeScopeJson: JSON.stringify(['Cessna Caravan 208B', 'Pilatus PC-6', 'PAC 750XL']),
+        aircraftRegistrationScopeJson: JSON.stringify([]),
+        notes: 'PT AMA authorization for technician mechanic and corrective-work sign-off only.',
         issuedBy: 'PT AMA Maintenance Control',
         version: 1,
         createdAt: seedNow,
@@ -283,6 +350,56 @@ export function seedMroFoundationData(
         airframeCycles: 2090,
         version: 1,
         isActive: 1,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+    sqlite
+      .prepare(
+        `UPDATE aircraft
+         SET airframe_hours = 1301,
+             airframe_cycles = 2201,
+             updated_at = ?
+         WHERE id = 'ac-pk-amb'`
+      )
+      .run(seedNow);
+
+    insertIgnore(sqlite, 'maintenance_facilities', {
+      id: 'mfac-djj-sentani',
+      stationId: 'st-djj',
+      code: 'DJJ-MX',
+      name: 'Sentani Maintenance Facility',
+      facilityType: 'LINE_MAINTENANCE',
+      timezone: 'Asia/Jayapura',
+      active: 1,
+      notes:
+        'Maintenance facility planning master data. Facility is separate from inventory warehouse.',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'maintenance_facility_areas', {
+      id: 'marea-djj-hangar-01',
+      facilityId: 'mfac-djj-sentani',
+      code: 'HGR-01',
+      name: 'Hangar 01',
+      areaType: 'HANGAR',
+      active: 1,
+      notes: 'Hangar area for maintenance slot booking.',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    for (const bay of [
+      ['mbay-djj-hgr01-a', 'BAY-A', 'Bay A'],
+      ['mbay-djj-hgr01-b', 'BAY-B', 'Bay B']
+    ] as const) {
+      insertIgnore(sqlite, 'maintenance_facility_bays', {
+        id: bay[0],
+        areaId: 'marea-djj-hangar-01',
+        code: bay[1],
+        name: bay[2],
+        capacity: 1,
+        active: 1,
+        notes: 'Capacity fixed to one aircraft for facility planning foundation.',
         createdAt: seedNow,
         updatedAt: seedNow
       });
@@ -968,6 +1085,369 @@ export function seedMroFoundationData(
         metadata: JSON.stringify({ seed: 'MRO_UI_ALIGNMENT' })
       });
     }
+
+    for (const document of [
+      {
+        id: 'mdata-doc-amm-c208-mrov2',
+        documentType: 'AMM',
+        documentNumber: 'AMA-MROV2-AMM-001',
+        title: 'C208B Sample Aircraft Maintenance Manual Reference',
+        sourceIssuer: 'PT AMA Sample Library',
+        applicability: 'Cessna Caravan 208B sample fleet',
+        status: 'ACTIVE'
+      },
+      {
+        id: 'mdata-doc-srm-c208-mrov2',
+        documentType: 'SRM',
+        documentNumber: 'AMA-MROV2-SRM-001',
+        title: 'C208B Sample Structural Repair Reference',
+        sourceIssuer: 'PT AMA Sample Library',
+        applicability: 'Cessna Caravan 208B sample fleet',
+        status: 'ACTIVE'
+      },
+      {
+        id: 'mdata-doc-ipc-c208-mrov2',
+        documentType: 'IPC',
+        documentNumber: 'AMA-MROV2-IPC-001',
+        title: 'C208B Sample Illustrated Parts Reference',
+        sourceIssuer: 'PT AMA Sample Library',
+        applicability: 'Cessna Caravan 208B sample fleet',
+        status: 'ACTIVE'
+      }
+    ] as const) {
+      insertIgnore(sqlite, 'maintenance_approved_data_documents', {
+        ...document,
+        fictionalDemo: 1,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+
+    for (const revision of [
+      {
+        id: 'mdata-rev-amm-c208-active',
+        documentId: 'mdata-doc-amm-c208-mrov2',
+        revision: 'REV-MROV2-ACTIVE',
+        effectiveDate: context.date(-30),
+        status: 'ACTIVE',
+        supersededByRevisionId: null,
+        notes: 'Fictional active revision for MRO-v2 job-card linking.'
+      },
+      {
+        id: 'mdata-rev-amm-c208-old',
+        documentId: 'mdata-doc-amm-c208-mrov2',
+        revision: 'REV-MROV2-OLD',
+        effectiveDate: context.date(-180),
+        status: 'SUPERSEDED',
+        supersededByRevisionId: 'mdata-rev-amm-c208-active',
+        notes: 'Fictional superseded revision used to show obsolete-data blockers.'
+      },
+      {
+        id: 'mdata-rev-srm-c208-active',
+        documentId: 'mdata-doc-srm-c208-mrov2',
+        revision: 'REV-MROV2-ACTIVE',
+        effectiveDate: context.date(-20),
+        status: 'ACTIVE',
+        supersededByRevisionId: null,
+        notes: 'Fictional SRM reference; not approved maintenance data.'
+      },
+      {
+        id: 'mdata-rev-ipc-c208-active',
+        documentId: 'mdata-doc-ipc-c208-mrov2',
+        revision: 'REV-MROV2-ACTIVE',
+        effectiveDate: context.date(-20),
+        status: 'ACTIVE',
+        supersededByRevisionId: null,
+        notes: 'Fictional IPC reference; not approved maintenance data.'
+      }
+    ] as const) {
+      insertIgnore(sqlite, 'maintenance_approved_data_revisions', {
+        ...revision,
+        fictionalDemo: 1,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+
+    for (const link of [
+      ['mdata-link-release-jc', 'mjc-mrov1-release-001', 'mdata-rev-amm-c208-active'],
+      ['mdata-link-rework-jc', 'mjc-mrov1-rework-001', 'mdata-rev-amm-c208-active'],
+      ['mdata-link-active-obsolete-jc', 'mjc-mrov1-active-001', 'mdata-rev-amm-c208-old']
+    ] as const) {
+      const revision = sqlite
+        .prepare(
+          `SELECT rev.revision, rev.effective_date, doc.document_number
+           FROM maintenance_approved_data_revisions rev
+           JOIN maintenance_approved_data_documents doc ON doc.id = rev.document_id
+           WHERE rev.id = ?`
+        )
+        .get(link[2]) as { revision: string; effective_date: string; document_number: string };
+      insertIgnore(sqlite, 'maintenance_job_card_approved_data_links', {
+        id: link[0],
+        jobCardId: link[1],
+        approvedDataRevisionId: link[2],
+        usageNote: 'MRO-v2 controlled approved-data snapshot; fictional data only.',
+        snapshotDocumentNumber: revision.document_number,
+        snapshotRevision: revision.revision,
+        snapshotEffectiveDate: revision.effective_date,
+        createdAt: seedNow
+      });
+    }
+
+    for (const due of [
+      {
+        id: 'mdue-m5-ama-100fh',
+        code: 'M5-100FH',
+        title: '100 FH Inspection',
+        aircraftId: 'ac-pk-amb',
+        nextDueAt: null,
+        nextDueFlightHours: 1300,
+        nextDueFlightCycles: null,
+        intervalCalendarDays: null,
+        intervalFlightHours: 100,
+        intervalFlightCycles: null,
+        status: 'OVERDUE',
+        sourceWorkPackageId: null,
+        sourceJobCardId: null
+      },
+      {
+        id: 'mdue-mrov2-mra-release',
+        code: 'MROV2-C208-CTRL-001',
+        title: 'Fictional controlled due task satisfied by release-ready package',
+        aircraftId: 'ac-pk-mra',
+        nextDueAt: context.date(-1),
+        nextDueFlightHours: 4110,
+        nextDueFlightCycles: 2085,
+        intervalCalendarDays: 90,
+        intervalFlightHours: 100,
+        intervalFlightCycles: 80,
+        status: 'OVERDUE',
+        sourceWorkPackageId: 'mwp-mrov1-release-ready',
+        sourceJobCardId: 'mjc-mrov1-release-001'
+      },
+      {
+        id: 'mdue-mrov2-amc-overdue',
+        code: 'MROV2-PAC-DUE-002',
+        title: 'Fictional mandatory due item for resource-blocked sample',
+        aircraftId: 'ac-pk-amc',
+        nextDueAt: context.date(-2),
+        nextDueFlightHours: 3980,
+        nextDueFlightCycles: 1900,
+        intervalCalendarDays: 90,
+        intervalFlightHours: 100,
+        intervalFlightCycles: 80,
+        status: 'OVERDUE',
+        sourceWorkPackageId: null,
+        sourceJobCardId: null
+      },
+      {
+        id: 'mdue-mrov2-mrb-soon',
+        code: 'MROV2-C208-FORECAST-003',
+        title: 'Fictional due-soon forecast item',
+        aircraftId: 'ac-pk-mrb',
+        nextDueAt: context.date(18),
+        nextDueFlightHours: 4145,
+        nextDueFlightCycles: 2110,
+        intervalCalendarDays: 90,
+        intervalFlightHours: 100,
+        intervalFlightCycles: 80,
+        status: 'DUE_SOON',
+        sourceWorkPackageId: null,
+        sourceJobCardId: null
+      }
+    ] as const) {
+      insertIgnore(sqlite, 'maintenance_due_requirements', {
+        id: due.id,
+        code: due.code,
+        title: due.title,
+        aircraftId: due.aircraftId,
+        applicability: 'Fictional MRO-v2 due control only',
+        sourceApprovedDataRevisionId: 'mdata-rev-amm-c208-active',
+        intervalCalendarDays: due.intervalCalendarDays,
+        intervalFlightHours: due.intervalFlightHours,
+        intervalFlightCycles: due.intervalFlightCycles,
+        toleranceCalendarDays: 0,
+        toleranceFlightHours: 0,
+        toleranceFlightCycles: 0,
+        mandatory: 1,
+        recurring: 1,
+        active: 1,
+        fictionalDemo: 1,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+      insertIgnore(sqlite, 'maintenance_aircraft_requirement_statuses', {
+        id: `${due.id}-status`,
+        requirementId: due.id,
+        aircraftId: due.aircraftId,
+        lastCompletedAt: context.date(-100),
+        lastCompletedFlightHours: 4000,
+        lastCompletedFlightCycles: 2000,
+        nextDueAt: due.nextDueAt,
+        nextDueFlightHours: due.nextDueFlightHours,
+        nextDueFlightCycles: due.nextDueFlightCycles,
+        status: due.status,
+        calculatedAt: seedNow,
+        sourceWorkPackageId: due.sourceWorkPackageId,
+        sourceJobCardId: due.sourceJobCardId
+      });
+    }
+
+    for (const tool of [
+      {
+        id: 'mtool-mrov2-calibrated',
+        toolCode: 'AMA-TOOL-MROV2-01',
+        name: 'Sample calibrated electrical test set',
+        status: 'AVAILABLE',
+        expiresAt: context.date(90),
+        calStatus: 'CURRENT'
+      },
+      {
+        id: 'mtool-mrov2-expired',
+        toolCode: 'AMA-TOOL-MROV2-02',
+        name: 'Sample expired calibration test set',
+        status: 'CALIBRATION_EXPIRED',
+        expiresAt: context.date(-1),
+        calStatus: 'EXPIRED'
+      }
+    ] as const) {
+      insertIgnore(sqlite, 'maintenance_tool_masters', {
+        id: tool.id,
+        toolCode: tool.toolCode,
+        name: tool.name,
+        serialNumber: `${tool.toolCode}-SN`,
+        category: 'MROV2_TEST_EQUIPMENT',
+        status: tool.status,
+        calibrationRequired: 1,
+        location: 'Sentani Sample Stores',
+        fictionalDemo: 1,
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+      insertIgnore(sqlite, 'maintenance_tool_calibration_records', {
+        id: `${tool.id}-cal`,
+        toolId: tool.id,
+        calibratedAt: context.date(-30),
+        expiresAt: tool.expiresAt,
+        certificateReference: `${tool.toolCode}-CAL-MROV2`,
+        status: tool.calStatus,
+        notes: 'Fictional calibration record for MRO-v2.',
+        createdAt: seedNow
+      });
+    }
+
+    for (const allocation of [
+      ['mtool-alloc-release', 'mwp-mrov1-release-ready', 'mtool-mrov2-calibrated'],
+      ['mtool-alloc-active-expired', 'mwp-mrov1-active', 'mtool-mrov2-expired']
+    ] as const) {
+      insertIgnore(sqlite, 'maintenance_work_package_tool_allocations', {
+        id: allocation[0],
+        workPackageId: allocation[1],
+        toolId: allocation[2],
+        required: 1,
+        allocatedAt: context.at(-1, '13:50'),
+        returnedAt: null,
+        createdByUserId: 'USR-MAINTENANCE-MANAGER'
+      });
+    }
+
+    for (const material of [
+      [
+        'mmat-release-filter',
+        'mwp-mrov1-release-ready',
+        'inv-part-filter-c208-reserve',
+        'RESERVED'
+      ],
+      ['mmat-active-blocked', 'mwp-mrov1-active', 'inv-part-filter-c208-reserve', 'REQUESTED']
+    ] as const) {
+      insertIgnore(sqlite, 'maintenance_work_package_material_requirements', {
+        id: material[0],
+        workPackageId: material[1],
+        partId: material[2],
+        serializedPartId: null,
+        requiredQuantity: 1,
+        unit: 'EA',
+        requestedStationId: 'st-bik',
+        required: 1,
+        status: material[3],
+        source: 'MROV2_READINESS',
+        notes: 'Fictional material readiness requirement.',
+        createdAt: seedNow,
+        updatedAt: seedNow
+      });
+    }
+
+    insertIgnore(sqlite, 'maintenance_demo_amo_capability_scopes', {
+      id: 'mamo-mrov2-c208',
+      scopeCode: 'AMA-MROV2-AMO-C208',
+      aircraftType: 'Cessna Caravan 208B',
+      aircraftRegistration: null,
+      permittedActionsJson: JSON.stringify(['TECHNICAL_RELEASE']),
+      status: 'ACTIVE',
+      validFrom: context.date(-30),
+      validUntil: context.date(180),
+      notes: 'Fictional AMO capability scope for MRO-v2. Not an approval record.',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'maintenance_demo_amo_capability_scopes', {
+      id: 'mamo-m5-pc6',
+      scopeCode: 'AMA-M5-AMO-PC6',
+      aircraftType: 'Pilatus PC-6',
+      aircraftRegistration: null,
+      permittedActionsJson: JSON.stringify(['TECHNICAL_RELEASE']),
+      status: 'ACTIVE',
+      validFrom: context.date(-30),
+      validUntil: context.date(180),
+      notes: 'Fictional AMO capability scope for M5 browser golden path. Not an approval record.',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'maintenance_quality_findings', {
+      id: 'mqf-mrov2-rework',
+      reference: 'QF-MROV2-FAILED-INSP-001',
+      sourceType: 'INSPECTION_ATTEMPT',
+      sourceId: 'minsp-mrov1-rework-failed',
+      aircraftId: 'ac-pk-mrc',
+      workPackageId: 'mwp-mrov1-rework',
+      classification: 'FAILED_INSPECTION_SAMPLE',
+      description:
+        'Simulasi Quality & Safety dari failed inspection. Data fiktif; bukan QMS/SMS production.',
+      status: 'ACTION_REQUIRED',
+      owner: 'Chief Inspector / Quality Sample',
+      dueDate: context.date(7),
+      fictionalDemo: 1,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'maintenance_capa_actions', {
+      id: 'mcapa-mrov2-rework',
+      findingId: 'mqf-mrov2-rework',
+      actionType: 'CORRECTIVE_ACTION_SAMPLE',
+      description: 'Review corrective work evidence and record effectiveness review sample.',
+      owner: 'Maintenance Control Sample',
+      dueDate: context.date(10),
+      completion: null,
+      effectivenessReview: null,
+      status: 'ACTION_REQUIRED',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'maintenance_sdr_assessments', {
+      id: 'msdr-mrov2-rework',
+      sourceType: 'QUALITY_FINDING',
+      sourceId: 'mqf-mrov2-rework',
+      reportabilityStatus: 'INTERNAL_ASSESSMENT_ONLY',
+      discoveredAt: context.at(-1, '14:45'),
+      simulatedDueAt: context.date(4),
+      assessment: 'Simulasi pelaporan internal. Bukan laporan resmi kepada regulator.',
+      decisionOwner: 'Quality/Safety Sample',
+      status: 'UNDER_REVIEW',
+      fictionalDemo: 1,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
   });
 
   seed.immediate();

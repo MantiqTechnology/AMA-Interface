@@ -4,6 +4,7 @@ import type { MaintenanceCommandCenterDto } from '#shared/features/maintenance';
 const ui = useMaintenanceUi();
 const format = useLocaleFormat();
 const route = useRoute();
+const { resolveAircraftImageUrl } = useAircraftImageUrl();
 const filters = reactive({
   search: String(route.query.search ?? ''),
   aircraft: '',
@@ -229,7 +230,18 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
                     </button>
                   </td>
                   <td>
-                    <div>{{ release.aircraftRegistrationNumber }}</div>
+                    <div class="d-flex align-center ga-2">
+                      <VAvatar rounded="lg" size="40">
+                        <VImg
+                          v-if="resolveAircraftImageUrl(release.aircraftImageUrl)"
+                          :alt="`${release.aircraftRegistrationNumber} aircraft image`"
+                          cover
+                          :src="resolveAircraftImageUrl(release.aircraftImageUrl) ?? undefined"
+                        />
+                        <VIcon v-else icon="mdi-airplane" size="22" />
+                      </VAvatar>
+                      <span>{{ release.aircraftRegistrationNumber }}</span>
+                    </div>
                     <div>
                       <VBtn
                         v-if="linkedPackage(release)"

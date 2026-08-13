@@ -109,6 +109,7 @@ export class OperationsMonitoringService {
            destination.latitude AS destinationLatitude, destination.longitude AS destinationLongitude,
            aircraft.id AS aircraftId,
            aircraft.registration_number AS aircraftRegistration,
+           aircraft.image_url AS aircraftImageUrl,
            crew.full_name AS pilotInCommandName,
            flight.scheduled_departure_at AS scheduledDepartureAt,
            flight.scheduled_arrival_at AS scheduledArrivalAt,

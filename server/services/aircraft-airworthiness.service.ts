@@ -7,6 +7,8 @@ import type {
   AircraftDto,
   AircraftMaintenanceReleaseInput,
   AircraftMaintenanceRequirementInput,
+  AircraftTechnicalEligibilityBlockerDto,
+  AircraftTechnicalEligibilityDto,
   AircraftOperationalStatus,
   AircraftOperationalTransition
 } from '../../shared/features/operations/aircraft';
@@ -19,6 +21,7 @@ type AircraftActor = { userId: string; role: string };
 type AircraftReleaseWriteOptions = {
   complyDueRequirements?: boolean;
   maintenanceRequirementIds?: string[];
+  exemptCanonicalDueStatusIds?: string[];
   signerAuthorizationSnapshot?: Record<string, unknown> | null;
 };
 type AircraftReleaseWriteResult = {
@@ -68,11 +71,339 @@ function jsonObject(value: unknown): Record<string, unknown> | null {
   }
 }
 
+function addTechnicalBlocker(
+  blockers: AircraftTechnicalEligibilityBlockerDto[],
+  input: AircraftTechnicalEligibilityBlockerDto
+) {
+  blockers.push(input);
+}
+
+export function evaluateAircraftTechnicalEligibility(
+  sqlite: Database.Database,
+  aircraftId: string,
+  options: { at?: string } = {}
+): AircraftTechnicalEligibilityDto {
+  const evaluatedAt = options.at ?? now();
+  const blockers: AircraftTechnicalEligibilityBlockerDto[] = [];
+  const warnings: AircraftTechnicalEligibilityBlockerDto[] = [];
+  const sourceReferences: AircraftTechnicalEligibilityDto['sourceReferences'] = [];
+  const aircraft = sqlite.prepare('SELECT * FROM aircraft WHERE id = ?').get(aircraftId) as
+    SqlRow | undefined;
+
+  if (!aircraft) {
+    addTechnicalBlocker(blockers, {
+      code: 'TECHNICAL_STATUS_UNKNOWN',
+      category: 'TECHNICAL_STATUS',
+      sourceEntityType: 'AIRCRAFT',
+      sourceEntityId: aircraftId,
+      reason: 'Aircraft technical status could not be evaluated.',
+      remediation: 'Refresh aircraft master data before flight release.',
+      isBlocking: true
+    });
+    return {
+      aircraftId,
+      status: 'UNKNOWN',
+      eligible: false,
+      evaluatedAt,
+      blockers,
+      restrictions: [],
+      warnings,
+      sourceReferences
+    };
+  }
+
+  const serviceabilityStatus = String(aircraft.serviceability_status);
+  const operationalStatus = String(aircraft.operational_status);
+  sourceReferences.push({
+    sourceType: 'AIRCRAFT',
+    sourceId: aircraftId,
+    label: `Aircraft ${String(aircraft.registration_number)}`
+  });
+
+  if (operationalStatus !== 'ACTIVE') {
+    addTechnicalBlocker(blockers, {
+      code: 'AIRCRAFT_NOT_ACTIVE',
+      category: 'AIRCRAFT',
+      sourceEntityType: 'AIRCRAFT',
+      sourceEntityId: aircraftId,
+      reason: `Aircraft operational status is ${operationalStatus}.`,
+      remediation: 'Resolve aircraft operational status before flight release.',
+      isBlocking: true
+    });
+  }
+
+  if (serviceabilityStatus === 'UNSERVICEABLE') {
+    addTechnicalBlocker(blockers, {
+      code: 'AIRCRAFT_UNSERVICEABLE',
+      category: 'AIRCRAFT',
+      sourceEntityType: 'AIRCRAFT',
+      sourceEntityId: aircraftId,
+      reason: String(aircraft.serviceability_note ?? 'Aircraft is marked unserviceable.'),
+      remediation: 'Complete maintenance control and issue a valid technical release.',
+      isBlocking: true
+    });
+  }
+
+  const latestRelease = sqlite
+    .prepare(
+      `SELECT id, release_number FROM aircraft_maintenance_releases
+       WHERE aircraft_id = ? ORDER BY released_at DESC LIMIT 1`
+    )
+    .get(aircraftId) as SqlRow | undefined;
+  if (!latestRelease) {
+    addTechnicalBlocker(blockers, {
+      code: 'TECHNICAL_STATUS_UNKNOWN',
+      category: 'TECHNICAL_STATUS',
+      sourceEntityType: 'AIRCRAFT',
+      sourceEntityId: aircraftId,
+      reason: 'Aircraft has no recorded technical release.',
+      remediation: 'Record or issue a technical release before flight release.',
+      isBlocking: true
+    });
+  } else {
+    sourceReferences.push({
+      sourceType: 'MAINTENANCE_RELEASE',
+      sourceId: String(latestRelease.id),
+      label: String(latestRelease.release_number)
+    });
+  }
+
+  const defectRows = sqlite
+    .prepare(
+      `SELECT defect.id, defect.defect_number, defect.title, assessment.assessment_decision
+       FROM aircraft_defects defect
+       LEFT JOIN maintenance_defect_assessments assessment ON assessment.defect_id = defect.id
+       WHERE defect.aircraft_id = ? AND defect.status = 'OPEN'
+       ORDER BY defect.detected_at DESC`
+    )
+    .all(aircraftId) as SqlRow[];
+  for (const defect of defectRows) {
+    const grounded = String(defect.assessment_decision ?? '') === 'GROUND';
+    addTechnicalBlocker(blockers, {
+      code: grounded ? 'NO_GO_DEFECT' : 'DEFECT_PENDING_ASSESSMENT',
+      category: 'DEFECT',
+      sourceEntityType: 'AIRCRAFT_DEFECT',
+      sourceEntityId: String(defect.id),
+      reason: grounded
+        ? `NO-GO defect ${String(defect.defect_number)} remains open.`
+        : `Defect ${String(defect.defect_number)} is still awaiting controlled maintenance disposition.`,
+      remediation: grounded
+        ? 'Complete rectification and issue Technical Release.'
+        : 'Complete maintenance assessment before flight release.',
+      isBlocking: true
+    });
+    sourceReferences.push({
+      sourceType: 'AIRCRAFT_DEFECT',
+      sourceId: String(defect.id),
+      label: String(defect.defect_number)
+    });
+  }
+
+  const defermentRows = sqlite
+    .prepare(
+      `SELECT deferment.*, defect.defect_number, defect.title
+       FROM aircraft_deferments deferment
+       LEFT JOIN aircraft_defects defect ON defect.id = deferment.defect_id
+       WHERE deferment.aircraft_id = ? AND deferment.status IN ('ACTIVE', 'EXPIRED')
+       ORDER BY deferment.effective_at DESC`
+    )
+    .all(aircraftId) as SqlRow[];
+  const restrictions = defermentRows
+    .filter(
+      (row) =>
+        String(row.status) === 'ACTIVE' &&
+        String(row.effective_at) <= evaluatedAt &&
+        String(row.expires_at) > evaluatedAt
+    )
+    .map((row) => ({
+      sourceType: 'DEFERRED_DEFECT' as const,
+      sourceId: String(row.id),
+      defectId: String(row.defect_id),
+      title: `${String(row.reference_code)} - ${String(row.defect_number ?? 'Deferred defect')}`,
+      restriction: String(row.operational_limitations),
+      validUntil: String(row.expires_at),
+      status: 'ACTIVE' as const
+    }));
+  for (const row of defermentRows) {
+    const expired = String(row.status) === 'EXPIRED' || String(row.expires_at) <= evaluatedAt;
+    if (expired) {
+      addTechnicalBlocker(blockers, {
+        code: 'DEFERMENT_EXPIRED',
+        category: 'DEFERMENT',
+        sourceEntityType: 'AIRCRAFT_DEFERMENT',
+        sourceEntityId: String(row.id),
+        reason: `Deferred defect ${String(row.reference_code)} has expired.`,
+        remediation: 'Rectify or re-control the deferred condition before flight release.',
+        isBlocking: true
+      });
+    }
+    sourceReferences.push({
+      sourceType: 'AIRCRAFT_DEFERMENT',
+      sourceId: String(row.id),
+      label: String(row.reference_code)
+    });
+  }
+  if (serviceabilityStatus === 'SERVICEABLE_WITH_RESTRICTIONS' && restrictions.length === 0) {
+    addTechnicalBlocker(blockers, {
+      code: 'DEFERMENT_CONTROL_MISSING',
+      category: 'DEFERMENT',
+      sourceEntityType: 'AIRCRAFT',
+      sourceEntityId: aircraftId,
+      reason: 'Aircraft is restricted but no active controlled deferment is valid.',
+      remediation: 'Record a valid deferment or issue unrestricted Technical Release.',
+      isBlocking: true
+    });
+  }
+
+  const legacyDueRows = sqlite
+    .prepare(
+      `SELECT id, requirement_code FROM aircraft_maintenance_requirements
+       WHERE aircraft_id = ? AND status = 'ACTIVE'
+         AND ((due_at IS NOT NULL AND due_at <= ?)
+           OR (due_airframe_hours IS NOT NULL AND due_airframe_hours <= ?)
+           OR (due_airframe_cycles IS NOT NULL AND due_airframe_cycles <= ?))`
+    )
+    .all(
+      aircraftId,
+      evaluatedAt.slice(0, 10),
+      number(aircraft.airframe_hours),
+      number(aircraft.airframe_cycles)
+    ) as SqlRow[];
+  const legacyDueCodes = new Set(legacyDueRows.map((row) => String(row.requirement_code)));
+  let dueBlockerCount = 0;
+  for (const row of legacyDueRows) {
+    dueBlockerCount += 1;
+    addTechnicalBlocker(blockers, {
+      code: 'MANDATORY_MAINTENANCE_OVERDUE',
+      category: 'DUE_CONTROL',
+      sourceEntityType: 'AIRCRAFT_MAINTENANCE_REQUIREMENT',
+      sourceEntityId: String(row.id),
+      reason: `Maintenance requirement ${String(row.requirement_code)} is due.`,
+      remediation: 'Plan, complete, and technically release the maintenance requirement.',
+      isBlocking: true
+    });
+    sourceReferences.push({
+      sourceType: 'AIRCRAFT_MAINTENANCE_REQUIREMENT',
+      sourceId: String(row.id),
+      label: String(row.requirement_code)
+    });
+  }
+
+  const canonicalDueRows = sqlite
+    .prepare(
+      `SELECT status.id, requirement.code
+       FROM maintenance_aircraft_requirement_statuses status
+       JOIN maintenance_due_requirements requirement ON requirement.id = status.requirement_id
+       WHERE status.aircraft_id = ?
+         AND requirement.active = 1
+         AND requirement.mandatory = 1
+         AND (
+           (status.next_due_at IS NOT NULL AND status.next_due_at <= ?)
+           OR (status.next_due_flight_hours IS NOT NULL AND status.next_due_flight_hours <= ?)
+           OR (status.next_due_flight_cycles IS NOT NULL AND status.next_due_flight_cycles <= ?)
+         )`
+    )
+    .all(
+      aircraftId,
+      evaluatedAt,
+      number(aircraft.airframe_hours),
+      number(aircraft.airframe_cycles)
+    ) as SqlRow[];
+  for (const row of canonicalDueRows.filter((item) => !legacyDueCodes.has(String(item.code)))) {
+    dueBlockerCount += 1;
+    addTechnicalBlocker(blockers, {
+      code: 'MANDATORY_MAINTENANCE_OVERDUE',
+      category: 'DUE_CONTROL',
+      sourceEntityType: 'MAINTENANCE_DUE_STATUS',
+      sourceEntityId: String(row.id),
+      reason: `Mandatory maintenance requirement ${String(row.code)} is overdue or due.`,
+      remediation: 'Complete the linked Work Package and issue Technical Release.',
+      isBlocking: true
+    });
+    sourceReferences.push({
+      sourceType: 'MAINTENANCE_DUE_STATUS',
+      sourceId: String(row.id),
+      label: String(row.code)
+    });
+  }
+  const nextMaintenanceDueAt = text(aircraft.next_maintenance_due_at);
+  if (
+    dueBlockerCount === 0 &&
+    nextMaintenanceDueAt &&
+    nextMaintenanceDueAt <= evaluatedAt.slice(0, 10)
+  ) {
+    addTechnicalBlocker(blockers, {
+      code: 'MANDATORY_MAINTENANCE_OVERDUE',
+      category: 'DUE_CONTROL',
+      sourceEntityType: 'AIRCRAFT',
+      sourceEntityId: aircraftId,
+      reason: `Aircraft maintenance is due on ${nextMaintenanceDueAt}.`,
+      remediation: 'Plan, complete, and technically release the maintenance requirement.',
+      isBlocking: true
+    });
+    sourceReferences.push({
+      sourceType: 'AIRCRAFT',
+      sourceId: aircraftId,
+      label: `Maintenance due ${nextMaintenanceDueAt}`
+    });
+  }
+
+  const activeWorkRows = sqlite
+    .prepare(
+      `SELECT id, package_number, status
+       FROM maintenance_work_packages
+       WHERE aircraft_id = ?
+         AND status IN ('IN_PROGRESS', 'READY_FOR_RELEASE')
+         AND release_id IS NULL`
+    )
+    .all(aircraftId) as SqlRow[];
+  for (const row of activeWorkRows) {
+    addTechnicalBlocker(blockers, {
+      code: 'MAINTENANCE_RELEASE_REQUIRED',
+      category: 'MAINTENANCE_RELEASE',
+      sourceEntityType: 'WORK_PACKAGE',
+      sourceEntityId: String(row.id),
+      reason: `Work Package ${String(row.package_number)} is ${String(row.status)} and still requires Technical Release.`,
+      remediation: 'Complete release eligibility and issue Technical Release for the Work Package.',
+      isBlocking: true
+    });
+    sourceReferences.push({
+      sourceType: 'WORK_PACKAGE',
+      sourceId: String(row.id),
+      label: String(row.package_number)
+    });
+  }
+
+  const status = blockers.length
+    ? 'BLOCKED'
+    : restrictions.length
+      ? 'ELIGIBLE_WITH_RESTRICTIONS'
+      : 'ELIGIBLE';
+
+  return {
+    aircraftId,
+    status,
+    eligible: status !== 'BLOCKED',
+    evaluatedAt,
+    blockers,
+    restrictions,
+    warnings,
+    sourceReferences
+  };
+}
+
 export class AircraftAirworthinessService {
   constructor(
     private readonly sqlite: Database.Database,
     private readonly flights: FlightOperationsVerificationService
   ) {}
+
+  evaluateAircraftTechnicalEligibility(
+    aircraftId: string,
+    options: { at?: string } = {}
+  ): AircraftTechnicalEligibilityDto {
+    return evaluateAircraftTechnicalEligibility(this.sqlite, aircraftId, options);
+  }
 
   detail(id: string): AircraftAirworthinessDto {
     this.requireAircraft(id);
@@ -87,6 +418,11 @@ export class AircraftAirworthinessService {
       title: String(row.title),
       description: String(row.description),
       detectedAt: String(row.detected_at),
+      reporterObservation: String(row.reporter_observation ?? 'UNKNOWN'),
+      initialSeverity: String(row.initial_severity ?? 'UNKNOWN'),
+      operationalImpact: text(row.operational_impact),
+      flightPhase: text(row.flight_phase),
+      stationId: text(row.station_id),
       sourceReference: text(row.source_reference),
       evidenceReferences: jsonArray(row.evidence_references),
       status: String(row.status) as AircraftAirworthinessDto['defects'][number]['status'],
@@ -108,11 +444,21 @@ export class AircraftAirworthinessService {
       referenceCode: String(row.reference_code),
       category: text(row.category),
       operationalLimitations: String(row.operational_limitations),
+      maintenanceProcedure: text(row.maintenance_procedure),
+      operationsProcedure: text(row.operations_procedure),
+      targetRectificationAt: text(row.target_rectification_at),
+      assessmentId: text(row.assessment_id),
+      followUpWorkPackageId: text(row.follow_up_work_package_id),
+      closedAt: text(row.closed_at),
+      closedByUserId: text(row.closed_by_user_id),
+      closureNote: text(row.closure_note),
       applicableRouteIds: jsonArray(row.applicable_route_ids),
       applicableServiceTypeCodes: jsonArray(row.applicable_service_type_codes),
       effectiveAt: String(row.effective_at),
       expiresAt: String(row.expires_at),
-      status: String(row.status) as AircraftAirworthinessDto['deferments'][number]['status']
+      status: (String(row.status) === 'ACTIVE' && String(row.expires_at) <= now()
+        ? 'EXPIRED'
+        : String(row.status)) as AircraftAirworthinessDto['deferments'][number]['status']
     }));
     const releases = (
       this.sqlite
@@ -267,9 +613,10 @@ export class AircraftAirworthinessService {
         .prepare(
           `INSERT INTO aircraft_defects (
             id, aircraft_id, defect_number, title, description, detected_at,
-            detected_by_user_id, source_reference, evidence_references, status,
+            detected_by_user_id, reporter_observation, initial_severity, operational_impact,
+            flight_phase, station_id, source_reference, evidence_references, status,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)`
         )
         .run(
           defectId,
@@ -279,24 +626,30 @@ export class AircraftAirworthinessService {
           body.description,
           body.detectedAt,
           actor.userId,
+          body.reporterObservation ?? 'UNKNOWN',
+          body.initialSeverity ?? 'UNKNOWN',
+          body.operationalImpact ?? null,
+          body.flightPhase ?? null,
+          body.stationId ?? null,
           body.sourceReference,
-          JSON.stringify(body.evidenceReferences),
+          JSON.stringify(body.evidenceReferences ?? []),
           timestamp,
           timestamp
         );
-      this.updateAircraftStatus(
-        aircraftId,
-        'serviceability_status',
-        'UNSERVICEABLE',
-        body.expectedVersion,
-        body.description
-      );
+      const touched = this.sqlite
+        .prepare(
+          'UPDATE aircraft SET version = version + 1, updated_at = ? WHERE id = ? AND version = ?'
+        )
+        .run(timestamp, aircraftId, body.expectedVersion);
+      if (!touched.changes) {
+        throw new DomainError('STALE_VERSION', 'Aircraft changed. Refresh and retry.', 409);
+      }
       this.appendHistory(
         aircraftId,
         'TECHNICAL',
         String(aircraft.serviceability_status),
-        'UNSERVICEABLE',
-        body.description,
+        String(aircraft.serviceability_status),
+        `Defect reported for maintenance assessment: ${body.title}`,
         'DEFECT',
         defectId,
         actor
@@ -320,6 +673,20 @@ export class AircraftAirworthinessService {
         409
       );
     }
+    const assessment = this.sqlite
+      .prepare(
+        `SELECT id FROM maintenance_defect_assessments
+         WHERE defect_id = ? AND assessment_decision = 'DEFER'
+         LIMIT 1`
+      )
+      .get(body.defectId) as { id: string } | undefined;
+    if (!assessment) {
+      throw new DomainError(
+        'AIRCRAFT_DEFECT_ASSESSMENT_REQUIRED',
+        'Defect must be assessed as deferred before deferment control can be recorded.',
+        422
+      );
+    }
     const defermentId = `adefer-${nanoid(12)}`;
     const timestamp = now();
     this.sqlite.transaction(() => {
@@ -328,9 +695,10 @@ export class AircraftAirworthinessService {
           `INSERT INTO aircraft_deferments (
             id, aircraft_id, defect_id, deferment_type, reference_code, category,
             operational_limitations, maintenance_procedure, operations_procedure,
-            effective_at, expires_at, authorized_by_user_id, authorization_reference,
-            applicable_route_ids, applicable_service_type_codes, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`
+            target_rectification_at, effective_at, expires_at, assessment_id,
+            authorized_by_user_id, authorization_reference, applicable_route_ids,
+            applicable_service_type_codes, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`
         )
         .run(
           defermentId,
@@ -342,12 +710,14 @@ export class AircraftAirworthinessService {
           body.operationalLimitations,
           body.maintenanceProcedure,
           body.operationsProcedure,
+          body.targetRectificationAt ?? null,
           body.effectiveAt,
           body.expiresAt,
+          assessment.id,
           actor.userId,
           body.authorizationReference,
-          JSON.stringify(body.applicableRouteIds),
-          JSON.stringify(body.applicableServiceTypeCodes),
+          JSON.stringify(body.applicableRouteIds ?? []),
+          JSON.stringify(body.applicableServiceTypeCodes ?? []),
           timestamp,
           timestamp
         );
@@ -392,12 +762,14 @@ export class AircraftAirworthinessService {
     actor: AircraftActor,
     options: {
       maintenanceRequirementIds: string[];
+      exemptCanonicalDueStatusIds?: string[];
       signerAuthorizationSnapshot: Record<string, unknown>;
     }
   ): AircraftReleaseWriteResult {
     return this.issueReleaseInOpenTransaction(aircraftId, body, actor, {
       complyDueRequirements: false,
       maintenanceRequirementIds: options.maintenanceRequirementIds,
+      exemptCanonicalDueStatusIds: options.exemptCanonicalDueStatusIds,
       signerAuthorizationSnapshot: options.signerAuthorizationSnapshot
     });
   }
@@ -463,12 +835,6 @@ export class AircraftAirworthinessService {
           aircraftId,
           ...uniqueDefectIds
         );
-      this.sqlite
-        .prepare(
-          `UPDATE aircraft_deferments SET status = 'CLOSED', updated_at = ?
-           WHERE aircraft_id = ? AND defect_id IN (${placeholders}) AND status = 'ACTIVE'`
-        )
-        .run(timestamp, aircraftId, ...uniqueDefectIds);
     }
     this.sqlite
       .prepare(
@@ -541,7 +907,11 @@ export class AircraftAirworthinessService {
         }
       }
     }
-    const remaining = this.technicalBlockers(aircraftId, now());
+    const remaining = this.technicalBlockers(
+      aircraftId,
+      now(),
+      options.exemptCanonicalDueStatusIds ?? []
+    );
     if (body.resultingStatus === 'SERVICEABLE' && remaining.length) {
       throw new DomainError(
         'AIRCRAFT_RELEASE_BLOCKED',
@@ -675,6 +1045,7 @@ export class AircraftAirworthinessService {
 
   private toAircraftDto(id: string): AircraftDto {
     const row = this.requireAircraft(id);
+    const eligibility = this.evaluateAircraftTechnicalEligibility(id);
     const blockers = this.technicalBlockers(id, now());
     const openDefectCount = number(
       (
@@ -708,6 +1079,7 @@ export class AircraftAirworthinessService {
       manufacturer: String(row.manufacturer),
       model: String(row.model),
       fleetCode: text(row.fleet_code),
+      imageUrl: text(row.image_url),
       passengerCapacity: number(row.passenger_capacity),
       cargoCapacityKg: number(row.cargo_capacity_kg),
       fuelType: String(row.fuel_type),
@@ -745,11 +1117,11 @@ export class AircraftAirworthinessService {
       maintenanceDue,
       dueReasons: blockers.filter((item) => item.startsWith('Maintenance requirement')),
       technicalEligibility:
-        serviceabilityStatus === 'UNSERVICEABLE' || blockers.length
-          ? 'BLOCKED'
-          : activeRestrictionCount
-            ? 'RESTRICTED'
-            : 'ELIGIBLE',
+        eligibility.status === 'ELIGIBLE_WITH_RESTRICTIONS'
+          ? 'RESTRICTED'
+          : eligibility.status === 'ELIGIBLE'
+            ? 'ELIGIBLE'
+            : 'BLOCKED',
       openDefectCount,
       activeRestrictionCount,
       isActive: Boolean(row.is_active),
@@ -758,7 +1130,11 @@ export class AircraftAirworthinessService {
     };
   }
 
-  private technicalBlockers(aircraftId: string, at: string) {
+  private technicalBlockers(
+    aircraftId: string,
+    at: string,
+    exemptCanonicalDueStatusIds: string[] = []
+  ) {
     const aircraft = this.requireAircraft(aircraftId);
     const blockers: string[] = [];
     const openDefects = this.sqlite
@@ -782,8 +1158,36 @@ export class AircraftAirworthinessService {
         number(aircraft.airframe_hours),
         number(aircraft.airframe_cycles)
       ) as Array<{ requirement_code: string }>;
+    const legacyDueCodes = new Set(dueRequirements.map((row) => row.requirement_code));
     blockers.push(
       ...dueRequirements.map((row) => `Maintenance requirement ${row.requirement_code} is due`)
+    );
+    const canonicalDueRequirements = this.sqlite
+      .prepare(
+        `SELECT status.id, requirement.code
+         FROM maintenance_aircraft_requirement_statuses status
+         JOIN maintenance_due_requirements requirement ON requirement.id = status.requirement_id
+         WHERE status.aircraft_id = ?
+           AND requirement.active = 1
+           AND requirement.mandatory = 1
+           AND (
+             (status.next_due_at IS NOT NULL AND status.next_due_at <= ?)
+             OR (status.next_due_flight_hours IS NOT NULL AND status.next_due_flight_hours <= ?)
+             OR (status.next_due_flight_cycles IS NOT NULL AND status.next_due_flight_cycles <= ?)
+           )`
+      )
+      .all(
+        aircraftId,
+        at,
+        number(aircraft.airframe_hours),
+        number(aircraft.airframe_cycles)
+      ) as Array<{ id: string; code: string }>;
+    blockers.push(
+      ...canonicalDueRequirements
+        .filter(
+          (row) => !legacyDueCodes.has(row.code) && !exemptCanonicalDueStatusIds.includes(row.id)
+        )
+        .map((row) => `Maintenance requirement ${row.code} is due`)
     );
     return blockers;
   }

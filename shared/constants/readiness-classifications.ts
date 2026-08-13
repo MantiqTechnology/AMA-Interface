@@ -65,6 +65,18 @@ export const READINESS_CLASSIFICATIONS: ReadinessClassification[] = [
     revalidateBeforeDeparture: true
   },
   {
+    check: 'MAINTENANCE_OPERATIONAL_AVAILABILITY',
+    classification: 'SYSTEM_CHECK',
+    gate: true,
+    verificationRequired: false,
+    evidenceRequired: false,
+    sourceModule: 'maintenance',
+    ownerRole: 'Maintenance Control',
+    approvalStages: [],
+    assurancePhase: 'PLANNING',
+    revalidateBeforeDeparture: true
+  },
+  {
     check: 'AIRCRAFT_LOCATION',
     classification: 'SYSTEM_CHECK',
     gate: true,

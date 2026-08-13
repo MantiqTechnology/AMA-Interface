@@ -8,6 +8,55 @@ const maintenance = { userId: 'USR-MAINTENANCE-MANAGER', role: 'Maintenance Mana
 const certifier = { userId: 'USR-CERTIFYING-STAFF', role: 'Certifying Staff' };
 
 describe('AircraftAirworthinessService', () => {
+  it('evaluates M8 aircraft-level technical eligibility from canonical MRO state', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+
+    expect(
+      services.aircraftAirworthiness.evaluateAircraftTechnicalEligibility('ac-pk-ama')
+    ).toMatchObject({
+      status: 'ELIGIBLE',
+      eligible: true,
+      blockers: []
+    });
+
+    const restricted =
+      services.aircraftAirworthiness.evaluateAircraftTechnicalEligibility('ac-pk-ame');
+    expect(restricted).toMatchObject({
+      status: 'ELIGIBLE_WITH_RESTRICTIONS',
+      eligible: true,
+      restrictions: [
+        expect.objectContaining({
+          sourceType: 'DEFERRED_DEFECT',
+          restriction: expect.stringContaining('Maximum payload')
+        })
+      ]
+    });
+
+    expect(
+      services.aircraftAirworthiness.evaluateAircraftTechnicalEligibility('ac-pk-amd')
+    ).toMatchObject({
+      status: 'BLOCKED',
+      eligible: false,
+      blockers: expect.arrayContaining([
+        expect.objectContaining({ code: 'AIRCRAFT_UNSERVICEABLE' }),
+        expect.objectContaining({ code: 'MANDATORY_MAINTENANCE_OVERDUE' })
+      ])
+    });
+
+    const expired = services.aircraftAirworthiness.evaluateAircraftTechnicalEligibility(
+      'ac-pk-ame',
+      {
+        at: '2026-08-19T09:00:00.000+09:00'
+      }
+    );
+    expect(expired).toMatchObject({
+      status: 'BLOCKED',
+      blockers: expect.arrayContaining([expect.objectContaining({ code: 'DEFERMENT_EXPIRED' })])
+    });
+
+    sqlite.close();
+  });
+
   it('exposes seeded release evidence and derives maintenance due independently of status', async () => {
     const { services, sqlite } = await createSeededTestServices();
 
@@ -28,7 +77,7 @@ describe('AircraftAirworthinessService', () => {
     sqlite.close();
   });
 
-  it('grounds the aircraft on defect report and immediately invalidates assigned flight readiness', async () => {
+  it('records defect report as pending assessment and invalidates assigned flight readiness', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const before = services.aircraftAirworthiness.detail('ac-pk-ama').aircraft;
 
@@ -46,7 +95,7 @@ describe('AircraftAirworthinessService', () => {
     );
 
     expect(result.aircraft).toMatchObject({
-      serviceabilityStatus: 'UNSERVICEABLE',
+      serviceabilityStatus: 'SERVICEABLE',
       technicalEligibility: 'BLOCKED',
       openDefectCount: 1,
       version: before.version + 1
@@ -79,27 +128,34 @@ describe('AircraftAirworthinessService', () => {
     );
     const defectId = grounded.defects[0]!.id;
 
-    const deferred = services.aircraftAirworthiness.deferDefect(
-      'ac-pk-amf',
+    const assessment = services.maintenance.assessDefect(
+      defectId,
       {
-        defectId,
-        defermentType: 'MEL',
-        referenceCode: 'MEL 33-40-01',
-        category: 'C',
-        operationalLimitations: 'Day VFR operations only until the position light is rectified.',
-        maintenanceProcedure: 'Placard and isolate the affected position light circuit.',
-        operationsProcedure: 'Dispatch only during the approved day operating period.',
-        effectiveAt: context.at(0, '08:00'),
-        expiresAt: context.at(10, '08:00'),
-        authorizationReference: 'MEL-AUTH-AMF-011',
-        applicableRouteIds: [],
-        applicableServiceTypeCodes: ['POSITIONING'],
-        expectedVersion: grounded.aircraft.version
+        assessmentDecision: 'DEFER',
+        assessmentNote:
+          'Maintenance Control defers the position light defect with day operating limitation.',
+        deferment: {
+          defermentType: 'MEL',
+          referenceCode: 'MEL 33-40-01',
+          category: 'C',
+          operationalLimitations: 'Day VFR operations only until the position light is rectified.',
+          maintenanceProcedure: 'Placard and isolate the affected position light circuit.',
+          operationsProcedure: 'Dispatch only during the approved day operating period.',
+          effectiveAt: context.at(0, '08:00'),
+          expiresAt: context.at(10, '08:00'),
+          targetRectificationAt: context.at(8, '08:00'),
+          authorizationReference: 'MEL-AUTH-AMF-011',
+          applicableRouteIds: [],
+          applicableServiceTypeCodes: ['POSITIONING']
+        }
       },
       maintenance
     );
+    const deferred = services.aircraftAirworthiness.detail('ac-pk-amf');
 
-    expect(deferred.aircraft.serviceabilityStatus).toBe('UNSERVICEABLE');
+    expect(assessment.assessmentDecision).toBe('DEFER');
+    expect(deferred.aircraft.serviceabilityStatus).toBe('SERVICEABLE');
+    expect(deferred.aircraft.technicalEligibility).toBe('RESTRICTED');
     expect(deferred.defects[0]?.status).toBe('DEFERRED');
 
     const released = services.aircraftAirworthiness.issueRelease(
@@ -132,7 +188,7 @@ describe('AircraftAirworthinessService', () => {
     sqlite.close();
   });
 
-  it('evaluates restricted serviceability against the individual flight service', async () => {
+  it('propagates restricted serviceability to Flight without claiming operational compatibility', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const base = {
       flightDate: context.date(1),
@@ -170,8 +226,8 @@ describe('AircraftAirworthinessService', () => {
     expect(
       prohibited.readinessChecks.find((item) => item.checkCode === 'AIRCRAFT_SERVICEABILITY')
     ).toMatchObject({
-      status: 'FAIL',
-      resultNote: 'MEL/CDL restriction is expired or not applicable to this flight.'
+      status: 'PASS',
+      resultNote: expect.stringContaining('maintenance restriction')
     });
 
     sqlite.close();

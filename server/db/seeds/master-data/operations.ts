@@ -26,6 +26,17 @@ export async function seedOperationsMasterData(
   context: DemoSeedContext = createDemoSeedContext()
 ) {
   const referenceNow = context.now;
+  const aircraftImageBasePath = 'aircraft';
+  const aircraftImageUrls = {
+    pkAma: `${aircraftImageBasePath}/pk-rka-associated-mission-aviation-ama-papua-pilatus-pc-6-b2-h4-turbo-porter_PlanespottersNet_1738497_f4e6bb222f_o.webp`,
+    pkAmb: `${aircraftImageBasePath}/Cessna-208-Caravan-PNC-0219-1.jpg`,
+    pkAmc: `${aircraftImageBasePath}/pac-p-750-xstol-985cf660-67bb-409a-a3d9-8ee17deff38-resize-750.webp`,
+    pkAmd: `${aircraftImageBasePath}/DSC05386-1024x682.webp`,
+    pkAme: `${aircraftImageBasePath}/pexels-rachel-claire-7276734-scaled.webp`,
+    pkAmf: `${aircraftImageBasePath}/img.webp`,
+    pkAmg: `${aircraftImageBasePath}/polar_airways_pilatus_pc-6_porter_n3603r.webp`,
+    pkAmh: `${aircraftImageBasePath}/pac-p-750-xstol-985cf660-67bb-409a-a3d9-8ee17deff38-resize-750.webp`
+  };
   await db
     .insert(stations)
     .values([
@@ -281,6 +292,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Pilatus',
         model: 'PC-6 Porter',
         fleetCode: 'PC6-01',
+        imageUrl: aircraftImageUrls.pkAma,
         passengerCapacity: 10,
         cargoCapacityKg: 1200,
         fuelType: 'AVTUR',
@@ -309,6 +321,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Cessna',
         model: 'Caravan 208B',
         fleetCode: 'CVN-01',
+        imageUrl: aircraftImageUrls.pkAmb,
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         fuelType: 'AVTUR',
@@ -337,6 +350,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Pacific Aerospace',
         model: 'PAC 750XL',
         fleetCode: 'PAC-01',
+        imageUrl: aircraftImageUrls.pkAmc,
         passengerCapacity: 9,
         cargoCapacityKg: 1000,
         fuelType: 'AVTUR',
@@ -365,6 +379,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Cessna',
         model: 'Caravan 208B Maintenance',
         fleetCode: 'CVN-02',
+        imageUrl: aircraftImageUrls.pkAmd,
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         fuelType: 'AVTUR',
@@ -393,6 +408,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Cessna',
         model: 'Caravan 208B',
         fleetCode: 'CVN-03',
+        imageUrl: aircraftImageUrls.pkAme,
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         fuelType: 'AVTUR',
@@ -421,6 +437,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Cessna',
         model: 'Caravan 208B',
         fleetCode: 'CVN-04',
+        imageUrl: aircraftImageUrls.pkAmf,
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         fuelType: 'AVTUR',
@@ -451,6 +468,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Pilatus',
         model: 'PC-6 Porter',
         fleetCode: 'PC6-02',
+        imageUrl: aircraftImageUrls.pkAmg,
         passengerCapacity: 10,
         cargoCapacityKg: 1200,
         fuelType: 'AVTUR',
@@ -481,6 +499,7 @@ export async function seedOperationsMasterData(
         manufacturer: 'Pacific Aerospace',
         model: 'PAC 750XL',
         fleetCode: 'PAC-02',
+        imageUrl: aircraftImageUrls.pkAmh,
         passengerCapacity: 9,
         cargoCapacityKg: 1000,
         fuelType: 'AVTUR',
@@ -1574,6 +1593,7 @@ export async function seedOperationsMasterData(
   for (const aircraftRecord of [
     {
       id: 'ac-pk-ama',
+      imageUrl: aircraftImageUrls.pkAma,
       currentStationId: 'st-djj',
       lastMaintenanceCheckAt: context.date(-16),
       nextMaintenanceDueAt: context.date(29),
@@ -1581,6 +1601,7 @@ export async function seedOperationsMasterData(
     },
     {
       id: 'ac-pk-amb',
+      imageUrl: aircraftImageUrls.pkAmb,
       currentStationId: 'st-wmx',
       lastMaintenanceCheckAt: context.date(-19),
       nextMaintenanceDueAt: context.date(3),
@@ -1589,6 +1610,7 @@ export async function seedOperationsMasterData(
     },
     {
       id: 'ac-pk-amc',
+      imageUrl: aircraftImageUrls.pkAmc,
       currentStationId: 'st-wmx',
       lastMaintenanceCheckAt: context.date(-33),
       nextMaintenanceDueAt: context.date(20),
@@ -1596,6 +1618,7 @@ export async function seedOperationsMasterData(
     },
     {
       id: 'ac-pk-amd',
+      imageUrl: aircraftImageUrls.pkAmd,
       currentStationId: 'st-djj',
       lastMaintenanceCheckAt: context.date(-33),
       nextMaintenanceDueAt: context.date(-11),
@@ -1603,16 +1626,42 @@ export async function seedOperationsMasterData(
     },
     {
       id: 'ac-pk-ame',
+      imageUrl: aircraftImageUrls.pkAme,
       currentStationId: 'st-wmx',
       lastMaintenanceCheckAt: context.date(-7),
       nextMaintenanceDueAt: context.date(21),
       serviceabilityNote:
         'Serviceable with a published payload restriction pending component review.'
+    },
+    {
+      id: 'ac-pk-amf',
+      imageUrl: aircraftImageUrls.pkAmf,
+      currentStationId: 'st-bik',
+      lastMaintenanceCheckAt: null,
+      nextMaintenanceDueAt: null,
+      serviceabilityNote: 'Available for user-created flight and MRO transactions.'
+    },
+    {
+      id: 'ac-pk-amg',
+      imageUrl: aircraftImageUrls.pkAmg,
+      currentStationId: 'st-djj',
+      lastMaintenanceCheckAt: null,
+      nextMaintenanceDueAt: null,
+      serviceabilityNote: 'Available for user-created flight and MRO transactions.'
+    },
+    {
+      id: 'ac-pk-amh',
+      imageUrl: aircraftImageUrls.pkAmh,
+      currentStationId: 'st-soq',
+      lastMaintenanceCheckAt: null,
+      nextMaintenanceDueAt: null,
+      serviceabilityNote: 'Available for user-created flight and MRO transactions.'
     }
   ]) {
     await db
       .update(aircraft)
       .set({
+        imageUrl: aircraftRecord.imageUrl,
         currentStationId: aircraftRecord.currentStationId,
         lastMaintenanceCheckAt: aircraftRecord.lastMaintenanceCheckAt,
         nextMaintenanceDueAt: aircraftRecord.nextMaintenanceDueAt,

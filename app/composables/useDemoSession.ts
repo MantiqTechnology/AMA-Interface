@@ -35,6 +35,11 @@ const personaDetails: Record<DemoRole, { name: string; label: string; stationSco
     label: 'Maintenance review',
     stationScope: [...demoRoleStationScopes['Maintenance Manager']]
   },
+  'Maintenance Technician': {
+    name: 'AMA Maintenance Technician',
+    label: 'Mechanic sign-off',
+    stationScope: [...demoRoleStationScopes['Maintenance Technician']]
+  },
   'Certifying Staff': {
     name: 'Certifying Staff',
     label: 'Technical Release',

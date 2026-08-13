@@ -7,6 +7,7 @@ export const demoRoles = [
   'Station Admin Origin',
   'Finance Reviewer',
   'Maintenance Manager',
+  'Maintenance Technician',
   'Certifying Staff',
   'Inventory Controller',
   'HR Staff',
@@ -28,6 +29,7 @@ export const demoRoleActorIds: Record<DemoRole, string> = {
   'Station Admin Origin': 'USR-STATION-ADMIN-DJJ',
   'Finance Reviewer': 'USR-FINANCE-REVIEWER',
   'Maintenance Manager': 'USR-MAINTENANCE-MANAGER',
+  'Maintenance Technician': 'USR-MAINTENANCE-TECHNICIAN',
   'Certifying Staff': 'USR-CERTIFYING-STAFF',
   'Inventory Controller': 'USR-INVENTORY-CONTROLLER',
   'HR Staff': 'USR-HR-STAFF',
@@ -45,6 +47,7 @@ export const demoRoleStationScopes: Record<DemoRole, readonly string[]> = {
   'Station Admin Origin': ['DJJ'],
   'Finance Reviewer': ['ALL'],
   'Maintenance Manager': ['DJJ'],
+  'Maintenance Technician': ['DJJ'],
   'Certifying Staff': ['ALL'],
   'Inventory Controller': ['ALL'],
   'HR Staff': ['ALL'],
@@ -141,7 +144,24 @@ const rateManagePermissions = [
 
 const commercialContractPermissions = ['commercial.contract.read'] as const;
 
-const maintenanceReadPermissions = ['maintenance.package.read', 'maintenance.audit.read'] as const;
+const maintenanceDemoV2ReadPermissions = [
+  'maintenance.approved_data.read',
+  'maintenance.due.read',
+  'maintenance.tooling.read',
+  'maintenance.quality.read',
+  'maintenance.audit_pack.export'
+] as const;
+
+const maintenanceResourceV21ReadPermissions = ['maintenance.v21.resource.read'] as const;
+
+const maintenanceResourceV21WritePermissions = ['maintenance.v21.resource.write'] as const;
+
+const maintenanceReadPermissions = [
+  'maintenance.package.read',
+  'maintenance.audit.read',
+  ...maintenanceResourceV21ReadPermissions,
+  ...maintenanceDemoV2ReadPermissions
+] as const;
 
 const maintenanceControlPermissions = [
   ...maintenanceReadPermissions,
@@ -149,7 +169,11 @@ const maintenanceControlPermissions = [
   'maintenance.package.plan',
   'maintenance.jobcard.manage',
   'maintenance.release.request',
-  'maintenance.financial.claim'
+  'maintenance.financial.claim',
+  'maintenance.approved_data.manage',
+  'maintenance.due.manage',
+  'maintenance.tooling.manage',
+  ...maintenanceResourceV21WritePermissions
 ] as const;
 
 const maintenanceExecutionPermissions = [
@@ -163,6 +187,11 @@ const maintenanceReleasePermissions = [
   ...maintenanceReadPermissions,
   'maintenance.jobcard.inspect',
   'maintenance.release.issue'
+] as const;
+
+const maintenanceQualityPermissions = [
+  ...maintenanceReadPermissions,
+  'maintenance.quality.manage'
 ] as const;
 
 export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
@@ -393,6 +422,17 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'aircraft.defect.manage',
     'aircraft.deferment.manage',
     ...maintenanceControlPermissions,
+    ...maintenanceExecutionPermissions,
+    ...maintenanceQualityPermissions
+  ],
+  'Maintenance Technician': [
+    'platform.dashboard.view',
+    'flight.read',
+    'document.read',
+    'inventory.read',
+    'asset.read',
+    'aircraft.airworthiness.read',
+    'aircraft.defect.report',
     ...maintenanceExecutionPermissions
   ],
   'Certifying Staff': [

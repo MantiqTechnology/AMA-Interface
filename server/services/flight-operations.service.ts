@@ -60,6 +60,8 @@ import { createAccountingService } from '../features/finance/accounting';
 import { createInvoiceService } from '../features/finance/invoices';
 import type { RoutesService } from '../features/operations/routes/service';
 import { AircraftTrackingService } from './aircraft-tracking.service';
+import { evaluateAircraftTechnicalEligibility } from './aircraft-airworthiness.service';
+import { evaluateMaintenanceOperationalAvailability } from './maintenance-facility-operations.service';
 import { demoRoleActorIds } from '../../shared/types/roles';
 
 type SqlValue = string | number | boolean | null;
@@ -88,6 +90,7 @@ const readinessDefinitions = [
   ['ROUTE_AVAILABILITY', 'Route availability'],
   ['OPERATIONAL_ADVISORY', 'Operational advisory'],
   ['AIRCRAFT_SERVICEABILITY', 'Aircraft serviceability'],
+  ['MAINTENANCE_OPERATIONAL_AVAILABILITY', 'Maintenance operational availability'],
   ['AIRCRAFT_LOCATION', 'Aircraft location'],
   ['AIRCRAFT_SCHEDULE', 'Aircraft schedule availability'],
   ['AIRCRAFT_CAPACITY', 'Aircraft capacity'],
@@ -263,6 +266,7 @@ function mapFlight(row: SqlRow): FlightOperationRecord {
     customerName: str(row.customer_name),
     aircraftId: str(row.aircraft_id),
     aircraftRegistration: str(row.aircraft_registration),
+    aircraftImageUrl: str(row.aircraft_image_url),
     aircraftServiceability: str(row.aircraft_serviceability),
     aircraftCurrentStationCode: str(row.aircraft_current_station_code),
     aircraftNextMaintenanceDueAt: str(row.aircraft_next_maintenance_due_at),
@@ -351,6 +355,7 @@ function mapRequest(row: SqlRow): FlightRequestRecord {
     customerName: str(row.customer_name),
     aircraftId: str(row.aircraft_id),
     aircraftRegistration: str(row.aircraft_registration),
+    aircraftImageUrl: str(row.aircraft_image_url),
     pilotInCommandId: str(row.pilot_in_command_id),
     pilotInCommandName: str(row.pic_name),
     coPilotId: str(row.co_pilot_id),
@@ -572,9 +577,17 @@ export class FlightOperationsService {
     const stationCosts = this.listStationCosts({ flightId: id });
     const maintenanceHandoffs = this.listMaintenance({ flightId: id });
     const financeHandoffs = this.listFinanceHandoffs(id);
+    const aircraftTechnicalEligibility = flight.aircraftId
+      ? evaluateAircraftTechnicalEligibility(this.sqlite, flight.aircraftId)
+      : null;
+    const maintenanceOperationalAvailability = flight.aircraftId
+      ? evaluateMaintenanceOperationalAvailability(this.sqlite, flight.aircraftId)
+      : null;
 
     return {
       ...flight,
+      aircraftTechnicalEligibility,
+      maintenanceOperationalAvailability,
       closureReadiness: this.closureReadiness({
         ...flight,
         manifests,
@@ -4490,7 +4503,8 @@ export class FlightOperationsService {
               r.route_code, origin.id as origin_station_id, origin.station_code as origin_station_code,
               destination.id as destination_station_id,
               destination.station_code as destination_station_code,
-              a.registration_number, a.aircraft_type, a.next_maintenance_due_at,
+              a.registration_number, a.image_url as aircraft_image_url,
+              a.aircraft_type, a.next_maintenance_due_at,
               cur.currency_code,
               COALESCE((
                 SELECT SUM(fuel.total_cost)
@@ -4606,6 +4620,7 @@ export class FlightOperationsService {
         scheduledDepartureAt,
         aircraftId: String(row.aircraft_id),
         aircraftRegistration: String(row.registration_number),
+        aircraftImageUrl: str(row.aircraft_image_url),
         aircraftType: String(row.aircraft_type),
         aircraftNextMaintenanceDueAt,
         serviceabilityStatus,
@@ -4715,6 +4730,7 @@ export class FlightOperationsService {
         actual_arrival_station.station_code as actual_arrival_station_code,
         c.account_name as customer_name,
         a.registration_number as aircraft_registration,
+        a.image_url as aircraft_image_url,
         a.serviceability_status as aircraft_serviceability,
         current_station.station_code as aircraft_current_station_code,
         a.next_maintenance_due_at as aircraft_next_maintenance_due_at,
@@ -4764,6 +4780,7 @@ export class FlightOperationsService {
         d.station_code as destination_station_code,
         c.account_name as customer_name,
         a.registration_number as aircraft_registration,
+        a.image_url as aircraft_image_url,
         pic.full_name as pic_name,
         cop.full_name as copilot_name
       FROM flight_requests fr
@@ -5750,6 +5767,7 @@ export class FlightOperationsService {
       'ROUTE_AVAILABILITY',
       'OPERATIONAL_ADVISORY',
       'AIRCRAFT_SERVICEABILITY',
+      'MAINTENANCE_OPERATIONAL_AVAILABILITY',
       'AIRCRAFT_LOCATION',
       'AIRCRAFT_SCHEDULE',
       'AIRCRAFT_CAPACITY',
@@ -6076,48 +6094,6 @@ export class FlightOperationsService {
             )
             .get(flight.aircraftId) as SqlRow | undefined)
         : undefined,
-      aircraftOpenDefects: flight.aircraftId
-        ? (this.sqlite
-            .prepare(
-              `SELECT COUNT(*) AS count FROM aircraft_defects
-               WHERE aircraft_id = ? AND status = 'OPEN'`
-            )
-            .get(flight.aircraftId) as SqlRow)
-        : ({ count: 0 } as SqlRow),
-      aircraftDueRequirements: flight.aircraftId
-        ? (this.sqlite
-            .prepare(
-              `SELECT requirement_code, title FROM aircraft_maintenance_requirements
-               WHERE aircraft_id = ? AND status = 'ACTIVE'
-                 AND ((due_at IS NOT NULL AND due_at <= ?)
-                   OR (due_airframe_hours IS NOT NULL AND due_airframe_hours <=
-                     (SELECT airframe_hours FROM aircraft WHERE id = ?))
-                   OR (due_airframe_cycles IS NOT NULL AND due_airframe_cycles <=
-                     (SELECT airframe_cycles FROM aircraft WHERE id = ?)))`
-            )
-            .all(
-              flight.aircraftId,
-              readinessDate,
-              flight.aircraftId,
-              flight.aircraftId
-            ) as SqlRow[])
-        : [],
-      aircraftDeferments: flight.aircraftId
-        ? (this.sqlite
-            .prepare(
-              `SELECT * FROM aircraft_deferments
-               WHERE aircraft_id = ? AND status = 'ACTIVE'`
-            )
-            .all(flight.aircraftId) as SqlRow[])
-        : [],
-      aircraftRelease: flight.aircraftId
-        ? (this.sqlite
-            .prepare(
-              `SELECT id FROM aircraft_maintenance_releases
-               WHERE aircraft_id = ? ORDER BY released_at DESC LIMIT 1`
-            )
-            .get(flight.aircraftId) as SqlRow | undefined)
-        : undefined,
       passengerCount: this.sqlite
         .prepare(
           `SELECT COUNT(*) as count FROM flight_manifest_passengers p
@@ -6202,36 +6178,34 @@ export class FlightOperationsService {
         .get(id) as SqlRow | undefined
     };
 
-    const nextMaintenanceDueAt = str(rows.aircraft?.next_maintenance_due_at ?? null);
+    const mroTechnical = flight.aircraftId
+      ? evaluateAircraftTechnicalEligibility(this.sqlite, flight.aircraftId, {
+          at: flight.scheduledDepartureAt ?? `${readinessDate}T00:00:00.000Z`
+        })
+      : null;
+    const mroPass = Boolean(
+      mroTechnical &&
+      (mroTechnical.status === 'ELIGIBLE' || mroTechnical.status === 'ELIGIBLE_WITH_RESTRICTIONS')
+    );
+    const maintenanceOperational = flight.aircraftId
+      ? evaluateMaintenanceOperationalAvailability(this.sqlite, flight.aircraftId, {
+          at: flight.scheduledDepartureAt ?? `${readinessDate}T00:00:00.000Z`
+        })
+      : null;
+    const maintenanceOperationalPass = Boolean(
+      maintenanceOperational &&
+      (maintenanceOperational.status === 'AVAILABLE' ||
+        maintenanceOperational.status === 'PLANNED_MAINTENANCE')
+    );
+    const mroPrimaryBlocker = mroTechnical?.blockers[0] ?? null;
+    const mroPrimaryRestriction = mroTechnical?.restrictions[0] ?? null;
+    const maintenanceOperationalBlocker = maintenanceOperational?.blockers[0] ?? null;
     const blockingAdvisory = rows.operationalAdvisories.find(
       (advisory) => advisory.severity === 'BLOCKING'
     );
     const warningAdvisory = rows.operationalAdvisories.find(
       (advisory) => advisory.severity === 'WARNING'
     );
-    const legacyMaintenanceDue = Boolean(
-      nextMaintenanceDueAt && nextMaintenanceDueAt <= readinessDate
-    );
-    const maintenanceDue = legacyMaintenanceDue || rows.aircraftDueRequirements.length > 0;
-    const scheduledArrival = flight.scheduledArrivalAt ?? `${readinessDate}T23:59:59.999Z`;
-    const restrictionMismatch = rows.aircraftDeferments.find((deferment) => {
-      const routeIds = stringArray(deferment.applicable_route_ids);
-      const serviceTypes = stringArray(deferment.applicable_service_type_codes);
-      return (
-        String(deferment.expires_at) <= scheduledArrival ||
-        (routeIds.length > 0 && !routeIds.includes(flight.routeId)) ||
-        (serviceTypes.length > 0 && !serviceTypes.includes(flight.serviceTypeCode))
-      );
-    });
-    const restricted = flight.aircraftServiceability === 'SERVICEABLE_WITH_RESTRICTIONS';
-    const restrictedPass = restricted && rows.aircraftDeferments.length > 0 && !restrictionMismatch;
-    const aircraftPass =
-      Boolean(rows.aircraft) &&
-      String(rows.aircraft?.operational_status) === 'ACTIVE' &&
-      Boolean(rows.aircraftRelease) &&
-      num(rows.aircraftOpenDefects.count) === 0 &&
-      !maintenanceDue &&
-      (flight.aircraftServiceability === 'SERVICEABLE' || restrictedPass);
     const aircraftCurrentStationCode = str(rows.aircraft?.current_station_code ?? null);
     const aircraftLocationPass =
       Boolean(rows.aircraft) &&
@@ -6410,25 +6384,47 @@ export class FlightOperationsService {
       {
         checkCode: 'AIRCRAFT_SERVICEABILITY',
         checkName: 'Aircraft serviceability',
-        status: aircraftPass ? 'PASS' : 'FAIL',
-        resultNote: aircraftPass
-          ? restricted
-            ? 'Aircraft restrictions are valid for this route, service, and scheduled arrival.'
-            : 'Aircraft is active, released to service, and maintenance is not due.'
-          : maintenanceDue
-            ? rows.aircraftDueRequirements.length
-              ? `Maintenance requirement ${String(rows.aircraftDueRequirements[0]?.requirement_code)} is due.`
-              : `Aircraft maintenance is due on ${nextMaintenanceDueAt}.`
-            : !rows.aircraftRelease
-              ? 'Aircraft has no recorded maintenance release.'
-              : num(rows.aircraftOpenDefects.count) > 0
-                ? 'Aircraft has an open, non-deferred defect.'
-                : restrictionMismatch
-                  ? 'MEL/CDL restriction is expired or not applicable to this flight.'
-                  : String(rows.aircraft?.operational_status) !== 'ACTIVE'
-                    ? 'Aircraft is not operationally active.'
-                    : 'Aircraft is not serviceable.',
-        sourceReference: 'aircraft_airworthiness'
+        status: mroPass ? 'PASS' : 'FAIL',
+        resultNote: mroPass
+          ? mroTechnical?.status === 'ELIGIBLE_WITH_RESTRICTIONS'
+            ? `Aircraft is technically eligible with maintenance restriction: ${mroPrimaryRestriction?.restriction ?? 'restriction recorded for operational review'}.`
+            : 'Aircraft satisfies canonical MRO technical eligibility.'
+          : mroPrimaryBlocker
+            ? mroPrimaryBlocker.reason
+            : 'Aircraft technical eligibility could not be verified.',
+        sourceReference: mroTechnical
+          ? JSON.stringify({
+              source: 'mro_aircraft_technical_eligibility',
+              status: mroTechnical.status,
+              blockers: mroTechnical.blockers.map((item) => item.code),
+              restrictions: mroTechnical.restrictions.map((item) => ({
+                sourceId: item.sourceId,
+                restriction: item.restriction,
+                validUntil: item.validUntil
+              }))
+            })
+          : 'mro_aircraft_technical_eligibility'
+      },
+      {
+        checkCode: 'MAINTENANCE_OPERATIONAL_AVAILABILITY',
+        checkName: 'Maintenance operational availability',
+        status: maintenanceOperationalPass ? 'PASS' : 'FAIL',
+        resultNote: maintenanceOperationalPass
+          ? maintenanceOperational?.status === 'PLANNED_MAINTENANCE'
+            ? 'Aircraft has planned maintenance, but it is not currently in Maintenance custody.'
+            : 'Aircraft is not physically held by Maintenance facility custody.'
+          : maintenanceOperationalBlocker
+            ? maintenanceOperationalBlocker.message
+            : 'Aircraft maintenance operational availability could not be verified.',
+        sourceReference: maintenanceOperational
+          ? JSON.stringify({
+              source: 'mro_maintenance_operational_availability',
+              status: maintenanceOperational.status,
+              blockers: maintenanceOperational.blockers.map((item) => item.code),
+              currentCustodyId: maintenanceOperational.currentCustody?.id ?? null,
+              plannedSlotId: maintenanceOperational.plannedSlot?.id ?? null
+            })
+          : 'mro_maintenance_operational_availability'
       },
       {
         checkCode: 'AIRCRAFT_LOCATION',

@@ -1,7 +1,7 @@
 import { readMultipartFormData } from 'h3';
 import { defineApiEventHandler } from '../../utils/api-response';
 import { DomainError } from '../../utils/errors';
-import { saveLocalUpload } from '../../utils/local-upload-storage';
+import { saveUpload } from '../../utils/upload-storage';
 
 export default defineApiEventHandler(async (event) => {
   const form = await readMultipartFormData(event);
@@ -11,7 +11,7 @@ export default defineApiEventHandler(async (event) => {
     throw new DomainError('UPLOAD_REQUIRED', 'Upload requires a file field', 422);
   }
 
-  return await saveLocalUpload({
+  return await saveUpload({
     data: file.data,
     originalName: file.filename,
     contentType: file.type

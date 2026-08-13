@@ -15,6 +15,7 @@ import { createInvoiceService } from '../features/finance/invoices';
 import { HrisService } from '../features/hris/service';
 import { createFinanceReportingService } from '../features/finance/reporting';
 import { createMaintenanceService } from '../features/maintenance';
+import { ResourceV21Service } from './resource-v21.service';
 
 export type Services = ReturnType<typeof createServices>;
 
@@ -28,6 +29,7 @@ export function createServices(sqlite: Database.Database) {
     aircraftTracking: new AircraftTrackingService(sqlite),
     aircraftAirworthiness,
     maintenance: createMaintenanceService(sqlite, aircraftAirworthiness),
+    resourceV21: new ResourceV21Service(sqlite),
     accounting: createAccountingService(sqlite),
     financeReporting: createFinanceReportingService(sqlite),
     invoices: createInvoiceService(sqlite),

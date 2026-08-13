@@ -15,6 +15,7 @@ const form = reactive<AircraftInput>({
   manufacturer: '',
   model: '',
   fleetCode: null,
+  imageUrl: null,
   passengerCapacity: 0,
   cargoCapacityKg: 0,
   fuelType: 'AVTUR',
@@ -58,6 +59,7 @@ watch(
         : '',
       model: props.record ? (props.record.model as AircraftInput['model']) : '',
       fleetCode: props.record ? (props.record.fleetCode as AircraftInput['fleetCode']) : null,
+      imageUrl: props.record ? (props.record.imageUrl as AircraftInput['imageUrl']) : null,
       passengerCapacity: props.record
         ? (props.record.passengerCapacity as AircraftInput['passengerCapacity'])
         : 0,

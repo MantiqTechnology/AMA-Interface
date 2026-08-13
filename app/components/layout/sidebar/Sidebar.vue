@@ -561,6 +561,36 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('maintenance.package.read').allowed
         },
         {
+          label: 'Data Perawatan Terkendali',
+          to: '/maintenance/approved-data',
+          icon: 'mdi-file-certificate-outline',
+          visible: can('maintenance.approved_data.read').allowed
+        },
+        {
+          label: 'Jatuh Tempo Perawatan',
+          to: '/maintenance/due-control',
+          icon: 'mdi-calendar-alert',
+          visible: can('maintenance.due.read').allowed
+        },
+        {
+          label: 'Timeline Hangar',
+          to: '/maintenance/facility-planning',
+          icon: 'mdi-calendar-clock',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Facility Operations',
+          to: '/maintenance/facility-operations',
+          icon: 'mdi-hangar',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: 'Simulasi Quality & Safety',
+          to: '/maintenance/quality',
+          icon: 'mdi-shield-check-outline',
+          visible: can('maintenance.quality.read').allowed
+        },
+        {
           label: 'Rilis Teknis',
           to: '/maintenance/releases',
           icon: 'mdi-certificate-outline',

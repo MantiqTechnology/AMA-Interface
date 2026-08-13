@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { isoDateTimeSchema } from './common';
+import type { AircraftTechnicalEligibilityDto } from '../features/operations/aircraft';
+import type { MaintenanceOperationalAvailabilityDto } from '../features/maintenance';
 
 export const flightOperationStatuses = [
   'DRAFT',
@@ -295,6 +297,7 @@ export type FlightOperationRecord = {
   customerName: string | null;
   aircraftId: string | null;
   aircraftRegistration: string | null;
+  aircraftImageUrl: string | null;
   aircraftServiceability: string | null;
   aircraftCurrentStationCode: string | null;
   aircraftNextMaintenanceDueAt: string | null;
@@ -624,6 +627,7 @@ export type FlightMaintenanceHandoffDto = {
   scheduledDepartureAt: string | null;
   aircraftId: string;
   aircraftRegistration: string;
+  aircraftImageUrl: string | null;
   aircraftType: string;
   aircraftNextMaintenanceDueAt: string | null;
   serviceabilityStatus: AircraftServiceabilityStatus;
@@ -732,6 +736,7 @@ export type FlightRequestRecord = {
   customerName: string | null;
   aircraftId: string | null;
   aircraftRegistration: string | null;
+  aircraftImageUrl: string | null;
   pilotInCommandId: string | null;
   pilotInCommandName: string | null;
   coPilotId: string | null;
@@ -912,6 +917,8 @@ export type FlightChangeImpactDto = {
 
 export type FlightOperationDetailDto = FlightOperationRecord & {
   commandCenter?: FlightCommandCenterDto;
+  aircraftTechnicalEligibility: AircraftTechnicalEligibilityDto | null;
+  maintenanceOperationalAvailability: MaintenanceOperationalAvailabilityDto | null;
   closureReadiness: {
     allowed: boolean;
     missing: string[];
