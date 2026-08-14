@@ -31,6 +31,12 @@ export type S3UploadFile = {
   stream: Readable;
 };
 
+export type S3ObjectFile = {
+  key: string;
+  contentType: string;
+  stream: Readable;
+};
+
 type S3UploadConfig = {
   endpoint: URL;
   bucket: string;
@@ -428,6 +434,23 @@ export async function getS3UploadFile(id: string): Promise<S3UploadFile> {
     upload,
     stream: Readable.fromWeb(response.body as unknown as Parameters<typeof Readable.fromWeb>[0])
   };
+}
+
+export async function getS3ObjectFile(key: string, contentType = 'application/octet-stream') {
+  const config = getS3UploadConfig();
+  if (!config)
+    throw new DomainError('S3_UPLOAD_NOT_CONFIGURED', 'S3 upload storage is not configured.', 500);
+
+  const response = await s3Request(config, 'GET', key);
+  if (!response.body) {
+    throw new DomainError('S3_OBJECT_FILE_MISSING', `S3 object ${key} was not found`, 404);
+  }
+
+  return {
+    key,
+    contentType: response.headers.get('content-type') ?? contentType,
+    stream: Readable.fromWeb(response.body as unknown as Parameters<typeof Readable.fromWeb>[0])
+  } satisfies S3ObjectFile;
 }
 
 export async function deleteS3Upload(id: string) {

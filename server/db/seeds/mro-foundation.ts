@@ -4,6 +4,7 @@ import { createDemoSeedContext, type DemoSeedContext } from './context';
 type Row = Record<string, string | number | null>;
 
 const authorizationNotice = 'Licence and PT AMA authorization verified.';
+const cessnaCaravanImageUrl = 'aircraft/Cessna-208-Caravan-PNC-0219-1.jpg';
 
 function insertIgnore(sqlite: Database.Database, table: string, row: Row) {
   const keys = Object.keys(row);
@@ -291,6 +292,7 @@ export function seedMroFoundationData(
         manufacturer: 'Cessna',
         model: 'Caravan 208B',
         fleetCode: 'CVN-MRA',
+        imageUrl: cessnaCaravanImageUrl,
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         serviceabilityStatus: 'UNSERVICEABLE',
@@ -306,6 +308,7 @@ export function seedMroFoundationData(
         manufacturer: 'Cessna',
         model: 'Caravan 208B',
         fleetCode: 'CVN-MRB',
+        imageUrl: cessnaCaravanImageUrl,
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         serviceabilityStatus: 'UNSERVICEABLE',
@@ -321,6 +324,7 @@ export function seedMroFoundationData(
         manufacturer: 'Cessna',
         model: 'Caravan 208B',
         fleetCode: 'CVN-MRC',
+        imageUrl: cessnaCaravanImageUrl,
         passengerCapacity: 12,
         cargoCapacityKg: 1400,
         serviceabilityStatus: 'UNSERVICEABLE',
