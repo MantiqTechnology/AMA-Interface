@@ -2,20 +2,20 @@
 
 ## STATEMENT OF WORK (SOW) - IMPLEMENTASI SISTEM AMA OPS INTERFACE
 
-**Nomor Dokumen**: SOW-AMA-MANTIQ-2026-001  
-**Tanggal Penerbitan**: 14 Agustus 2026  
+**Nomor Dokumen**: SOW-AMA-MANTIQ-2026-001
+**Tanggal Penerbitan**: 14 Agustus 2026
 **Status**: Draft Final (Siap Tanda Tangan)
 
 ---
 
 ### PARA PIHAK
 
-1. **PT ALFA TRANS PASIFIK / PT OPERATOR PENERBANGAN AMA (PT AMA)**  
-   Maskapai Operator Penerbangan Rintis & Charter Komersial di Papua.  
+1. **PT ALFA TRANS PASIFIK / PT OPERATOR PENERBANGAN AMA (PT AMA)**
+   Maskapai Operator Penerbangan Rintis & Charter Komersial di Papua.
    _(Selanjutnya disebut sebagai **"PEMILIK PROYEK / PIHAK PERTAMA"**)_
 
-2. **PT MANTIK TEKNOLOGI NUSANTARA (MANTIQ TECHNOLOGY)**  
-   Penyedia Solusi Teknologi Informasi & Pengembang Sistem Perangkat Lunak Penerbangan.  
+2. **PT MANTIK TEKNOLOGI NUSANTARA (MANTIQ TECHNOLOGY)**
+   Penyedia Solusi Teknologi Informasi & Pengembang Sistem Perangkat Lunak Penerbangan.
    _(Selanjutnya disebut sebagai **"PELAKSANA PEKERJAAN / PIHAK KEDUA"**)_
 
 ---
