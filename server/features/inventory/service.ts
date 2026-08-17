@@ -3594,6 +3594,13 @@ export class InventoryService {
   private assertUsableTransferLifecycle(allocations: PhysicalAllocation[]) {
     const sqlite = this.repository.sqlite;
     for (const allocation of allocations) {
+      if (allocation.condition === 'QUARANTINE') {
+        throw new DomainError(
+          'INVENTORY_QUARANTINE_RELEASE_REQUIRED',
+          'Quarantined stock requires Certifying Staff quarantine release approval.',
+          403
+        );
+      }
       if (allocation.condition === 'UNSERVICEABLE' || allocation.condition === 'IN_REPAIR') {
         throw new DomainError(
           'INVENTORY_TRANSFER_CONDITION_INVALID',
@@ -3602,6 +3609,16 @@ export class InventoryService {
         );
       }
       if (!allocation.serialId) continue;
+      const serial = sqlite
+        .prepare(`SELECT is_suspected_unapproved FROM inventory_serialized_parts WHERE id = ?`)
+        .get(allocation.serialId) as SqlRow | undefined;
+      if (Boolean(serial?.is_suspected_unapproved)) {
+        throw new DomainError(
+          'INVENTORY_QUARANTINE_RELEASE_REQUIRED',
+          'Suspected-unapproved stock requires Certifying Staff quarantine release approval.',
+          403
+        );
+      }
       const activeRepair = sqlite
         .prepare(
           `SELECT id FROM inventory_repair_orders
@@ -4245,12 +4262,17 @@ export class InventoryService {
   ) {
     const tool = this.repository.listTools(scope).find((t) => t.id === input.toolId);
     if (!tool) throw notFound('Tool', input.toolId);
+    if (!tool.lastCalibratedAt || !tool.nextCalibrationDue || !tool.certificateNumber) {
+      throw new DomainError(
+        'CALIBRATION_ERROR',
+        `Cannot check out tool ${tool.toolNumber} before complete calibration evidence is recorded.`,
+        409
+      );
+    }
     if (tool.isExpired) {
       throw new DomainError(
         'CALIBRATION_ERROR',
-        tool.nextCalibrationDue
-          ? `Cannot check out tool ${tool.toolNumber} because its calibration expired on ${tool.nextCalibrationDue}.`
-          : `Cannot check out tool ${tool.toolNumber} before an initial calibration is recorded.`,
+        `Cannot check out tool ${tool.toolNumber} because its calibration expired on ${tool.nextCalibrationDue}.`,
         409
       );
     }

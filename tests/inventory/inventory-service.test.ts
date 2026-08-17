@@ -341,7 +341,7 @@ describe('inventory service', () => {
     ).rejects.toThrow(/Insufficient eligible stock/u);
   });
 
-  it('releases quarantine stock only after a matching document is verified', async () => {
+  it('prevents generic transfer from releasing quarantine stock even with a verified document', async () => {
     await inventory.postGoodsReceipt(
       {
         purchaseOrderId: 'inv-po-replenishment-001',
@@ -379,23 +379,25 @@ describe('inventory service', () => {
     };
 
     await expect(inventory.transfer(transfer, 'USR-INVENTORY-CONTROLLER', ['ALL'])).rejects.toThrow(
-      /matching verified and unexpired certificate/u
+      /requires Certifying Staff/u
     );
 
     sqlite
       .prepare(`UPDATE inventory_lots SET certificate_reference = 'ARC-FEFO-TEST' WHERE id = ?`)
       .run(lot.id);
-    await inventory.transfer(transfer, 'USR-INVENTORY-CONTROLLER', ['ALL']);
+    await expect(inventory.transfer(transfer, 'USR-INVENTORY-CONTROLLER', ['ALL'])).rejects.toThrow(
+      /requires Certifying Staff/u
+    );
 
     expect(
       sqlite
         .prepare(
           `SELECT condition, on_hand_quantity FROM inventory_stock_balances
-           WHERE part_id = 'inv-part-filter-pc6' AND bin_id = 'inv-bin-djj-usable'
+           WHERE part_id = 'inv-part-filter-pc6' AND bin_id = 'inv-bin-djj-quarantine'
              AND lot_id = ?`
         )
         .get(lot.id)
-    ).toMatchObject({ condition: 'SERVICEABLE', on_hand_quantity: 1 });
+    ).toMatchObject({ condition: 'QUARANTINE', on_hand_quantity: 1 });
   });
 
   it('posts cycle-count variance as an immutable adjustment and accounting event', () => {
@@ -482,7 +484,7 @@ describe('inventory service', () => {
         'USR-INVENTORY-CONTROLLER',
         ['ALL']
       )
-    ).rejects.toThrow(/Expired lot/u);
+    ).rejects.toThrow(/requires Certifying Staff/u);
   });
 
   it('rejects issue reversal after the serialized component is installed', async () => {
@@ -1111,7 +1113,7 @@ describe('inventory service', () => {
         'USR-INVENTORY-CONTROLLER',
         ['ALL']
       )
-    ).rejects.toThrow(/active repair order/u);
+    ).rejects.toThrow(/requires Certifying Staff/u);
 
     sqlite
       .prepare(

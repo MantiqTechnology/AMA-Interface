@@ -1043,7 +1043,10 @@ export class InventoryRepository {
     const today = new Date().toISOString().slice(0, 10);
     return rows.map((r) => {
       const nextDue = str(r.next_calibration_due);
-      const isExpired = nextDue === null || nextDue < today;
+      const hasCalibrationEvidence = Boolean(
+        r.last_calibrated_at && nextDue && r.certificate_number
+      );
+      const isExpired = !hasCalibrationEvidence || nextDue === null || nextDue < today;
       return {
         id: String(r.id),
         toolNumber: String(r.tool_number),
@@ -1124,6 +1127,8 @@ export class InventoryRepository {
         `UPDATE inventory_tools
          SET status = 'CHECKED_OUT', updated_at = ?
          WHERE id = ? AND status = 'AVAILABLE'
+           AND last_calibrated_at IS NOT NULL
+           AND certificate_number IS NOT NULL AND TRIM(certificate_number) <> ''
            AND next_calibration_due IS NOT NULL AND next_calibration_due >= ?`
       )
       .run(nowIso, toolId, today);

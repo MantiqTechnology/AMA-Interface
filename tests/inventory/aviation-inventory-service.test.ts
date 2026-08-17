@@ -2,7 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { inventoryToolReturnSchema } from '../../shared/features/inventory';
+import {
+  inventoryToolInputSchema,
+  inventoryToolReturnSchema
+} from '../../shared/features/inventory';
 import { createSeededTestServices } from '../helpers/demo-db';
 import { InventoryRepository } from '../../server/features/inventory/repository';
 import { InventoryService } from '../../server/features/inventory/service';
@@ -181,11 +184,12 @@ describe('Aviation Inventory Standards & Extensions', () => {
       toolNumber: 'TL-UNCALIBRATED-01',
       serialNumber: 'SN-UNCALIBRATED-01',
       toolName: 'Uncalibrated Gauge',
-      calibrationIntervalDays: 365
+      calibrationIntervalDays: 365,
+      nextCalibrationDue: '2027-08-17'
     })!;
 
     expect(() => service.checkoutTool({ toolId: uncalibrated.id, userId: 'USR-TECH-01' })).toThrow(
-      /initial calibration/u
+      /complete calibration evidence/u
     );
 
     const calibrated = service.createTool({
@@ -224,6 +228,62 @@ describe('Aviation Inventory Standards & Extensions', () => {
       inventoryToolReturnSchema.safeParse({ toolId: 'tool-1', conditionOnReturn: 'DAMAGED' })
         .success
     ).toBe(false);
+    expect(
+      inventoryToolInputSchema.safeParse({
+        toolNumber: 'TL-PARTIAL-CAL',
+        serialNumber: 'SN-PARTIAL-CAL',
+        toolName: 'Partial Calibration Tool',
+        nextCalibrationDue: '2027-08-17'
+      }).success
+    ).toBe(false);
+  });
+
+  it('prevents generic transfer from bypassing quarantine approval', async () => {
+    const { sqlite } = await createSeededTestServices();
+    const service = new InventoryService(new InventoryRepository(sqlite));
+    sqlite
+      .prepare(
+        `UPDATE inventory_serialized_parts
+         SET bin_id = 'inv-bin-djj-quarantine', condition = 'QUARANTINE',
+             lifecycle_status = 'QUARANTINE', is_suspected_unapproved = 1
+         WHERE id = 'inv-serial-brake-001'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE inventory_stock_balances SET on_hand_quantity = 0 WHERE id = 'inv-bal-brake-djj'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `INSERT INTO inventory_stock_balances
+         (id, part_id, bin_id, lot_key, lot_id, condition, on_hand_quantity, updated_at)
+         VALUES ('test-transfer-quarantine-balance', 'inv-part-brake-pc6',
+                 'inv-bin-djj-quarantine', 'inv-lot-brake-260701',
+                 'inv-lot-brake-260701', 'QUARANTINE', 1, ?)`
+      )
+      .run(new Date().toISOString());
+
+    await expect(
+      service.transfer(
+        {
+          partId: 'inv-part-brake-pc6',
+          fromBinId: 'inv-bin-djj-quarantine',
+          toBinId: 'inv-bin-djj-usable',
+          quantity: 1,
+          lotId: 'inv-lot-brake-260701',
+          serialIds: ['inv-serial-brake-001'],
+          reason: 'Attempt generic quarantine bypass.'
+        },
+        'USR-INVENTORY-CONTROLLER',
+        ['DJJ']
+      )
+    ).rejects.toThrow(/requires Certifying Staff/u);
+    expect(
+      sqlite
+        .prepare('SELECT condition FROM inventory_serialized_parts WHERE id = ?')
+        .get('inv-serial-brake-001')
+    ).toMatchObject({ condition: 'QUARANTINE' });
   });
 
   it('tracks vendor Core Returns & updates status', async () => {

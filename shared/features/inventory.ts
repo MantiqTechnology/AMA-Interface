@@ -290,29 +290,52 @@ export const inventoryCoreReturnStatusSchema = z.object({
   notes: nullableText.default(null)
 });
 
-export const inventoryToolInputSchema = z.object({
-  toolNumber: z
-    .string()
-    .trim()
-    .min(2)
-    .max(80)
-    .transform((val) => val.toUpperCase()),
-  serialNumber: z
-    .string()
-    .trim()
-    .min(2)
-    .max(100)
-    .transform((val) => val.toUpperCase()),
-  toolName: z.string().trim().min(2).max(160),
-  category: z.string().trim().min(2).default('SPECIAL_TOOL'),
-  warehouseId: nullableText.default(null),
-  binId: nullableText.default(null),
-  calibrationIntervalDays: z.coerce.number().int().positive().default(365),
-  lastCalibratedAt: nullableDate.default(null),
-  nextCalibrationDue: nullableDate.default(null),
-  certificateNumber: nullableText.default(null),
-  restrictedUse: z.boolean().default(false)
-});
+export const inventoryToolInputSchema = z
+  .object({
+    toolNumber: z
+      .string()
+      .trim()
+      .min(2)
+      .max(80)
+      .transform((val) => val.toUpperCase()),
+    serialNumber: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .transform((val) => val.toUpperCase()),
+    toolName: z.string().trim().min(2).max(160),
+    category: z.string().trim().min(2).default('SPECIAL_TOOL'),
+    warehouseId: nullableText.default(null),
+    binId: nullableText.default(null),
+    calibrationIntervalDays: z.coerce.number().int().positive().default(365),
+    lastCalibratedAt: nullableDate.default(null),
+    nextCalibrationDue: nullableDate.default(null),
+    certificateNumber: nullableText.default(null),
+    restrictedUse: z.boolean().default(false)
+  })
+  .superRefine((value, context) => {
+    const evidence = [value.lastCalibratedAt, value.nextCalibrationDue, value.certificateNumber];
+    if (evidence.some(Boolean) && !evidence.every(Boolean)) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Last calibration date, next due date, and certificate number must be provided together.',
+        path: ['lastCalibratedAt']
+      });
+    }
+    if (
+      value.lastCalibratedAt &&
+      value.nextCalibrationDue &&
+      value.nextCalibrationDue <= value.lastCalibratedAt
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Next calibration due must be after the calibration date.',
+        path: ['nextCalibrationDue']
+      });
+    }
+  });
 
 export const inventoryToolCheckoutSchema = z.object({
   toolId: z.string().trim().min(1),
