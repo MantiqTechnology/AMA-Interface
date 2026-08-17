@@ -283,6 +283,14 @@ async function save() {
             <VCol cols="12" md="3">
               <VSelect
                 v-model="form.lifecycleType"
+                :items="['CONSUMABLE', 'EXPENDABLE', 'REPAIRABLE', 'ROTABLE']"
+                label="Lifecycle"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="3">
+              <VSelect
+                v-model="form.partCategory"
                 :items="[
                   'CONSUMABLE',
                   'EXPENDABLE',

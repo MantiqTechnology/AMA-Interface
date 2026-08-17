@@ -3,6 +3,7 @@ import type { InventoryQuarantineItemDto } from '#shared/features/inventory';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { errorMessage } = useInventoryUi();
+const { can } = useAuthorization();
 const {
   data: items,
   pending,
@@ -114,6 +115,7 @@ async function submitRelease() {
             </td>
             <td class="text-end">
               <VBtn
+                v-if="can('inventory.quarantine.release').allowed"
                 color="success"
                 size="small"
                 prepend-icon="mdi-lock-open-check-outline"

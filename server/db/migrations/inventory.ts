@@ -81,8 +81,8 @@ export const inventoryStatements = [
     cycles_since_new INTEGER NOT NULL DEFAULT 0 CHECK (cycles_since_new >= 0),
     certificate_reference TEXT,
     certificate_verified INTEGER NOT NULL DEFAULT 0,
-    tag_color TEXT DEFAULT 'YELLOW_SERVICEABLE',
-    lifecycle_status TEXT DEFAULT 'ACTIVE',
+    tag_color TEXT NOT NULL DEFAULT 'YELLOW_SERVICEABLE',
+    lifecycle_status TEXT NOT NULL DEFAULT 'AVAILABLE',
     is_suspected_unapproved INTEGER NOT NULL DEFAULT 0,
     quarantine_reason TEXT,
     accumulated_flight_hours REAL NOT NULL DEFAULT 0,
@@ -337,6 +337,7 @@ export const inventoryStatements = [
   `CREATE TABLE IF NOT EXISTS inventory_core_returns (
     id TEXT PRIMARY KEY,
     return_number TEXT NOT NULL UNIQUE,
+    station_id TEXT NOT NULL REFERENCES stations(id),
     vendor_id TEXT NOT NULL REFERENCES vendors(id),
     part_id TEXT NOT NULL REFERENCES inventory_parts(id),
     serial_id TEXT REFERENCES inventory_serialized_parts(id),
@@ -419,7 +420,11 @@ export const inventoryStatements = [
     message TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'OPEN',
     created_at TEXT NOT NULL
-  )`
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_tool_open_checkout
+   ON inventory_tool_logs(tool_id) WHERE returned_at IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_interchangeability_pair
+   ON inventory_part_interchangeabilities(part_id, alternate_part_id, interchangeability_type)`
 ];
 
 export const inventoryImmutabilityStatements = [
@@ -453,6 +458,14 @@ export const inventoryImmutabilityStatements = [
 ];
 
 export const inventoryDropStatements = [
+  'DROP TABLE IF EXISTS inventory_sms_alerts',
+  'DROP TABLE IF EXISTS inventory_fly_away_kit_items',
+  'DROP TABLE IF EXISTS inventory_fly_away_kits',
+  'DROP TABLE IF EXISTS inventory_software_navdb',
+  'DROP TABLE IF EXISTS inventory_tool_logs',
+  'DROP TABLE IF EXISTS inventory_tools',
+  'DROP TABLE IF EXISTS inventory_core_returns',
+  'DROP TABLE IF EXISTS inventory_part_interchangeabilities',
   'DROP TABLE IF EXISTS inventory_repair_orders',
   'DROP TABLE IF EXISTS inventory_component_installations',
   'DROP TABLE IF EXISTS inventory_count_lines',

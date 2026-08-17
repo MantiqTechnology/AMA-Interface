@@ -3,6 +3,7 @@ import type { InventorySoftwareNavdbDto } from '#shared/features/inventory';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { errorMessage } = useInventoryUi();
+const { can } = useAuthorization();
 const {
   data: list,
   pending,
@@ -43,7 +44,12 @@ async function submitSave() {
 <template>
   <InventoryShell title="Avionics Software & AIRAC NavDB Tracker">
     <template #actions>
-      <VBtn color="primary" prepend-icon="mdi-plus" @click="showModal = true">
+      <VBtn
+        v-if="can('inventory.catalog.manage').allowed"
+        color="primary"
+        prepend-icon="mdi-plus"
+        @click="showModal = true"
+      >
         Update Database AIRAC / Software
       </VBtn>
       <DsTooltipIconButton

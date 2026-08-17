@@ -7,23 +7,51 @@ describe('Aviation Inventory Standards & Extensions', () => {
   it('enforces Digital Quarantine Lock & Quarantine Release workflow', async () => {
     const { sqlite } = await createSeededTestServices();
     const service = new InventoryService(new InventoryRepository(sqlite));
+    sqlite
+      .prepare(
+        `UPDATE inventory_serialized_parts
+         SET bin_id = 'inv-bin-djj-quarantine', condition = 'QUARANTINE',
+             lifecycle_status = 'QUARANTINE', tag_color = 'ORANGE_QUARANTINE',
+             quarantine_reason = 'Certificate inspection pending'
+         WHERE id = 'inv-serial-brake-001'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE inventory_stock_balances SET on_hand_quantity = 0
+         WHERE id = 'inv-bal-brake-djj'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `INSERT INTO inventory_stock_balances
+         (id, part_id, bin_id, lot_key, lot_id, condition, on_hand_quantity, updated_at)
+         VALUES ('test-quarantine-balance', 'inv-part-brake-pc6', 'inv-bin-djj-quarantine',
+                 'inv-lot-brake-260701', 'inv-lot-brake-260701', 'QUARANTINE', 1, ?)`
+      )
+      .run(new Date().toISOString());
 
-    // List quarantine items (initial seeds or quarantined receipts)
-    const items = service.listQuarantineItems(['ALL']);
-    expect(Array.isArray(items)).toBe(true);
+    const result = await service.releaseQuarantineItem(
+      {
+        serialId: 'inv-serial-brake-001',
+        targetBinId: 'inv-bin-djj-usable',
+        certificateReference: 'FAA-8130-2026-RELEASE-001'
+      },
+      'USR-CERTIFYING-STAFF',
+      ['DJJ']
+    );
 
-    // Release quarantine item
-    if (items.length > 0) {
-      const serialId = items[0].serialId;
-      const targetBinId = 'inv-bin-djj-usable';
-      const certRef = 'FAA-8130-2026-RELEASE-001';
-
-      const success = service.releaseQuarantineItem(
-        { serialId, targetBinId, certificateReference: certRef },
-        'USR-QA-INSPECTOR'
-      );
-      expect(success).toBe(true);
-    }
+    expect(result.item.condition).toBe('SERVICEABLE');
+    expect(result.movement?.sourceType).toBe('QUARANTINE_RELEASE');
+    expect(
+      sqlite
+        .prepare(
+          `SELECT on_hand_quantity quantity FROM inventory_stock_balances
+           WHERE part_id = 'inv-part-brake-pc6' AND bin_id = 'inv-bin-djj-usable'
+             AND lot_key = 'inv-lot-brake-260701' AND condition = 'SERVICEABLE'`
+        )
+        .get()
+    ).toMatchObject({ quantity: 1 });
   });
 
   it('blocks tool check-out if calibration is EXPIRED', async () => {
@@ -90,6 +118,7 @@ describe('Aviation Inventory Standards & Extensions', () => {
     const service = new InventoryService(new InventoryRepository(sqlite));
 
     const core = service.createCoreReturn({
+      stationId: 'st-djj',
       vendorId: 'vendor-maintenance',
       partId: 'inv-part-brake-pc6',
       serialId: 'inv-serial-brake-001',
@@ -101,7 +130,11 @@ describe('Aviation Inventory Standards & Extensions', () => {
     expect(core.returnNumber).toMatch(/^CR-/);
     expect(core.status).toBe('PENDING_RETURN');
 
-    const updated = service.updateCoreReturnStatus(core.id, 'SHIPPED', 'Shipped via Express Cargo');
+    const updated = service.updateCoreReturnStatus(
+      core.id,
+      { status: 'SHIPPED', notes: 'Shipped via Express Cargo' },
+      ['DJJ']
+    );
     expect(updated?.status).toBe('SHIPPED');
     expect(updated?.shippedAt).toBeDefined();
   });

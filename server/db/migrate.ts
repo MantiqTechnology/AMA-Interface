@@ -1364,6 +1364,94 @@ export function runMigrations(sqlite: Database.Database) {
     for (const statement of createStatements) {
       sqlite.exec(statement);
     }
+    ensureColumn(sqlite, 'inventory_parts', 'part_category', "TEXT NOT NULL DEFAULT 'ROTABLE'");
+    ensureColumn(sqlite, 'inventory_parts', 'is_aircraft_part', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'inventory_parts', 'is_life_limited', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'inventory_parts', 'max_flight_hours', 'REAL');
+    ensureColumn(sqlite, 'inventory_parts', 'max_flight_cycles', 'INTEGER');
+    ensureColumn(sqlite, 'inventory_parts', 'on_condition', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'inventory_bins', 'temp_min_celsius', 'REAL');
+    ensureColumn(sqlite, 'inventory_bins', 'temp_max_celsius', 'REAL');
+    ensureColumn(sqlite, 'inventory_bins', 'humidity_min_percent', 'REAL');
+    ensureColumn(sqlite, 'inventory_bins', 'humidity_max_percent', 'REAL');
+    ensureColumn(sqlite, 'inventory_bins', 'is_esd_sensitive', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'inventory_bins', 'is_hazmat', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'inventory_bins', 'hazmat_class', 'TEXT');
+    ensureColumn(sqlite, 'inventory_bins', 'is_quarantine_bin', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(
+      sqlite,
+      'inventory_serialized_parts',
+      'tag_color',
+      "TEXT NOT NULL DEFAULT 'YELLOW_SERVICEABLE'"
+    );
+    ensureColumn(
+      sqlite,
+      'inventory_serialized_parts',
+      'lifecycle_status',
+      "TEXT NOT NULL DEFAULT 'AVAILABLE'"
+    );
+    ensureColumn(
+      sqlite,
+      'inventory_serialized_parts',
+      'is_suspected_unapproved',
+      'INTEGER NOT NULL DEFAULT 0'
+    );
+    ensureColumn(sqlite, 'inventory_serialized_parts', 'quarantine_reason', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'inventory_serialized_parts',
+      'accumulated_flight_hours',
+      'REAL NOT NULL DEFAULT 0'
+    );
+    ensureColumn(
+      sqlite,
+      'inventory_serialized_parts',
+      'accumulated_flight_cycles',
+      'INTEGER NOT NULL DEFAULT 0'
+    );
+    ensureColumn(sqlite, 'inventory_serialized_parts', 'back_to_birth_history_json', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'inventory_purchase_orders',
+      'po_type',
+      "TEXT NOT NULL DEFAULT 'AIRCRAFT_PART'"
+    );
+    ensureColumn(
+      sqlite,
+      'inventory_purchase_orders',
+      'is_aog_procurement',
+      'INTEGER NOT NULL DEFAULT 0'
+    );
+    ensureColumn(sqlite, 'inventory_purchase_orders', 'coc_required', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'inventory_purchase_orders', 'certificate_type', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'inventory_goods_receipts',
+      'inspection_status',
+      "TEXT NOT NULL DEFAULT 'PASSED'"
+    );
+    ensureColumn(sqlite, 'inventory_goods_receipts', 'quarantine_reason', 'TEXT');
+    ensureColumn(sqlite, 'inventory_repair_orders', 'station_id', 'TEXT REFERENCES stations(id)');
+    ensureColumn(sqlite, 'inventory_core_returns', 'station_id', 'TEXT REFERENCES stations(id)');
+    sqlite.exec(`UPDATE inventory_core_returns
+      SET station_id = COALESCE(
+        station_id,
+        (SELECT repair.station_id FROM inventory_repair_orders repair
+         WHERE repair.id = inventory_core_returns.repair_order_id),
+        (SELECT warehouse.station_id
+         FROM inventory_serialized_parts serial
+         JOIN inventory_bins bin ON bin.id = serial.bin_id
+         JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
+         WHERE serial.id = inventory_core_returns.serial_id),
+        (SELECT id FROM stations ORDER BY station_code LIMIT 1)
+      )
+      WHERE station_id IS NULL`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_tool_open_checkout
+      ON inventory_tool_logs(tool_id) WHERE returned_at IS NULL`);
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_interchangeability_pair
+      ON inventory_part_interchangeabilities(part_id, alternate_part_id, interchangeability_type)`);
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_core_returns_station
+      ON inventory_core_returns(station_id)`);
     ensureColumn(sqlite, 'aircraft', 'image_url', 'TEXT');
     ensureColumn(sqlite, 'customers', 'lifecycle_status', "TEXT NOT NULL DEFAULT 'ACTIVE'");
     ensureColumn(sqlite, 'customers', 'credit_status', "TEXT NOT NULL DEFAULT 'NORMAL'");

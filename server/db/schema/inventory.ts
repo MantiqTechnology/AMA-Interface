@@ -494,6 +494,9 @@ export const inventoryPartInterchangeabilities = sqliteTable(
 export const inventoryCoreReturns = sqliteTable('inventory_core_returns', {
   id: text('id').primaryKey(),
   returnNumber: text('return_number').notNull().unique(),
+  stationId: text('station_id')
+    .notNull()
+    .references(() => stations.id),
   vendorId: text('vendor_id')
     .notNull()
     .references(() => vendors.id),

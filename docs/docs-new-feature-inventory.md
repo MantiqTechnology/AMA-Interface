@@ -142,7 +142,7 @@ erDiagram
 
 ### 4.1 Digital Quarantine & SUP Management
 
-- **Halaman**: [app/pages/inventory/quarantine.vue](file:///home/mark/Development/project/AMA-Interface/app/pages/inventory/quarantine.vue)
+- **Halaman**: [app/pages/inventory/quarantine.vue](../app/pages/inventory/quarantine.vue)
 - **Fungsi**: Memantau seluruh suku cadang yang berada dalam area Karantina fisik dan digital.
 - **Kuncian Digital (_Digital Lock_)**: Part bermerek Tag Oranye di-block oleh sistem sehingga tidak dapat di-issue ke Work Order atau di-transfer.
 - **Prosedur Quarantine Release**:
@@ -153,7 +153,7 @@ erDiagram
 
 ### 4.2 Tool Control & GSE Calibration Management
 
-- **Halaman**: [app/pages/inventory/tools.vue](file:///home/mark/Development/project/AMA-Interface/app/pages/inventory/tools.vue)
+- **Halaman**: [app/pages/inventory/tools.vue](../app/pages/inventory/tools.vue)
 - **Fungsi**: Pelacakan peminjaman alat ukur (_Tool Check-Out/Check-In_) dan status sertifikat kalibrasi.
 - **Aturan Pemblokiran Kalibrasi (_Calibration Enforcement Guard_)**:
   - Apabila `nextCalibrationDue` telah terlewat, status tool berubah menjadi `EXPIRED / BLOCKED`.
@@ -162,7 +162,7 @@ erDiagram
 
 ### 4.3 Vendor Core Return & Deposit Tracking
 
-- **Halaman**: [app/pages/inventory/core-returns.vue](file:///home/mark/Development/project/AMA-Interface/app/pages/inventory/core-returns.vue)
+- **Halaman**: [app/pages/inventory/core-returns.vue](../app/pages/inventory/core-returns.vue)
 - **Fungsi**: Pelacakan tenggat pengembalian suku cadang bekas (_Old Core_) dari transaksi transaksi pembelian _Exchange_.
 - **Alur Kerja Deposit Refund**:
   1. Pembelian _Exchange PO_ mencatat uang jaminan deposit (`depositAmountIdr`).
@@ -171,13 +171,13 @@ erDiagram
 
 ### 4.4 Avionics Software & AIRAC 28-Day NavDB Tracker
 
-- **Halaman**: [app/pages/inventory/software-navdb.vue](file:///home/mark/Development/project/AMA-Interface/app/pages/inventory/software-navdb.vue)
+- **Halaman**: [app/pages/inventory/software-navdb.vue](../app/pages/inventory/software-navdb.vue)
 - **Fungsi**: Memantau masa berlaku database navigasi penerbangan (Garmin G1000 NXi, FMS, EGPWS) sesuai siklus 28-hari AIRAC ICAO/FAA.
 - **Peringatan Dini**: Menampilkan hitungan sisa hari (`daysLeft`). Jika sisa $\le 7$ hari, indikator visual kuning (`EXPIRING_SOON`) ditampilkan.
 
 ### 4.5 Fly Away Kit (FAK) Pesawat Perintis
 
-- **Halaman**: [app/pages/inventory/fly-away-kits.vue](file:///home/mark/Development/project/AMA-Interface/app/pages/inventory/fly-away-kits.vue)
+- **Halaman**: [app/pages/inventory/fly-away-kits.vue](../app/pages/inventory/fly-away-kits.vue)
 - **Fungsi**: Mengelola kelengkapan kotak suku cadang darurat bawaan pesawat perintis (Pilatus PC-6, Cessna C208 Caravan) yang terbang ke bandara pedalaman tanpa gudang MRO.
 - **Status Audit Kit**:
   - `COMPLETE & READY`: Seluruh komponen onboard sesuai jumlah minimum.
@@ -185,7 +185,7 @@ erDiagram
 
 ### 4.6 LLP (Life-Limited Parts) & Part Interchangeability
 
-- **Halaman**: [app/pages/inventory/parts.vue](file:///home/mark/Development/project/AMA-Interface/app/pages/inventory/parts.vue)
+- **Halaman**: [app/pages/inventory/parts.vue](../app/pages/inventory/parts.vue)
 - **Fungsi**:
   - Menandai suku cadang sebagai **Life-Limited Part (LLP)** dengan input batas maksimal jam terbang (`maxFlightHours`) dan siklus (`maxFlightCycles`).
   - Menentukan kategori penerbangan: `ROTABLE`, `REPAIRABLE`, `CONSUMABLE`, `EXPENDABLE`, `TOOL_GSE`, `SOFTWARE_NAVDB`, `MISSION_SPECIFIC`.
@@ -269,8 +269,8 @@ flowchart LR
 
 Seluruh pengujian otomatis dijalankan menggunakan **Vitest** dengan tingkat keberhasilan **100% PASS**:
 
-- **File Test Main Inventory**: [tests/inventory/inventory-service.test.ts](file:///home/mark/Development/project/AMA-Interface/tests/inventory/inventory-service.test.ts) (30 Pass)
-- **File Test Aviation Extensions**: [tests/inventory/aviation-inventory-service.test.ts](file:///home/mark/Development/project/AMA-Interface/tests/inventory/aviation-inventory-service.test.ts) (7 Pass)
+- **File Test Main Inventory**: [tests/inventory/inventory-service.test.ts](../tests/inventory/inventory-service.test.ts)
+- **File Test Aviation Extensions**: [tests/inventory/aviation-inventory-service.test.ts](../tests/inventory/aviation-inventory-service.test.ts)
 
 ### Perintah Menjalankan Test Suite:
 

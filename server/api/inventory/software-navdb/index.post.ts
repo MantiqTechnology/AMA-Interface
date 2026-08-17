@@ -5,7 +5,7 @@ import { requireDemoPermission } from '../../../utils/auth';
 import { parseBody } from '../../../utils/validation';
 
 export default defineApiEventHandler(async (event) => {
-  requireDemoPermission(event, 'inventory.write');
+  requireDemoPermission(event, 'inventory.catalog.manage');
   const body = await parseBody(event, inventorySoftwareNavdbInputSchema);
   return getInventoryService().upsertSoftwareNavdb(body);
 });

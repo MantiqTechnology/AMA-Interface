@@ -3,6 +3,7 @@ import type { InventoryToolDto } from '#shared/features/inventory';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { errorMessage } = useInventoryUi();
+const { can } = useAuthorization();
 const {
   data: tools,
   pending,
@@ -25,6 +26,8 @@ const newTool = reactive({
   serialNumber: '',
   toolName: '',
   category: 'SPECIAL_TOOL',
+  warehouseId: '',
+  binId: '',
   calibrationIntervalDays: 365,
   certificateNumber: '',
   restrictedUse: false
@@ -144,7 +147,12 @@ async function submitCalibrate() {
 <template>
   <InventoryShell title="Tool Control & GSE Calibration Management">
     <template #actions>
-      <VBtn color="primary" prepend-icon="mdi-plus" @click="showAddTool = true">
+      <VBtn
+        v-if="can('inventory.tool.manage').allowed"
+        color="primary"
+        prepend-icon="mdi-plus"
+        @click="showAddTool = true"
+      >
         Daftarkan Tool / GSE Baru
       </VBtn>
       <DsTooltipIconButton
@@ -222,7 +230,11 @@ async function submitCalibrate() {
             <td class="text-end">
               <div class="d-flex justify-end ga-2">
                 <VBtn
-                  v-if="tool.status === 'AVAILABLE' && !tool.isExpired"
+                  v-if="
+                    can('inventory.tool.checkout').allowed &&
+                      tool.status === 'AVAILABLE' &&
+                      !tool.isExpired
+                  "
                   color="primary"
                   size="small"
                   variant="tonal"
@@ -232,7 +244,7 @@ async function submitCalibrate() {
                   Check-Out
                 </VBtn>
                 <VBtn
-                  v-if="tool.status === 'CHECKED_OUT'"
+                  v-if="can('inventory.tool.checkout').allowed && tool.status === 'CHECKED_OUT'"
                   color="warning"
                   size="small"
                   variant="tonal"
@@ -242,6 +254,7 @@ async function submitCalibrate() {
                   Return Tool
                 </VBtn>
                 <VBtn
+                  v-if="can('inventory.tool.manage').allowed"
                   color="info"
                   size="small"
                   variant="text"
@@ -284,6 +297,20 @@ async function submitCalibrate() {
           <VTextField
             v-model="newTool.toolName"
             label="Nama Tool / Alat Ukur"
+            density="compact"
+            variant="outlined"
+            class="mb-3"
+          />
+          <VTextField
+            v-model="newTool.warehouseId"
+            label="Warehouse ID"
+            density="compact"
+            variant="outlined"
+            class="mb-3"
+          />
+          <VTextField
+            v-model="newTool.binId"
+            label="Bin ID (optional)"
             density="compact"
             variant="outlined"
             class="mb-3"

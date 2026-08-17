@@ -115,8 +115,9 @@ export class InventoryService {
             `INSERT INTO inventory_parts (
               id, part_number, part_name, description, manufacturer, manufacturer_part_number,
               unit_of_measure, lifecycle_type, tracking_type, criticality, certificate_required,
-              shelf_life_days, is_active, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+              shelf_life_days, part_category, is_aircraft_part, is_life_limited,
+              max_flight_hours, max_flight_cycles, on_condition, is_active, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
           )
           .run(
             id,
@@ -131,6 +132,12 @@ export class InventoryService {
             input.criticality,
             input.certificateRequired ? 1 : 0,
             input.shelfLifeDays,
+            input.partCategory ?? input.lifecycleType,
+            input.isAircraftPart === false ? 0 : 1,
+            input.isLifeLimited ? 1 : 0,
+            input.maxFlightHours ?? null,
+            input.maxFlightCycles ?? null,
+            input.onCondition ? 1 : 0,
             createdAt,
             createdAt
           );
@@ -190,6 +197,8 @@ export class InventoryService {
               part_number = ?, part_name = ?, description = ?, manufacturer = ?,
               manufacturer_part_number = ?, unit_of_measure = ?, lifecycle_type = ?,
               tracking_type = ?, criticality = ?, certificate_required = ?, shelf_life_days = ?,
+              part_category = ?, is_aircraft_part = ?, is_life_limited = ?,
+              max_flight_hours = ?, max_flight_cycles = ?, on_condition = ?,
               updated_at = ? WHERE id = ?`
           )
           .run(
@@ -204,6 +213,12 @@ export class InventoryService {
             input.criticality,
             input.certificateRequired ? 1 : 0,
             input.shelfLifeDays,
+            input.partCategory ?? input.lifecycleType,
+            input.isAircraftPart === false ? 0 : 1,
+            input.isLifeLimited ? 1 : 0,
+            input.maxFlightHours ?? null,
+            input.maxFlightCycles ?? null,
+            input.onCondition ? 1 : 0,
             now(),
             id
           );
@@ -250,8 +265,10 @@ export class InventoryService {
           .run(id, input.stationId, input.warehouseCode, input.warehouseName, createdAt, createdAt);
         const insertBin = sqlite.prepare(
           `INSERT INTO inventory_bins
-           (id, warehouse_id, bin_code, bin_name, bin_type, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+           (id, warehouse_id, bin_code, bin_name, bin_type, temp_min_celsius,
+            temp_max_celsius, humidity_min_percent, humidity_max_percent, is_esd_sensitive,
+            is_hazmat, hazmat_class, is_quarantine_bin, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
         );
         for (const bin of input.bins) {
           insertBin.run(
@@ -260,6 +277,14 @@ export class InventoryService {
             bin.binCode,
             bin.binName,
             bin.binType,
+            bin.tempMinCelsius,
+            bin.tempMaxCelsius,
+            bin.humidityMinPercent,
+            bin.humidityMaxPercent,
+            bin.isEsdSensitive ? 1 : 0,
+            bin.isHazmat ? 1 : 0,
+            bin.hazmatClass,
+            bin.isQuarantineBin ? 1 : 0,
             createdAt,
             createdAt
           );
@@ -409,9 +434,10 @@ export class InventoryService {
         .prepare(
           `INSERT INTO inventory_purchase_orders
            (id, order_number, purchase_request_id, vendor_id, currency_id,
-            exchange_rate_to_idr_micros, expected_at, status, rejection_reason,
+            exchange_rate_to_idr_micros, expected_at, po_type, is_aog_procurement,
+            coc_required, certificate_type, status, rejection_reason,
             created_by_user_id, approved_by_user_id, approved_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', NULL, ?, NULL, NULL, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', NULL, ?, NULL, NULL, ?, ?)`
         )
         .run(
           id,
@@ -421,6 +447,10 @@ export class InventoryService {
           input.currencyId,
           input.exchangeRateToIdrMicros,
           input.expectedAt,
+          input.poType ?? 'AIRCRAFT_PART',
+          input.isAogProcurement ? 1 : 0,
+          input.cocRequired === false ? 0 : 1,
+          input.certificateType ?? null,
           actorUserId,
           timestamp,
           timestamp
@@ -663,6 +693,27 @@ export class InventoryService {
         }
         this.validateQuantity(orderLine, line.quantity);
         const bin = this.requireBin(line.binId, input.warehouseId);
+        if (input.inspectionStatus === 'REJECTED') {
+          throw new DomainError(
+            'INVENTORY_RECEIPT_REJECTED',
+            'Rejected inspection stock cannot be posted into inventory.',
+            422
+          );
+        }
+        if (input.inspectionStatus === 'QUARANTINED' && bin.bin_type !== 'QUARANTINE') {
+          throw new DomainError(
+            'INVENTORY_RECEIPT_QUARANTINE_BIN_REQUIRED',
+            'Quarantined receipts must be posted to a quarantine bin.',
+            422
+          );
+        }
+        if (input.inspectionStatus === 'QUARANTINED' && !input.quarantineReason) {
+          throw new DomainError(
+            'INVENTORY_RECEIPT_QUARANTINE_REASON_REQUIRED',
+            'A quarantine reason is required for quarantined receipts.',
+            422
+          );
+        }
         const tracking = String(orderLine.tracking_type);
         this.assertStoredPartTrackingControls(orderLine);
         if (
@@ -753,8 +804,9 @@ export class InventoryService {
         .prepare(
           `INSERT INTO inventory_goods_receipts
            (id, receipt_number, purchase_order_id, warehouse_id, document_reference, received_at,
-            status, movement_id, total_base_value_idr, received_by_user_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?)`
+            inspection_status, quarantine_reason, status, movement_id, total_base_value_idr,
+            received_by_user_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?)`
         )
         .run(
           receiptId,
@@ -763,6 +815,8 @@ export class InventoryService {
           input.warehouseId,
           input.documentReference,
           input.receivedAt,
+          input.inspectionStatus ?? 'PASSED',
+          input.quarantineReason ?? null,
           movementId,
           totalBaseValueIdr,
           actorUserId,
@@ -830,8 +884,9 @@ export class InventoryService {
                   `INSERT INTO inventory_serialized_parts
                    (id, part_id, serial_number, lot_id, bin_id, condition, aircraft_id, position,
                     hours_since_new, cycles_since_new, certificate_reference, certificate_verified,
+                    tag_color, lifecycle_status, is_suspected_unapproved, quarantine_reason,
                     created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?)`
+                   VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?, 0, ?, ?, ?)`
                 )
                 .run(
                   serialId,
@@ -842,6 +897,9 @@ export class InventoryService {
                   bin.bin_type === 'USABLE' ? 'SERVICEABLE' : 'QUARANTINE',
                   line.certificateReference,
                   certificateVerified ? 1 : 0,
+                  bin.bin_type === 'USABLE' ? 'YELLOW_SERVICEABLE' : 'ORANGE_QUARANTINE',
+                  bin.bin_type === 'USABLE' ? 'AVAILABLE' : 'QUARANTINE',
+                  input.quarantineReason ?? null,
                   timestamp,
                   timestamp
                 );
@@ -4003,6 +4061,21 @@ export class InventoryService {
     interchangeabilityType: string;
     notes?: string | null;
   }) {
+    this.requirePart(input.partId);
+    this.requirePart(input.alternatePartId);
+    const duplicate = this.repository.sqlite
+      .prepare(
+        `SELECT id FROM inventory_part_interchangeabilities
+         WHERE part_id = ? AND alternate_part_id = ? AND interchangeability_type = ?`
+      )
+      .get(input.partId, input.alternatePartId, input.interchangeabilityType);
+    if (duplicate) {
+      throw new DomainError(
+        'INVENTORY_INTERCHANGEABILITY_DUPLICATE',
+        'This interchangeability relationship already exists.',
+        409
+      );
+    }
     const id = `ic_${nanoid(10)}`;
     const createdAt = now();
     return this.repository.createInterchangeability(
@@ -4015,25 +4088,43 @@ export class InventoryService {
     );
   }
 
-  listCoreReturns(scope: readonly string[]) {
-    return this.repository.listCoreReturns(scope);
+  listCoreReturns(scope: readonly string[], canViewValuation = true) {
+    return this.repository.listCoreReturns(scope, canViewValuation);
   }
 
-  createCoreReturn(input: {
-    vendorId: string;
-    partId: string;
-    serialId?: string | null;
-    repairOrderId?: string | null;
-    coreDueDate: string;
-    depositAmountIdr?: number;
-    notes?: string | null;
-  }) {
+  createCoreReturn(
+    input: {
+      stationId: string;
+      vendorId: string;
+      partId: string;
+      serialId?: string | null;
+      repairOrderId?: string | null;
+      coreDueDate: string;
+      depositAmountIdr?: number;
+      notes?: string | null;
+    },
+    scope: readonly string[] = ['ALL']
+  ) {
+    this.requireStationScope(input.stationId, scope);
+    this.requireActiveReference('vendors', input.vendorId, 'Vendor');
+    this.requirePart(input.partId);
+    if (input.serialId) {
+      const serial = this.requireSerial(input.serialId);
+      if (String(serial.part_id) !== input.partId) {
+        throw new DomainError(
+          'INVENTORY_CORE_SERIAL_PART_MISMATCH',
+          'The selected serial does not belong to the core-return part.',
+          422
+        );
+      }
+    }
     const id = `cr_${nanoid(10)}`;
     const returnNumber = `CR-${now().slice(0, 10).replace(/-/g, '')}-${nanoid(4).toUpperCase()}`;
     const nowIso = now();
     return this.repository.createCoreReturn({
       id,
       returnNumber,
+      stationId: input.stationId,
       vendorId: input.vendorId,
       partId: input.partId,
       serialId: input.serialId ?? null,
@@ -4045,15 +4136,37 @@ export class InventoryService {
     });
   }
 
-  updateCoreReturnStatus(id: string, status: string, notes?: string | null) {
-    const shippedAt = status === 'SHIPPED' ? now() : undefined;
-    const vendorReceiptAt = status === 'ACCEPTED_BY_VENDOR' ? now() : undefined;
+  updateCoreReturnStatus(
+    id: string,
+    input: { status: 'SHIPPED' | 'ACCEPTED_BY_VENDOR'; notes?: string | null },
+    scope: readonly string[]
+  ) {
+    const row = this.repository.sqlite
+      .prepare(
+        `SELECT core.status, station.station_code
+         FROM inventory_core_returns core
+         JOIN stations station ON station.id = core.station_id
+         WHERE core.id = ?`
+      )
+      .get(id) as SqlRow | undefined;
+    if (!row) throw notFound('Core return', id);
+    this.assertStationCode(String(row.station_code), scope);
+    const expectedStatus = row.status === 'PENDING_RETURN' ? 'SHIPPED' : 'ACCEPTED_BY_VENDOR';
+    if (input.status !== expectedStatus) {
+      throw new DomainError(
+        'INVENTORY_CORE_TRANSITION_INVALID',
+        `Core return cannot transition from ${String(row.status)} to ${input.status}.`,
+        409
+      );
+    }
+    const shippedAt = input.status === 'SHIPPED' ? now() : undefined;
+    const vendorReceiptAt = input.status === 'ACCEPTED_BY_VENDOR' ? now() : undefined;
     return this.repository.updateCoreReturnStatus(
       id,
-      status,
+      input.status,
       shippedAt,
       vendorReceiptAt,
-      notes ?? undefined,
+      input.notes ?? undefined,
       now()
     );
   }
@@ -4062,19 +4175,40 @@ export class InventoryService {
     return this.repository.listTools(scope);
   }
 
-  createTool(input: {
-    toolNumber: string;
-    serialNumber: string;
-    toolName: string;
-    category?: string;
-    warehouseId?: string | null;
-    binId?: string | null;
-    calibrationIntervalDays?: number;
-    lastCalibratedAt?: string | null;
-    nextCalibrationDue?: string | null;
-    certificateNumber?: string | null;
-    restrictedUse?: boolean;
-  }) {
+  createTool(
+    input: {
+      toolNumber: string;
+      serialNumber: string;
+      toolName: string;
+      category?: string;
+      warehouseId?: string | null;
+      binId?: string | null;
+      calibrationIntervalDays?: number;
+      lastCalibratedAt?: string | null;
+      nextCalibrationDue?: string | null;
+      certificateNumber?: string | null;
+      restrictedUse?: boolean;
+    },
+    scope: readonly string[] = ['ALL']
+  ) {
+    if (!input.warehouseId && !scope.includes('ALL')) {
+      throw new DomainError(
+        'INVENTORY_TOOL_STATION_REQUIRED',
+        'Station-scoped users must assign a tool to a warehouse.',
+        422
+      );
+    }
+    if (input.warehouseId) this.requireWarehouse(input.warehouseId, scope);
+    if (input.binId) {
+      const bin = this.requireBin(input.binId);
+      if (!input.warehouseId || String(bin.warehouse_id) !== input.warehouseId) {
+        throw new DomainError(
+          'INVENTORY_TOOL_BIN_MISMATCH',
+          'Tool bin must belong to the selected warehouse.',
+          422
+        );
+      }
+    }
     const id = `tl_${nanoid(10)}`;
     const nowIso = now();
     return this.repository.createTool({
@@ -4095,13 +4229,16 @@ export class InventoryService {
     });
   }
 
-  checkoutTool(input: {
-    toolId: string;
-    userId: string;
-    workOrderId?: string | null;
-    notes?: string | null;
-  }) {
-    const tool = this.repository.listTools(['ALL']).find((t) => t.id === input.toolId);
+  checkoutTool(
+    input: {
+      toolId: string;
+      userId: string;
+      workOrderId?: string | null;
+      notes?: string | null;
+    },
+    scope: readonly string[] = ['ALL']
+  ) {
+    const tool = this.repository.listTools(scope).find((t) => t.id === input.toolId);
     if (!tool) throw notFound('Tool', input.toolId);
     if (tool.isExpired) {
       throw new DomainError(
@@ -4115,38 +4252,63 @@ export class InventoryService {
         `Tool ${tool.toolNumber} is not available for check-out (current status: ${tool.status})`
       );
     }
-    const logId = `tlog_${nanoid(10)}`;
-    return this.repository.checkoutTool(
-      logId,
-      input.toolId,
-      input.userId,
-      now(),
-      input.workOrderId ?? null,
-      input.notes ?? null
+    const transaction = this.repository.sqlite.transaction(() =>
+      this.repository.checkoutTool(
+        `tlog_${nanoid(10)}`,
+        input.toolId,
+        input.userId,
+        now(),
+        input.workOrderId ?? null,
+        input.notes ?? null
+      )
     );
+    return transaction.immediate();
   }
 
-  returnTool(input: {
-    toolId: string;
-    conditionOnReturn?: string;
-    missingReported?: boolean;
-    notes?: string | null;
-  }) {
-    return this.repository.returnTool(
-      input.toolId,
-      now(),
-      input.conditionOnReturn ?? 'SERVICEABLE',
-      input.missingReported ?? false,
-      input.notes ?? null
+  returnTool(
+    input: {
+      toolId: string;
+      conditionOnReturn?: string;
+      missingReported?: boolean;
+      notes?: string | null;
+    },
+    scope: readonly string[] = ['ALL']
+  ) {
+    const tool = this.repository.listTools(scope).find((item) => item.id === input.toolId);
+    if (!tool) throw notFound('Tool', input.toolId);
+    if (tool.status !== 'CHECKED_OUT') {
+      throw new DomainError('TOOL_STATUS_ERROR', 'Only a checked-out tool can be returned.', 409);
+    }
+    const transaction = this.repository.sqlite.transaction(() =>
+      this.repository.returnTool(
+        input.toolId,
+        now(),
+        input.conditionOnReturn ?? 'SERVICEABLE',
+        input.missingReported ?? false,
+        input.notes ?? null
+      )
     );
+    return transaction.immediate();
   }
 
-  calibrateTool(input: {
-    toolId: string;
-    calibratedAt: string;
-    nextCalibrationDue: string;
-    certificateNumber: string;
-  }) {
+  calibrateTool(
+    input: {
+      toolId: string;
+      calibratedAt: string;
+      nextCalibrationDue: string;
+      certificateNumber: string;
+    },
+    scope: readonly string[] = ['ALL']
+  ) {
+    const tool = this.repository.listTools(scope).find((item) => item.id === input.toolId);
+    if (!tool) throw notFound('Tool', input.toolId);
+    if (input.nextCalibrationDue <= input.calibratedAt) {
+      throw new DomainError(
+        'INVENTORY_TOOL_CALIBRATION_RANGE_INVALID',
+        'Next calibration due must be after the calibration date.',
+        422
+      );
+    }
     return this.repository.calibrateTool(
       input.toolId,
       input.calibratedAt,
@@ -4188,18 +4350,59 @@ export class InventoryService {
     return this.repository.listFlyAwayKits(scope);
   }
 
-  createFlyAwayKit(input: {
-    kitNumber: string;
-    aircraftId?: string | null;
-    stationId?: string | null;
-    items?: Array<{
-      partId: string;
-      serialId?: string | null;
-      requiredQuantity: number;
-      currentQuantity: number;
-      condition?: string;
-    }>;
-  }) {
+  createFlyAwayKit(
+    input: {
+      kitNumber: string;
+      aircraftId?: string | null;
+      stationId?: string | null;
+      items?: Array<{
+        partId: string;
+        serialId?: string | null;
+        requiredQuantity: number;
+        currentQuantity: number;
+        condition?: string;
+      }>;
+    },
+    scope: readonly string[] = ['ALL']
+  ) {
+    let resolvedStationId = input.stationId ?? null;
+    if (input.aircraftId) {
+      const aircraft = this.repository.sqlite
+        .prepare(`SELECT current_station_id FROM aircraft WHERE id = ?`)
+        .get(input.aircraftId) as SqlRow | undefined;
+      if (!aircraft) throw notFound('Aircraft', input.aircraftId);
+      const aircraftStationId = String(aircraft.current_station_id);
+      if (resolvedStationId && resolvedStationId !== aircraftStationId) {
+        throw new DomainError(
+          'INVENTORY_FAK_STATION_MISMATCH',
+          'Fly-away kit station must match the assigned aircraft current station.',
+          422
+        );
+      }
+      resolvedStationId = aircraftStationId;
+    }
+    if (!resolvedStationId) {
+      throw new DomainError(
+        'INVENTORY_FAK_STATION_REQUIRED',
+        'Fly-away kits must be assigned to a station or aircraft.',
+        422
+      );
+    }
+    this.requireStationScope(resolvedStationId, scope);
+    for (const item of input.items ?? []) {
+      const part = this.requirePart(item.partId);
+      this.validateQuantity(part, item.requiredQuantity);
+      if (item.serialId) {
+        const serial = this.requireSerial(item.serialId);
+        if (String(serial.part_id) !== item.partId) {
+          throw new DomainError(
+            'INVENTORY_FAK_SERIAL_PART_MISMATCH',
+            'A fly-away-kit serial must belong to its selected part.',
+            422
+          );
+        }
+      }
+    }
     const id = `fak_${nanoid(10)}`;
     const nowIso = now();
     const items = (input.items ?? []).map((i) => ({
@@ -4214,7 +4417,7 @@ export class InventoryService {
       id,
       kitNumber: input.kitNumber,
       aircraftId: input.aircraftId ?? null,
-      stationId: input.stationId ?? null,
+      stationId: resolvedStationId,
       nowIso,
       items
     });
@@ -4225,19 +4428,111 @@ export class InventoryService {
   }
 
   releaseQuarantineItem(
-    input: { serialId: string; targetBinId: string; certificateReference: string },
-    userId?: string
+    input: {
+      serialId: string;
+      targetBinId: string;
+      certificateReference: string;
+      notes?: string | null;
+    },
+    userId: string,
+    scope: readonly string[]
   ) {
-    void userId;
-    return this.repository.releaseQuarantineItem(
-      input.serialId,
-      input.targetBinId,
-      input.certificateReference,
-      now()
-    );
+    const sqlite = this.repository.sqlite;
+    const serial = this.requireSerial(input.serialId);
+    if (String(serial.condition) !== 'QUARANTINE' && !Boolean(serial.is_suspected_unapproved)) {
+      throw new DomainError(
+        'INVENTORY_QUARANTINE_RELEASE_INVALID',
+        'Only quarantined or suspected-unapproved parts can be released.',
+        409
+      );
+    }
+    if (!serial.bin_id) {
+      throw new DomainError(
+        'INVENTORY_QUARANTINE_LOCATION_MISSING',
+        'The quarantined serial has no source bin.',
+        409
+      );
+    }
+    const sourceBin = this.requireBin(String(serial.bin_id));
+    const sourceWarehouse = this.requireWarehouse(String(sourceBin.warehouse_id), scope);
+    const targetBin = this.requireBin(input.targetBinId);
+    const targetWarehouse = this.requireWarehouse(String(targetBin.warehouse_id), scope);
+    if (String(targetBin.bin_type) !== 'USABLE') {
+      throw new DomainError(
+        'INVENTORY_QUARANTINE_TARGET_INVALID',
+        'Quarantine release requires a usable target bin.',
+        422
+      );
+    }
+    if (String(sourceWarehouse.station_id) !== String(targetWarehouse.station_id)) {
+      throw new DomainError(
+        'INVENTORY_QUARANTINE_STATION_MISMATCH',
+        'Quarantine release must remain within the source station.',
+        422
+      );
+    }
+    const transaction = sqlite.transaction(() => {
+      const cost = this.latestSerialCost(input.serialId);
+      const movementId = this.insertMovement({
+        movementType: 'TRANSFER',
+        sourceType: 'QUARANTINE_RELEASE',
+        sourceId: `quarantine-release-${input.serialId}-${nanoid(6)}`,
+        stationId: String(sourceWarehouse.station_id),
+        destinationStationId: String(targetWarehouse.station_id),
+        reason:
+          input.notes?.trim() ||
+          `QA quarantine release with certificate ${input.certificateReference}.`,
+        actorUserId: userId
+      });
+      this.changeBalance(
+        String(serial.part_id),
+        String(serial.bin_id),
+        nullable(serial.lot_id),
+        'QUARANTINE',
+        -1
+      );
+      this.changeBalance(
+        String(serial.part_id),
+        input.targetBinId,
+        nullable(serial.lot_id),
+        'SERVICEABLE',
+        1
+      );
+      this.insertMovementLine({
+        movementId,
+        partId: String(serial.part_id),
+        fromBinId: String(serial.bin_id),
+        toBinId: input.targetBinId,
+        lotId: nullable(serial.lot_id),
+        serialId: input.serialId,
+        conditionFrom: 'QUARANTINE',
+        conditionTo: 'SERVICEABLE',
+        quantity: 1,
+        cost
+      });
+      sqlite
+        .prepare(
+          `UPDATE inventory_serialized_parts
+           SET condition = 'SERVICEABLE', tag_color = 'YELLOW_SERVICEABLE',
+               lifecycle_status = 'AVAILABLE', bin_id = ?, certificate_reference = ?,
+               certificate_verified = 1, is_suspected_unapproved = 0,
+               quarantine_reason = NULL, updated_at = ?
+           WHERE id = ? AND (condition = 'QUARANTINE' OR is_suspected_unapproved = 1)`
+        )
+        .run(input.targetBinId, input.certificateReference, now(), input.serialId);
+      this.finalizeMovement(movementId, cost.baseUnitCostIdr);
+      return movementId;
+    });
+    const movementId = transaction.immediate();
+    return {
+      item: this.requireSerializedDto(input.serialId, scope),
+      movement: this.repository
+        .listMovements({ limit: 250, offset: 0 }, scope)
+        .find((movement) => movement.id === movementId)
+    };
   }
 
-  listSmsAlerts() {
-    return this.repository.listSmsAlerts();
+  listSmsAlerts(scope: readonly string[]) {
+    return this.repository.listSmsAlerts(scope);
   }
 }

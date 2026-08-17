@@ -1010,6 +1010,7 @@ export function seedInventoryData(
     insertIgnore(sqlite, 'inventory_core_returns', {
       id: 'cr-seed-001',
       returnNumber: `CR-${context.compactDate(-5)}-001`,
+      stationId: 'st-djj',
       vendorId: 'vendor-maintenance',
       partId: 'inv-part-brake-pc6',
       serialId: 'inv-serial-brake-001',

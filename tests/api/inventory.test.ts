@@ -93,6 +93,32 @@ describe('inventory APIs', () => {
     });
     expect(!directorAdjustment.ok && directorAdjustment.error.code).toBe('FORBIDDEN');
 
+    const controllerQuarantineRelease = await $fetch<ApiResponse<unknown>>(
+      '/api/inventory/quarantine/release',
+      {
+        method: 'POST',
+        headers: controllerCookie,
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!controllerQuarantineRelease.ok && controllerQuarantineRelease.error.code).toBe(
+      'FORBIDDEN'
+    );
+
+    const certifierQuarantineRelease = await $fetch<ApiResponse<unknown>>(
+      '/api/inventory/quarantine/release',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Certifying%20Staff' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!certifierQuarantineRelease.ok && certifierQuarantineRelease.error.code).not.toBe(
+      'FORBIDDEN'
+    );
+
     const financeMutation = await $fetch<ApiResponse<unknown>>('/api/inventory/parts', {
       method: 'POST',
       headers: { cookie: 'ama_demo_role=Finance%20Reviewer' },

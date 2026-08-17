@@ -3,6 +3,7 @@ import type { InventoryCoreReturnDto } from '#shared/features/inventory';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { money, errorMessage } = useInventoryUi();
+const { can } = useAuthorization();
 const {
   data: returns,
   pending,
@@ -83,7 +84,9 @@ async function updateStatus(id: string, newStatus: string) {
                 OVERDUE
               </VChip>
             </td>
-            <td class="font-weight-bold text-success">{{ money(item.depositAmountIdr) }}</td>
+            <td class="font-weight-bold text-success">
+              {{ item.depositAmountIdr === null ? 'Restricted' : money(item.depositAmountIdr) }}
+            </td>
             <td>
               <VChip
                 :color="
@@ -102,7 +105,9 @@ async function updateStatus(id: string, newStatus: string) {
             <td class="text-end">
               <div class="d-flex justify-end ga-2">
                 <VBtn
-                  v-if="item.status === 'PENDING_RETURN'"
+                  v-if="
+                    can('inventory.procurement.manage').allowed && item.status === 'PENDING_RETURN'
+                  "
                   color="info"
                   size="small"
                   variant="tonal"
@@ -113,7 +118,7 @@ async function updateStatus(id: string, newStatus: string) {
                   Kirim Core (Shipped)
                 </VBtn>
                 <VBtn
-                  v-if="item.status === 'SHIPPED'"
+                  v-if="can('inventory.procurement.manage').allowed && item.status === 'SHIPPED'"
                   color="success"
                   size="small"
                   variant="flat"

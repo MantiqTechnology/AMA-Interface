@@ -26,6 +26,12 @@ export const inventoryLifecycleTypes = [
   'CONSUMABLE',
   'EXPENDABLE',
   'REPAIRABLE',
+  'ROTABLE'
+] as const;
+export const inventoryPartCategories = [
+  'CONSUMABLE',
+  'EXPENDABLE',
+  'REPAIRABLE',
   'ROTABLE',
   'TOOL_GSE',
   'SOFTWARE_NAVDB',
@@ -70,6 +76,7 @@ export const inventoryMovementTypes = [
 ] as const;
 
 export type InventoryLifecycleType = (typeof inventoryLifecycleTypes)[number];
+export type InventoryPartCategory = (typeof inventoryPartCategories)[number];
 export type InventoryTrackingType = (typeof inventoryTrackingTypes)[number];
 export type InventoryBinType = (typeof inventoryBinTypes)[number];
 export type InventoryCondition = (typeof inventoryConditions)[number];
@@ -121,7 +128,7 @@ export const inventoryPartInputSchema = z
     criticality: z.enum(['STANDARD', 'ESSENTIAL', 'CRITICAL']),
     certificateRequired: z.boolean().default(false),
     shelfLifeDays: z.coerce.number().int().positive().nullable().default(null),
-    partCategory: z.enum(inventoryLifecycleTypes).default('ROTABLE').optional(),
+    partCategory: z.enum(inventoryPartCategories).default('ROTABLE').optional(),
     isAircraftPart: z.boolean().default(true).optional(),
     isLifeLimited: z.boolean().default(false).optional(),
     maxFlightHours: z.coerce.number().positive().nullable().default(null).optional(),
@@ -255,20 +262,31 @@ export const goodsReceiptInputSchema = z.object({
     .min(1)
 });
 
-export const inventoryPartInterchangeabilityInputSchema = z.object({
-  partId: z.string().trim().min(1),
-  alternatePartId: z.string().trim().min(1),
-  interchangeabilityType: z.enum(inventoryInterchangeabilityTypes),
-  notes: nullableText.default(null)
-});
+export const inventoryPartInterchangeabilityInputSchema = z
+  .object({
+    partId: z.string().trim().min(1),
+    alternatePartId: z.string().trim().min(1),
+    interchangeabilityType: z.enum(inventoryInterchangeabilityTypes),
+    notes: nullableText.default(null)
+  })
+  .refine((value) => value.partId !== value.alternatePartId, {
+    message: 'A part cannot be interchangeable with itself.',
+    path: ['alternatePartId']
+  });
 
 export const inventoryCoreReturnInputSchema = z.object({
+  stationId: z.string().trim().min(1),
   vendorId: z.string().trim().min(1),
   partId: z.string().trim().min(1),
   serialId: nullableText.default(null),
   repairOrderId: nullableText.default(null),
   coreDueDate: dateOnly,
   depositAmountIdr: z.coerce.number().int().nonnegative().default(0),
+  notes: nullableText.default(null)
+});
+
+export const inventoryCoreReturnStatusSchema = z.object({
+  status: z.enum(['SHIPPED', 'ACCEPTED_BY_VENDOR']),
   notes: nullableText.default(null)
 });
 
@@ -309,22 +327,33 @@ export const inventoryToolReturnSchema = z.object({
   notes: nullableText.default(null)
 });
 
-export const inventoryToolCalibrateSchema = z.object({
-  toolId: z.string().trim().min(1),
-  calibratedAt: dateOnly,
-  nextCalibrationDue: dateOnly,
-  certificateNumber: z.string().trim().min(2)
-});
+export const inventoryToolCalibrateSchema = z
+  .object({
+    toolId: z.string().trim().min(1),
+    calibratedAt: dateOnly,
+    nextCalibrationDue: dateOnly,
+    certificateNumber: z.string().trim().min(2)
+  })
+  .refine((value) => value.nextCalibrationDue > value.calibratedAt, {
+    message: 'Next calibration due must be after the calibration date.',
+    path: ['nextCalibrationDue']
+  });
 
-export const inventorySoftwareNavdbInputSchema = z.object({
-  partId: nullableText.default(null),
-  softwareName: z.string().trim().min(2).max(160),
-  systemType: z.string().trim().min(2).max(100),
-  version: z.string().trim().min(1).max(80),
-  airacCycle: nullableText.default(null),
-  effectiveDate: dateOnly,
-  expirationDate: dateOnly
-});
+export const inventorySoftwareNavdbInputSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    partId: nullableText.default(null),
+    softwareName: z.string().trim().min(2).max(160),
+    systemType: z.string().trim().min(2).max(100),
+    version: z.string().trim().min(1).max(80),
+    airacCycle: nullableText.default(null),
+    effectiveDate: dateOnly,
+    expirationDate: dateOnly
+  })
+  .refine((value) => value.expirationDate > value.effectiveDate, {
+    message: 'Expiration date must be after the effective date.',
+    path: ['expirationDate']
+  });
 
 export const inventoryFlyAwayKitInputSchema = z.object({
   kitNumber: z
@@ -796,6 +825,7 @@ export type InventoryPartInterchangeabilityInput = z.infer<
   typeof inventoryPartInterchangeabilityInputSchema
 >;
 export type InventoryCoreReturnInput = z.infer<typeof inventoryCoreReturnInputSchema>;
+export type InventoryCoreReturnStatusInput = z.infer<typeof inventoryCoreReturnStatusSchema>;
 export type InventoryToolInput = z.infer<typeof inventoryToolInputSchema>;
 export type InventoryToolCheckoutInput = z.infer<typeof inventoryToolCheckoutSchema>;
 export type InventoryToolReturnInput = z.infer<typeof inventoryToolReturnSchema>;
@@ -812,9 +842,14 @@ export type InventoryQuarantineItemDto = {
   partNumber: string;
   partName: string;
   manufacturer: string;
+  warehouseId: string | null;
   warehouseName: string | null;
+  binId: string | null;
   binCode: string | null;
+  stationCode: string | null;
   isSuspectedUnapproved: boolean;
+  tagColor: InventoryTagColor;
+  createdAt: string;
 };
 
 export type InventoryToolDto = {
@@ -837,6 +872,8 @@ export type InventoryToolDto = {
 export type InventoryCoreReturnDto = {
   id: string;
   returnNumber: string;
+  stationId: string;
+  stationCode: string;
   vendorId: string;
   vendorName: string;
   partId: string;
@@ -846,7 +883,7 @@ export type InventoryCoreReturnDto = {
   serialNumber: string | null;
   repairOrderId: string | null;
   coreDueDate: string;
-  depositAmountIdr: number;
+  depositAmountIdr: number | null;
   status: string;
   shippedAt: string | null;
   vendorReceiptAt: string | null;

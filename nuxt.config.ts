@@ -21,6 +21,23 @@ function patchVuetifySwitchCss() {
   };
 }
 
+type CssDeclaration = {
+  value: string;
+};
+
+function patchVuetifySwitchPostcss() {
+  return {
+    postcssPlugin: 'patch-vuetify-switch-postcss',
+    Declaration(decl: CssDeclaration) {
+      if (!decl.value.includes('calc(')) return;
+
+      decl.value = decl.value
+        .replaceAll('calc(16px / 24px)', '0.6666666667')
+        .replaceAll('calc(28px / 24px)', '1.1666666667');
+    }
+  };
+}
+
 export default defineNuxtConfig({
   buildDir: process.env.NUXT_BUILD_DIR ?? '.nuxt',
   compatibilityDate: '2026-07-04',
@@ -66,6 +83,11 @@ export default defineNuxtConfig({
   vite: {
     build: {
       cssMinify: 'lightningcss'
+    },
+    css: {
+      postcss: {
+        plugins: [patchVuetifySwitchPostcss()]
+      }
     },
     plugins: [patchVuetifySwitchCss(), tailwindcss()]
   },
@@ -135,6 +157,6 @@ export default defineNuxtConfig({
   },
   typescript: {
     strict: true,
-    typeCheck: process.env.NUXT_TYPECHECK === 'true'
+    typeCheck: process.env.NODE_ENV !== 'test'
   }
 });

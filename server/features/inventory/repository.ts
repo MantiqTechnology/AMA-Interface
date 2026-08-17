@@ -930,21 +930,25 @@ export class InventoryRepository {
     return this.listInterchangeabilities(partId).find((i) => i.id === id);
   }
 
-  listCoreReturns(scope?: readonly string[]) {
-    void scope;
+  listCoreReturns(scope: readonly string[] = ['ALL'], canViewValuation = true) {
+    const stationScope = stationScopeCondition(scope, 'st');
     const rows = this.sqlite
       .prepare(
-        `SELECT c.*, v.vendor_name, p.part_number, p.part_name, s.serial_number
+        `SELECT c.*, st.station_code, v.vendor_name, p.part_number, p.part_name, s.serial_number
          FROM inventory_core_returns c
+         JOIN stations st ON st.id = c.station_id
          JOIN vendors v ON v.id = c.vendor_id
          JOIN inventory_parts p ON p.id = c.part_id
          LEFT JOIN inventory_serialized_parts s ON s.id = c.serial_id
+         WHERE 1 = 1 ${stationScope.sql}
          ORDER BY c.created_at DESC`
       )
-      .all() as SqlRow[];
+      .all(...stationScope.params) as SqlRow[];
     return rows.map((r) => ({
       id: String(r.id),
       returnNumber: String(r.return_number),
+      stationId: String(r.station_id),
+      stationCode: String(r.station_code),
       vendorId: String(r.vendor_id),
       vendorName: String(r.vendor_name),
       partId: String(r.part_id),
@@ -954,7 +958,7 @@ export class InventoryRepository {
       serialNumber: str(r.serial_number),
       repairOrderId: str(r.repair_order_id),
       coreDueDate: String(r.core_due_date),
-      depositAmountIdr: num(r.deposit_amount_idr),
+      depositAmountIdr: canViewValuation ? num(r.deposit_amount_idr) : null,
       status: String(r.status),
       shippedAt: str(r.shipped_at),
       vendorReceiptAt: str(r.vendor_receipt_at),
@@ -969,6 +973,7 @@ export class InventoryRepository {
   createCoreReturn(row: {
     id: string;
     returnNumber: string;
+    stationId: string;
     vendorId: string;
     partId: string;
     serialId: string | null;
@@ -980,12 +985,13 @@ export class InventoryRepository {
   }) {
     this.sqlite
       .prepare(
-        `INSERT INTO inventory_core_returns (id, return_number, vendor_id, part_id, serial_id, repair_order_id, core_due_date, deposit_amount_idr, status, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_RETURN', ?, ?, ?)`
+        `INSERT INTO inventory_core_returns (id, return_number, station_id, vendor_id, part_id, serial_id, repair_order_id, core_due_date, deposit_amount_idr, status, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_RETURN', ?, ?, ?)`
       )
       .run(
         row.id,
         row.returnNumber,
+        row.stationId,
         row.vendorId,
         row.partId,
         row.serialId,
@@ -1021,17 +1027,19 @@ export class InventoryRepository {
     return this.listCoreReturns(['ALL']).find((c) => c.id === id);
   }
 
-  listTools(scope?: readonly string[]) {
-    void scope;
+  listTools(scope: readonly string[] = ['ALL']) {
+    const stationScope = stationScopeCondition(scope, 'st');
     const rows = this.sqlite
       .prepare(
-        `SELECT t.*, w.warehouse_name, b.bin_code
+        `SELECT t.*, w.warehouse_name, b.bin_code, st.station_code
          FROM inventory_tools t
          LEFT JOIN inventory_warehouses w ON w.id = t.warehouse_id
          LEFT JOIN inventory_bins b ON b.id = t.bin_id
+         LEFT JOIN stations st ON st.id = w.station_id
+         WHERE 1 = 1 ${stationScope.sql}
          ORDER BY t.tool_number ASC`
       )
-      .all() as SqlRow[];
+      .all(...stationScope.params) as SqlRow[];
     const today = new Date().toISOString().slice(0, 10);
     return rows.map((r) => {
       const nextDue = str(r.next_calibration_due);
@@ -1044,6 +1052,7 @@ export class InventoryRepository {
         category: String(r.category),
         warehouseId: str(r.warehouse_id),
         warehouseName: str(r.warehouse_name),
+        stationCode: str(r.station_code),
         binId: str(r.bin_id),
         binCode: str(r.bin_code),
         calibrationIntervalDays: num(r.calibration_interval_days),
@@ -1236,19 +1245,20 @@ export class InventoryRepository {
     return this.listSoftwareNavdb().find((s) => s.id === row.id);
   }
 
-  listFlyAwayKits(scope?: readonly string[]) {
-    void scope;
+  listFlyAwayKits(scope: readonly string[] = ['ALL']) {
+    const stationScope = stationScopeCondition(scope, 'st');
     const rows = this.sqlite
       .prepare(
         `SELECT k.*, a.registration_number AS registration, st.station_code
          FROM inventory_fly_away_kits k
          LEFT JOIN aircraft a ON a.id = k.aircraft_id
          LEFT JOIN stations st ON st.id = k.station_id
+         WHERE 1 = 1 ${stationScope.sql}
          ORDER BY k.kit_number ASC`
       )
-      .all() as SqlRow[];
+      .all(...stationScope.params) as SqlRow[];
     const itemsStmt = this.sqlite.prepare(
-      `SELECT i.*, p.part_number, p.part_name, s.serial_number
+      `SELECT i.*, p.part_number, p.part_name, p.unit_of_measure, s.serial_number
        FROM inventory_fly_away_kit_items i
        JOIN inventory_parts p ON p.id = i.part_id
        LEFT JOIN inventory_serialized_parts s ON s.id = i.serial_id
@@ -1260,6 +1270,7 @@ export class InventoryRepository {
         partId: String(item.part_id),
         partNumber: String(item.part_number),
         partName: String(item.part_name),
+        unitOfMeasure: String(item.unit_of_measure),
         serialId: str(item.serial_id),
         serialNumber: str(item.serial_number),
         requiredQuantity: num(item.required_quantity),
@@ -1299,32 +1310,35 @@ export class InventoryRepository {
       condition: string;
     }>;
   }) {
-    this.sqlite
-      .prepare(
-        `INSERT INTO inventory_fly_away_kits (id, kit_number, aircraft_id, station_id, status, assigned_at, created_at)
-         VALUES (?, ?, ?, ?, 'ONBOARD', ?, ?)`
-      )
-      .run(row.id, row.kitNumber, row.aircraftId, row.stationId, row.nowIso, row.nowIso);
-    const itemStmt = this.sqlite.prepare(
-      `INSERT INTO inventory_fly_away_kit_items (id, kit_id, part_id, serial_id, required_quantity, current_quantity, condition)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-    for (const item of row.items) {
-      itemStmt.run(
-        item.id,
-        row.id,
-        item.partId,
-        item.serialId,
-        item.requiredQuantity,
-        item.currentQuantity,
-        item.condition
+    const transaction = this.sqlite.transaction(() => {
+      this.sqlite
+        .prepare(
+          `INSERT INTO inventory_fly_away_kits (id, kit_number, aircraft_id, station_id, status, assigned_at, created_at)
+           VALUES (?, ?, ?, ?, 'ONBOARD', ?, ?)`
+        )
+        .run(row.id, row.kitNumber, row.aircraftId, row.stationId, row.nowIso, row.nowIso);
+      const itemStmt = this.sqlite.prepare(
+        `INSERT INTO inventory_fly_away_kit_items (id, kit_id, part_id, serial_id, required_quantity, current_quantity, condition)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       );
-    }
+      for (const item of row.items) {
+        itemStmt.run(
+          item.id,
+          row.id,
+          item.partId,
+          item.serialId,
+          item.requiredQuantity,
+          item.currentQuantity,
+          item.condition
+        );
+      }
+    });
+    transaction.immediate();
     return this.listFlyAwayKits(['ALL']).find((k) => k.id === row.id);
   }
 
-  listQuarantineItems(scope?: readonly string[]) {
-    void scope;
+  listQuarantineItems(scope: readonly string[] = ['ALL']) {
+    const stationScope = stationScopeCondition(scope, 'st');
     const rows = this.sqlite
       .prepare(
         `SELECT s.id serial_id, s.serial_number, s.quarantine_reason, s.is_suspected_unapproved, s.created_at,
@@ -1335,10 +1349,11 @@ export class InventoryRepository {
          LEFT JOIN inventory_bins b ON b.id = s.bin_id
          LEFT JOIN inventory_warehouses w ON w.id = b.warehouse_id
          LEFT JOIN stations st ON st.id = w.station_id
-         WHERE s.condition = 'QUARANTINE' OR s.lifecycle_status = 'QUARANTINE' OR s.is_suspected_unapproved = 1
+         WHERE (s.condition = 'QUARANTINE' OR s.lifecycle_status = 'QUARANTINE' OR s.is_suspected_unapproved = 1)
+           ${stationScope.sql}
          ORDER BY s.created_at DESC`
       )
-      .all() as SqlRow[];
+      .all(...stationScope.params) as SqlRow[];
     return rows.map((r) => ({
       serialId: String(r.serial_id),
       serialNumber: String(r.serial_number),
@@ -1358,40 +1373,19 @@ export class InventoryRepository {
     }));
   }
 
-  releaseQuarantineItem(
-    serialId: string,
-    targetBinId: string,
-    certificateReference: string,
-    nowIso: string
-  ) {
-    this.sqlite
-      .prepare(
-        `UPDATE inventory_serialized_parts
-         SET condition = 'SERVICEABLE',
-             tag_color = 'YELLOW_SERVICEABLE',
-             lifecycle_status = 'AVAILABLE',
-             bin_id = ?,
-             certificate_reference = ?,
-             certificate_verified = 1,
-             is_suspected_unapproved = 0,
-             quarantine_reason = NULL,
-             updated_at = ?
-         WHERE id = ?`
-      )
-      .run(targetBinId, certificateReference, nowIso, serialId);
-    return true;
-  }
-
-  listSmsAlerts() {
+  listSmsAlerts(scope: readonly string[] = ['ALL']) {
+    const stationScope = stationScopeCondition(scope, 'st');
     const rows = this.sqlite
       .prepare(
-        `SELECT a.*, p.part_number, p.part_name, w.warehouse_name
+        `SELECT a.*, p.part_number, p.part_name, w.warehouse_name, st.station_code
          FROM inventory_sms_alerts a
          LEFT JOIN inventory_parts p ON p.id = a.part_id
          LEFT JOIN inventory_warehouses w ON w.id = a.warehouse_id
+         LEFT JOIN stations st ON st.id = w.station_id
+         WHERE 1 = 1 ${stationScope.sql}
          ORDER BY a.created_at DESC`
       )
-      .all() as SqlRow[];
+      .all(...stationScope.params) as SqlRow[];
     return rows.map((r) => ({
       id: String(r.id),
       alertType: String(r.alert_type),

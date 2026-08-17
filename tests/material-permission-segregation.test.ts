@@ -24,4 +24,15 @@ describe('material workflow permission segregation', () => {
       'maintenance.material.install'
     );
   });
+
+  it('reserves quarantine release for Certifying Staff and the wildcard admin', () => {
+    expect(demoRolePermissions['Certifying Staff']).toContain('inventory.quarantine.release');
+    expect(demoRolePermissions['Inventory Controller']).not.toContain(
+      'inventory.quarantine.release'
+    );
+    expect(demoRolePermissions['Maintenance Manager']).not.toContain(
+      'inventory.quarantine.release'
+    );
+    expect(demoRolePermissions['Demo Admin']).toContain('*');
+  });
 });

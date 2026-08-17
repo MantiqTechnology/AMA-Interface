@@ -1,10 +1,12 @@
+import { inventoryCoreReturnStatusSchema } from '../../../../../shared/features/inventory';
 import { getInventoryService } from '../../../../features/inventory';
 import { defineApiEventHandler } from '../../../../utils/api-response';
-import { requireDemoPermission } from '../../../../utils/auth';
+import { getDemoStationScope, requireDemoPermission } from '../../../../utils/auth';
+import { parseBody } from '../../../../utils/validation';
 
 export default defineApiEventHandler(async (event) => {
-  requireDemoPermission(event, 'inventory.write');
+  requireDemoPermission(event, 'inventory.procurement.manage');
   const id = getRouterParam(event, 'id')!;
-  const body = await readBody(event);
-  return getInventoryService().updateCoreReturnStatus(id, body.status, body.notes);
+  const body = await parseBody(event, inventoryCoreReturnStatusSchema);
+  return getInventoryService().updateCoreReturnStatus(id, body, getDemoStationScope(event));
 });

@@ -1,5 +1,8 @@
 import { getDbClient } from '../db/client';
 import { runMigrations } from '../db/migrate';
+import { createDemoSeedContext } from '../db/seeds/context';
+import { resetDemoDatabase } from '../db/reset-demo';
+import { seedScenarioDatabase } from '../db/seeds/scenario-database';
 import { resetScenarioBaselineOnce } from '../db/startup-reset';
 import {
   shouldResetDemoDatabaseOnStartup,
@@ -10,7 +13,6 @@ export default defineNitroPlugin(async () => {
   const config = useRuntimeConfig();
 
   if (shouldResetDemoDatabaseOnStartup(config)) {
-    const { resetDemoDatabase } = await import('../db/reset-demo');
     await resetScenarioBaselineOnce(() =>
       resetDemoDatabase(config.dbPath, { resetDocuments: true })
     );
@@ -27,7 +29,6 @@ export default defineNitroPlugin(async () => {
     { count: number } | undefined;
   if (!empCountRow || empCountRow.count === 0) {
     const { seedDemoData } = await import('../db/seed');
-    const { createDemoSeedContext } = await import('../db/seeds/context');
     await seedDemoData(db, createDemoSeedContext());
   }
 
@@ -35,7 +36,6 @@ export default defineNitroPlugin(async () => {
     count: number;
   };
   if (flightCount.count === 0 && shouldSeedDemoDatabaseOnStartup(config)) {
-    const { seedScenarioDatabase } = await import('../db/seeds/scenario-database');
     await resetScenarioBaselineOnce(() =>
       seedScenarioDatabase(
         { db, sqlite },

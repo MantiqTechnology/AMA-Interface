@@ -24,7 +24,83 @@ function foreignKeysEnabled(sqlite: Database.Database) {
   return (sqlite.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number }).foreign_keys;
 }
 
+function tableColumns(sqlite: Database.Database, table: string) {
+  return (sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+    (row) => row.name
+  );
+}
+
 describe('database migrations', () => {
+  it('upgrades the pre-aviation inventory schema without requiring a reset', () => {
+    const sqlite = new Database(':memory:');
+    runMigrations(sqlite);
+
+    sqlite.pragma('foreign_keys = OFF');
+    sqlite.exec('DROP INDEX IF EXISTS idx_inventory_core_returns_station');
+    for (const [table, columns] of Object.entries({
+      inventory_parts: [
+        'part_category',
+        'is_aircraft_part',
+        'is_life_limited',
+        'max_flight_hours',
+        'max_flight_cycles',
+        'on_condition'
+      ],
+      inventory_bins: [
+        'temp_min_celsius',
+        'temp_max_celsius',
+        'humidity_min_percent',
+        'humidity_max_percent',
+        'is_esd_sensitive',
+        'is_hazmat',
+        'hazmat_class',
+        'is_quarantine_bin'
+      ],
+      inventory_serialized_parts: [
+        'tag_color',
+        'lifecycle_status',
+        'is_suspected_unapproved',
+        'quarantine_reason',
+        'accumulated_flight_hours',
+        'accumulated_flight_cycles',
+        'back_to_birth_history_json'
+      ],
+      inventory_purchase_orders: [
+        'po_type',
+        'is_aog_procurement',
+        'coc_required',
+        'certificate_type'
+      ],
+      inventory_goods_receipts: ['inspection_status', 'quarantine_reason'],
+      inventory_core_returns: ['station_id']
+    })) {
+      for (const column of columns) {
+        sqlite.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      }
+    }
+
+    runMigrations(sqlite);
+
+    expect(tableColumns(sqlite, 'inventory_parts')).toEqual(
+      expect.arrayContaining(['part_category', 'is_life_limited', 'max_flight_hours'])
+    );
+    expect(tableColumns(sqlite, 'inventory_bins')).toEqual(
+      expect.arrayContaining(['temp_min_celsius', 'is_esd_sensitive', 'is_quarantine_bin'])
+    );
+    expect(tableColumns(sqlite, 'inventory_serialized_parts')).toEqual(
+      expect.arrayContaining(['tag_color', 'lifecycle_status', 'quarantine_reason'])
+    );
+    expect(tableColumns(sqlite, 'inventory_purchase_orders')).toEqual(
+      expect.arrayContaining(['po_type', 'is_aog_procurement', 'certificate_type'])
+    );
+    expect(tableColumns(sqlite, 'inventory_goods_receipts')).toEqual(
+      expect.arrayContaining(['inspection_status', 'quarantine_reason'])
+    );
+    expect(tableColumns(sqlite, 'inventory_core_returns')).toContain('station_id');
+    expect(foreignKeysEnabled(sqlite)).toBe(1);
+    sqlite.close();
+  });
+
   it('rejects pre-cleanup tables with a reset instruction', () => {
     const sqlite = new Database(':memory:');
 

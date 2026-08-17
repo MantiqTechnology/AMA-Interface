@@ -3,6 +3,7 @@ import type { InventoryFlyAwayKitDto } from '#shared/features/inventory';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { errorMessage } = useInventoryUi();
+const { can } = useAuthorization();
 const {
   data: kits,
   pending,
@@ -54,7 +55,12 @@ async function submitCreateKit() {
 <template>
   <InventoryShell title="Fly Away Kit (FAK) Onboard Spare Parts">
     <template #actions>
-      <VBtn color="primary" prepend-icon="mdi-plus" @click="showModal = true">
+      <VBtn
+        v-if="can('inventory.catalog.manage').allowed"
+        color="primary"
+        prepend-icon="mdi-plus"
+        @click="showModal = true"
+      >
         Daftarkan Fly Away Kit Baru
       </VBtn>
       <DsTooltipIconButton
@@ -105,7 +111,8 @@ async function submitCreateKit() {
             <td>{{ kit.lastInspectedAt ?? kit.assignedAt }}</td>
             <td>
               <div v-for="item in kit.items" :key="item.id" class="text-caption">
-                <strong>{{ item.partNumber }}</strong>: {{ item.currentQuantity }} / {{ item.requiredQuantity }}
+                <strong>{{ item.partNumber }}</strong>: {{ item.currentQuantity }} /
+                {{ item.requiredQuantity }}
                 {{ item.unitOfMeasure ?? 'EA' }}
               </div>
             </td>
