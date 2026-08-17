@@ -1065,6 +1065,9 @@ export class InventoryService {
       await this.assertTransferEligible(part, physical);
     }
     const transaction = sqlite.transaction(() => {
+      if (toBin.bin_type === 'USABLE') {
+        this.assertUsableTransferLifecycle(physical);
+      }
       const sameWarehouse = String(fromWarehouse.id) === String(toWarehouse.id);
       const costs = this.consumeFifo(
         input.partId,
@@ -1157,14 +1160,32 @@ export class InventoryService {
             );
         }
         if (chunk.physical.serialId) {
-          sqlite
+          const movedSerial = sqlite
             .prepare(
               `UPDATE inventory_serialized_parts
                SET bin_id = ?, condition = ?,
                    certificate_verified = CASE WHEN ? = 'SERVICEABLE' THEN 1 ELSE certificate_verified END,
-                   updated_at = ? WHERE id = ?`
+                   updated_at = ?
+               WHERE id = ? AND bin_id = ? AND condition = ?
+                 AND (? <> 'SERVICEABLE' OR is_suspected_unapproved = 0)`
             )
-            .run(input.toBinId, toCondition, toCondition, now(), chunk.physical.serialId);
+            .run(
+              input.toBinId,
+              toCondition,
+              toCondition,
+              now(),
+              chunk.physical.serialId,
+              chunk.physical.binId,
+              fromCondition,
+              toCondition
+            );
+          if (movedSerial.changes !== 1) {
+            throw new DomainError(
+              'INVENTORY_TRANSFER_CONFLICT',
+              'Serialized stock changed during transfer validation. Refresh and retry.',
+              409
+            );
+          }
         } else if (chunk.physical.lotId && toCondition === 'SERVICEABLE') {
           sqlite
             .prepare(`UPDATE inventory_lots SET certificate_verified = 1 WHERE id = ?`)
@@ -3594,14 +3615,36 @@ export class InventoryService {
   private assertUsableTransferLifecycle(allocations: PhysicalAllocation[]) {
     const sqlite = this.repository.sqlite;
     for (const allocation of allocations) {
-      if (allocation.condition === 'QUARANTINE') {
+      let currentCondition = allocation.condition;
+      let serial: SqlRow | undefined;
+      if (allocation.serialId) {
+        serial = sqlite
+          .prepare(
+            `SELECT bin_id, condition, is_suspected_unapproved
+             FROM inventory_serialized_parts WHERE id = ?`
+          )
+          .get(allocation.serialId) as SqlRow | undefined;
+        if (
+          !serial ||
+          String(serial.bin_id) !== allocation.binId ||
+          String(serial.condition) !== allocation.condition
+        ) {
+          throw new DomainError(
+            'INVENTORY_TRANSFER_CONFLICT',
+            'Serialized stock changed during transfer validation. Refresh and retry.',
+            409
+          );
+        }
+        currentCondition = String(serial.condition);
+      }
+      if (currentCondition === 'QUARANTINE') {
         throw new DomainError(
           'INVENTORY_QUARANTINE_RELEASE_REQUIRED',
           'Quarantined stock requires Certifying Staff quarantine release approval.',
           403
         );
       }
-      if (allocation.condition === 'UNSERVICEABLE' || allocation.condition === 'IN_REPAIR') {
+      if (currentCondition === 'UNSERVICEABLE' || currentCondition === 'IN_REPAIR') {
         throw new DomainError(
           'INVENTORY_TRANSFER_CONDITION_INVALID',
           'Unserviceable or in-repair stock cannot be released through a generic transfer.',
@@ -3609,9 +3652,6 @@ export class InventoryService {
         );
       }
       if (!allocation.serialId) continue;
-      const serial = sqlite
-        .prepare(`SELECT is_suspected_unapproved FROM inventory_serialized_parts WHERE id = ?`)
-        .get(allocation.serialId) as SqlRow | undefined;
       if (Boolean(serial?.is_suspected_unapproved)) {
         throw new DomainError(
           'INVENTORY_QUARANTINE_RELEASE_REQUIRED',

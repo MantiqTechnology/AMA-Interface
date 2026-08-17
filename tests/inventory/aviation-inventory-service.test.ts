@@ -286,6 +286,47 @@ describe('Aviation Inventory Standards & Extensions', () => {
     ).toMatchObject({ condition: 'QUARANTINE' });
   });
 
+  it('revalidates SUP status after asynchronous transfer checks', async () => {
+    const { sqlite } = await createSeededTestServices();
+    const service = new InventoryService(new InventoryRepository(sqlite));
+    sqlite
+      .prepare(
+        `UPDATE inventory_parts SET certificate_required = 0
+         WHERE id = 'inv-part-brake-pc6'`
+      )
+      .run();
+
+    const transfer = service.transfer(
+      {
+        partId: 'inv-part-brake-pc6',
+        fromBinId: 'inv-bin-djj-usable',
+        toBinId: 'inv-bin-wmx-usable',
+        quantity: 1,
+        lotId: 'inv-lot-brake-260701',
+        serialIds: ['inv-serial-brake-001'],
+        reason: 'Concurrent SUP status regression.'
+      },
+      'USR-INVENTORY-CONTROLLER',
+      ['ALL']
+    );
+    sqlite
+      .prepare(
+        `UPDATE inventory_serialized_parts SET is_suspected_unapproved = 1
+         WHERE id = 'inv-serial-brake-001'`
+      )
+      .run();
+
+    await expect(transfer).rejects.toThrow(/requires Certifying Staff/u);
+    expect(
+      sqlite
+        .prepare(
+          `SELECT bin_id AS binId, condition, is_suspected_unapproved AS isSup
+           FROM inventory_serialized_parts WHERE id = 'inv-serial-brake-001'`
+        )
+        .get()
+    ).toMatchObject({ binId: 'inv-bin-djj-usable', condition: 'SERVICEABLE', isSup: 1 });
+  });
+
   it('tracks vendor Core Returns & updates status', async () => {
     const { sqlite } = await createSeededTestServices();
     const service = new InventoryService(new InventoryRepository(sqlite));
