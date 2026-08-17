@@ -17,6 +17,12 @@ export const inventoryParts = sqliteTable('inventory_parts', {
     .notNull()
     .default(false),
   shelfLifeDays: integer('shelf_life_days'),
+  partCategory: text('part_category').notNull().default('ROTABLE'),
+  isAircraftPart: integer('is_aircraft_part', { mode: 'boolean' }).notNull().default(true),
+  isLifeLimited: integer('is_life_limited', { mode: 'boolean' }).notNull().default(false),
+  maxFlightHours: real('max_flight_hours'),
+  maxFlightCycles: integer('max_flight_cycles'),
+  onCondition: integer('on_condition', { mode: 'boolean' }).notNull().default(false),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
@@ -54,6 +60,14 @@ export const inventoryBins = sqliteTable(
     binCode: text('bin_code').notNull(),
     binName: text('bin_name').notNull(),
     binType: text('bin_type').notNull(),
+    tempMinCelsius: real('temp_min_celsius'),
+    tempMaxCelsius: real('temp_max_celsius'),
+    humidityMinPercent: real('humidity_min_percent'),
+    humidityMaxPercent: real('humidity_max_percent'),
+    isEsdSensitive: integer('is_esd_sensitive', { mode: 'boolean' }).notNull().default(false),
+    isHazmat: integer('is_hazmat', { mode: 'boolean' }).notNull().default(false),
+    hazmatClass: text('hazmat_class'),
+    isQuarantineBin: integer('is_quarantine_bin', { mode: 'boolean' }).notNull().default(false),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull()
@@ -110,6 +124,15 @@ export const inventorySerializedParts = sqliteTable('inventory_serialized_parts'
   lotId: text('lot_id').references(() => inventoryLots.id),
   binId: text('bin_id').references(() => inventoryBins.id),
   condition: text('condition').notNull(),
+  tagColor: text('tag_color').notNull().default('YELLOW_SERVICEABLE'),
+  lifecycleStatus: text('lifecycle_status').notNull().default('AVAILABLE'),
+  isSuspectedUnapproved: integer('is_suspected_unapproved', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  quarantineReason: text('quarantine_reason'),
+  accumulatedFlightHours: real('accumulated_flight_hours').notNull().default(0),
+  accumulatedFlightCycles: integer('accumulated_flight_cycles').notNull().default(0),
+  backToBirthHistoryJson: text('back_to_birth_history_json'),
   aircraftId: text('aircraft_id').references(() => aircraft.id),
   position: text('position'),
   hoursSinceNew: real('hours_since_new').notNull().default(0),
@@ -275,6 +298,10 @@ export const inventoryPurchaseOrders = sqliteTable('inventory_purchase_orders', 
     .references(() => currencies.id),
   exchangeRateToIdrMicros: integer('exchange_rate_to_idr_micros').notNull(),
   expectedAt: text('expected_at').notNull(),
+  poType: text('po_type').notNull().default('AIRCRAFT_PART'),
+  isAogProcurement: integer('is_aog_procurement', { mode: 'boolean' }).notNull().default(false),
+  cocRequired: integer('coc_required', { mode: 'boolean' }).notNull().default(true),
+  certificateType: text('certificate_type'),
   status: text('status').notNull(),
   rejectionReason: text('rejection_reason'),
   createdByUserId: text('created_by_user_id').notNull(),
@@ -311,6 +338,8 @@ export const inventoryGoodsReceipts = sqliteTable('inventory_goods_receipts', {
     .notNull()
     .references(() => inventoryWarehouses.id),
   documentReference: text('document_reference').notNull(),
+  inspectionStatus: text('inspection_status').notNull().default('PASSED'),
+  quarantineReason: text('quarantine_reason'),
   receivedAt: text('received_at').notNull(),
   status: text('status').notNull(),
   movementId: text('movement_id')
@@ -444,4 +473,123 @@ export const inventoryRepairOrders = sqliteTable('inventory_repair_orders', {
   createdByUserId: text('created_by_user_id').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
+});
+
+export const inventoryPartInterchangeabilities = sqliteTable(
+  'inventory_part_interchangeabilities',
+  {
+    id: text('id').primaryKey(),
+    partId: text('part_id')
+      .notNull()
+      .references(() => inventoryParts.id, { onDelete: 'cascade' }),
+    alternatePartId: text('alternate_part_id')
+      .notNull()
+      .references(() => inventoryParts.id, { onDelete: 'cascade' }),
+    interchangeabilityType: text('interchangeability_type').notNull(),
+    notes: text('notes'),
+    createdAt: text('created_at').notNull()
+  }
+);
+
+export const inventoryCoreReturns = sqliteTable('inventory_core_returns', {
+  id: text('id').primaryKey(),
+  returnNumber: text('return_number').notNull().unique(),
+  vendorId: text('vendor_id')
+    .notNull()
+    .references(() => vendors.id),
+  partId: text('part_id')
+    .notNull()
+    .references(() => inventoryParts.id),
+  serialId: text('serial_id').references(() => inventorySerializedParts.id),
+  repairOrderId: text('repair_order_id').references(() => inventoryRepairOrders.id),
+  coreDueDate: text('core_due_date').notNull(),
+  depositAmountIdr: integer('deposit_amount_idr').notNull().default(0),
+  status: text('status').notNull().default('PENDING_RETURN'),
+  shippedAt: text('shipped_at'),
+  vendorReceiptAt: text('vendor_receipt_at'),
+  notes: text('notes'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const inventoryTools = sqliteTable('inventory_tools', {
+  id: text('id').primaryKey(),
+  toolNumber: text('tool_number').notNull().unique(),
+  serialNumber: text('serial_number').notNull().unique(),
+  toolName: text('tool_name').notNull(),
+  category: text('category').notNull().default('SPECIAL_TOOL'),
+  warehouseId: text('warehouse_id').references(() => inventoryWarehouses.id),
+  binId: text('bin_id').references(() => inventoryBins.id),
+  calibrationIntervalDays: integer('calibration_interval_days').notNull().default(365),
+  lastCalibratedAt: text('last_calibrated_at'),
+  nextCalibrationDue: text('next_calibration_due'),
+  certificateNumber: text('certificate_number'),
+  status: text('status').notNull().default('AVAILABLE'),
+  restrictedUse: integer('restricted_use', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const inventoryToolLogs = sqliteTable('inventory_tool_logs', {
+  id: text('id').primaryKey(),
+  toolId: text('tool_id')
+    .notNull()
+    .references(() => inventoryTools.id, { onDelete: 'cascade' }),
+  workOrderId: text('work_order_id'),
+  issuedToUserId: text('issued_to_user_id').notNull(),
+  issuedAt: text('issued_at').notNull(),
+  returnedAt: text('returned_at'),
+  conditionOnReturn: text('condition_on_return'),
+  missingReported: integer('missing_reported', { mode: 'boolean' }).notNull().default(false),
+  notes: text('notes')
+});
+
+export const inventorySoftwareNavdb = sqliteTable('inventory_software_navdb', {
+  id: text('id').primaryKey(),
+  partId: text('part_id').references(() => inventoryParts.id),
+  softwareName: text('software_name').notNull(),
+  systemType: text('system_type').notNull(),
+  version: text('version').notNull(),
+  airacCycle: text('airac_cycle'),
+  effectiveDate: text('effective_date').notNull(),
+  expirationDate: text('expiration_date').notNull(),
+  status: text('status').notNull().default('ACTIVE'),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const inventoryFlyAwayKits = sqliteTable('inventory_fly_away_kits', {
+  id: text('id').primaryKey(),
+  kitNumber: text('kit_number').notNull().unique(),
+  aircraftId: text('aircraft_id').references(() => aircraft.id),
+  stationId: text('station_id').references(() => stations.id),
+  status: text('status').notNull().default('ONBOARD'),
+  assignedAt: text('assigned_at').notNull(),
+  lastInspectedAt: text('last_inspected_at'),
+  createdAt: text('created_at').notNull()
+});
+
+export const inventoryFlyAwayKitItems = sqliteTable('inventory_fly_away_kit_items', {
+  id: text('id').primaryKey(),
+  kitId: text('kit_id')
+    .notNull()
+    .references(() => inventoryFlyAwayKits.id, { onDelete: 'cascade' }),
+  partId: text('part_id')
+    .notNull()
+    .references(() => inventoryParts.id),
+  serialId: text('serial_id').references(() => inventorySerializedParts.id),
+  requiredQuantity: real('required_quantity').notNull(),
+  currentQuantity: real('current_quantity').notNull(),
+  condition: text('condition').notNull().default('SERVICEABLE')
+});
+
+export const inventorySmsAlerts = sqliteTable('inventory_sms_alerts', {
+  id: text('id').primaryKey(),
+  alertType: text('alert_type').notNull(),
+  severity: text('severity').notNull().default('HIGH'),
+  partId: text('part_id').references(() => inventoryParts.id),
+  serialId: text('serial_id').references(() => inventorySerializedParts.id),
+  warehouseId: text('warehouse_id').references(() => inventoryWarehouses.id),
+  message: text('message').notNull(),
+  status: text('status').notNull().default('OPEN'),
+  createdAt: text('created_at').notNull()
 });

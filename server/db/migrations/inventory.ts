@@ -81,6 +81,13 @@ export const inventoryStatements = [
     cycles_since_new INTEGER NOT NULL DEFAULT 0 CHECK (cycles_since_new >= 0),
     certificate_reference TEXT,
     certificate_verified INTEGER NOT NULL DEFAULT 0,
+    tag_color TEXT DEFAULT 'YELLOW_SERVICEABLE',
+    lifecycle_status TEXT DEFAULT 'ACTIVE',
+    is_suspected_unapproved INTEGER NOT NULL DEFAULT 0,
+    quarantine_reason TEXT,
+    accumulated_flight_hours REAL NOT NULL DEFAULT 0,
+    accumulated_flight_cycles INTEGER NOT NULL DEFAULT 0,
+    back_to_birth_history_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK ((condition = 'INSTALLED' AND aircraft_id IS NOT NULL AND bin_id IS NULL) OR condition <> 'INSTALLED')
@@ -318,7 +325,101 @@ export const inventoryStatements = [
   `CREATE INDEX IF NOT EXISTS idx_inventory_layers_fifo ON inventory_cost_layers(part_id, warehouse_id, received_at)`,
   `CREATE INDEX IF NOT EXISTS idx_inventory_movements_created ON inventory_movements(created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_inventory_po_status ON inventory_purchase_orders(status)`,
-  `CREATE INDEX IF NOT EXISTS idx_inventory_serial_condition ON inventory_serialized_parts(condition)`
+  `CREATE INDEX IF NOT EXISTS idx_inventory_serial_condition ON inventory_serialized_parts(condition)`,
+  `CREATE TABLE IF NOT EXISTS inventory_part_interchangeabilities (
+    id TEXT PRIMARY KEY,
+    part_id TEXT NOT NULL REFERENCES inventory_parts(id) ON DELETE CASCADE,
+    alternate_part_id TEXT NOT NULL REFERENCES inventory_parts(id) ON DELETE CASCADE,
+    interchangeability_type TEXT NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS inventory_core_returns (
+    id TEXT PRIMARY KEY,
+    return_number TEXT NOT NULL UNIQUE,
+    vendor_id TEXT NOT NULL REFERENCES vendors(id),
+    part_id TEXT NOT NULL REFERENCES inventory_parts(id),
+    serial_id TEXT REFERENCES inventory_serialized_parts(id),
+    repair_order_id TEXT REFERENCES inventory_repair_orders(id),
+    core_due_date TEXT NOT NULL,
+    deposit_amount_idr INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'PENDING_RETURN',
+    shipped_at TEXT,
+    vendor_receipt_at TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS inventory_tools (
+    id TEXT PRIMARY KEY,
+    tool_number TEXT NOT NULL UNIQUE,
+    serial_number TEXT NOT NULL UNIQUE,
+    tool_name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'SPECIAL_TOOL',
+    warehouse_id TEXT REFERENCES inventory_warehouses(id),
+    bin_id TEXT REFERENCES inventory_bins(id),
+    calibration_interval_days INTEGER NOT NULL DEFAULT 365,
+    last_calibrated_at TEXT,
+    next_calibration_due TEXT,
+    certificate_number TEXT,
+    status TEXT NOT NULL DEFAULT 'AVAILABLE',
+    restricted_use INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS inventory_tool_logs (
+    id TEXT PRIMARY KEY,
+    tool_id TEXT NOT NULL REFERENCES inventory_tools(id) ON DELETE CASCADE,
+    work_order_id TEXT,
+    issued_to_user_id TEXT NOT NULL,
+    issued_at TEXT NOT NULL,
+    returned_at TEXT,
+    condition_on_return TEXT,
+    missing_reported INTEGER NOT NULL DEFAULT 0,
+    notes TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS inventory_software_navdb (
+    id TEXT PRIMARY KEY,
+    part_id TEXT REFERENCES inventory_parts(id),
+    software_name TEXT NOT NULL,
+    system_type TEXT NOT NULL,
+    version TEXT NOT NULL,
+    airac_cycle TEXT,
+    effective_date TEXT NOT NULL,
+    expiration_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS inventory_fly_away_kits (
+    id TEXT PRIMARY KEY,
+    kit_number TEXT NOT NULL UNIQUE,
+    aircraft_id TEXT REFERENCES aircraft(id),
+    station_id TEXT REFERENCES stations(id),
+    status TEXT NOT NULL DEFAULT 'ONBOARD',
+    assigned_at TEXT NOT NULL,
+    last_inspected_at TEXT,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS inventory_fly_away_kit_items (
+    id TEXT PRIMARY KEY,
+    kit_id TEXT NOT NULL REFERENCES inventory_fly_away_kits(id) ON DELETE CASCADE,
+    part_id TEXT NOT NULL REFERENCES inventory_parts(id),
+    serial_id TEXT REFERENCES inventory_serialized_parts(id),
+    required_quantity REAL NOT NULL,
+    current_quantity REAL NOT NULL,
+    condition TEXT NOT NULL DEFAULT 'SERVICEABLE'
+  )`,
+  `CREATE TABLE IF NOT EXISTS inventory_sms_alerts (
+    id TEXT PRIMARY KEY,
+    alert_type TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'HIGH',
+    part_id TEXT REFERENCES inventory_parts(id),
+    serial_id TEXT REFERENCES inventory_serialized_parts(id),
+    warehouse_id TEXT REFERENCES inventory_warehouses(id),
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    created_at TEXT NOT NULL
+  )`
 ];
 
 export const inventoryImmutabilityStatements = [

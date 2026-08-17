@@ -63,6 +63,7 @@ The UI uses Vuetify through `vuetify-nuxt-module`. Brand colors are configured i
 
 The ticketing architecture and OCC manifest synchronization are documented in [ticketing-flow.md](ticketing-flow.md).
 The enterprise MVP planning, HRIS/CRM roadmap, offline sync scope, and implementation rundown are documented in [roadmap-enterprise-mvp.md](roadmap-enterprise-mvp.md).
+The business use case diagrams and module workflows (in Excalidraw-ready Mermaid format) are documented in [business-use-cases.md](business-use-cases.md).
 
 ## Data
 
