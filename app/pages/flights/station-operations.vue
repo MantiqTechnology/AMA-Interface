@@ -8,6 +8,8 @@ const legacyTabRoutes: Record<string, string> = {
   flights: '/flights/station-operations/flights',
   services: '/flights/station-operations/services',
   verification: '/flights/station-operations/verification',
+  'actual-closure': '/flights/station-operations/actual-closure',
+  maintenance: '/flights/station-operations/maintenance',
   costs: '/flights/station-operations/costs',
   reports: '/flights/station-operations/reports',
   audit: '/flights/station-operations/audit'

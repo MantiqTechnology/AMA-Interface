@@ -1,5 +1,10 @@
 import type { DemoSessionDto } from '#shared/contracts/auth';
-import { demoRoles, demoRoleStationScopes, type DemoRole } from '#shared/types/roles';
+import {
+  defaultDemoRole,
+  demoRoles,
+  demoRoleStationScopes,
+  type DemoRole
+} from '#shared/types/roles';
 import { safeDemoRoleRedirectPath } from '../utils/demoRouteAccess';
 
 const personaDetails: Record<DemoRole, { name: string; label: string; stationScope: string[] }> = {
@@ -73,9 +78,17 @@ const personaDetails: Record<DemoRole, { name: string; label: string; stationSco
 };
 
 export function useDemoSession() {
-  const role = useState<DemoRole>('ama-demo-role', () => 'Demo Admin');
-  const demoMode = useState('ama-demo-mode', () => true);
-  const loaded = useState('ama-demo-session-loaded', () => false);
+  const roleCookie = useCookie<string>('ama_demo_role', {
+    default: () => defaultDemoRole,
+    sameSite: 'lax'
+  });
+  const initialRole = demoRoles.includes(roleCookie.value as DemoRole)
+    ? (roleCookie.value as DemoRole)
+    : defaultDemoRole;
+  const role = useState<DemoRole>('ama-demo-role', () => initialRole);
+  const config = useRuntimeConfig();
+  const demoMode = useState('ama-demo-mode', () => String(config.public.demoMode) === 'true');
+  const loaded = useState('ama-demo-session-loaded', () => true);
   const personas = demoRoles.map((personaRole) => ({
     role: personaRole,
     ...personaDetails[personaRole]
@@ -86,6 +99,7 @@ export function useDemoSession() {
     if (loaded.value) return;
     const session = await fetchApi<DemoSessionDto>('/api/auth/session');
     role.value = session.role;
+    roleCookie.value = session.role;
     demoMode.value = session.demoMode;
     loaded.value = true;
   }

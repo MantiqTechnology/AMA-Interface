@@ -336,6 +336,7 @@ export type FlightOperationRecord = {
   discretionaryFuelLitre: number;
   isLocked: boolean;
   readinessPercent: number;
+  readinessRequiredChecks: number;
   readinessSummary: string;
   blockingReason: string | null;
   version: number;
@@ -952,6 +953,12 @@ export type FlightOperationDetailDto = FlightOperationRecord & {
 export type FlightOperationOverviewDto = {
   summary: Record<FlightOperationStatus, number>;
   flights: FlightOperationRecord[];
+  pagination: {
+    limit: number;
+    offset: number;
+    returned: number;
+    hasMore: boolean;
+  };
 };
 
 export type FlightOperationLookupsDto = {
@@ -998,10 +1005,24 @@ export type FlightRatePreviewDto = {
 export const listFlightOperationsQuerySchema = z.object({
   search: z.string().trim().max(100).optional().default(''),
   statusId: z.string().trim().optional(),
+  status: flightOperationStatusSchema.optional(),
+  manifestStatus: manifestStatusSchema.optional(),
+  fuelStatus: fuelWorkflowStatusSchema.optional(),
   flightTypeId: z.string().trim().optional(),
   routeId: z.string().trim().optional(),
   originStationId: z.string().trim().optional(),
   destinationStationId: z.string().trim().optional(),
+  stationId: z.string().trim().optional(),
+  lifecycle: z
+    .enum(['PLANNING', 'BLOCKED', 'DEPARTURE', 'AIRBORNE', 'ARRIVAL', 'TERMINAL'])
+    .optional(),
+  readinessBand: z.enum(['READY', 'NEEDS_ACTION', 'BLOCKED', 'NOT_EVALUATED']).optional(),
+  cohort: z.enum(['PLANNED', 'DEPARTED', 'CLOSED']).optional(),
+  attention: z.coerce.boolean().optional(),
+  departed: z.coerce.boolean().optional(),
+  departurePerformance: z.enum(['ON_TIME', 'DELAYED']).optional(),
+  age: z.enum(['UNDER_2H', '2_TO_6H', 'OVER_6H']).optional(),
+  approvalAge: z.enum(['UNDER_2H', '2_TO_6H', 'OVER_6H']).optional(),
   aircraftId: z.string().trim().optional(),
   customerId: z.string().trim().optional(),
   dateFrom: z.string().trim().optional(),
@@ -1011,6 +1032,13 @@ export const listFlightOperationsQuerySchema = z.object({
   sortDirection: z.enum(['asc', 'desc']).optional(),
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0)
+});
+
+export const listFuelQuerySchema = z.object({
+  status: fuelWorkflowStatusSchema.optional(),
+  stationId: z.string().trim().optional(),
+  dateFrom: z.string().trim().optional(),
+  dateTo: z.string().trim().optional()
 });
 
 export const listFlightRequestsQuerySchema = z.object({
@@ -1422,6 +1450,7 @@ export const listMaintenanceHandoffsQuerySchema = z.object({
 });
 
 export type ListFlightOperationsQuery = z.infer<typeof listFlightOperationsQuerySchema>;
+export type ListFuelQuery = z.infer<typeof listFuelQuerySchema>;
 export type FlightPlanningContextQuery = z.infer<typeof flightPlanningContextQuerySchema>;
 export type ListFlightRequestsQuery = z.infer<typeof listFlightRequestsQuerySchema>;
 export type CreateFlightOperationBody = z.infer<typeof createFlightOperationBodySchema>;

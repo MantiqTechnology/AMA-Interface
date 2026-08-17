@@ -2,9 +2,27 @@
 import StationSelect from '../../features/operations/stations/StationSelect.vue';
 import type { OperationalFlightMonitorDto } from '#shared/contracts/operations-monitoring';
 
-const date = ref<Date | null>(null);
-const status = ref<string | null>(null);
-const stationId = ref<string | null>(null);
+const currentRoute = useRoute();
+const date = ref<Date | null>(
+  typeof currentRoute.query.date === 'string'
+    ? new Date(`${currentRoute.query.date}T00:00:00`)
+    : null
+);
+const dateFrom = ref(
+  typeof currentRoute.query.dateFrom === 'string' ? currentRoute.query.dateFrom : ''
+);
+const dateTo = ref(typeof currentRoute.query.dateTo === 'string' ? currentRoute.query.dateTo : '');
+const status = ref<string | null>(
+  typeof currentRoute.query.status === 'string' ? currentRoute.query.status : null
+);
+const stationId = ref<string | null>(
+  typeof currentRoute.query.stationId === 'string' ? currentRoute.query.stationId : null
+);
+const tracking = ref<'LIVE' | 'STALE' | 'UNTRACKED' | null>(
+  ['LIVE', 'STALE', 'UNTRACKED'].includes(String(currentRoute.query.tracking))
+    ? (currentRoute.query.tracking as 'LIVE' | 'STALE' | 'UNTRACKED')
+    : null
+);
 const statusItems = [
   'SCHEDULED',
   'CHECK_IN_OPEN',
@@ -23,8 +41,11 @@ const mapRef = ref<{ fitFleet: () => void } | null>(null);
 const { can } = useAuthorization();
 const query = computed(() => ({
   date: date.value || undefined,
+  dateFrom: dateFrom.value || undefined,
+  dateTo: dateTo.value || undefined,
   stationId: stationId.value || undefined,
-  status: status.value || undefined
+  status: status.value || undefined,
+  tracking: tracking.value || undefined
 }));
 const {
   data: flights,
@@ -169,7 +190,36 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
             label="Station"
           />
         </div>
+        <div class="filter-field">
+          <VSelect
+            v-model="tracking"
+            clearable
+            density="compact"
+            hide-details
+            :items="[
+              { title: 'Live', value: 'LIVE' },
+              { title: 'Stale > 15 menit', value: 'STALE' },
+              { title: 'Belum terlacak', value: 'UNTRACKED' }
+            ]"
+            label="Tracking health"
+            variant="outlined"
+          />
+        </div>
       </div>
+      <VAlert v-if="dateFrom || dateTo" class="mt-3" density="compact" type="info" variant="tonal">
+        Drill-down dashboard: {{ dateFrom || 'awal data' }} sampai {{ dateTo || 'akhir data' }}.
+        <VBtn
+          class="ml-2"
+          size="x-small"
+          variant="text"
+          @click="
+            dateFrom = '';
+            dateTo = '';
+          "
+        >
+          Hapus rentang
+        </VBtn>
+      </VAlert>
     </VCard>
 
     <section class="tracking-surface">

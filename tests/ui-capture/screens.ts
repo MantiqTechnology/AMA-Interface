@@ -31,6 +31,18 @@ export const uiScreens: UiScreenDefinition[] = [
     roles: ['Demo Admin']
   },
   {
+    id: 'ops-overview-dashboard',
+    path: `/ops?period=TODAY&anchorDate=${seedDate}`,
+    ready: { heading: 'Ops Overview', level: 1 },
+    roles: ['OCC']
+  },
+  {
+    id: 'flight-control-overview-dashboard',
+    path: `/flights/dashboard?period=TODAY&anchorDate=${seedDate}`,
+    ready: { heading: 'Flight Control Overview', level: 1 },
+    roles: ['OCC']
+  },
+  {
     id: 'demo-access-personas',
     path: '/admin/access-demo',
     ready: { heading: 'Access Demo', level: 1 },
@@ -45,7 +57,19 @@ export const uiScreens: UiScreenDefinition[] = [
   {
     id: 'station-operations-verification',
     path: `/flights/station-operations/verification?stationCode=WMX&date=${seedDate}`,
-    ready: { heading: 'Operational Verification', level: 2 },
+    ready: { heading: 'Verifikasi operasional', level: 2 },
+    roles: ['Station Admin']
+  },
+  {
+    id: 'station-operations-actual-closure',
+    path: `/flights/station-operations/actual-closure?stationCode=WMX&date=${seedDate}`,
+    ready: { heading: 'Actual & Closure Station', level: 2 },
+    roles: ['Station Admin']
+  },
+  {
+    id: 'station-operations-technical-handoff',
+    path: `/flights/station-operations/maintenance?stationCode=WMX&date=${seedDate}`,
+    ready: { heading: 'Temuan Teknis & Handoff MRO', level: 2 },
     roles: ['Station Admin']
   },
   {
@@ -95,8 +119,14 @@ export const uiScreens: UiScreenDefinition[] = [
   {
     id: 'inventory-control-center',
     path: '/inventory',
-    ready: { heading: 'Inventory Control Center', level: 1 },
+    ready: { heading: 'Pusat Kendali Inventory', level: 1 },
     roles: ['Demo Admin']
+  },
+  {
+    id: 'inventory-maintenance-demand',
+    path: '/inventory/maintenance-demand',
+    ready: { heading: 'Kebutuhan Material MRO', level: 1 },
+    roles: ['Inventory Controller']
   },
   {
     id: 'inventory-stock-availability',
@@ -107,7 +137,13 @@ export const uiScreens: UiScreenDefinition[] = [
   {
     id: 'mro-command-center',
     path: '/maintenance',
-    ready: { heading: 'Maintenance Command Center', level: 1 },
+    ready: { heading: 'Pusat Kendali MRO', level: 1 },
+    roles: ['Maintenance Manager']
+  },
+  {
+    id: 'mro-flight-handoffs',
+    path: '/maintenance/flight-handoffs',
+    ready: { heading: 'Flight Handoffs', level: 1 },
     roles: ['Maintenance Manager']
   },
   {
@@ -131,7 +167,7 @@ export const uiScreens: UiScreenDefinition[] = [
   {
     id: 'mro-valid-work-package-creation-review',
     path: '/maintenance?defect=DEF-MROV1-MRB-001',
-    ready: { heading: 'Maintenance Command Center', level: 1 },
+    ready: { heading: 'Pusat Kendali MRO', level: 1 },
     roles: ['Maintenance Manager'],
     prepare: async (page) => {
       await page.getByRole('heading', { name: 'Create Work Package' }).waitFor();

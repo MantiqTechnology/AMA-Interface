@@ -31,6 +31,7 @@ import type {
 } from '#shared/features/maintenance-v21';
 import { useResourceV21 } from '../../../../composables/useResourceV21';
 import { demoRoleActorIds } from '#shared/types/roles';
+import type { InventoryPartDto, InventoryWarehouseDto } from '#shared/features/inventory';
 
 const authorizationWording = 'Lisensi dan wewenang PT AMA terverifikasi.';
 
@@ -241,6 +242,16 @@ const { data: facilityData } = await useAsyncData(
   () => fetchApi<MaintenanceFacilityDto[]>('/api/maintenance/facility-planning/facilities'),
   { server: false }
 );
+const { data: inventoryParts } = await useAsyncData(
+  'maintenance-material-part-options',
+  () => fetchApi<InventoryPartDto[]>('/api/inventory/parts'),
+  { server: false }
+);
+const { data: inventoryWarehouses } = await useAsyncData(
+  'maintenance-material-station-options',
+  () => fetchApi<InventoryWarehouseDto[]>('/api/inventory/warehouses'),
+  { server: false }
+);
 
 const workPackage = computed(() => data.value);
 const currentSlot = computed(() => workPackage.value?.currentMaintenanceSlot ?? null);
@@ -310,6 +321,10 @@ const canAssessNonRoutine = computed(() => can('maintenance.defect.assess').allo
 const canRequestRelease = computed(() => can('maintenance.release.request').allowed);
 const canIssueRelease = computed(() => can('maintenance.release.issue').allowed);
 const canExportAuditPack = computed(() => can('maintenance.audit_pack.export').allowed);
+const canRequestMaterial = computed(() => can('maintenance.material.request').allowed);
+const canReserveMaterial = computed(() => can('inventory.material.reserve').allowed);
+const canIssueMaterial = computed(() => can('inventory.material.issue').allowed);
+const canInstallMaterial = computed(() => can('maintenance.material.install').allowed);
 const immutablePackage = computed(() =>
   ['RELEASED', 'CANCELLED'].includes(workPackage.value?.status ?? '')
 );
@@ -1144,6 +1159,61 @@ const resourceLoading = ref(false);
 const resourceError = ref<string | null>(null);
 
 const resource = useResourceV21(computed(() => workPackage.value?.id || ''));
+const materialRequirementDialog = ref(false);
+const materialRequirementForm = reactive({
+  partId: '',
+  requestedStationId: '',
+  requiredQuantity: 1,
+  requiredBy: '',
+  reason: '',
+  notes: ''
+});
+const materialPartOptions = computed(() =>
+  (inventoryParts.value ?? [])
+    .filter((part) => part.isActive)
+    .map((part) => ({
+      title: `${part.partNumber} - ${part.partName}`,
+      value: part.id,
+      unit: part.unitOfMeasure
+    }))
+);
+const materialStationOptions = computed(() => {
+  const seen = new Set<string>();
+  return (inventoryWarehouses.value ?? []).flatMap((warehouse) => {
+    if (seen.has(warehouse.stationId)) return [];
+    seen.add(warehouse.stationId);
+    return [{ title: warehouse.stationCode, value: warehouse.stationId }];
+  });
+});
+
+async function createMaterialRequirement() {
+  const selectedPart = (inventoryParts.value ?? []).find(
+    (part) => part.id === materialRequirementForm.partId
+  );
+  if (!selectedPart || !workPackage.value) return;
+  await runResourceMutation(async () => {
+    await resource.createMaterialRequirement({
+      workPackageId: workPackage.value!.id,
+      partId: selectedPart.id,
+      requiredQuantity: materialRequirementForm.requiredQuantity,
+      unit: selectedPart.unitOfMeasure,
+      requestedStationId: materialRequirementForm.requestedStationId,
+      requiredBy: materialRequirementForm.requiredBy || undefined,
+      reason: materialRequirementForm.reason || undefined,
+      notes: materialRequirementForm.notes || undefined
+    });
+    materialRequirementDialog.value = false;
+    Object.assign(materialRequirementForm, {
+      partId: '',
+      requestedStationId: '',
+      requiredQuantity: 1,
+      requiredBy: '',
+      reason: '',
+      notes: ''
+    });
+    await loadResourceData();
+  });
+}
 
 async function loadResourceData() {
   if (!workPackage.value?.id) return;
@@ -1845,9 +1915,7 @@ watch(
                     <div class="d-flex flex-wrap align-center ga-2 mb-3">
                       <strong>{{ finding.findingNumber }}</strong>
                       <VChip size="x-small" variant="tonal">
-                        {{
-                          finding.sourceJobCardNumber
-                        }}
+                        {{ finding.sourceJobCardNumber }}
                       </VChip>
                       <VChip
                         :color="finding.status === 'CLOSED' ? 'success' : 'warning'"
@@ -3654,8 +3722,22 @@ watch(
         <VWindowItem value="material">
           <VCard border class="mb-4">
             <VCardTitle class="d-flex align-center">
-              <span>Material Requirements</span>
+              <div>
+                <span>Kebutuhan material</span>
+                <div class="text-caption text-medium-emphasis">
+                  MRO menentukan kebutuhan dan pemasangan; Inventory mengendalikan reservasi, issue,
+                  serta return.
+                </div>
+              </div>
               <VSpacer />
+              <VBtn
+                v-if="canRequestMaterial"
+                prepend-icon="mdi-plus"
+                size="small"
+                text="Tambah kebutuhan"
+                variant="tonal"
+                @click="materialRequirementDialog = true"
+              />
             </VCardTitle>
             <VCardText>
               <VAlert v-if="resourceError" type="error" variant="tonal" class="mb-4">
@@ -3663,6 +3745,16 @@ watch(
               </VAlert>
 
               <VProgressLinear v-if="resourceLoading" indeterminate class="mb-4" />
+              <VAlert class="mb-4" type="info" variant="tonal">
+                Status reservasi dan issue bersifat read-only untuk role MRO.
+                <VBtn
+                  class="ml-2"
+                  size="small"
+                  text="Buka antrean Inventory"
+                  to="/inventory/maintenance-demand"
+                  variant="text"
+                />
+              </VAlert>
 
               <!-- Resource Declaration -->
               <VCard
@@ -3774,7 +3866,8 @@ watch(
                       <div class="d-flex flex-wrap ga-1">
                         <VBtn
                           v-if="
-                            req.lifecycleStatus === 'REQUESTED' &&
+                            canReserveMaterial &&
+                              req.lifecycleStatus === 'REQUESTED' &&
                               req.partId &&
                               req.requestedStationId
                           "
@@ -3786,7 +3879,7 @@ watch(
                           Reserve
                         </VBtn>
                         <VBtn
-                          v-if="req.lifecycleStatus === 'RESERVED'"
+                          v-if="canIssueMaterial && req.lifecycleStatus === 'RESERVED'"
                           size="x-small"
                           color="primary"
                           :loading="resourceLoading"
@@ -3795,7 +3888,7 @@ watch(
                           Issue
                         </VBtn>
                         <VBtn
-                          v-if="req.lifecycleStatus === 'RESERVED'"
+                          v-if="canReserveMaterial && req.lifecycleStatus === 'RESERVED'"
                           size="x-small"
                           variant="text"
                           :loading="resourceLoading"
@@ -3804,7 +3897,7 @@ watch(
                           Release
                         </VBtn>
                         <VBtn
-                          v-if="req.lifecycleStatus === 'ISSUED'"
+                          v-if="canInstallMaterial && req.lifecycleStatus === 'ISSUED'"
                           size="x-small"
                           color="primary"
                           :loading="resourceLoading"
@@ -3828,8 +3921,66 @@ watch(
               </VTable>
 
               <VAlert v-else type="info" variant="tonal">
-                No material requirements found for this work package.
+                Belum ada kebutuhan material untuk paket pekerjaan ini.
               </VAlert>
+
+              <VDialog v-model="materialRequirementDialog" max-width="680" persistent>
+                <VCard title="Tambah kebutuhan material">
+                  <VCardText>
+                    <VAutocomplete
+                      v-model="materialRequirementForm.partId"
+                      class="mb-3"
+                      :items="materialPartOptions"
+                      label="Part"
+                      variant="outlined"
+                    />
+                    <VSelect
+                      v-model="materialRequirementForm.requestedStationId"
+                      class="mb-3"
+                      :items="materialStationOptions"
+                      label="Station pemenuhan"
+                      variant="outlined"
+                    />
+                    <VTextField
+                      v-model.number="materialRequirementForm.requiredQuantity"
+                      class="mb-3"
+                      label="Jumlah"
+                      min="1"
+                      type="number"
+                      variant="outlined"
+                    />
+                    <VTextField
+                      v-model="materialRequirementForm.requiredBy"
+                      class="mb-3"
+                      label="Diperlukan sebelum"
+                      type="date"
+                      variant="outlined"
+                    />
+                    <VTextarea
+                      v-model="materialRequirementForm.reason"
+                      label="Alasan kebutuhan"
+                      rows="3"
+                      variant="outlined"
+                    />
+                  </VCardText>
+                  <VCardActions>
+                    <VSpacer /><VBtn
+                      text="Batal"
+                      variant="text"
+                      @click="materialRequirementDialog = false"
+                    /><VBtn
+                      :disabled="
+                        !materialRequirementForm.partId ||
+                          !materialRequirementForm.requestedStationId ||
+                          materialRequirementForm.requiredQuantity <= 0
+                      "
+                      :loading="resourceLoading"
+                      text="Kirim ke Inventory"
+                      @click="createMaterialRequirement"
+                    />
+                  </VCardActions>
+                </VCard>
+              </VDialog>
 
               <!-- Reservations -->
               <VCard v-if="materialReservations.length" border class="mt-4">

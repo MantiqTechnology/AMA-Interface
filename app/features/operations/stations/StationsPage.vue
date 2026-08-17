@@ -3,6 +3,11 @@ import type { StationDto } from '#shared/features/operations/stations';
 import StationFormDialog from './StationFormDialog.vue';
 
 const active = ref<'active' | 'inactive' | 'all'>('active');
+const route = useRoute();
+const capability = ref<string | null>(
+  typeof route.query.capability === 'string' ? route.query.capability : null
+);
+const capabilityGap = route.query.capabilityGap === 'true';
 const search = ref('');
 const dialog = ref(false);
 const editing = ref<StationDto | null>(null);
@@ -18,6 +23,21 @@ const {
       query: { active: active.value, search: search.value }
     }),
   { default: () => [], watch: [active, search] }
+);
+const filteredStations = computed(() =>
+  stations.value.filter((station) => {
+    if (
+      capabilityGap &&
+      station.hasFuelService &&
+      station.hasHandlingService &&
+      station.hasParkingService
+    )
+      return false;
+    if (capability.value === 'FUEL') return station.hasFuelService;
+    if (capability.value === 'HANDLING') return station.hasHandlingService;
+    if (capability.value === 'PARKING') return station.hasParkingService;
+    return true;
+  })
 );
 function add() {
   editing.value = null;
@@ -64,6 +84,19 @@ async function toggle(station: StationDto) {
             max-width="180"
             variant="outlined"
           />
+          <VSelect
+            v-model="capability"
+            clearable
+            hide-details
+            :items="[
+              { title: 'Fuel', value: 'FUEL' },
+              { title: 'Handling', value: 'HANDLING' },
+              { title: 'Parking', value: 'PARKING' }
+            ]"
+            label="Capability"
+            max-width="180"
+            variant="outlined"
+          />
         </div>
         <VAlert v-if="error" color="error">{{ error.message }}</VAlert>
         <VSkeletonLoader v-else-if="pending" type="table" />
@@ -80,7 +113,7 @@ async function toggle(station: StationDto) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="station in stations" :key="station.id">
+            <tr v-for="station in filteredStations" :key="station.id">
               <td>{{ station.stationCode }}</td>
               <td>{{ station.stationName }}</td>
               <td>{{ station.city }}, {{ station.province }}</td>
@@ -88,6 +121,7 @@ async function toggle(station: StationDto) {
               <td>
                 <VChip v-if="station.hasFuelService" size="small">Fuel</VChip>
                 <VChip v-if="station.hasHandlingService" size="small">Handling</VChip>
+                <VChip v-if="station.hasParkingService" size="small">Parking</VChip>
               </td>
               <td>
                 <VChip :color="station.isActive ? 'success' : 'default'" size="small">

@@ -59,10 +59,16 @@ const navItems = computed<NavItem[]>(() =>
     },
     {
       label: t('nav.ops'),
-      icon: 'mdi-airport',
+      icon: 'mdi-compass-outline',
       visible:
         can('flight.read').allowed || masterDataVisible.value || routeMasterDataVisible.value,
       children: [
+        {
+          label: t('nav.overview'),
+          to: '/ops',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('flight.read').allowed
+        },
         {
           label: t('nav.following'),
           to: '/ops/flight-following',
@@ -113,6 +119,12 @@ const navItems = computed<NavItem[]>(() =>
       visible: can('flight.read').allowed,
       children: [
         {
+          label: t('nav.overview'),
+          to: '/flights/dashboard',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('flight.read').allowed
+        },
+        {
           label: t('nav.flights'),
           to: '/flights',
           icon: 'mdi-airplane-marker',
@@ -143,28 +155,71 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('flight.read').allowed && can('flight.fuel.update').allowed
         },
         {
-          label: t('nav.stationOperations'),
-          to: '/flights/station-operations',
-          icon: 'mdi-airport',
-          visible: can('station.task.view').allowed
-        },
-        {
-          label: t('nav.actualClosure'),
-          to: '/flights/actual-closure',
-          icon: 'mdi-airplane-check',
-          visible: can('flight.read').allowed
-        },
-        {
-          label: t('nav.maintenance'),
-          to: '/flights/maintenance',
-          icon: 'mdi-wrench-clock',
-          visible: can('flight.read').allowed
-        },
-        {
           label: t('nav.aircraft'),
           icon: 'mdi-airplane',
           to: '/master-data/aircraft',
           visible: masterDataVisible.value
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: t('nav.stationOperations'),
+      icon: 'mdi-airport',
+      visible: can('station.task.view').allowed,
+      children: [
+        {
+          label: t('nav.overview'),
+          to: '/flights/station-operations',
+          icon: 'mdi-view-dashboard-outline',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.flights'),
+          to: '/flights/station-operations/flights',
+          icon: 'mdi-airplane-marker',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.services'),
+          to: '/flights/station-operations/services',
+          icon: 'mdi-toolbox-outline',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.verification'),
+          to: '/flights/station-operations/verification',
+          icon: 'mdi-clipboard-check-outline',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.actualClosure'),
+          to: '/flights/station-operations/actual-closure',
+          icon: 'mdi-airplane-check',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.technicalHandoff'),
+          to: '/flights/station-operations/maintenance',
+          icon: 'mdi-handshake-outline',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.costs'),
+          to: '/flights/station-operations/costs',
+          icon: 'mdi-cash-multiple',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.reports'),
+          to: '/flights/station-operations/reports',
+          icon: 'mdi-chart-box-outline',
+          visible: can('station.task.view').allowed
+        },
+        {
+          label: t('nav.auditTrail'),
+          to: '/flights/station-operations/audit',
+          icon: 'mdi-history',
+          visible: can('station.task.view').allowed
         }
       ].filter((child) => child.visible)
     },
@@ -612,6 +667,12 @@ const navItems = computed<NavItem[]>(() =>
           label: 'Paket Pekerjaan',
           to: '/maintenance/work-packages',
           icon: 'mdi-clipboard-list-outline',
+          visible: can('maintenance.package.read').allowed
+        },
+        {
+          label: t('nav.flightHandoffs'),
+          to: '/maintenance/flight-handoffs',
+          icon: 'mdi-handshake-outline',
           visible: can('maintenance.package.read').allowed
         },
         {

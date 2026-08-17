@@ -8,6 +8,7 @@ import { StationsRepository } from '../features/operations/stations/repository';
 import { DashboardService } from './dashboard.service';
 import { FlightOperationsVerificationService } from './flight-operations-verification.service';
 import { OperationsMonitoringService } from './operations-monitoring.service';
+import { OperationalDashboardsService } from './operational-dashboards.service';
 import { AircraftAirworthinessService } from './aircraft-airworthiness.service';
 import { AircraftTrackingService } from './aircraft-tracking.service';
 import { createAccountingService } from '../features/finance/accounting';
@@ -35,6 +36,7 @@ export function createServices(sqlite: Database.Database) {
     invoices: createInvoiceService(sqlite),
     dashboard: new DashboardService(sqlite),
     operationsMonitoring: new OperationsMonitoringService(sqlite),
+    operationalDashboards: new OperationalDashboardsService(sqlite),
     hris: new HrisService(sqlite)
   };
 }

@@ -6,7 +6,7 @@ import { getServices } from '#server/utils/services';
 import { parseBody, parseParams } from '#server/utils/validation';
 
 export default defineApiEventHandler(async (event) => {
-  requireDemoPermission(event, 'maintenance.v21.resource.write');
+  requireDemoPermission(event, 'inventory.material.reserve');
   const { id } = parseParams(event, maintenanceIdParamsSchema);
   const body = await parseBody(event, releaseMaterialReservationSchema);
   return getServices().resourceV21.releaseReservation(body, getDemoActorContext(event), id);

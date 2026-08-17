@@ -42,6 +42,7 @@ import type {
   ListMaintenanceHandoffsQuery,
   FlightStatusHistoryDto,
   ListFlightOperationsQuery,
+  ListFuelQuery,
   ListFlightRequestsQuery,
   OperationalAdvisoryDto,
   UpdateStationCostBody,
@@ -313,6 +314,7 @@ function mapFlight(row: SqlRow): FlightOperationRecord {
     discretionaryFuelLitre: num(row.discretionary_fuel_litre),
     isLocked: bool(row.is_locked),
     readinessPercent,
+    readinessRequiredChecks: required,
     readinessSummary: `${passed + notApplicable}/${required || readinessDefinitions.length} ready`,
     blockingReason: str(row.blocking_reason),
     version: num(row.version) || 1,
@@ -434,7 +436,7 @@ function readinessPresentation(code: string, status: string) {
       category: 'AIRCRAFT',
       ownerRole: 'Maintenance Reviewer',
       recommendedAction: 'Review aircraft serviceability and maintenance restrictions.',
-      actionHref: '/flights/maintenance'
+      actionHref: '/maintenance/flight-handoffs'
     },
     AIRCRAFT_LOCATION: {
       category: 'AIRCRAFT',
@@ -541,29 +543,32 @@ export class FlightOperationsService {
     private readonly routesService?: RoutesService
   ) {}
 
-  list(query: ListFlightOperationsQuery): FlightOperationOverviewDto {
-    const rows = this.queryFlights(query);
+  list(
+    query: ListFlightOperationsQuery,
+    stationScope: readonly string[] = ['ALL']
+  ): FlightOperationOverviewDto {
+    this.assertStationInScope(query.stationId, stationScope);
+    const queriedRows = this.queryFlights(query, stationScope);
+    const hasMore = queriedRows.length > query.limit;
+    const rows = queriedRows.slice(0, query.limit);
     const summary = Object.fromEntries(
       flightOperationStatuses.map((status) => [status, 0])
     ) as Record<FlightOperationStatus, number>;
 
-    const summaryRows = this.sqlite
-      .prepare(
-        `SELECT status.code as current_status, COUNT(*) as count
-         FROM flight_operations f
-         JOIN flight_operation_statuses status ON status.id = f.current_status_id
-         GROUP BY status.code`
-      )
-      .all() as SqlRow[];
-
-    for (const row of summaryRows) {
-      const status = String(row.current_status) as FlightOperationStatus;
-      if (status in summary) summary[status] = Number(row.count);
+    for (const row of rows) {
+      const status = String(row.current_status_code) as FlightOperationStatus;
+      summary[status] += 1;
     }
 
     return {
       summary,
-      flights: rows.map(mapFlight)
+      flights: rows.map(mapFlight),
+      pagination: {
+        limit: query.limit,
+        offset: query.offset,
+        returned: rows.length,
+        hasMore
+      }
     };
   }
 
@@ -1157,7 +1162,7 @@ export class FlightOperationsService {
   listRequests(query: ListFlightRequestsQuery): FlightRequestOverviewDto {
     const conditions: string[] = [];
     const params: Record<string, string | number> = {
-      limit: query.limit,
+      limit: query.limit + 1,
       offset: query.offset
     };
     if (query.search) {
@@ -1678,8 +1683,28 @@ export class FlightOperationsService {
     return this.evaluateReadiness(id, true, actorUserId);
   }
 
-  listOperationalAdvisories(): OperationalAdvisoryDto[] {
-    return (
+  listOperationalAdvisories(
+    params: {
+      status?: 'ACTIVE' | 'RESOLVED' | 'CANCELLED';
+      dateFrom?: string;
+      dateTo?: string;
+      stationId?: string;
+    } = {},
+    stationScope: readonly string[] = ['ALL']
+  ): OperationalAdvisoryDto[] {
+    this.assertStationInScope(params.stationId, stationScope);
+    const scopedStationIds = stationScope.includes('ALL')
+      ? null
+      : new Set(
+          (
+            this.sqlite
+              .prepare(
+                `SELECT id FROM stations WHERE station_code IN (${stationScope.map(() => '?').join(', ')})`
+              )
+              .all(...stationScope) as SqlRow[]
+          ).map((row) => String(row.id))
+        );
+    const advisories = (
       this.sqlite
         .prepare(
           `SELECT * FROM operational_advisories
@@ -1701,6 +1726,26 @@ export class FlightOperationsService {
       operationalLimitation: str(row.operational_limitation),
       sourceReference: str(row.source_reference)
     }));
+    return advisories.filter((advisory) => {
+      if (params.status && advisory.status !== params.status) return false;
+      if (params.dateFrom && advisory.validUntil.slice(0, 10) < params.dateFrom) return false;
+      if (params.dateTo && advisory.validFrom.slice(0, 10) > params.dateTo) return false;
+      const applicableStationIds = params.stationId
+        ? new Set([params.stationId])
+        : scopedStationIds;
+      if (!applicableStationIds) return true;
+      if (advisory.stationId) return applicableStationIds.has(advisory.stationId);
+      if (!advisory.routeId) return false;
+      const route = this.sqlite
+        .prepare('SELECT origin_station_id, destination_station_id FROM routes WHERE id = ?')
+        .get(advisory.routeId) as SqlRow | undefined;
+      return Boolean(
+        route &&
+        [String(route.origin_station_id), String(route.destination_station_id)].some((id) =>
+          applicableStationIds.has(id)
+        )
+      );
+    });
   }
 
   setOperationalAdvisoryStatus(
@@ -4268,8 +4313,44 @@ export class FlightOperationsService {
     return row;
   }
 
-  listFuel(params: { flightId?: string } = {}): FlightFuelRequestDto[] {
-    const where = params.flightId ? 'WHERE f.id = @flightId' : '';
+  listFuel(
+    params: ListFuelQuery & { flightId?: string } = {},
+    stationScope: readonly string[] = ['ALL']
+  ): FlightFuelRequestDto[] {
+    this.assertStationInScope(params.stationId, stationScope);
+    const conditions: string[] = [];
+    const values: Record<string, string> = {};
+    if (params.flightId) {
+      conditions.push('f.id = @flightId');
+      values.flightId = params.flightId;
+    }
+    if (params.status) {
+      conditions.push('status.code = @status');
+      values.status = params.status;
+    }
+    if (params.stationId) {
+      conditions.push(
+        `station.id = @stationId AND
+         (f.origin_station_id = @stationId OR f.destination_station_id = @stationId OR f.actual_arrival_station_id = @stationId)`
+      );
+      values.stationId = params.stationId;
+    }
+    if (params.dateFrom) {
+      conditions.push('f.flight_date >= @dateFrom');
+      values.dateFrom = params.dateFrom;
+    }
+    if (params.dateTo) {
+      conditions.push('f.flight_date <= @dateTo');
+      values.dateTo = params.dateTo;
+    }
+    if (!stationScope.includes('ALL')) {
+      const scopePlaceholders = stationScope.map((_, index) => `@scope${index}`).join(', ');
+      conditions.push(`station.station_code IN (${scopePlaceholders})`);
+      stationScope.forEach((code, index) => {
+        values[`scope${index}`] = code;
+      });
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     return (
       this.sqlite
         .prepare(
@@ -4283,7 +4364,7 @@ export class FlightOperationsService {
        ${where}
        ORDER BY r.updated_at DESC`
         )
-        .all(params) as SqlRow[]
+        .all(values) as SqlRow[]
     ).map((row) => ({
       id: String(row.id),
       flightId: String(row.flight_id),
@@ -4654,11 +4735,14 @@ export class FlightOperationsService {
     });
   }
 
-  private queryFlights(query: ListFlightOperationsQuery) {
+  private queryFlights(
+    query: ListFlightOperationsQuery,
+    stationScope: readonly string[] = ['ALL']
+  ) {
     const conditions: string[] = [];
     const params: Record<string, SqlValue> = {
       search: `%${query.search ?? ''}%`,
-      limit: query.limit,
+      limit: query.limit + 1,
       offset: query.offset
     };
 
@@ -4666,6 +4750,134 @@ export class FlightOperationsService {
       conditions.push(
         '(f.flight_number LIKE @search OR c.account_name LIKE @search OR r.route_code LIKE @search)'
       );
+    }
+    if (query.status) {
+      conditions.push('current_status.code = @status');
+      params.status = query.status;
+    }
+    if (query.manifestStatus) {
+      conditions.push(
+        `EXISTS (
+          SELECT 1 FROM flight_manifests dashboard_manifest
+          JOIN manifest_statuses dashboard_manifest_status
+            ON dashboard_manifest_status.id = dashboard_manifest.status_id
+          WHERE dashboard_manifest.flight_operation_id = f.id
+            AND dashboard_manifest_status.code = @manifestStatus
+        )`
+      );
+      params.manifestStatus = query.manifestStatus;
+    }
+    if (query.fuelStatus) {
+      const fuelStationPredicate = query.stationId
+        ? 'AND dashboard_supplier.station_id = @fuelStationId'
+        : stationScope.includes('ALL')
+          ? 'AND dashboard_fuel_station.is_active = 1'
+          : `AND dashboard_fuel_station.is_active = 1
+             AND dashboard_fuel_station.station_code IN (${stationScope
+               .map((_, index) => `@scope${index}`)
+               .join(', ')})`;
+      conditions.push(
+        `EXISTS (
+          SELECT 1 FROM flight_fuel_requests dashboard_fuel
+          JOIN fuel_workflow_statuses dashboard_fuel_status
+            ON dashboard_fuel_status.id = dashboard_fuel.status_id
+          JOIN fuel_suppliers dashboard_supplier
+            ON dashboard_supplier.id = dashboard_fuel.fuel_supplier_id
+          JOIN stations dashboard_fuel_station
+            ON dashboard_fuel_station.id = dashboard_supplier.station_id
+          WHERE dashboard_fuel.flight_id = f.id
+            AND dashboard_fuel_status.code = @fuelStatus
+            ${fuelStationPredicate}
+        )`
+      );
+      params.fuelStatus = query.fuelStatus;
+      if (query.stationId) params.fuelStationId = query.stationId;
+    }
+    if (query.stationId) {
+      conditions.push(
+        '(f.origin_station_id = @stationId OR f.destination_station_id = @stationId OR f.actual_arrival_station_id = @stationId)'
+      );
+      params.stationId = query.stationId;
+    }
+    if (!stationScope.includes('ALL')) {
+      const scopePlaceholders = stationScope.map((_, index) => `@scope${index}`).join(', ');
+      conditions.push(
+        `(o.station_code IN (${scopePlaceholders}) OR d.station_code IN (${scopePlaceholders}) OR actual_arrival_station.station_code IN (${scopePlaceholders}))`
+      );
+      stationScope.forEach((code, index) => {
+        params[`scope${index}`] = code;
+      });
+    }
+    const lifecycleStatuses: Record<string, string[]> = {
+      PLANNING: [
+        'DRAFT',
+        'PENDING_READINESS',
+        'READY_FOR_OCC_REVIEW',
+        'READY_FOR_APPROVAL',
+        'APPROVED',
+        'REAPPROVAL_REQUIRED'
+      ],
+      BLOCKED: ['BLOCKED'],
+      DEPARTURE: ['SCHEDULED', 'CHECK_IN_OPEN', 'CHECK_IN_CLOSED', 'READY_FOR_DEPARTURE'],
+      AIRBORNE: ['IN_PROGRESS'],
+      ARRIVAL: ['LANDED', 'DIVERTED', 'PENDING_CLOSURE'],
+      TERMINAL: ['CLOSED', 'CANCELLED', 'REOPENED_FOR_CORRECTION']
+    };
+    if (query.lifecycle) {
+      const statuses = lifecycleStatuses[query.lifecycle];
+      const placeholders = statuses.map((_, index) => `@lifecycle${index}`).join(', ');
+      conditions.push(`current_status.code IN (${placeholders})`);
+      statuses.forEach((status, index) => {
+        params[`lifecycle${index}`] = status;
+      });
+    }
+    const requiredChecks = `(SELECT COUNT(*) FROM flight_readiness_checks chk WHERE chk.flight_id = f.id AND chk.is_required = 1 AND (chk.assurance_phase = 'PLANNING' OR chk.assurance_phase IS NULL))`;
+    const passedChecks = `(SELECT COUNT(*) FROM flight_readiness_checks chk JOIN readiness_statuses rs ON rs.id = chk.status_id WHERE chk.flight_id = f.id AND chk.is_required = 1 AND rs.code IN ('PASS', 'NOT_APPLICABLE') AND (chk.assurance_phase = 'PLANNING' OR chk.assurance_phase IS NULL))`;
+    if (query.readinessBand === 'READY')
+      conditions.push(
+        `current_status.code <> 'BLOCKED' AND ${requiredChecks} > 0 AND ${passedChecks} >= ${requiredChecks}`
+      );
+    if (query.readinessBand === 'NEEDS_ACTION')
+      conditions.push(
+        `current_status.code <> 'BLOCKED' AND ${requiredChecks} > 0 AND ${passedChecks} < ${requiredChecks}`
+      );
+    if (query.readinessBand === 'BLOCKED') conditions.push(`current_status.code = 'BLOCKED'`);
+    if (query.readinessBand === 'NOT_EVALUATED')
+      conditions.push(`current_status.code <> 'BLOCKED' AND ${requiredChecks} = 0`);
+    if (query.attention)
+      conditions.push(
+        `(current_status.code IN ('BLOCKED', 'PENDING_CLOSURE') OR (current_status.code NOT IN ('CLOSED', 'CANCELLED') AND ${requiredChecks} > ${passedChecks}))`
+      );
+    if (query.departed || query.cohort === 'DEPARTED')
+      conditions.push('f.actual_departure_at IS NOT NULL');
+    if (query.cohort === 'PLANNED') conditions.push(`current_status.code <> 'CANCELLED'`);
+    if (query.cohort === 'CLOSED') conditions.push(`current_status.code = 'CLOSED'`);
+    if (query.departurePerformance) {
+      conditions.push('f.actual_departure_at IS NOT NULL AND f.scheduled_departure_at IS NOT NULL');
+      conditions.push(
+        query.departurePerformance === 'ON_TIME'
+          ? `(julianday(f.actual_departure_at) - julianday(f.scheduled_departure_at)) * 1440 <= 15`
+          : `(julianday(f.actual_departure_at) - julianday(f.scheduled_departure_at)) * 1440 > 15`
+      );
+    }
+    const addAgeCondition = (column: string, bucket: string) => {
+      conditions.push(`${column} IS NOT NULL`);
+      const ageExpression = `(julianday('now') - julianday(${column})) * 1440`;
+      if (bucket === 'UNDER_2H') conditions.push(`${ageExpression} < 120`);
+      if (bucket === '2_TO_6H')
+        conditions.push(`${ageExpression} >= 120 AND ${ageExpression} <= 360`);
+      if (bucket === 'OVER_6H') conditions.push(`${ageExpression} > 360`);
+    };
+    if (query.age) addAgeCondition('f.actual_arrival_at', query.age);
+    if (query.approvalAge) {
+      const oldestPendingApproval = `(SELECT MIN(approval.requested_at) FROM flight_operation_approvals approval JOIN flight_approval_statuses approval_status ON approval_status.id = approval.status_id WHERE approval.flight_id = f.id AND approval_status.code = 'PENDING' AND approval.requested_at IS NOT NULL)`;
+      const agePredicate =
+        query.approvalAge === 'UNDER_2H'
+          ? `(julianday('now') - julianday(${oldestPendingApproval})) * 1440 < 120`
+          : query.approvalAge === '2_TO_6H'
+            ? `(julianday('now') - julianday(${oldestPendingApproval})) * 1440 BETWEEN 120 AND 360`
+            : `(julianday('now') - julianday(${oldestPendingApproval})) * 1440 > 360`;
+      conditions.push(`${oldestPendingApproval} IS NOT NULL AND ${agePredicate}`);
     }
     for (const [key, column] of [
       ['statusId', 'f.current_status_id'],
@@ -4705,6 +4917,21 @@ export class FlightOperationsService {
         `${this.flightSelectSql()} ${where} ORDER BY datetime(f.scheduled_departure_at) ${order}, f.flight_number ${order} LIMIT @limit OFFSET @offset`
       )
       .all(params) as SqlRow[];
+  }
+
+  private assertStationInScope(stationId: string | undefined, stationScope: readonly string[]) {
+    if (!stationId || stationScope.includes('ALL')) return;
+    const station = this.sqlite
+      .prepare('SELECT station_code FROM stations WHERE id = ?')
+      .get(stationId) as SqlRow | undefined;
+    if (!station || !stationScope.includes(String(station.station_code))) {
+      throw new DomainError(
+        'FLIGHT_STATION_FORBIDDEN',
+        'Station is outside the active role scope.',
+        403,
+        { stationId, stationScope }
+      );
+    }
   }
 
   private queryFlightById(id: string) {

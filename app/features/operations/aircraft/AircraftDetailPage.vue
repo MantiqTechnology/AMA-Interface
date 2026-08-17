@@ -490,7 +490,7 @@ function readinessItemColor(state: ReadinessState) {
             <VBtn
               prepend-icon="mdi-wrench-clock"
               :to="{
-                path: '/flights/maintenance',
+                path: '/maintenance/flight-handoffs',
                 query: { search: record.registrationNumber }
               }"
               variant="outlined"
@@ -774,7 +774,7 @@ function readinessItemColor(state: ReadinessState) {
                 class="mt-5"
                 prepend-icon="mdi-open-in-new"
                 :to="{
-                  path: '/flights/maintenance',
+                  path: '/maintenance/flight-handoffs',
                   query: { search: record.registrationNumber }
                 }"
                 variant="tonal"

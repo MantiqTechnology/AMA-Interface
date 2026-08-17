@@ -8,6 +8,7 @@ import type { MasterDocumentDto } from '../../shared/contracts/documents';
 import type {
   GoodsReceiptDto,
   InventoryDashboardDto,
+  InventoryMaintenanceDemandDto,
   InventoryMovementDto,
   InventoryStockDto,
   InventoryWarehouseDto,
@@ -151,6 +152,46 @@ describe('inventory APIs', () => {
     expect(
       stationWarehouses.ok && stationWarehouses.data.map((warehouse) => warehouse.stationCode)
     ).toEqual(['WMX']);
+  });
+
+  it('exposes MRO material demand only to Inventory and separates lifecycle actions', async () => {
+    const demand = await $fetch<ApiResponse<InventoryMaintenanceDemandDto[]>>(
+      '/api/inventory/maintenance-demand',
+      { headers: controllerCookie }
+    );
+    expect(demand.ok).toBe(true);
+    expect(demand.ok && demand.data.length).toBeGreaterThan(0);
+    expect(
+      demand.ok && demand.data.every((item) => item.workPackageNumber && item.aircraftRegistration)
+    ).toBe(true);
+
+    const mroDemand = await $fetch<ApiResponse<unknown>>('/api/inventory/maintenance-demand', {
+      headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+      ignoreResponseError: true
+    });
+    expect(!mroDemand.ok && mroDemand.error.code).toBe('FORBIDDEN');
+
+    const mroReserve = await $fetch<ApiResponse<unknown>>(
+      '/api/inventory/maintenance-demand/reservations',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=Maintenance%20Manager' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!mroReserve.ok && mroReserve.error.code).toBe('FORBIDDEN');
+
+    const inventoryInstall = await $fetch<ApiResponse<unknown>>(
+      '/api/maintenance/work-packages/mwp-mrov1-active/material-install',
+      {
+        method: 'POST',
+        headers: controllerCookie,
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!inventoryInstall.ok && inventoryInstall.error.code).toBe('FORBIDDEN');
   });
 
   it('runs PR to PO approval and partial receipt without over-receipt', async () => {

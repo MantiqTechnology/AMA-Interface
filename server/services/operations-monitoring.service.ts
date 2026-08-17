@@ -15,6 +15,8 @@ type FlightRow = Omit<
   | 'plannedDestinationCode'
   | 'actualArrivalStationCode'
   | 'stationScopeMatch'
+  | 'readinessRequiredChecks'
+  | 'readinessCompletedChecks'
 > & {
   requiredChecks: number;
   completedChecks: number;
@@ -74,6 +76,14 @@ export class OperationsMonitoringService {
       conditions.push('flight.flight_date = @date');
       parameters.date = query.date;
     }
+    if (query.dateFrom) {
+      conditions.push('flight.flight_date >= @dateFrom');
+      parameters.dateFrom = query.dateFrom;
+    }
+    if (query.dateTo) {
+      conditions.push('flight.flight_date <= @dateTo');
+      parameters.dateTo = query.dateTo;
+    }
     if (query.stationId) {
       conditions.push(
         '(flight.origin_station_id = @stationId OR flight.destination_station_id = @stationId OR flight.actual_arrival_station_id = @stationId)'
@@ -105,6 +115,7 @@ export class OperationsMonitoringService {
            origin.station_code AS originCode,
            flight.destination_station_id AS destinationStationId,
            destination.station_code AS destinationCode,
+           route.id AS routeId, route.route_code AS routeCode,
            origin.latitude AS originLatitude, origin.longitude AS originLongitude,
            destination.latitude AS destinationLatitude, destination.longitude AS destinationLongitude,
            aircraft.id AS aircraftId,
@@ -127,13 +138,16 @@ export class OperationsMonitoringService {
            current_position.recorded_at AS positionRecordedAt,
            current_position.version AS positionVersion,
            (SELECT COUNT(*) FROM flight_readiness_checks check_row
-             WHERE check_row.flight_id = flight.id AND check_row.is_required = 1) AS requiredChecks,
+             WHERE check_row.flight_id = flight.id AND check_row.is_required = 1
+               AND (check_row.assurance_phase = 'PLANNING' OR check_row.assurance_phase IS NULL)) AS requiredChecks,
            (SELECT COUNT(*) FROM flight_readiness_checks check_row
              JOIN readiness_statuses check_status ON check_status.id = check_row.status_id
              WHERE check_row.flight_id = flight.id AND check_row.is_required = 1
-               AND check_status.code IN ('PASS', 'NOT_APPLICABLE')) AS completedChecks
+               AND check_status.code IN ('PASS', 'NOT_APPLICABLE')
+               AND (check_row.assurance_phase = 'PLANNING' OR check_row.assurance_phase IS NULL)) AS completedChecks
          FROM flight_operations flight
          JOIN flight_operation_statuses status ON status.id = flight.current_status_id
+         JOIN routes route ON route.id = flight.route_id
          JOIN stations origin ON origin.id = flight.origin_station_id
          JOIN stations destination ON destination.id = flight.destination_station_id
          LEFT JOIN stations actual_arrival_station ON actual_arrival_station.id = flight.actual_arrival_station_id
@@ -146,7 +160,7 @@ export class OperationsMonitoringService {
          ORDER BY COALESCE(flight.scheduled_departure_at, flight.flight_date) ASC`
       )
       .all(parameters) as FlightRow[];
-    return rows.map(
+    const mapped: OperationalFlightMonitorDto[] = rows.map(
       ({
         requiredChecks,
         completedChecks,
@@ -233,6 +247,8 @@ export class OperationsMonitoringService {
           ...row,
           position,
           readinessPercent,
+          readinessRequiredChecks: requiredChecks,
+          readinessCompletedChecks: completedChecks,
           delayMinutes,
           urgency,
           nextAction: nextAction(row.currentStatus),
@@ -242,6 +258,12 @@ export class OperationsMonitoringService {
         };
       }
     );
+    if (!query.tracking) return mapped;
+    return mapped.filter((flight) => {
+      if (query.tracking === 'LIVE') return Boolean(flight.position && !flight.position.isStale);
+      if (query.tracking === 'STALE') return Boolean(flight.position?.isStale);
+      return !flight.position;
+    });
   }
 
   operationsOverview(query: OperationsMonitoringQuery): OperationsOverviewDto {

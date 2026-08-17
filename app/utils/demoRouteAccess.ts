@@ -20,6 +20,7 @@ const routeAccessRules: RouteAccessRule[] = [
   },
   { prefix: '/master-data/routes', any: ['master_data.read', 'platform.module.manage'] },
   { prefix: '/master-data', all: ['platform.module.manage'] },
+  { prefix: '/ops', all: ['flight.read'] },
   { prefix: '/ops/flight-following', all: ['flight.read'] },
   { prefix: '/ops/flights', all: ['flight.read'] },
   { prefix: '/ops/flight-closure', all: ['flight.read'] },
@@ -28,8 +29,11 @@ const routeAccessRules: RouteAccessRule[] = [
   { prefix: '/flights/manifest', all: ['flight.manifest.view'] },
   { prefix: '/flights/fuel', all: ['flight.read', 'flight.fuel.update'] },
   { prefix: '/flights/station-operations', all: ['station.task.view'] },
-  { prefix: '/flights/actual-closure', all: ['flight.read'] },
-  { prefix: '/flights/maintenance', all: ['flight.read'] },
+  { prefix: '/flights/actual-closure', all: ['station.task.view'] },
+  {
+    prefix: '/flights/maintenance',
+    any: ['station.task.view', 'maintenance.package.read']
+  },
   { prefix: '/flights', all: ['flight.read'] }
 ];
 

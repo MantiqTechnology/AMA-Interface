@@ -17,46 +17,36 @@ const { context, pending, dataset, stationTasks } = useStationOperationsPageData
 
 const kpiCards = computed(() => [
   {
-    key: 'inbound',
-    label: 'Inbound Flights',
-    value: numberFormat(dataset.value.kpi.inboundFlights),
-    icon: 'mdi-airplane-landing',
-    tone: 'info'
+    label: 'Flight hari ini',
+    value: numberFormat(dataset.value.flights.length),
+    icon: 'mdi-airplane'
   },
   {
-    key: 'outbound',
-    label: 'Outbound Flights',
-    value: numberFormat(dataset.value.kpi.outboundFlights),
-    icon: 'mdi-airplane-takeoff',
-    tone: 'success'
-  },
-  {
-    key: 'action',
-    label: 'Flights Needing Action',
+    label: 'Belum siap',
     value: numberFormat(dataset.value.kpi.flightsNeedingAction),
-    icon: 'mdi-alert-outline',
-    tone: 'warning'
+    icon: 'mdi-airplane-alert',
+    tone: 'danger' as const,
+    to: '/flights/station-operations/flights?readiness=NOT_READY'
   },
   {
-    key: 'pax',
-    label: 'Pax Check-in / Boarded',
-    value: `${numberFormat(dataset.value.kpi.paxCheckedIn)} / ${numberFormat(dataset.value.kpi.paxBoarded)}`,
-    icon: 'mdi-account-group-outline',
-    tone: 'secondary'
+    label: 'Verifikasi tertunda',
+    value: numberFormat(stationTasks.value.filter((task) => task.status !== 'VERIFIED').length),
+    icon: 'mdi-clipboard-check-outline',
+    tone: 'warning' as const,
+    to: '/flights/station-operations/verification'
   },
   {
-    key: 'services',
-    label: 'Pending Services',
+    label: 'Layanan tertunda',
     value: numberFormat(dataset.value.kpi.pendingServices),
     icon: 'mdi-toolbox-outline',
-    tone: 'info'
+    to: '/flights/station-operations/services'
   },
   {
-    key: 'costs',
-    label: 'Pending Costs',
+    label: 'Biaya perlu tindakan',
     value: numberFormat(dataset.value.kpi.pendingCosts),
     icon: 'mdi-cash-clock',
-    tone: 'warning'
+    tone: 'warning' as const,
+    to: '/flights/station-operations/costs'
   }
 ]);
 export interface StationOperationsPageData {
@@ -117,17 +107,6 @@ const flightsNotReadyCount = computed<number>(
     dataset.value.flights.filter((flight: StationFlightRow) => flight.readiness !== 'READY').length
 );
 
-const draftCostCount = computed<number>(
-  () => dataset.value.costs.filter((cost: StationCostRow) => cost.status === 'DRAFT').length
-);
-
-const submittedCostCount = computed<number>(
-  () => dataset.value.costs.filter((cost: StationCostRow) => cost.status === 'SUBMITTED').length
-);
-
-const approvedCostCount = computed<number>(
-  () => dataset.value.costs.filter((cost: StationCostRow) => cost.status === 'APPROVED').length
-);
 const originTaskCount = computed(
   () =>
     stationTasks.value.filter(
@@ -161,72 +140,76 @@ const occSignoffCount = computed(
       (task) => task.stationDecision === 'VERIFIED' && task.occDecision !== 'APPROVED'
     ).length
 );
-const attentionItems = computed(() => [
-  {
-    label: 'Departure preparation',
-    value: originTaskCount.value,
-    icon: 'mdi-airplane-takeoff',
-    tone: 'warning',
-    to: '/flights/station-operations/verification',
-    query: { phase: 'ORIGIN_DEPARTURE' }
-  },
-  {
-    label: 'Arrival completion',
-    value: arrivalTaskCount.value,
-    icon: 'mdi-airplane-landing',
-    tone: 'info',
-    to: '/flights/station-operations/verification',
-    query: { phase: 'DESTINATION_ARRIVAL' }
-  },
-  {
-    label: 'Closure dependency',
-    value: closureTaskCount.value,
-    icon: 'mdi-lock-clock-outline',
-    tone: 'warning',
-    to: '/flights/station-operations/verification',
-    query: { phase: 'DESTINATION_CLOSURE' }
-  },
-  {
-    label: 'Evidence pending',
-    value: evidencePendingCount.value,
-    icon: 'mdi-file-alert-outline',
-    tone: 'error',
-    to: '/flights/station-operations/verification',
-    query: {}
-  },
-  {
-    label: 'OCC sign-off pending',
-    value: occSignoffCount.value,
-    icon: 'mdi-shield-check-outline',
-    tone: 'secondary',
-    to: '/flights/station-operations/verification',
-    query: {}
-  },
-  {
-    label: 'Services awaiting confirmation',
-    value: pendingServiceCount.value,
-    icon: 'mdi-toolbox-outline',
-    tone: 'info',
-    to: '/flights/station-operations/services',
-    query: {}
-  },
-  {
-    label: 'Costs awaiting action',
-    value: pendingCostCount.value,
-    icon: 'mdi-cash-clock',
-    tone: 'warning',
-    to: '/flights/station-operations/costs',
-    query: {}
-  },
-  {
-    label: 'Flights not ready',
-    value: flightsNotReadyCount.value,
-    icon: 'mdi-airplane-alert',
-    tone: 'error',
-    to: '/flights/station-operations/flights',
-    query: {}
-  }
-]);
+const attentionItems = computed(() =>
+  [
+    {
+      label: 'Persiapan keberangkatan',
+      value: originTaskCount.value,
+      icon: 'mdi-airplane-takeoff',
+      tone: 'warning',
+      to: '/flights/station-operations/verification',
+      query: { phase: 'ORIGIN_DEPARTURE' }
+    },
+    {
+      label: 'Penyelesaian kedatangan',
+      value: arrivalTaskCount.value,
+      icon: 'mdi-airplane-landing',
+      tone: 'info',
+      to: '/flights/station-operations/verification',
+      query: { phase: 'DESTINATION_ARRIVAL' }
+    },
+    {
+      label: 'Dependensi penutupan',
+      value: closureTaskCount.value,
+      icon: 'mdi-lock-clock-outline',
+      tone: 'warning',
+      to: '/flights/station-operations/verification',
+      query: { phase: 'DESTINATION_CLOSURE' }
+    },
+    {
+      label: 'Bukti belum lengkap',
+      value: evidencePendingCount.value,
+      icon: 'mdi-file-alert-outline',
+      tone: 'error',
+      to: '/flights/station-operations/verification',
+      query: {}
+    },
+    {
+      label: 'Menunggu sign-off OCC',
+      value: occSignoffCount.value,
+      icon: 'mdi-shield-check-outline',
+      tone: 'secondary',
+      to: '/flights/station-operations/verification',
+      query: {}
+    },
+    {
+      label: 'Layanan menunggu konfirmasi',
+      value: pendingServiceCount.value,
+      icon: 'mdi-toolbox-outline',
+      tone: 'info',
+      to: '/flights/station-operations/services',
+      query: {}
+    },
+    {
+      label: 'Biaya menunggu tindakan',
+      value: pendingCostCount.value,
+      icon: 'mdi-cash-clock',
+      tone: 'warning',
+      to: '/flights/station-operations/costs',
+      query: {}
+    },
+    {
+      label: 'Flight belum siap',
+      value: flightsNotReadyCount.value,
+      icon: 'mdi-airplane-alert',
+      tone: 'error',
+      to: '/flights/station-operations/flights',
+      query: {}
+    }
+  ]
+    .filter((item) => item.value > 0)
+    .slice(0, 5)
+);
 
 const isEmpty = computed(
   () =>
@@ -259,26 +242,15 @@ const isEmpty = computed(
   </VCard>
 
   <template v-else>
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-      <VCard v-for="card in kpiCards" :key="card.key" border class="pa-4">
-        <div class="mb-3 flex items-start justify-between gap-2">
-          <span class="text-caption text-text-secondary">{{ card.label }}</span>
-          <VAvatar :color="card.tone" size="32" variant="tonal">
-            <VIcon :icon="card.icon" size="18" />
-          </VAvatar>
-        </div>
-        <div class="text-h5 font-weight-bold">{{ card.value }}</div>
-        <div class="mt-1 text-caption text-text-secondary">Current operational date</div>
-      </VCard>
-    </div>
+    <DsMetricStrip class="mb-4" :items="kpiCards" />
 
     <div class="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
       <VCard border class="xl:col-span-8">
         <div class="flex flex-wrap items-center justify-between gap-3 pa-4">
           <div>
-            <h2 class="text-subtitle-1 font-weight-bold">Priority Flight Board</h2>
+            <h2 class="text-subtitle-1 font-weight-bold">Prioritas kesiapan flight</h2>
             <p class="text-caption text-text-secondary">
-              Flights needing attention are shown first.
+              Flight dengan blocker paling kritis ditampilkan lebih dahulu.
             </p>
           </div>
           <VBtn
@@ -287,7 +259,7 @@ const isEmpty = computed(
             append-icon="mdi-arrow-right"
             :to="context.withContext('/flights/station-operations/flights')"
           >
-            Open Flights
+            Buka daftar flight
           </VBtn>
         </div>
         <VDivider />
@@ -300,13 +272,13 @@ const isEmpty = computed(
                 <th>Route</th>
                 <th>Status</th>
                 <th>Readiness</th>
-                <th>Pax / Cargo</th>
-                <th class="text-right">Action</th>
+                <th>Blocker / pemilik</th>
+                <th class="text-right">Tindakan</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="priorityFlights.length === 0">
-                <td colspan="7" class="py-8 text-center text-text-secondary">No flights found.</td>
+                <td colspan="7" class="py-8 text-center text-text-secondary">Tidak ada flight.</td>
               </tr>
               <tr v-for="flight in priorityFlights" v-else :key="flight.id">
                 <td>
@@ -318,8 +290,10 @@ const isEmpty = computed(
                 <td><DsStatusBadge :value="flight.status" /></td>
                 <td><DsStatusBadge :value="flight.readiness" /></td>
                 <td>
-                  <span v-if="flight.type === 'PSG'">{{ flight.paxOnboard }} / {{ flight.paxTotal }}</span>
-                  <span v-else>{{ numberFormat(flight.cargoWeightKg) }} kg</span>
+                  <div>{{ flight.blockerLabel ?? 'Tidak ada blocker' }}</div>
+                  <div v-if="flight.readinessOwner" class="text-caption text-medium-emphasis">
+                    Pemilik: {{ flight.readinessOwner }}
+                  </div>
                 </td>
                 <td class="text-right">
                   <DsTooltipIconButton
@@ -337,8 +311,8 @@ const isEmpty = computed(
 
       <VCard border class="xl:col-span-4">
         <div class="pa-4">
-          <h2 class="text-subtitle-1 font-weight-bold">Attention Queue</h2>
-          <p class="text-caption text-text-secondary">Operational items requiring follow-up.</p>
+          <h2 class="text-subtitle-1 font-weight-bold">Antrean perhatian</h2>
+          <p class="text-caption text-text-secondary">Item aktif yang memerlukan tindak lanjut.</p>
         </div>
         <VDivider />
         <VList lines="two">
@@ -353,72 +327,10 @@ const isEmpty = computed(
               </VAvatar>
             </template>
             <VListItemTitle>{{ item.label }}</VListItemTitle>
-            <VListItemSubtitle>{{ item.value }} record(s)</VListItemSubtitle>
+            <VListItemSubtitle>{{ item.value }} item</VListItemSubtitle>
             <template #append><VIcon icon="mdi-chevron-right" /></template>
           </VListItem>
         </VList>
-      </VCard>
-    </div>
-
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <VCard border class="pa-4">
-        <h2 class="mb-4 text-subtitle-1 font-weight-bold">Passenger &amp; Cargo</h2>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Checked in</div>
-            <div class="text-h6 font-weight-bold">{{ numberFormat(dataset.kpi.paxCheckedIn) }}</div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Boarded</div>
-            <div class="text-h6 font-weight-bold">{{ numberFormat(dataset.kpi.paxBoarded) }}</div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Load factor</div>
-            <div class="text-h6 font-weight-bold">
-              {{ dataset.dailyReport.passengers.loadFactor }}%
-            </div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Cargo weight</div>
-            <div class="text-h6 font-weight-bold">
-              {{ numberFormat(dataset.kpi.cargoWeightKg) }} kg
-            </div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Shipments</div>
-            <div class="text-h6 font-weight-bold">{{ dataset.dailyReport.cargo.shipments }}</div>
-          </div>
-        </div>
-      </VCard>
-
-      <VCard border class="pa-4">
-        <h2 class="mb-4 text-subtitle-1 font-weight-bold">Service &amp; Cost Status</h2>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Requested services</div>
-            <div class="text-h6 font-weight-bold">{{ dataset.dailyReport.services.requested }}</div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Confirmed services</div>
-            <div class="text-h6 font-weight-bold">{{ dataset.dailyReport.services.confirmed }}</div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Completed services</div>
-            <div class="text-h6 font-weight-bold">{{ dataset.dailyReport.services.completed }}</div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Draft costs</div>
-            <div class="text-h6 font-weight-bold">{{ draftCostCount }}</div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Submitted costs</div>
-            <div class="text-h6 font-weight-bold">{{ submittedCostCount }}</div>
-          </div>
-          <div class="rounded-lg border pa-3">
-            <div class="text-caption text-text-secondary">Approved costs</div>
-            <div class="text-h6 font-weight-bold">{{ approvedCostCount }}</div>
-          </div>
-        </div>
       </VCard>
     </div>
   </template>

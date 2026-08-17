@@ -1,11 +1,33 @@
 <script setup lang="ts">
-import type { FlightFuelRequestDto } from '#shared/contracts/flight-operations';
+import StationSelect from '../../../features/operations/stations/StationSelect.vue';
+import type { FlightFuelRequestDto, FuelWorkflowStatus } from '#shared/contracts/flight-operations';
 
 const loadingId = ref('');
 const actionError = ref('');
+const route = useRoute();
+const status = ref<FuelWorkflowStatus | null>(
+  ['REQUESTED', 'APPROVED', 'UPLIFTED', 'POSTED', 'REJECTED'].includes(String(route.query.status))
+    ? (route.query.status as FuelWorkflowStatus)
+    : null
+);
+const stationId = ref<string | null>(
+  typeof route.query.stationId === 'string' ? route.query.stationId : null
+);
+const dateFrom = ref(typeof route.query.dateFrom === 'string' ? route.query.dateFrom : '');
+const dateTo = ref(typeof route.query.dateTo === 'string' ? route.query.dateTo : '');
 
-const { data, pending, error, refresh } = await useAsyncData('flight-fuel-control', () =>
-  fetchApi<FlightFuelRequestDto[]>('/api/flight-operations/fuel')
+const { data, pending, error, refresh } = await useAsyncData(
+  'flight-fuel-control',
+  () =>
+    fetchApi<FlightFuelRequestDto[]>('/api/flight-operations/fuel', {
+      query: {
+        status: status.value ?? undefined,
+        stationId: stationId.value ?? undefined,
+        dateFrom: dateFrom.value || undefined,
+        dateTo: dateTo.value || undefined
+      }
+    }),
+  { watch: [status, stationId, dateFrom, dateTo] }
 );
 
 function money(value: number | null) {
@@ -79,6 +101,47 @@ async function fuelAction(
       Unable to load fuel requests.
     </VAlert>
     <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">{{ actionError }}</VAlert>
+
+    <VCard border class="mb-4">
+      <VCardText>
+        <VRow density="comfortable">
+          <VCol cols="12" md="3">
+            <VSelect
+              v-model="status"
+              clearable
+              density="compact"
+              hide-details
+              :items="['REQUESTED', 'APPROVED', 'UPLIFTED', 'POSTED', 'REJECTED']"
+              label="Fuel status"
+              variant="outlined"
+            />
+          </VCol>
+          <VCol cols="12" md="3">
+            <StationSelect v-model="stationId" :allow-create="false" label="Station" />
+          </VCol>
+          <VCol cols="12" md="3">
+            <VTextField
+              v-model="dateFrom"
+              density="compact"
+              hide-details
+              label="Date from"
+              type="date"
+              variant="outlined"
+            />
+          </VCol>
+          <VCol cols="12" md="3">
+            <VTextField
+              v-model="dateTo"
+              density="compact"
+              hide-details
+              label="Date to"
+              type="date"
+              variant="outlined"
+            />
+          </VCol>
+        </VRow>
+      </VCardText>
+    </VCard>
 
     <VCard border>
       <VTable density="comfortable" hover>

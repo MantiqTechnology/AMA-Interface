@@ -103,14 +103,14 @@ export const scenarioCatalog = [
     'landed-maintenance',
     'Landed maintenance',
     'Maintenance Manager',
-    '/flights/maintenance',
+    '/maintenance/flight-handoffs',
     'Submit maintenance handoff'
   ],
   [
     'pending-closure',
     'Pending closure',
     'OCC / Finance Reviewer',
-    '/flights/actual-closure',
+    '/flights/station-operations/actual-closure',
     'Complete closure evidence'
   ],
   [

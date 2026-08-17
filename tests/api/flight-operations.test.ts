@@ -92,6 +92,131 @@ describe('flight request APIs', () => {
     ).toBe(true);
   });
 
+  it('lets Station create a maintenance request without granting MRO authority', async () => {
+    const stationHeaders = { cookie: 'ama_demo_role=Station%20Admin' };
+    const aggregate = await $fetch<
+      ApiResponse<Array<{ flightId: string; aircraftVersion: number }>>
+    >('/api/flight-operations/station-operations', {
+      headers: stationHeaders,
+      query: { flightId: 'fop-ticketing-passenger' }
+    });
+    expect(aggregate.ok).toBe(true);
+    if (!aggregate.ok || !aggregate.data[0]) throw new Error('Station flight is missing');
+
+    const created = await $fetch<ApiResponse<{ defectNumber: string; nextAction: string }>>(
+      '/api/flight-operations/flights/fop-ticketing-passenger/maintenance-requests',
+      {
+        method: 'POST',
+        headers: stationHeaders,
+        body: {
+          title: 'Abnormal brake indication',
+          description:
+            'Station observed an abnormal brake indication during turnaround inspection.',
+          detectedAt: '2026-07-17T03:00:00.000Z',
+          reporterObservation: 'ATTENTION_BEFORE_NEXT_FLIGHT',
+          initialSeverity: 'HIGH',
+          operationalImpact: 'Requires controlled assessment before the next departure.',
+          flightPhase: 'GROUND',
+          evidenceReferences: ['STATION-PHOTO-001'],
+          expectedAircraftVersion: aggregate.data[0].aircraftVersion
+        }
+      }
+    );
+    expect(created.ok).toBe(true);
+    expect(created.ok && created.data.nextAction).toBe('Menunggu assessment MRO');
+
+    const projectionDb = new Database(resolveDbPath(testDbPath));
+    const createdDefect = projectionDb
+      .prepare(
+        `SELECT aircraft_id, source_reference
+         FROM aircraft_defects
+         WHERE defect_number = ?`
+      )
+      .get(created.ok ? created.data.defectNumber : '') as {
+      aircraft_id: string;
+      source_reference: string;
+    };
+    projectionDb
+      .prepare(
+        `INSERT INTO aircraft_defects (
+          id, aircraft_id, defect_number, title, description, detected_at,
+          detected_by_user_id, source_reference, evidence_references, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)`
+      )
+      .run(
+        'adefect-station-newer-deferred',
+        createdDefect.aircraft_id,
+        'DEF-STATION-NEWER-DEFERRED',
+        'Newer deferred observation',
+        'A newer deferred observation must not hide an older unresolved blocking defect.',
+        '2026-07-17T04:00:00.000Z',
+        'USR-STATION-ADMIN',
+        createdDefect.source_reference,
+        '[]',
+        '2026-07-17T04:00:00.000Z',
+        '2026-07-17T04:00:00.000Z'
+      );
+    projectionDb
+      .prepare(
+        `INSERT INTO maintenance_defect_assessments (
+          id, defect_id, aircraft_id, assessment_decision, assessment_note,
+          assessed_by_user_id, assessed_at, request_id
+        ) VALUES (?, ?, ?, 'DEFER', ?, ?, ?, NULL)`
+      )
+      .run(
+        'massess-station-newer-deferred',
+        'adefect-station-newer-deferred',
+        createdDefect.aircraft_id,
+        'Deferred within approved limits for regression coverage.',
+        'USR-MAINTENANCE-MANAGER',
+        '2026-07-17T04:05:00.000Z'
+      );
+    projectionDb.close();
+
+    const projected = await $fetch<
+      ApiResponse<
+        Array<{
+          technicalReadiness: { status: string; owner: string };
+          maintenanceRequests: Array<{ defectNumber: string }>;
+        }>
+      >
+    >('/api/flight-operations/station-operations', {
+      headers: stationHeaders,
+      query: { flightId: 'fop-ticketing-passenger' }
+    });
+    expect(projected.ok).toBe(true);
+    expect(projected.ok && projected.data[0]?.technicalReadiness).toMatchObject({
+      status: 'NOT_READY',
+      owner: 'MRO'
+    });
+    expect(
+      projected.ok &&
+        projected.data[0]?.maintenanceRequests.some(
+          (request) => request.defectNumber === (created.ok ? created.data.defectNumber : '')
+        )
+    ).toBe(true);
+
+    const cleanupDb = new Database(resolveDbPath(testDbPath));
+    cleanupDb
+      .prepare('DELETE FROM maintenance_defect_assessments WHERE id = ?')
+      .run('massess-station-newer-deferred');
+    cleanupDb
+      .prepare('DELETE FROM aircraft_defects WHERE id = ?')
+      .run('adefect-station-newer-deferred');
+    cleanupDb.close();
+
+    const forbidden = await $fetch<ApiResponse<unknown>>(
+      '/api/flight-operations/flights/fop-ticketing-passenger/maintenance-requests',
+      {
+        method: 'POST',
+        headers: { cookie: 'ama_demo_role=OCC' },
+        body: {},
+        ignoreResponseError: true
+      }
+    );
+    expect(!forbidden.ok && forbidden.error.code).toBe('FORBIDDEN');
+  });
+
   it('allows the Finance Reviewer to read the station-cost review queue', async () => {
     const response = await $fetch<
       ApiResponse<
@@ -480,6 +605,12 @@ describe('flight request APIs', () => {
         projectedGrossMargin: 6500000
       })
     );
+
+    const deniedList = await $fetch<ApiResponse<unknown>>('/api/flight-operations/maintenance', {
+      headers: { cookie: 'ama_demo_role=OCC' },
+      ignoreResponseError: true
+    });
+    expect(!deniedList.ok && deniedList.error.code).toBe('FORBIDDEN');
 
     const filtered = await $fetch<ApiResponse<FlightMaintenanceHandoffDto[]>>(
       '/api/flight-operations/maintenance',

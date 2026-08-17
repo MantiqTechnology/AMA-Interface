@@ -6,8 +6,11 @@ const emptyQueryValue = (value: unknown) =>
 
 export const operationsMonitoringQuerySchema = z.object({
   date: z.preprocess(emptyQueryValue, z.string().trim().min(10).max(10).optional()),
+  dateFrom: z.preprocess(emptyQueryValue, z.string().trim().min(10).max(10).optional()),
+  dateTo: z.preprocess(emptyQueryValue, z.string().trim().min(10).max(10).optional()),
   stationId: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
-  status: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional())
+  status: z.preprocess(emptyQueryValue, z.string().trim().min(1).optional()),
+  tracking: z.preprocess(emptyQueryValue, z.enum(['LIVE', 'STALE', 'UNTRACKED']).optional())
 });
 
 export type OperationsMonitoringQuery = z.infer<typeof operationsMonitoringQuerySchema>;
@@ -22,6 +25,8 @@ export type OperationalFlightMonitorDto = {
   originCode: string;
   destinationStationId: string;
   destinationCode: string;
+  routeId: string;
+  routeCode: string;
   originLatitude: number | null;
   originLongitude: number | null;
   destinationLatitude: number | null;
@@ -41,6 +46,8 @@ export type OperationalFlightMonitorDto = {
   actualArrivalStationCode: string | null;
   stationScopeMatch: boolean;
   readinessPercent: number;
+  readinessRequiredChecks: number;
+  readinessCompletedChecks: number;
   blockingReason: string | null;
   position: AircraftPositionDto | null;
 };

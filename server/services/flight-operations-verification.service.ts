@@ -357,7 +357,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
             severity: 'BLOCKING',
             href:
               blocker.recoveryHref ??
-              `/flights/maintenance?flightId=${encodeURIComponent(flight.id)}`
+              `/maintenance/flight-handoffs?flightId=${encodeURIComponent(flight.id)}`
           });
         }
       }
@@ -1776,6 +1776,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         f.flight_date,
         f.aircraft_id,
         ac.aircraft_type,
+        ac.registration_number,
+        ac.version AS aircraft_version,
         origin.station_code as origin_station_code,
         origin.id as origin_station_id,
         dest.station_code as destination_station_code,
@@ -1918,6 +1920,8 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         flightDate: String(row.flight_date),
         aircraftId: String(row.aircraft_id ?? ''),
         aircraftType: String(row.aircraft_type ?? ''),
+        aircraftRegistration: String(row.registration_number ?? ''),
+        aircraftVersion: Number(row.aircraft_version ?? 0),
         originStationId: String(row.origin_station_id),
         originStationCode: String(row.origin_station_code),
         destinationStationId: String(row.destination_station_id),
@@ -1990,12 +1994,177 @@ export class FlightOperationsVerificationService extends FlightOperationsService
             }
           : null,
         audit,
+        ...this.getStationTechnicalProjection(flightId, String(row.aircraft_id ?? '')),
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at)
       });
     }
 
     return results;
+  }
+
+  private getStationTechnicalProjection(flightId: string, aircraftId: string) {
+    const evaluatedAt = timestamp();
+    if (!aircraftId) {
+      return {
+        technicalReadiness: {
+          status: 'NOT_READY',
+          blockerCode: 'AIRCRAFT_REQUIRED',
+          blockerLabel: 'Aircraft belum ditentukan',
+          owner: 'STATION',
+          nextAction: 'Tetapkan aircraft untuk flight ini',
+          evaluatedAt
+        },
+        maintenanceRequests: []
+      };
+    }
+
+    const requests = this.sqlite
+      .prepare(
+        `SELECT defect.id, defect.defect_number, defect.title, defect.status, defect.updated_at,
+                assessment.assessment_decision,
+                package.id AS work_package_id, package.package_number, package.status AS package_status,
+                package.release_id,
+                release.release_number,
+                CASE
+                  WHEN EXISTS (
+                    SELECT 1 FROM maintenance_work_package_material_requirements requirement
+                    WHERE requirement.work_package_id = package.id
+                      AND requirement.status IN ('REQUESTED', 'BLOCKED')
+                  ) THEN 'WAITING_MATERIAL'
+                  WHEN EXISTS (
+                    SELECT 1 FROM maintenance_work_package_material_requirements requirement
+                    WHERE requirement.work_package_id = package.id
+                      AND requirement.status = 'RESERVED'
+                  ) THEN 'RESERVED'
+                  WHEN EXISTS (
+                    SELECT 1 FROM maintenance_work_package_material_requirements requirement
+                    WHERE requirement.work_package_id = package.id
+                      AND requirement.status IN ('ISSUED', 'ALLOCATED')
+                  ) THEN 'ISSUED'
+                  ELSE NULL
+                END AS material_status
+         FROM aircraft_defects defect
+         LEFT JOIN maintenance_defect_assessments assessment ON assessment.defect_id = defect.id
+         LEFT JOIN maintenance_work_packages package ON package.primary_defect_id = defect.id
+         LEFT JOIN aircraft_maintenance_releases release ON release.id = package.release_id
+         WHERE defect.aircraft_id = ?
+           AND defect.source_reference = ?
+         ORDER BY defect.detected_at DESC`
+      )
+      .all(aircraftId, `STATION-FLIGHT:${flightId}`) as SqlRow[];
+
+    const maintenanceRequests = requests.map((request) => {
+      const assessmentDecision = request.assessment_decision
+        ? String(request.assessment_decision)
+        : null;
+      const materialStatus = request.material_status ? String(request.material_status) : null;
+      const releaseNumber = request.release_number ? String(request.release_number) : null;
+      let nextAction = 'Menunggu assessment MRO';
+      if (releaseNumber) nextAction = 'Rilis teknis selesai';
+      else if (materialStatus === 'WAITING_MATERIAL') nextAction = 'Inventory menyiapkan material';
+      else if (materialStatus === 'RESERVED') nextAction = 'Inventory mengeluarkan material';
+      else if (materialStatus === 'ISSUED') nextAction = 'MRO memasang material';
+      else if (request.package_status === 'READY_FOR_RELEASE') nextAction = 'Menunggu rilis teknis';
+      else if (assessmentDecision) nextAction = 'MRO menyiapkan paket pekerjaan';
+
+      return {
+        id: String(request.id),
+        defectNumber: String(request.defect_number),
+        flightId,
+        aircraftId,
+        title: String(request.title),
+        status: String(request.status),
+        assessmentDecision,
+        workPackageId: request.work_package_id ? String(request.work_package_id) : null,
+        workPackageNumber: request.package_number ? String(request.package_number) : null,
+        workPackageStatus: request.package_status ? String(request.package_status) : null,
+        materialStatus,
+        releaseNumber,
+        owner:
+          materialStatus === 'WAITING_MATERIAL' || materialStatus === 'RESERVED'
+            ? ('INVENTORY' as const)
+            : ('MRO' as const),
+        nextAction,
+        updatedAt: String(request.updated_at)
+      };
+    });
+
+    const aircraft = this.sqlite
+      .prepare('SELECT operational_status, serviceability_status FROM aircraft WHERE id = ?')
+      .get(aircraftId) as SqlRow | undefined;
+    const openRequests = maintenanceRequests.filter(
+      (request) => request.status === 'OPEN' && !request.releaseNumber
+    );
+    const deferredRequests = maintenanceRequests.filter(
+      (request) => request.assessmentDecision === 'DEFER' && !request.releaseNumber
+    );
+    const blockingRequest =
+      openRequests.find((request) => request.assessmentDecision === 'GROUND') ??
+      openRequests.find((request) => request.assessmentDecision !== 'DEFER');
+    const materialOwner =
+      blockingRequest?.materialStatus === 'WAITING_MATERIAL' ||
+      blockingRequest?.materialStatus === 'RESERVED';
+    const aircraftBlocked =
+      !aircraft ||
+      String(aircraft.operational_status) !== 'ACTIVE' ||
+      String(aircraft.serviceability_status) === 'UNSERVICEABLE';
+    const blocked = aircraftBlocked || Boolean(blockingRequest);
+
+    return {
+      technicalReadiness: {
+        status: blocked ? 'NOT_READY' : deferredRequests.length > 0 ? 'AT_RISK' : 'READY',
+        blockerCode: blockingRequest
+          ? (blockingRequest.materialStatus ??
+            (blockingRequest.assessmentDecision === 'GROUND' ? 'NO_GO' : 'PENDING_MRO_ASSESSMENT'))
+          : aircraftBlocked
+            ? 'AIRCRAFT_UNSERVICEABLE'
+            : null,
+        blockerLabel: blockingRequest
+          ? blockingRequest.materialStatus === 'WAITING_MATERIAL'
+            ? 'Menunggu material'
+            : blockingRequest.assessmentDecision === 'GROUND'
+              ? 'NO-GO oleh MRO'
+              : 'Menunggu assessment MRO'
+          : aircraftBlocked
+            ? 'Aircraft belum siap secara teknis'
+            : null,
+        owner: blockingRequest
+          ? materialOwner
+            ? 'INVENTORY'
+            : 'MRO'
+          : aircraftBlocked
+            ? 'MRO'
+            : null,
+        nextAction:
+          blockingRequest?.nextAction ??
+          deferredRequests[0]?.nextAction ??
+          (aircraftBlocked ? 'MRO meninjau status teknis aircraft' : null),
+        evaluatedAt
+      },
+      maintenanceRequests
+    };
+  }
+
+  async recordMaintenanceRequestHandoff(input: {
+    flightId: string;
+    stationId: string;
+    defectId: string;
+    defectNumber: string;
+    actor: ActorContext;
+  }) {
+    await this.logAudit({
+      actorUserId: input.actor.userId,
+      actorRole: input.actor.role,
+      flightId: input.flightId,
+      stationId: input.stationId,
+      module: 'STATION_MAINTENANCE',
+      action: 'MAINTENANCE_REQUEST_CREATED',
+      afterStatus: 'PENDING_MRO_ASSESSMENT',
+      reason: `Maintenance request ${input.defectNumber} diteruskan ke MRO.`,
+      requestId: input.actor.requestId,
+      metadata: { defectId: input.defectId, defectNumber: input.defectNumber }
+    });
   }
 
   async getFlightStationTasks(flightId: string, ctx?: ActorContext) {

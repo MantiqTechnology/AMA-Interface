@@ -1,21 +1,55 @@
 <script setup lang="ts">
 import AircraftSelect from '../../features/operations/aircraft/AircraftSelect.vue';
 import RouteSelect from '../../features/operations/routes/RouteSelect.vue';
+import StationSelect from '../../features/operations/stations/StationSelect.vue';
 import type {
   FlightOperationLookupsDto,
   FlightOperationOverviewDto,
   FlightOperationStatus
 } from '#shared/contracts/flight-operations';
+import { flightOperationStatuses } from '#shared/contracts/flight-operations';
 
 const search = ref('');
 const currentRoute = useRoute();
-const statusId = ref<string | undefined>();
+const router = useRouter();
+const status = ref<FlightOperationStatus | undefined>(
+  typeof currentRoute.query.status === 'string' &&
+    flightOperationStatuses.includes(currentRoute.query.status as FlightOperationStatus)
+    ? (currentRoute.query.status as FlightOperationStatus)
+    : undefined
+);
 const flightTypeId = ref<string | undefined>();
 const routeId = ref<string | null>(
   typeof currentRoute.query.routeId === 'string' ? currentRoute.query.routeId : null
 );
 const aircraftId = ref<string | null>(null);
 const customerId = ref<string | undefined>();
+const stationId = ref<string | null>(
+  typeof currentRoute.query.stationId === 'string' ? currentRoute.query.stationId : null
+);
+const dateFrom = ref(
+  typeof currentRoute.query.dateFrom === 'string' ? currentRoute.query.dateFrom : ''
+);
+const dateTo = ref(typeof currentRoute.query.dateTo === 'string' ? currentRoute.query.dateTo : '');
+const pageOffset = ref(0);
+const dashboardQuery = computed(() => ({
+  lifecycle:
+    typeof currentRoute.query.lifecycle === 'string' ? currentRoute.query.lifecycle : undefined,
+  readinessBand:
+    typeof currentRoute.query.readinessBand === 'string'
+      ? currentRoute.query.readinessBand
+      : undefined,
+  cohort: typeof currentRoute.query.cohort === 'string' ? currentRoute.query.cohort : undefined,
+  attention: currentRoute.query.attention === 'true' ? true : undefined,
+  departed: currentRoute.query.departed === 'true' ? true : undefined,
+  departurePerformance:
+    typeof currentRoute.query.departurePerformance === 'string'
+      ? currentRoute.query.departurePerformance
+      : undefined,
+  age: typeof currentRoute.query.age === 'string' ? currentRoute.query.age : undefined,
+  approvalAge:
+    typeof currentRoute.query.approvalAge === 'string' ? currentRoute.query.approvalAge : undefined
+}));
 
 const { data: lookups } = await useAsyncData('flight-operation-lookups', () =>
   fetchApi<FlightOperationLookupsDto>('/api/flight-operations/lookups')
@@ -27,20 +61,73 @@ const { data, pending, error, refresh } = await useAsyncData(
     fetchApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
       query: {
         search: search.value,
-        statusId: statusId.value,
+        status: status.value,
         flightTypeId: flightTypeId.value,
         routeId: routeId.value ?? undefined,
+        stationId: stationId.value ?? undefined,
+        dateFrom: dateFrom.value || undefined,
+        dateTo: dateTo.value || undefined,
         aircraftId: aircraftId.value ?? undefined,
-        customerId: customerId.value
+        customerId: customerId.value,
+        ...dashboardQuery.value,
+        limit: 100,
+        offset: pageOffset.value
       }
     }),
   {
-    watch: [search, statusId, flightTypeId, routeId, aircraftId, customerId]
+    watch: [
+      search,
+      status,
+      flightTypeId,
+      routeId,
+      stationId,
+      dateFrom,
+      dateTo,
+      aircraftId,
+      customerId,
+      dashboardQuery,
+      pageOffset
+    ]
   }
 );
 
 const statusOptions = computed(() => lookups.value?.flightOperationStatuses ?? []);
 const flightTypeOptions = computed(() => lookups.value?.flightTypes ?? []);
+
+const filteredFlights = computed(() => data.value?.flights ?? []);
+
+const hasDashboardDrilldown = computed(() =>
+  [
+    'lifecycle',
+    'readinessBand',
+    'cohort',
+    'departurePerformance',
+    'attention',
+    'departed',
+    'age',
+    'approvalAge'
+  ].some((key) => typeof currentRoute.query[key] === 'string')
+);
+
+function clearDashboardDrilldown() {
+  const query = { ...currentRoute.query };
+  for (const key of [
+    'lifecycle',
+    'readinessBand',
+    'cohort',
+    'departurePerformance',
+    'attention',
+    'departed',
+    'age',
+    'approvalAge'
+  ])
+    delete query[key];
+  void router.replace({ query });
+}
+
+function cardCount(statusValue: FlightOperationStatus) {
+  return filteredFlights.value.filter((flight) => flight.currentStatus === statusValue).length;
+}
 
 const cards: Array<{ label: string; status: FlightOperationStatus; icon: string }> = [
   { label: 'Draft', status: 'DRAFT', icon: 'mdi-file-outline' },
@@ -80,7 +167,7 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
             <div>
               <div class="text-xs text-text-secondary">{{ card.label }}</div>
               <div class="text-h5 font-weight-bold text-text-primary">
-                {{ data?.summary[card.status] ?? 0 }}
+                {{ cardCount(card.status) }}
               </div>
             </div>
             <VIcon color="secondary" :icon="card.icon" size="28" />
@@ -104,12 +191,12 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
           </VCol>
           <VCol cols="12" md="2">
             <VSelect
-              v-model="statusId"
+              v-model="status"
               density="compact"
               hide-details
               clearable
               item-title="title"
-              item-value="value"
+              item-value="code"
               label="Status"
               :items="statusOptions"
               variant="outlined"
@@ -134,6 +221,39 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
           <VCol cols="12" md="3">
             <AircraftSelect v-model="aircraftId" :allow-create="false" label="Aircraft" />
           </VCol>
+          <VCol cols="12" md="3">
+            <StationSelect v-model="stationId" :allow-create="false" label="Station" />
+          </VCol>
+          <VCol cols="12" md="2">
+            <VTextField
+              v-model="dateFrom"
+              density="compact"
+              hide-details
+              label="Date from"
+              type="date"
+              variant="outlined"
+            />
+          </VCol>
+          <VCol cols="12" md="2">
+            <VTextField
+              v-model="dateTo"
+              density="compact"
+              hide-details
+              label="Date to"
+              type="date"
+              variant="outlined"
+            />
+          </VCol>
+          <VCol v-if="hasDashboardDrilldown" cols="12" md="2">
+            <VBtn
+              block
+              prepend-icon="mdi-filter-remove-outline"
+              variant="tonal"
+              @click="clearDashboardDrilldown"
+            >
+              Clear drill-down
+            </VBtn>
+          </VCol>
         </VRow>
       </VCardText>
     </VCard>
@@ -145,7 +265,28 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
           <VBtn icon="mdi-refresh" variant="text" @click="refresh" />
         </div>
       </template>
-      <FlightsFlightOperationTable :flights="data?.flights ?? []" :loading="pending" />
+      <FlightsFlightOperationTable :flights="filteredFlights" :loading="pending" />
+      <VCardActions class="justify-end">
+        <span class="mr-3 text-caption text-text-secondary">
+          {{ pageOffset + 1 }}–{{ pageOffset + filteredFlights.length }}
+        </span>
+        <VBtn
+          :disabled="pageOffset === 0"
+          prepend-icon="mdi-chevron-left"
+          variant="text"
+          @click="pageOffset = Math.max(0, pageOffset - 100)"
+        >
+          Previous
+        </VBtn>
+        <VBtn
+          append-icon="mdi-chevron-right"
+          :disabled="!data?.pagination.hasMore"
+          variant="text"
+          @click="pageOffset += 100"
+        >
+          Next
+        </VBtn>
+      </VCardActions>
     </VCard>
   </VContainer>
 </template>

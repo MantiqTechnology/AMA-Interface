@@ -12,6 +12,7 @@ import {
   flattenAudit,
   flattenStationTasks
 } from '../utils/stationOperationsTransformers';
+import { isoDateToLocalDate } from '../utils/stationOperationsDate';
 import type { StationOperationsPageData } from 'app/pages/flights/station-operations/index.vue';
 export function useStationOperationsPageData(): StationOperationsPageData {
   const context = useStationOperationsContext();
@@ -35,21 +36,40 @@ export function useStationOperationsPageData(): StationOperationsPageData {
     context.error.value = '';
 
     try {
+      const hasExplicitDate = typeof route.query.date === 'string';
       const flights = await fetchApi<ApiStationFlight[]>(
         '/api/flight-operations/station-operations',
         {
           query: {
             stationCode: context.selectedStationCode.value,
-            operationalDate: context.operationalDateIso.value,
+            operationalDate: hasExplicitDate ? context.operationalDateIso.value : undefined,
             phase: typeof route.query.phase === 'string' ? route.query.phase : undefined
           }
         }
       );
 
       if (currentRequest !== requestSequence) return;
+      let scopedFlights = flights;
 
-      workbenchFlights.value = flights;
-      dataset.value = buildDatasetFromApi(context.selectedStationCode.value, flights);
+      // Demo data is intentionally deterministic and may not use today's date.
+      // Without an explicit URL date, anchor the workspace to the latest available
+      // operational day so the first screen always contains an actionable shift.
+      if (!hasExplicitDate && flights.length > 0) {
+        const latestDate = flights.reduce(
+          (latest, flight) => (flight.flightDate > latest ? flight.flightDate : latest),
+          flights[0]!.flightDate
+        );
+
+        if (latestDate !== context.operationalDateIso.value) {
+          context.operationalDateModel.value = isoDateToLocalDate(latestDate);
+          return;
+        }
+
+        scopedFlights = flights.filter((flight) => flight.flightDate === latestDate);
+      }
+
+      workbenchFlights.value = scopedFlights;
+      dataset.value = buildDatasetFromApi(context.selectedStationCode.value, scopedFlights);
       context.lastUpdated.value = new Date();
     } catch (error) {
       if (currentRequest !== requestSequence) return;

@@ -6,7 +6,7 @@ import { getServices } from '#server/utils/services';
 import { parseBody, parseParams } from '#server/utils/validation';
 
 export default defineApiEventHandler(async (event) => {
-  requireDemoPermission(event, 'maintenance.v21.resource.write');
+  requireDemoPermission(event, 'maintenance.material.install');
   const { id } = parseParams(event, maintenanceIdParamsSchema);
   const body = await parseBody(event, installMaterialSchema);
   return getServices().resourceV21.installMaterial(body, getDemoActorContext(event), id);

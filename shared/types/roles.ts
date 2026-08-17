@@ -326,6 +326,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'station.task.start',
     'station.task.verify',
     'station.task.reject',
+    'station.maintenance_request.create',
     'station.evidence.add',
     'station.origin.signoff',
     'station.destination.signoff',
@@ -368,6 +369,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'station.task.start',
     'station.task.verify',
     'station.task.reject',
+    'station.maintenance_request.create',
     'station.evidence.add',
     'station.origin.signoff',
     'station.destination.signoff',
@@ -421,6 +423,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'aircraft.defect.report',
     'aircraft.defect.manage',
     'aircraft.deferment.manage',
+    'maintenance.material.request',
     ...maintenanceControlPermissions,
     ...maintenanceExecutionPermissions,
     ...maintenanceQualityPermissions
@@ -433,6 +436,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read',
     'aircraft.airworthiness.read',
     'aircraft.defect.report',
+    'maintenance.material.install',
     ...maintenanceExecutionPermissions
   ],
   'Certifying Staff': [
@@ -461,6 +465,10 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'inventory.issue',
     'inventory.repair.manage',
     'inventory.valuation.read',
+    'inventory.maintenance_demand.read',
+    'inventory.material.reserve',
+    'inventory.material.issue',
+    'inventory.material.return',
     'asset.read',
     'document.read',
     'document.upload'

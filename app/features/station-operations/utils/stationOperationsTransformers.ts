@@ -72,8 +72,11 @@ export function toFlightType(serviceTypeCode: string): StationFlightRow['type'] 
 }
 
 export function deriveReadiness(flight: ApiStationFlight): ReadinessStatus {
+  if (flight.technicalReadiness.status === 'NOT_READY') return 'NOT_READY';
   const incompleteTasks = flight.tasks.filter((task) => task.status !== 'VERIFIED');
-  if (incompleteTasks.length === 0) return 'READY';
+  if (incompleteTasks.length === 0) {
+    return flight.technicalReadiness.status === 'AT_RISK' ? 'CHECK' : 'READY';
+  }
   return incompleteTasks.some((task) => task.status === 'REJECTED') ? 'NOT_READY' : 'CHECK';
 }
 
@@ -122,6 +125,8 @@ export function buildDatasetFromApi(
       origin: flight.originStationCode,
       destination: flight.destinationStationCode,
       aircraftType: flight.aircraftType || 'Aircraft',
+      aircraftRegistration: flight.aircraftRegistration,
+      aircraftVersion: flight.aircraftVersion,
       type: toFlightType(flight.serviceTypeCode),
       direction,
       scheduledTime: toLocalTime(flight.scheduledDepartureAt),
@@ -131,6 +136,13 @@ export function buildDatasetFromApi(
           : toLocalTime(flight.actualArrivalAt),
       status,
       readiness,
+      blockerLabel:
+        flight.technicalReadiness.blockerLabel ??
+        (readiness === 'CHECK' ? 'Verifikasi Station belum lengkap' : null),
+      readinessOwner: flight.technicalReadiness.owner ?? (readiness === 'CHECK' ? 'STATION' : null),
+      nextAction:
+        flight.technicalReadiness.nextAction ??
+        (readiness === 'CHECK' ? 'Selesaikan verifikasi Station' : null),
       paxOnboard: isCargo ? 0 : flight.passengerActual,
       paxTotal: isCargo ? 0 : flight.passengerTotal,
       cargoWeightKg: flight.cargoWeightKg,

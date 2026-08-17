@@ -21,9 +21,23 @@ const createDialog = ref(false);
 const createStep = ref(0);
 const creating = ref(false);
 const createError = ref<MaintenanceErrorPresentation | null>(null);
-const search = ref('');
-const stageFilter = ref('');
+const search = ref(String(route.query.search ?? ''));
+const stageFilter = ref(String(route.query.stage ?? ''));
 const handledCreateQuery = ref('');
+
+watch([search, stageFilter], () => {
+  void navigateTo(
+    {
+      path: route.path,
+      query: {
+        ...route.query,
+        ...(search.value ? { search: search.value } : { search: undefined }),
+        ...(stageFilter.value ? { stage: stageFilter.value } : { stage: undefined })
+      }
+    },
+    { replace: true }
+  );
+});
 
 const { data, pending, error, refresh } = await useAsyncData('maintenance-command-center', () =>
   fetchApi<MaintenanceCommandCenterDto>('/api/maintenance/command-center')
@@ -104,56 +118,41 @@ const stages = computed(() => [
   ...new Set((data.value?.operationalAttention ?? []).map((item) => item.currentStage))
 ]);
 
-const flowMetrics = computed(() => [
+const priorityMetrics = computed(() => [
   {
-    label: 'Temuan',
-    value: data.value?.defects.length ?? '-',
-    helper: 'Temuan teknis yang sudah dikontrol'
-  },
-  {
-    label: 'Paket pekerjaan',
-    value: data.value?.summary.activeWorkPackages ?? '-',
-    helper: 'Lingkup pekerjaan terkendali'
-  },
-  {
-    label: 'Kartu kerja',
-    value: data.value?.summary.jobCardsAwaitingExecution ?? '-',
-    helper: 'Menunggu pekerjaan teknisi'
-  },
-  {
-    label: 'Pemeriksaan',
-    value: data.value?.summary.inspectionsAwaitingAction ?? '-',
-    helper: 'Menunggu pemeriksaan independen'
-  },
-  {
-    label: 'Rilis',
-    value: data.value?.technicalReleases.length ?? '-',
-    helper: 'Catatan rilis teknis'
-  },
-  {
-    label: 'Audit',
-    value: data.value?.recentAuditRecords.length ?? '-',
-    helper: 'Riwayat tindakan'
+    label: 'Pesawat tidak serviceable',
+    value: data.value?.summary.unserviceable ?? '-',
+    tone: 'danger' as const,
+    icon: 'mdi-airplane-alert'
   },
   {
     label: 'Overdue',
     value: data.value?.summary.overdue ?? '-',
-    helper: 'Due control demo'
+    tone: 'danger' as const,
+    icon: 'mdi-calendar-alert'
   },
   {
-    label: 'Material',
+    label: 'Menunggu material',
     value: data.value?.summary.partsBlockers ?? '-',
-    helper: 'Blocker kesiapan material'
+    tone: 'warning' as const,
+    icon: 'mdi-package-variant-remove'
   },
   {
-    label: 'Peralatan',
-    value: data.value?.summary.toolingBlockers ?? '-',
-    helper: 'Blocker kalibrasi/alloc'
+    label: 'Menunggu pemeriksaan',
+    value: data.value?.summary.inspectionsAwaitingAction ?? '-',
+    tone: 'warning' as const,
+    icon: 'mdi-clipboard-search-outline'
   },
   {
-    label: 'Data',
-    value: data.value?.summary.approvedDataBlockers ?? '-',
-    helper: 'Blocker revisi controlled'
+    label: 'Menunggu rilis',
+    value: data.value?.summary.readyForRelease ?? '-',
+    tone: 'success' as const,
+    icon: 'mdi-certificate-outline'
+  },
+  {
+    label: 'Paket aktif',
+    value: data.value?.summary.activeWorkPackages ?? '-',
+    icon: 'mdi-briefcase-wrench-outline'
   }
 ]);
 
@@ -372,26 +371,32 @@ async function createPackage() {
 
 <template>
   <VContainer fluid class="maintenance-command-center">
-    <div class="d-flex flex-wrap align-start ga-4 mb-4">
-      <div>
-        <h1 class="text-h4 font-weight-bold">Ringkasan Maintenance</h1>
-        <p class="text-body-2 text-medium-emphasis mb-0">
-          Ringkasan pekerjaan maintenance dari temuan sampai rilis teknis pesawat.
-          <span class="text-caption">Maintenance Command Center</span>
-        </p>
-      </div>
-      <VSpacer />
-      <VBtn
-        v-if="canPlan"
-        color="primary"
-        prepend-icon="mdi-plus"
-        :disabled="selectorsPending || Boolean(selectorsError)"
-        @click="openCreateDialog"
-      >
-        Buat paket pekerjaan
-      </VBtn>
-      <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
-    </div>
+    <DsOperationalPageHeader
+      class="mb-4"
+      description="Prioritaskan NO-GO, pekerjaan overdue, kesiapan resource, pemeriksaan, dan rilis teknis."
+      eyebrow="Maintenance Operations"
+      title="Pusat Kendali MRO"
+      :updated-at="data?.generatedAt ? format.dateTime(data.generatedAt) : null"
+    >
+      <template #actions>
+        <VBtn
+          v-if="canPlan"
+          color="primary"
+          prepend-icon="mdi-plus"
+          :disabled="selectorsPending || Boolean(selectorsError)"
+          @click="openCreateDialog"
+        >
+          Buat paket pekerjaan
+        </VBtn>
+        <VBtn
+          prepend-icon="mdi-refresh"
+          text="Perbarui"
+          variant="tonal"
+          :loading="pending"
+          @click="refresh()"
+        />
+      </template>
+    </DsOperationalPageHeader>
 
     <VAlert type="info" variant="tonal" class="mb-4" density="comfortable">
       {{ authorizationWording }}
@@ -403,77 +408,10 @@ async function createPackage() {
       Data maintenance dari backend belum dapat dimuat.
     </VAlert>
 
-    <VCard border class="mb-4">
-      <VCardTitle>
-        <div class="text-h6">Alur kerja maintenance</div>
-        <div class="text-body-2 text-medium-emphasis">
-          Jumlah aktual dari backend untuk temuan, paket pekerjaan, pemeriksaan, rilis, dan audit.
-        </div>
-      </VCardTitle>
-      <VCardText>
-        <div class="flow-strip">
-          <div v-for="metric in flowMetrics" :key="metric.label" class="flow-step">
-            <div class="flow-step__label">{{ metric.label }}</div>
-            <div class="flow-step__value">{{ metric.value }}</div>
-            <div class="flow-step__helper">{{ metric.helper }}</div>
-          </div>
-        </div>
-      </VCardText>
-    </VCard>
-
-    <VRow>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard label="Total Pesawat" :value="data?.summary.fleetTotal ?? '-'" tone="info" />
-      </VCol>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard
-          label="Unserviceable"
-          :value="data?.summary.unserviceable ?? '-'"
-          tone="danger"
-        />
-      </VCol>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard
-          label="Menunggu Pemeriksaan"
-          :value="data?.summary.inspectionsAwaitingAction ?? '-'"
-          tone="warning"
-        />
-      </VCol>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard
-          label="Menunggu Rilis"
-          :value="data?.summary.readyForRelease ?? '-'"
-          tone="success"
-        />
-      </VCol>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard label="Overdue Demo" :value="data?.summary.overdue ?? '-'" tone="danger" />
-      </VCol>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard
-          label="Blocker Material"
-          :value="data?.summary.partsBlockers ?? '-'"
-          tone="warning"
-        />
-      </VCol>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard
-          label="Blocker Peralatan"
-          :value="data?.summary.toolingBlockers ?? '-'"
-          tone="warning"
-        />
-      </VCol>
-      <VCol cols="12" sm="6" lg="3">
-        <DsStatCard
-          label="Blocker Data"
-          :value="data?.summary.approvedDataBlockers ?? '-'"
-          tone="warning"
-        />
-      </VCol>
-    </VRow>
+    <DsMetricStrip class="mb-4" :items="priorityMetrics" />
 
     <VRow class="mt-2">
-      <VCol cols="12">
+      <VCol cols="12" lg="8">
         <VCard border>
           <VCardTitle class="d-flex flex-wrap align-center ga-3">
             <div>

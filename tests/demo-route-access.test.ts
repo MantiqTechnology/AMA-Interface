@@ -21,6 +21,9 @@ describe('demo route access', () => {
     expect(safeDemoRoleRedirectPath('Demo Admin', '/admin/access-demo')).toBeNull();
     expect(safeDemoRoleRedirectPath('Finance Reviewer', '/asset-management/finance')).toBeNull();
     expect(safeDemoRoleRedirectPath('OCC', '/master-data/routes')).toBeNull();
+    expect(safeDemoRoleRedirectPath('OCC', '/ops')).toBeNull();
+    expect(safeDemoRoleRedirectPath('OCC', '/flights/dashboard')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Inventory Controller', '/ops')).toBe('/dashboard');
   });
 
   it('keeps MRO routes read-scoped and role-change redirect safe', () => {
@@ -33,5 +36,19 @@ describe('demo route access', () => {
     );
     expect(safeDemoRoleRedirectPath('OCC', '/maintenance/work-packages')).toBe('/dashboard');
     expect(safeDemoRoleRedirectPath('Inventory Controller', '/maintenance')).toBe('/dashboard');
+  });
+
+  it('separates Station technical handoff from the MRO approval workbench', () => {
+    expect(
+      safeDemoRoleRedirectPath('Station Admin', '/flights/station-operations/maintenance')
+    ).toBeNull();
+    expect(safeDemoRoleRedirectPath('Station Admin', '/flights/maintenance')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Maintenance Manager', '/flights/maintenance')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Station Admin', '/maintenance/flight-handoffs')).toBe(
+      '/dashboard'
+    );
+    expect(
+      safeDemoRoleRedirectPath('Maintenance Manager', '/maintenance/flight-handoffs')
+    ).toBeNull();
   });
 });

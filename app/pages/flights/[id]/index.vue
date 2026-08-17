@@ -1895,7 +1895,7 @@ function historyActor(item: FlightStatusHistoryDto) {
               <VBtn
                 append-icon="mdi-open-in-new"
                 size="small"
-                to="/flights/actual-closure"
+                to="/flights/station-operations/actual-closure"
                 variant="text"
               >
                 Record Flight Actual
@@ -1919,7 +1919,7 @@ function historyActor(item: FlightStatusHistoryDto) {
               <VBtn
                 append-icon="mdi-open-in-new"
                 size="small"
-                to="/flights/actual-closure"
+                to="/flights/station-operations/actual-closure"
                 variant="text"
               >
                 Start Flight Closure

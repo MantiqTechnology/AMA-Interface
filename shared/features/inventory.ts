@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import type {
+  MaintenanceInventoryReservationDto,
+  MaintenanceMaterialRequirementDto
+} from './maintenance-v21';
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
@@ -68,6 +72,17 @@ export const inventoryListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(250).default(100),
   offset: z.coerce.number().int().nonnegative().default(0)
 });
+
+export const inventoryMaintenanceDemandQuerySchema = z.object({
+  search: z.preprocess(emptyToUndefined, z.string().trim().max(100).optional()),
+  stationId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  status: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  requiredBefore: z.preprocess(emptyToUndefined, dateOnly.optional()),
+  limit: z.coerce.number().int().positive().max(250).default(100),
+  offset: z.coerce.number().int().nonnegative().default(0)
+});
+
+export type InventoryMaintenanceDemandQuery = z.infer<typeof inventoryMaintenanceDemandQuerySchema>;
 
 export const inventoryPartInputSchema = z
   .object({
@@ -411,6 +426,7 @@ export type InventoryMovementDto = {
   sourceType: string;
   sourceId: string | null;
   stationId: string | null;
+  stationCode?: string | null;
   destinationStationId: string | null;
   aircraftId: string | null;
   flightId: string | null;
@@ -431,6 +447,40 @@ export type InventoryDashboardDto = {
   openPurchaseOrderCount: number;
   fifoValuationIdr: number | null;
   recentMovements: InventoryMovementDto[];
+};
+
+export type InventoryMaintenanceDemandDto = {
+  requirement: MaintenanceMaterialRequirementDto;
+  workPackageNumber: string;
+  workPackageTitle: string;
+  workPackageStatus: string;
+  aircraftId: string;
+  aircraftRegistration: string;
+  flightId: string | null;
+  flightNumber: string | null;
+  stationId: string | null;
+  stationCode: string | null;
+  reservations: MaintenanceInventoryReservationDto[];
+  candidates: Array<{
+    inventoryItemId: string;
+    stationId: string;
+    stationCode: string;
+    warehouseCode: string;
+    binId: string;
+    binCode: string;
+    lotNumber: string | null;
+    serialId: string | null;
+    serialNumber: string | null;
+    availableQuantity: number;
+    condition: string;
+    expiresAt: string | null;
+    certificateReference: string | null;
+    certificateVerified: boolean;
+    eligible: boolean;
+    blocker: string | null;
+  }>;
+  nextAction: 'RESERVE' | 'ISSUE' | 'WAIT_INSTALL' | 'COMPLETED' | 'BLOCKED';
+  blocker: string | null;
 };
 
 export type PurchaseRequestDto = {

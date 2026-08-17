@@ -396,7 +396,7 @@ export class InventoryRepository {
     }
     const rows = this.sqlite
       .prepare(
-        `SELECT m.*,
+        `SELECT m.*, s.station_code,
                 CASE WHEN EXISTS (
                   SELECT 1 FROM inventory_movements reversal
                   WHERE reversal.reversal_of_movement_id = m.id AND reversal.is_finalized = 1
@@ -421,6 +421,7 @@ export class InventoryRepository {
       sourceType: String(row.source_type),
       sourceId: str(row.source_id),
       stationId: str(row.station_id),
+      stationCode: str(row.station_code),
       destinationStationId: str(row.destination_station_id),
       aircraftId: str(row.aircraft_id),
       flightId: str(row.flight_id),

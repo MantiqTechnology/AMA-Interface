@@ -1,5 +1,6 @@
 export const stationWorkspaceTabs = [
   'tasks',
+  'maintenance',
   'services',
   'evidence',
   'costs',

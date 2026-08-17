@@ -53,6 +53,10 @@ import type {
   MaintenanceMaterialTraceabilityDto,
   ResourceAvailabilityStatus
 } from '#shared/features/maintenance-v21';
+import type {
+  InventoryMaintenanceDemandDto,
+  InventoryMaintenanceDemandQuery
+} from '#shared/features/inventory';
 
 type SqlRow = Record<string, string | number | bigint | Buffer | null>;
 
@@ -493,6 +497,156 @@ export class ResourceV21Service {
       partTrackingType: nullableText(row.tracking_type),
       partCertificateRequired: Boolean(row.part_certificate_required)
     };
+  }
+
+  listMaintenanceDemand(
+    query: InventoryMaintenanceDemandQuery,
+    stationCodes: readonly string[]
+  ): InventoryMaintenanceDemandDto[] {
+    let sql = `
+      SELECT requirement.id, package.package_number, package.title AS package_title,
+             package.status AS package_status, package.aircraft_id, package.source_flight_id,
+             aircraft.registration_number, flight.flight_number,
+             station.id AS station_id, station.station_code
+      FROM maintenance_work_package_material_requirements requirement
+      JOIN maintenance_work_packages package ON package.id = requirement.work_package_id
+      JOIN aircraft ON aircraft.id = package.aircraft_id
+      LEFT JOIN flight_operations flight ON flight.id = package.source_flight_id
+      LEFT JOIN stations station ON station.id = requirement.requested_station_id
+      LEFT JOIN inventory_parts part ON part.id = requirement.part_id
+      WHERE requirement.status != 'NOT_REQUIRED'
+        AND package.status NOT IN ('RELEASED', 'CANCELLED')`;
+    const params: Array<string | number> = [];
+
+    if (query.stationId) {
+      sql += ' AND requirement.requested_station_id = ?';
+      params.push(query.stationId);
+    }
+    if (query.status) {
+      sql += ' AND requirement.status = ?';
+      params.push(query.status);
+    }
+    if (query.requiredBefore) {
+      sql += ' AND requirement.required_by <= ?';
+      params.push(query.requiredBefore);
+    }
+    if (query.search) {
+      sql += ` AND (
+        package.package_number LIKE ? OR aircraft.registration_number LIKE ? OR
+        part.part_number LIKE ? OR part.part_name LIKE ?
+      )`;
+      const search = `%${query.search}%`;
+      params.push(search, search, search, search);
+    }
+    if (!stationCodes.includes('ALL')) {
+      sql += ` AND station.station_code IN (${stationCodes.map(() => '?').join(', ')})`;
+      params.push(...stationCodes);
+    }
+    sql +=
+      ' ORDER BY requirement.required_by IS NULL, requirement.required_by, requirement.created_at LIMIT ? OFFSET ?';
+    params.push(query.limit, query.offset);
+
+    const rows = this.sqlite.prepare(sql).all(...params) as SqlRow[];
+    return rows.map((row) => {
+      const requirement = this.getMaterialRequirement(String(row.id));
+      const reservations = this.listReservations(requirement.workPackageId).filter(
+        (item) => item.materialRequirementId === requirement.id
+      );
+      const candidates = requirement.partId
+        ? this.listDemandCandidates(requirement.partId, requirement.requestedStationId)
+        : [];
+      const activeReservation = reservations.find((item) =>
+        ['ACTIVE', 'PARTIALLY_ISSUED', 'ISSUED'].includes(item.status)
+      );
+      let nextAction: InventoryMaintenanceDemandDto['nextAction'] = 'RESERVE';
+      let blocker: string | null = null;
+      if (requirement.satisfied) nextAction = 'COMPLETED';
+      else if (activeReservation?.status === 'ISSUED') nextAction = 'WAIT_INSTALL';
+      else if (activeReservation) nextAction = 'ISSUE';
+      else if (!candidates.some((item) => item.eligible && item.availableQuantity > 0)) {
+        nextAction = 'BLOCKED';
+        blocker = candidates[0]?.blocker ?? 'Stok layak pakai belum tersedia';
+      }
+
+      return {
+        requirement,
+        workPackageNumber: String(row.package_number),
+        workPackageTitle: String(row.package_title),
+        workPackageStatus: String(row.package_status),
+        aircraftId: String(row.aircraft_id),
+        aircraftRegistration: String(row.registration_number),
+        flightId: nullableText(row.source_flight_id),
+        flightNumber: nullableText(row.flight_number),
+        stationId: nullableText(row.station_id),
+        stationCode: nullableText(row.station_code),
+        reservations,
+        candidates,
+        nextAction,
+        blocker
+      };
+    });
+  }
+
+  private listDemandCandidates(partId: string, stationId: string | null) {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT balance.id, balance.condition, balance.on_hand_quantity,
+                station.id AS station_id, station.station_code,
+                warehouse.warehouse_code, bin.id AS bin_id, bin.bin_code,
+                lot.lot_number, lot.expires_at, lot.certificate_reference,
+                lot.certificate_verified, part.certificate_required,
+                serial.id AS serial_id, serial.serial_number,
+                serial.certificate_verified AS serial_certificate_verified
+         FROM inventory_stock_balances balance
+         JOIN inventory_parts part ON part.id = balance.part_id
+         JOIN inventory_bins bin ON bin.id = balance.bin_id
+         JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
+         JOIN stations station ON station.id = warehouse.station_id
+         LEFT JOIN inventory_lots lot ON lot.id = balance.lot_id
+         LEFT JOIN inventory_serialized_parts serial
+           ON serial.part_id = balance.part_id AND serial.bin_id = balance.bin_id
+         WHERE balance.part_id = ?
+           AND (? IS NULL OR station.id = ?)
+         ORDER BY balance.condition = 'SERVICEABLE' DESC, balance.on_hand_quantity DESC`
+      )
+      .all(partId, stationId, stationId) as SqlRow[];
+    return rows.map((row) => {
+      const expired = Boolean(row.expires_at && String(row.expires_at) <= now());
+      const certificateVerified =
+        !Boolean(row.certificate_required) ||
+        Boolean(row.certificate_verified) ||
+        Boolean(row.serial_certificate_verified);
+      const serviceable = String(row.condition) === 'SERVICEABLE';
+      const eligible =
+        serviceable && !expired && certificateVerified && number(row.on_hand_quantity) > 0;
+      const blocker = !serviceable
+        ? 'Kondisi material tidak serviceable'
+        : expired
+          ? 'Masa simpan material telah berakhir'
+          : !certificateVerified
+            ? 'Sertifikat material belum terverifikasi'
+            : number(row.on_hand_quantity) <= 0
+              ? 'Stok tersedia kosong'
+              : null;
+      return {
+        inventoryItemId: String(row.id),
+        stationId: String(row.station_id),
+        stationCode: String(row.station_code),
+        warehouseCode: String(row.warehouse_code),
+        binId: String(row.bin_id),
+        binCode: String(row.bin_code),
+        lotNumber: nullableText(row.lot_number),
+        serialId: nullableText(row.serial_id),
+        serialNumber: nullableText(row.serial_number),
+        availableQuantity: number(row.on_hand_quantity),
+        condition: String(row.condition),
+        expiresAt: nullableText(row.expires_at),
+        certificateReference: nullableText(row.certificate_reference),
+        certificateVerified,
+        eligible,
+        blocker
+      };
+    });
   }
 
   // =============================================================================
@@ -1149,13 +1303,187 @@ export class ResourceV21Service {
     input: ReturnMaterialInput,
     actor: AuditActor
   ): MaintenanceInventoryReservationDto {
-    void actor;
-    throw new DomainError(
-      'RESOURCE_CONFLICT',
-      'Material return is outside M1. Return handling will be implemented with material lifecycle controls.',
-      409,
-      { reservationId: input.reservationId, condition: input.condition }
-    );
+    const timestamp = now();
+    const reservation = this.getReservation(input.reservationId);
+    const replay = this.sqlite
+      .prepare(
+        `SELECT id FROM maintenance_reservation_events
+         WHERE reservation_id = ? AND event_type = 'RETURNED' AND idempotency_key = ?`
+      )
+      .get(input.reservationId, input.idempotencyKey) as SqlRow | undefined;
+    if (replay) return reservation;
+    if (reservation.status !== 'ISSUED') {
+      throw new DomainError(
+        'MATERIAL_NOT_ISSUED',
+        'Hanya material yang sudah di-issue dapat dikembalikan.',
+        409
+      );
+    }
+    const issuedQuantity = reservation.issuedQuantity ?? reservation.quantity;
+    if (Math.abs(input.quantity - issuedQuantity) > 0.000001) {
+      throw new DomainError(
+        'PARTIAL_RETURN_NOT_SUPPORTED',
+        'Pengembalian harus mencakup seluruh jumlah yang telah di-issue.',
+        409
+      );
+    }
+    if (this.installedQuantityForReservation(input.reservationId) > 0) {
+      throw new DomainError(
+        'MATERIAL_ALREADY_INSTALLED',
+        'Material yang sudah terpasang tidak dapat dikembalikan ke inventory.',
+        409
+      );
+    }
+
+    let updated: MaintenanceInventoryReservationDto | null = null;
+    this.sqlite
+      .transaction(() => {
+        const source = this.requireReservationSource(reservation, false);
+        const targetBinId =
+          input.condition === 'SERVICEABLE'
+            ? source.binId
+            : this.findReturnBin(reservation.stationId, input.condition);
+        const movementId = `inv-move-return-${nanoid(10)}`;
+        const movementNumber = `MOV-RET-${timestamp.slice(0, 10).replaceAll('-', '')}-${nanoid(5).toUpperCase()}`;
+        const lotKey = source.lotId ?? '';
+
+        this.sqlite
+          .prepare(
+            `INSERT INTO inventory_stock_balances (
+               id, part_id, bin_id, lot_key, lot_id, condition, on_hand_quantity, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(part_id, bin_id, lot_key, condition)
+             DO UPDATE SET on_hand_quantity = on_hand_quantity + excluded.on_hand_quantity,
+                           updated_at = excluded.updated_at`
+          )
+          .run(
+            `inv-stock-return-${nanoid(10)}`,
+            reservation.partId,
+            targetBinId,
+            lotKey,
+            source.lotId,
+            input.condition,
+            input.quantity,
+            timestamp
+          );
+
+        if (reservation.serializedPartId) {
+          this.sqlite
+            .prepare(
+              `UPDATE inventory_serialized_parts
+               SET bin_id = ?, condition = ?, aircraft_id = NULL, position = NULL, updated_at = ?
+               WHERE id = ? AND condition != 'INSTALLED'`
+            )
+            .run(targetBinId, input.condition, timestamp, reservation.serializedPartId);
+        }
+
+        this.sqlite
+          .prepare(
+            `INSERT INTO inventory_movements (
+               id, movement_number, movement_type, source_type, source_id, station_id,
+               aircraft_id, reason, status, total_base_value_idr, is_finalized,
+               created_by_user_id, created_at
+             ) VALUES (?, ?, 'ADJUSTMENT_GAIN', 'MAINTENANCE_MATERIAL_RETURN', ?, ?, ?, ?,
+                       'POSTED', 0, 0, ?, ?)`
+          )
+          .run(
+            movementId,
+            movementNumber,
+            reservation.id,
+            reservation.stationId,
+            reservation.aircraftId,
+            input.reason,
+            actor.userId,
+            timestamp
+          );
+        this.sqlite
+          .prepare(
+            `INSERT INTO inventory_movement_lines (
+               id, movement_id, part_id, from_bin_id, to_bin_id, lot_id, serial_id,
+               condition_from, condition_to, quantity
+             ) VALUES (?, ?, ?, NULL, ?, ?, ?, 'SERVICEABLE', ?, ?)`
+          )
+          .run(
+            `inv-move-line-return-${nanoid(10)}`,
+            movementId,
+            reservation.partId,
+            targetBinId,
+            source.lotId,
+            reservation.serializedPartId,
+            input.condition,
+            input.quantity
+          );
+        this.sqlite
+          .prepare('UPDATE inventory_movements SET is_finalized = 1 WHERE id = ?')
+          .run(movementId);
+
+        const changed = this.sqlite
+          .prepare(
+            `UPDATE maintenance_inventory_reservations
+             SET status = 'RELEASED', released_by = ?, released_at = ?, release_reason = ?,
+                 version = version + 1, updated_at = ?
+             WHERE id = ? AND status = 'ISSUED' AND version = ?`
+          )
+          .run(
+            actor.userId,
+            timestamp,
+            input.reason,
+            timestamp,
+            input.reservationId,
+            reservation.version
+          );
+        if (!changed.changes) {
+          throw new DomainError(
+            'CONCURRENT_RESERVATION_CONFLICT',
+            'Reservation berubah saat material dikembalikan. Muat ulang data.',
+            409
+          );
+        }
+
+        this.insertReservationEvent(
+          input.reservationId,
+          'RETURNED',
+          input.quantity,
+          actor,
+          input.reason,
+          { status: 'ISSUED', quantity: issuedQuantity },
+          { status: 'RELEASED', returnCondition: input.condition, movementId },
+          input.idempotencyKey,
+          timestamp
+        );
+        this.audit('INVENTORY_RESERVATION', input.reservationId, 'RETURNED', actor, {
+          movementId,
+          quantity: input.quantity,
+          condition: input.condition
+        });
+        this.recalculateMaterialRequirementStatus(reservation.materialRequirementId, timestamp);
+        updated = this.getReservation(input.reservationId);
+      })
+      .immediate();
+
+    return updated!;
+  }
+
+  private findReturnBin(stationId: string, condition: ReturnMaterialInput['condition']): string {
+    const preferredType = condition === 'QUARANTINE' ? 'QUARANTINE' : 'REPAIR';
+    const row = this.sqlite
+      .prepare(
+        `SELECT bin.id
+         FROM inventory_bins bin
+         JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
+         WHERE warehouse.station_id = ? AND bin.bin_type = ? AND bin.is_active = 1
+         ORDER BY warehouse.warehouse_code, bin.bin_code
+         LIMIT 1`
+      )
+      .get(stationId, preferredType) as SqlRow | undefined;
+    if (!row) {
+      throw new DomainError(
+        'RETURN_BIN_NOT_FOUND',
+        `Bin ${preferredType.toLowerCase()} belum tersedia pada station tujuan.`,
+        409
+      );
+    }
+    return String(row.id);
   }
 
   releaseReservation(

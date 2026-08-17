@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import type { LocalUploadDto } from '#shared/contracts/uploads';
+import type {
+  StationMaintenanceRequestDto,
+  StationMaintenanceRequestInput,
+  StationTechnicalReadinessDto
+} from '#shared/contracts/station-maintenance';
+import MaintenanceRequestDialog from '../../../components/station-operations/MaintenanceRequestDialog.vue';
 import { fetchApi } from '../../../composables/useApiEnvelope';
 import {
   normalizeStationWorkspaceTab,
@@ -93,6 +99,8 @@ type WorkbenchFlight = {
   flightNumber: string;
   flightDate: string;
   aircraftType: string;
+  aircraftRegistration: string;
+  aircraftVersion: number;
   originStationId: string;
   originStationCode: string;
   destinationStationId: string;
@@ -105,6 +113,8 @@ type WorkbenchFlight = {
   passengerTotal: number;
   passengerActual: number;
   cargoWeightKg: number;
+  technicalReadiness: StationTechnicalReadinessDto;
+  maintenanceRequests: StationMaintenanceRequestDto[];
   tasks: Task[];
   services: StationService[];
   costs: StationCost[];
@@ -136,6 +146,7 @@ const flightId = computed<string>(() => String(route.params.flightId));
 const loadingId = ref<string>('');
 const actionError = ref<string>('');
 const actionSuccess = ref<string>('');
+const maintenanceDialog = ref(false);
 
 const {
   data: flights,
@@ -152,6 +163,27 @@ const {
 );
 
 const flight = computed<WorkbenchFlight | null>(() => flights.value[0] ?? null);
+
+async function createMaintenanceRequest(input: StationMaintenanceRequestInput): Promise<void> {
+  if (!flight.value) return;
+  loadingId.value = 'maintenance-request';
+  clearActionMessages();
+  try {
+    await fetchApi(`/api/flight-operations/flights/${flight.value.flightId}/maintenance-requests`, {
+      method: 'POST',
+      body: input
+    });
+    actionSuccess.value = 'Maintenance request diteruskan ke MRO.';
+    maintenanceDialog.value = false;
+    await refreshWorkspace();
+    activeTab.value = 'maintenance';
+  } catch (value) {
+    actionError.value =
+      value instanceof Error ? value.message : 'Maintenance request gagal dibuat.';
+  } finally {
+    loadingId.value = '';
+  }
+}
 
 async function refreshWorkspace(): Promise<void> {
   await refresh();
@@ -865,6 +897,52 @@ function handleSnackbarModelValue(value: boolean): void {
     </VCard>
 
     <template v-if="flight">
+      <VAlert
+        class="mb-4"
+        :color="
+          flight.technicalReadiness.status === 'READY'
+            ? 'success'
+            : flight.technicalReadiness.status === 'AT_RISK'
+              ? 'warning'
+              : 'error'
+        "
+        :icon="
+          flight.technicalReadiness.status === 'READY'
+            ? 'mdi-shield-check-outline'
+            : 'mdi-airplane-alert'
+        "
+        variant="tonal"
+      >
+        <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+          <div>
+            <div class="font-weight-bold">
+              Kesiapan teknis:
+              {{
+                flight.technicalReadiness.status === 'READY'
+                  ? 'Siap'
+                  : flight.technicalReadiness.status === 'AT_RISK'
+                    ? 'Perlu perhatian'
+                    : 'Belum siap'
+              }}
+            </div>
+            <div>
+              {{ flight.technicalReadiness.blockerLabel ?? 'Tidak ada blocker teknis aktif.' }}
+            </div>
+            <div v-if="flight.technicalReadiness.owner" class="text-caption">
+              Pemilik tindakan: {{ flight.technicalReadiness.owner }} ·
+              {{ flight.technicalReadiness.nextAction }}
+            </div>
+          </div>
+          <VBtn
+            v-if="can('station.maintenance_request.create').allowed"
+            prepend-icon="mdi-alert-plus-outline"
+            text="Laporkan temuan"
+            variant="outlined"
+            @click="maintenanceDialog = true"
+          />
+        </div>
+      </VAlert>
+
       <VCard border class="mb-4 overflow-hidden">
         <VCardText>
           <div class="workspace-summary-grid">
@@ -880,7 +958,9 @@ function handleSnackbarModelValue(value: boolean): void {
 
             <div class="workspace-summary-item">
               <div class="text-caption text-medium-emphasis">Aircraft</div>
-              <div class="font-weight-medium">{{ flight.aircraftType || '-' }}</div>
+              <div class="font-weight-medium">
+                {{ flight.aircraftRegistration || flight.aircraftType || '-' }}
+              </div>
               <div class="text-caption text-medium-emphasis">{{ flight.serviceTypeCode }}</div>
             </div>
 
@@ -953,6 +1033,15 @@ function handleSnackbarModelValue(value: boolean): void {
             <VIcon icon="mdi-clipboard-check-outline" start />
             Tasks
             <VChip class="ml-2" size="x-small" variant="tonal">{{ tasks.length }}</VChip>
+          </VTab>
+          <VTab value="maintenance">
+            <VIcon icon="mdi-handshake-outline" start />
+            Maintenance
+            <VChip class="ml-2" size="x-small" variant="tonal">
+              {{
+                flight.maintenanceRequests.length
+              }}
+            </VChip>
           </VTab>
           <VTab value="services">
             <VIcon icon="mdi-toolbox-outline" start />
@@ -1188,6 +1277,75 @@ function handleSnackbarModelValue(value: boolean): void {
               </VCard>
             </VCol>
           </VRow>
+        </VWindowItem>
+
+        <VWindowItem value="maintenance">
+          <VCard border>
+            <div class="pa-4 d-flex flex-wrap align-center justify-space-between ga-3">
+              <div>
+                <div class="text-h6 font-weight-bold">Handoff maintenance</div>
+                <div class="text-caption text-medium-emphasis">
+                  Station melaporkan temuan dan memonitor progres. Assessment serta rilis tetap
+                  menjadi kewenangan MRO.
+                </div>
+              </div>
+              <VBtn
+                v-if="can('station.maintenance_request.create').allowed"
+                prepend-icon="mdi-alert-plus-outline"
+                text="Maintenance request"
+                variant="tonal"
+                @click="maintenanceDialog = true"
+              />
+            </div>
+            <VDivider />
+            <VTimeline
+              v-if="flight.maintenanceRequests.length"
+              align="start"
+              class="pa-4"
+              density="compact"
+              side="end"
+            >
+              <VTimelineItem
+                v-for="request in flight.maintenanceRequests"
+                :key="request.id"
+                :dot-color="
+                  request.releaseNumber
+                    ? 'success'
+                    : request.materialStatus === 'WAITING_MATERIAL'
+                      ? 'warning'
+                      : 'secondary'
+                "
+                size="small"
+              >
+                <div class="d-flex flex-wrap align-center ga-2">
+                  <strong>{{ request.defectNumber }}</strong><DsStatusBadge
+                    :value="
+                      request.releaseNumber
+                        ? 'RELEASED'
+                        : (request.materialStatus ?? request.workPackageStatus ?? request.status)
+                    "
+                  />
+                </div>
+                <div>{{ request.title }}</div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ request.nextAction }} · Pemilik: {{ request.owner }}
+                </div>
+                <div v-if="request.workPackageNumber" class="mt-1">
+                  <NuxtLink
+                    v-if="can('maintenance.package.read').allowed"
+                    :to="`/maintenance/work-packages/${request.workPackageId}`"
+                  >
+                    {{ request.workPackageNumber }}
+                  </NuxtLink>
+                  <span v-else>Referensi WP: {{ request.workPackageNumber }}</span>
+                </div>
+              </VTimelineItem>
+            </VTimeline>
+            <VCardText v-else class="py-10 text-center text-medium-emphasis">
+              <VIcon class="mb-2" icon="mdi-shield-check-outline" size="36" />
+              <div>Belum ada maintenance request dari Station untuk flight ini.</div>
+            </VCardText>
+          </VCard>
         </VWindowItem>
 
         <VWindowItem value="services">
@@ -1976,6 +2134,21 @@ function handleSnackbarModelValue(value: boolean): void {
         </VCardActions>
       </VCard>
     </VDialog>
+
+    <MaintenanceRequestDialog
+      v-model="maintenanceDialog"
+      :flight="
+        flight
+          ? {
+            flightNumber: flight.flightNumber,
+            aircraftRegistration: flight.aircraftRegistration,
+            aircraftVersion: flight.aircraftVersion
+          }
+          : null
+      "
+      :loading="loadingId === 'maintenance-request'"
+      @submit="createMaintenanceRequest"
+    />
 
     <VSnackbar
       :model-value="Boolean(actionSuccess)"

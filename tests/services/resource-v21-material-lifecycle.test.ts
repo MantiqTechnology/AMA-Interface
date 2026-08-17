@@ -366,6 +366,75 @@ describe('Resource-v21 M2 material lifecycle', () => {
     sqlite.close();
   });
 
+  it('returns issued but uninstalled material to stock with an immutable event', async () => {
+    const { services, sqlite } = await createResourceFixture();
+    const inventoryActor = { userId: 'USR-INVENTORY-CONTROLLER', role: 'Inventory Controller' };
+    const requirement = services.resourceV21.createMaterialRequirement(
+      {
+        workPackageId: 'mwp-mrov1-active',
+        jobCardId: 'mjc-mrov1-active-001',
+        partId: 'inv-part-oil',
+        requiredQuantity: 2,
+        unit: 'L',
+        requestedStationId: 'st-djj',
+        reason: 'Return lifecycle regression test'
+      },
+      actor
+    );
+    const before = services.resourceV21.calculateAtp('inv-part-oil', 'st-djj');
+    const reservation = services.resourceV21.reserveMaterial(
+      {
+        materialRequirementId: requirement.id,
+        inventoryItemId: 'inv-bal-oil-djj',
+        quantity: 2,
+        unit: 'L',
+        stationId: 'st-djj',
+        inventoryLocationId: 'inv-bin-djj-usable',
+        idempotencyKey: 'return-regression-reserve'
+      },
+      inventoryActor
+    );
+    services.resourceV21.issueMaterial(
+      { reservationId: reservation.id, quantity: 2, idempotencyKey: 'return-regression-issue' },
+      inventoryActor
+    );
+    const returned = services.resourceV21.returnMaterial(
+      {
+        reservationId: reservation.id,
+        quantity: 2,
+        condition: 'SERVICEABLE',
+        reason: 'Work scope changed before installation.',
+        idempotencyKey: 'return-regression-return'
+      },
+      inventoryActor
+    );
+    expect(returned.status).toBe('RELEASED');
+    expect(services.resourceV21.calculateAtp('inv-part-oil', 'st-djj').serviceableOnHand).toBe(
+      before.serviceableOnHand
+    );
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) count FROM maintenance_reservation_events
+           WHERE reservation_id = ? AND event_type = 'RETURNED'`
+        )
+        .get(reservation.id)
+    ).toMatchObject({ count: 1 });
+    expect(
+      services.resourceV21.returnMaterial(
+        {
+          reservationId: reservation.id,
+          quantity: 2,
+          condition: 'SERVICEABLE',
+          reason: 'Work scope changed before installation.',
+          idempotencyKey: 'return-regression-return'
+        },
+        inventoryActor
+      ).status
+    ).toBe('RELEASED');
+    sqlite.close();
+  });
+
   it('prevents true parallel serialized reservation with a file-backed database', async () => {
     const fixture = await createFileResourceFixture();
     try {

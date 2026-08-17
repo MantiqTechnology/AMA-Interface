@@ -2,12 +2,14 @@
 defineProps<{
   title: string;
   eyebrow?: string;
+  description?: string;
 }>();
 
 const route = useRoute();
 const tabs = [
   { label: 'Overview', to: '/inventory', icon: 'mdi-view-dashboard-outline' },
   { label: 'Stock', to: '/inventory/stock', icon: 'mdi-layers-triple-outline' },
+  { label: 'Kebutuhan MRO', to: '/inventory/maintenance-demand', icon: 'mdi-airplane-wrench' },
   { label: 'Parts', to: '/inventory/parts', icon: 'mdi-cog-outline' },
   { label: 'Warehouses', to: '/inventory/warehouses', icon: 'mdi-warehouse' },
   { label: 'Requests', to: '/inventory/purchase-requests', icon: 'mdi-clipboard-text-outline' },
@@ -25,16 +27,14 @@ const activeTab = computed(() => {
 
 <template>
   <VContainer class="inventory-shell px-3 py-5 md:px-4" fluid>
-    <div class="mb-4 d-flex flex-wrap align-end ga-3">
-      <div>
-        <div class="text-caption font-weight-bold text-medium-emphasis">
-          {{ eyebrow ?? 'Inventory / Spare Parts' }}
-        </div>
-        <h1 class="text-h4 font-weight-bold text-text-primary">{{ title }}</h1>
-      </div>
-      <VSpacer />
-      <slot name="actions" />
-    </div>
+    <DsOperationalPageHeader
+      class="mb-4"
+      :description="description"
+      :eyebrow="eyebrow ?? 'Inventory / Spare Parts'"
+      :title="title"
+    >
+      <template #actions><slot name="actions" /></template>
+    </DsOperationalPageHeader>
 
     <VTabs
       :model-value="activeTab"
@@ -60,11 +60,5 @@ const activeTab = computed(() => {
 <style scoped>
 .inventory-tabs {
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-}
-
-@media (max-width: 600px) {
-  .inventory-shell {
-    overflow-x: hidden;
-  }
 }
 </style>

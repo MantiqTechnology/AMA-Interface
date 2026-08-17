@@ -20,6 +20,7 @@ export type FlightDirection = 'INBOUND' | 'OUTBOUND';
 export type FlightStatus =
   'SCHEDULED' | 'ARRIVING' | 'LANDED' | 'DELAYED' | 'DEPARTED' | 'BOARDING';
 export type ReadinessStatus = 'READY' | 'CHECK' | 'NOT_READY';
+export type EffectiveReadinessStatus = 'READY' | 'AT_RISK' | 'NOT_READY';
 export type ServiceType = 'HANDLING' | 'PARKING';
 export type ServiceStatus =
   'PLANNED' | 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'VERIFIED' | 'REJECTED' | 'CANCELLED';
@@ -44,12 +45,17 @@ export interface StationFlightRow {
   origin: string;
   destination: string;
   aircraftType: string;
+  aircraftRegistration: string;
+  aircraftVersion: number;
   type: 'PSG' | 'CRG';
   direction: FlightDirection;
   scheduledTime: string;
   actualTime: string;
   status: FlightStatus;
   readiness: ReadinessStatus;
+  blockerLabel: string | null;
+  readinessOwner: 'STATION' | 'MRO' | 'INVENTORY' | null;
+  nextAction: string | null;
   paxOnboard: number;
   paxTotal: number;
   cargoWeightKg: number;
@@ -247,6 +253,8 @@ export interface ApiStationFlight {
   flightDate: string;
   aircraftId: string;
   aircraftType: string;
+  aircraftRegistration: string;
+  aircraftVersion: number;
   originStationId: string;
   originStationCode: string;
   destinationStationId: string;
@@ -263,6 +271,15 @@ export interface ApiStationFlight {
   passengerActual: number;
   cargoWeightKg: number;
   dangerousGoods: boolean;
+  technicalReadiness: {
+    status: EffectiveReadinessStatus;
+    blockerCode: string | null;
+    blockerLabel: string | null;
+    owner: 'STATION' | 'MRO' | 'INVENTORY' | null;
+    nextAction: string | null;
+    evaluatedAt: string;
+  };
+  maintenanceRequests: import('#shared/contracts/station-maintenance').StationMaintenanceRequestDto[];
   tasks: ApiStationTask[];
   services: ApiStationService[];
   costs: ApiStationCost[];

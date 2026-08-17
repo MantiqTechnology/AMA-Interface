@@ -35,11 +35,25 @@ test('station operations desk loads flights for seed date', async ({ page }) => 
   expect(body.data.length).toBeGreaterThan(0);
 });
 
+test('station workspace without a date opens the latest actionable shift', async ({
+  context,
+  page
+}) => {
+  await context.addCookies([
+    { name: 'ama_demo_role', value: 'Station Admin', url: 'http://localhost:3100' }
+  ]);
+  await page.goto('/flights/station-operations', { waitUntil: 'networkidle' });
+
+  await expect(page).toHaveURL(/stationCode=WMX&date=\d{4}-\d{2}-\d{2}/u);
+  await expect(page.getByRole('heading', { name: 'Prioritas kesiapan flight' })).toBeVisible();
+  await expect(page.locator('main table').first().locator('tbody tr').first()).toBeVisible();
+});
+
 test('station operations shows flight board for seed date', async ({ page }) => {
   await gotoStationOps(page);
   await setOperationalDate(page, DEMO_SEED_DATE);
 
-  await expect(page.getByRole('heading', { name: 'Priority Flight Board' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Prioritas kesiapan flight' })).toBeVisible();
 
   const firstTableRows = page.locator('main table').first().locator('tbody tr');
   await expect(firstTableRows.first()).toBeVisible();
@@ -57,6 +71,26 @@ test('station operations opens service and cost creation dialogs', async ({ page
   await page.getByRole('tab', { name: 'Costs' }).click();
   await page.getByRole('button', { name: 'Create Cost' }).click();
   await expect(page.getByRole('heading', { name: 'Create Station Cost' })).toBeVisible();
+});
+
+test('station operations exposes actual closure and technical handoff workbenches', async ({
+  context,
+  page
+}) => {
+  await context.addCookies([
+    { name: 'ama_demo_role', value: 'Station Admin', url: 'http://localhost:3100' }
+  ]);
+  await page.goto(
+    `/flights/station-operations/actual-closure?stationCode=WMX&date=${DEMO_SEED_DATE}`,
+    { waitUntil: 'networkidle' }
+  );
+  await expect(page.getByRole('heading', { name: 'Actual & Closure Station' })).toBeVisible();
+  await expect(page.getByText('Kesiapan closure', { exact: true })).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Handoff MRO' }).click();
+  await expect(page.getByRole('heading', { name: 'Temuan Teknis & Handoff MRO' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Laporkan temuan' })).toBeVisible();
+  await expect(page.getByText('Menunggu MRO', { exact: true })).toBeVisible();
 });
 
 test('switching station updates the flight board', async ({ page }) => {

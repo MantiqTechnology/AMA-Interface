@@ -92,6 +92,8 @@ const severityColor: Record<string, string> = {
 onMounted(() => session.load());
 
 const pageTitle = computed(() => {
+  if (route.path === '/ops') return t('topbar.page.opsOverview');
+  if (route.path === '/flights/dashboard') return t('topbar.page.flightControlOverview');
   if (route.path.startsWith('/ops/flight-following')) return t('topbar.page.flightFollowing');
   if (route.path.startsWith('/ops/flights')) return t('topbar.page.flightDetail');
   if (route.path.startsWith('/ops/flight-closure')) return t('topbar.page.flightClosure');
@@ -99,6 +101,14 @@ const pageTitle = computed(() => {
   if (route.path.startsWith('/master-data')) return t('topbar.page.masterData');
   if (route.path.startsWith('/dashboard')) return t('topbar.page.dashboard');
   if (route.path.startsWith('/flights/requests')) return t('topbar.page.flightRequests');
+  if (
+    route.path.startsWith('/flights/station-operations') ||
+    route.path.startsWith('/flights/actual-closure') ||
+    route.path.startsWith('/flights/maintenance')
+  ) {
+    return t('topbar.page.stationOperations');
+  }
+  if (route.path.startsWith('/maintenance')) return t('topbar.page.maintenanceOperations');
   if (/^\/flights\/[^/]+$/u.test(route.path)) {
     return mdAndUp.value ? t('topbar.page.flightOperationsWorkspace') : t('topbar.page.flight');
   }

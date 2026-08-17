@@ -8,9 +8,9 @@ test('inventory dashboard and catalog render with accessible actions', async ({ 
 
   await page.goto('/inventory', { waitUntil: 'networkidle' });
   await expect(
-    page.getByRole('heading', { level: 1, name: 'Inventory Control Center' })
+    page.getByRole('heading', { level: 1, name: 'Pusat Kendali Inventory' })
   ).toBeVisible();
-  await expect(page.getByText('Available Parts', { exact: true })).toBeVisible();
+  await expect(page.getByText('Part tersedia', { exact: true })).toBeVisible();
   await expect(page.getByText('FIFO Valuation', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh inventory dashboard' })).toBeVisible();
 
@@ -91,7 +91,7 @@ test('Director can cancel and then approve a submitted purchase order', async ({
 
   await row.getByRole('button', { name: 'Approve purchase order' }).click();
   await confirmation.getByRole('button', { name: 'Approve order' }).click();
-  await expect(row.getByText('approved', { exact: true })).toBeVisible();
+  await expect(row.getByText('Disetujui', { exact: true })).toBeVisible();
 });
 
 test('repairable custom modal and inventory pages remain usable on mobile', async ({ page }) => {
@@ -113,4 +113,18 @@ test('repairable custom modal and inventory pages remain usable on mobile', asyn
     content: document.documentElement.scrollWidth
   }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+});
+
+test('Inventory Controller can open the MRO material demand queue', async ({ context, page }) => {
+  await context.addCookies([
+    { name: 'ama_demo_role', value: 'Inventory Controller', url: 'http://localhost:3100' }
+  ]);
+  await page.goto('/inventory/maintenance-demand', { waitUntil: 'networkidle' });
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Kebutuhan Material MRO' })
+  ).toBeVisible();
+  await expect(page.getByText('Kebutuhan aktif', { exact: true })).toBeVisible();
+  await expect(page.getByText('Kebutuhan material MRO tidak dapat dimuat.')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reservasi', exact: true }).first()).toBeVisible();
+  await expect(page.locator('text=undefined')).toHaveCount(0);
 });

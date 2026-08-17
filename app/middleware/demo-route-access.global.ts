@@ -1,11 +1,7 @@
 import { safeDemoRoleRedirectPath } from '../utils/demoRouteAccess';
 
-export default defineNuxtRouteMiddleware(async (to) => {
-  if (!import.meta.client) return;
-
+export default defineNuxtRouteMiddleware((to) => {
   const session = useDemoSession();
-  await session.load();
-
   const redirectPath = safeDemoRoleRedirectPath(session.role.value, to.path);
   if (!redirectPath || redirectPath === to.path) return;
 

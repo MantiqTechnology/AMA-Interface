@@ -253,7 +253,7 @@ export class AccountingJournalDetailReader {
       MAINTENANCE_PART_ISSUE: {
         table: 'maintenance_part_issues',
         label: 'issue_number',
-        route: '/flights/maintenance'
+        route: '/maintenance/flight-handoffs'
       },
       COMPONENT_INSTALLATION: { route: '/inventory/repairables' },
       PASSENGER_TICKET: {
@@ -602,7 +602,7 @@ export class AccountingJournalDetailReader {
         status: payload.workOrderId ? 'AVAILABLE' : 'MISSING',
         recordedAt: null,
         recordedBy: null,
-        sourceRoute: '/flights/maintenance'
+        sourceRoute: '/maintenance/flight-handoffs'
       });
       add({
         type: 'TECHNICAL_ACCEPTANCE',

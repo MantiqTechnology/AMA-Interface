@@ -7,6 +7,16 @@ export const stationOperationsTabs = [
     icon: 'mdi-clipboard-check-outline',
     to: '/flights/station-operations/verification'
   },
+  {
+    label: 'Actual & Closure',
+    icon: 'mdi-airplane-check',
+    to: '/flights/station-operations/actual-closure'
+  },
+  {
+    label: 'Handoff MRO',
+    icon: 'mdi-airplane-wrench',
+    to: '/flights/station-operations/maintenance'
+  },
   { label: 'Costs', icon: 'mdi-cash-multiple', to: '/flights/station-operations/costs' },
   { label: 'Reports', icon: 'mdi-chart-box-outline', to: '/flights/station-operations/reports' },
   { label: 'Audit Trail', icon: 'mdi-history', to: '/flights/station-operations/audit' }

@@ -5,8 +5,10 @@ import type {
   InventoryWarehouseDto
 } from '#shared/features/inventory';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import { useDisplay } from 'vuetify';
 
 const { can } = useAuthorization();
+const { smAndDown } = useDisplay();
 const { money, number, date, errorMessage } = useInventoryUi();
 const search = ref('');
 const warehouseId = ref('');
@@ -146,7 +148,7 @@ async function postAdjustment() {
 
     <VCard border class="mb-4">
       <VCardText>
-        <VRow dense>
+        <VRow density="compact">
           <VCol cols="12" md="6">
             <VTextField
               v-model="search"
@@ -190,6 +192,8 @@ async function postAdjustment() {
         ]"
         :items="rows"
         :loading="pending"
+        :mobile="smAndDown"
+        mobile-breakpoint="sm"
       >
         <template #[`item.partNumber`]="{ item }">
           <div class="py-2">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import StationSelect from '../../../features/operations/stations/StationSelect.vue';
 import type {
   FlightOperationDetailDto,
   FlightOperationOverviewDto,
@@ -9,20 +10,40 @@ const search = ref('');
 const loadingId = ref('');
 const actionError = ref('');
 const advisoryLoadingId = ref('');
+const route = useRoute();
+const stationId = ref<string | null>(
+  typeof route.query.stationId === 'string' ? route.query.stationId : null
+);
+const dateFrom = ref(typeof route.query.dateFrom === 'string' ? route.query.dateFrom : '');
+const dateTo = ref(typeof route.query.dateTo === 'string' ? route.query.dateTo : '');
 const { can } = useAuthorization();
 
 const { data, pending, error, refresh } = await useAsyncData(
   'flight-readiness-worklist',
   () =>
     fetchApi<FlightOperationOverviewDto>('/api/flight-operations/flights', {
-      query: { search: search.value, limit: 100 }
+      query: {
+        search: search.value,
+        stationId: stationId.value ?? undefined,
+        dateFrom: dateFrom.value || undefined,
+        dateTo: dateTo.value || undefined,
+        limit: 100
+      }
     }),
-  { watch: [search] }
+  { watch: [search, stationId, dateFrom, dateTo] }
 );
 const { data: advisories, refresh: refreshAdvisories } = await useAsyncData(
   'operational-advisories',
-  () => fetchApi<OperationalAdvisoryDto[]>('/api/flight-operations/advisories'),
-  { default: () => [] }
+  () =>
+    fetchApi<OperationalAdvisoryDto[]>('/api/flight-operations/advisories', {
+      query: {
+        status: 'ACTIVE',
+        stationId: stationId.value ?? undefined,
+        dateFrom: dateFrom.value || undefined,
+        dateTo: dateTo.value || undefined
+      }
+    }),
+  { default: () => [], watch: [stationId, dateFrom, dateTo] }
 );
 
 async function changeAdvisoryStatus(
@@ -66,6 +87,7 @@ const departureRows = computed(() =>
     ['CHECK_IN_CLOSED', 'READY_FOR_DEPARTURE'].includes(flight.currentStatus)
   )
 );
+const filteredAdvisories = computed(() => advisories.value);
 
 async function runAction(id: string, action: 'evaluate' | 'approve') {
   loadingId.value = `${id}-${action}`;
@@ -113,7 +135,7 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
       <VCardText class="pt-0">
         <VList lines="three">
           <VListItem
-            v-for="advisory in advisories"
+            v-for="advisory in filteredAdvisories"
             :key="advisory.id"
             :subtitle="advisory.operationalLimitation ?? advisory.sourceReference ?? undefined"
             :title="advisory.summary"
@@ -164,6 +186,31 @@ async function runAction(id: string, action: 'evaluate' | 'approve') {
           prepend-inner-icon="mdi-magnify"
           variant="outlined"
         />
+        <VRow class="mt-2" density="comfortable">
+          <VCol cols="12" md="4">
+            <StationSelect v-model="stationId" :allow-create="false" label="Station" />
+          </VCol>
+          <VCol cols="12" md="4">
+            <VTextField
+              v-model="dateFrom"
+              density="compact"
+              hide-details
+              label="Date from"
+              type="date"
+              variant="outlined"
+            />
+          </VCol>
+          <VCol cols="12" md="4">
+            <VTextField
+              v-model="dateTo"
+              density="compact"
+              hide-details
+              label="Date to"
+              type="date"
+              variant="outlined"
+            />
+          </VCol>
+        </VRow>
       </VCardText>
     </VCard>
 
