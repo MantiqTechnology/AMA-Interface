@@ -961,6 +961,114 @@ export function seedInventoryData(
       }),
       createdAt: context.at(-1, '10:00')
     });
+
+    insertIgnore(sqlite, 'inventory_part_interchangeabilities', {
+      id: 'ic-seed-001',
+      partId: 'inv-part-filter-pc6',
+      alternatePartId: 'inv-part-filter-c208-reserve',
+      interchangeabilityType: 'TWO_WAY',
+      notes: 'Approved alternate oil filter for PC-6 / C208 operations.',
+      createdAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'inventory_tools', {
+      id: 'tl-seed-torque-01',
+      toolNumber: 'TL-TORQUE-001',
+      serialNumber: 'SN-TL-TQ-9821',
+      toolName: 'Digital Calibrated Torque Wrench (10-100 Nm)',
+      category: 'SPECIAL_TOOL',
+      warehouseId: 'inv-wh-djj-main',
+      binId: 'inv-bin-djj-usable',
+      calibrationIntervalDays: 180,
+      lastCalibratedAt: context.at(-30, '08:00').slice(0, 10),
+      nextCalibrationDue: context.at(150, '08:00').slice(0, 10),
+      certificateNumber: 'CAL-2026-TQ-042',
+      status: 'AVAILABLE',
+      restrictedUse: 0,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'inventory_tools', {
+      id: 'tl-seed-multimeter-02',
+      toolNumber: 'TL-MULTI-002',
+      serialNumber: 'SN-TL-MM-1102',
+      toolName: 'Avionics Fluke Multimeter',
+      category: 'TEST_EQUIPMENT',
+      warehouseId: 'inv-wh-djj-main',
+      binId: 'inv-bin-djj-usable',
+      calibrationIntervalDays: 365,
+      lastCalibratedAt: context.at(-400, '08:00').slice(0, 10),
+      nextCalibrationDue: context.at(-35, '08:00').slice(0, 10),
+      certificateNumber: 'CAL-2025-MM-901',
+      status: 'EXPIRED',
+      restrictedUse: 1,
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'inventory_core_returns', {
+      id: 'cr-seed-001',
+      returnNumber: `CR-${context.compactDate(-5)}-001`,
+      vendorId: 'vendor-maintenance',
+      partId: 'inv-part-brake-pc6',
+      serialId: 'inv-serial-brake-001',
+      repairOrderId: null,
+      coreDueDate: context.at(14, '00:00').slice(0, 10),
+      depositAmountIdr: 15000000,
+      status: 'PENDING_RETURN',
+      shippedAt: null,
+      vendorReceiptAt: null,
+      notes: 'Old starter generator core return due to vendor within 14 days.',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'inventory_software_navdb', {
+      id: 'sdb-seed-airac-2608',
+      partId: null,
+      softwareName: 'Garmin G1000 NXi Navigation Database (AIRAC 2608)',
+      systemType: 'FMS / GPS',
+      version: 'Cycle 2608 v1.0',
+      airacCycle: 'AIRAC 2608',
+      effectiveDate: context.at(-10, '00:00').slice(0, 10),
+      expirationDate: context.at(18, '00:00').slice(0, 10),
+      status: 'ACTIVE',
+      updatedAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'inventory_fly_away_kits', {
+      id: 'fak-seed-pk-ama',
+      kitNumber: 'FAK-PK-AMA-01',
+      aircraftId: 'ac-pk-ama',
+      stationId: 'st-djj',
+      status: 'ONBOARD',
+      assignedAt: context.at(-10, '00:00'),
+      lastInspectedAt: context.at(-2, '00:00'),
+      createdAt: seedNow
+    });
+
+    insertIgnore(sqlite, 'inventory_fly_away_kit_items', {
+      id: 'faki-seed-001',
+      kitId: 'fak-seed-pk-ama',
+      partId: 'inv-part-filter-pc6',
+      serialId: null,
+      requiredQuantity: 2,
+      currentQuantity: 2,
+      condition: 'SERVICEABLE'
+    });
+
+    insertIgnore(sqlite, 'inventory_sms_alerts', {
+      id: 'sms-seed-001',
+      alertType: 'CRITICAL_STOCK_MIN_BREACH',
+      severity: 'CRITICAL',
+      partId: 'inv-part-filter-pc6',
+      serialId: null,
+      warehouseId: 'inv-wh-djj-main',
+      message: 'Critical safety part SP-PC6-FLT-1001 below minimum safety threshold (AOG Risk).',
+      status: 'OPEN',
+      createdAt: seedNow
+    });
   });
 
   seed();

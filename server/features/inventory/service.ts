@@ -3992,4 +3992,252 @@ export class InventoryService {
     this.requireRepairRow(id, scope);
     return this.listRepairOrders({ limit: 250, offset: 0 }, scope).find((item) => item.id === id)!;
   }
+
+  listInterchangeabilities(partId?: string) {
+    return this.repository.listInterchangeabilities(partId);
+  }
+
+  createInterchangeability(input: {
+    partId: string;
+    alternatePartId: string;
+    interchangeabilityType: string;
+    notes?: string | null;
+  }) {
+    const id = `ic_${nanoid(10)}`;
+    const createdAt = now();
+    return this.repository.createInterchangeability(
+      id,
+      input.partId,
+      input.alternatePartId,
+      input.interchangeabilityType,
+      input.notes ?? null,
+      createdAt
+    );
+  }
+
+  listCoreReturns(scope: readonly string[]) {
+    return this.repository.listCoreReturns(scope);
+  }
+
+  createCoreReturn(input: {
+    vendorId: string;
+    partId: string;
+    serialId?: string | null;
+    repairOrderId?: string | null;
+    coreDueDate: string;
+    depositAmountIdr?: number;
+    notes?: string | null;
+  }) {
+    const id = `cr_${nanoid(10)}`;
+    const returnNumber = `CR-${now().slice(0, 10).replace(/-/g, '')}-${nanoid(4).toUpperCase()}`;
+    const nowIso = now();
+    return this.repository.createCoreReturn({
+      id,
+      returnNumber,
+      vendorId: input.vendorId,
+      partId: input.partId,
+      serialId: input.serialId ?? null,
+      repairOrderId: input.repairOrderId ?? null,
+      coreDueDate: input.coreDueDate,
+      depositAmountIdr: input.depositAmountIdr ?? 0,
+      notes: input.notes ?? null,
+      nowIso
+    });
+  }
+
+  updateCoreReturnStatus(id: string, status: string, notes?: string | null) {
+    const shippedAt = status === 'SHIPPED' ? now() : undefined;
+    const vendorReceiptAt = status === 'ACCEPTED_BY_VENDOR' ? now() : undefined;
+    return this.repository.updateCoreReturnStatus(
+      id,
+      status,
+      shippedAt,
+      vendorReceiptAt,
+      notes ?? undefined,
+      now()
+    );
+  }
+
+  listTools(scope: readonly string[]) {
+    return this.repository.listTools(scope);
+  }
+
+  createTool(input: {
+    toolNumber: string;
+    serialNumber: string;
+    toolName: string;
+    category?: string;
+    warehouseId?: string | null;
+    binId?: string | null;
+    calibrationIntervalDays?: number;
+    lastCalibratedAt?: string | null;
+    nextCalibrationDue?: string | null;
+    certificateNumber?: string | null;
+    restrictedUse?: boolean;
+  }) {
+    const id = `tl_${nanoid(10)}`;
+    const nowIso = now();
+    return this.repository.createTool({
+      id,
+      toolNumber: input.toolNumber,
+      serialNumber: input.serialNumber,
+      toolName: input.toolName,
+      category: input.category ?? 'SPECIAL_TOOL',
+      warehouseId: input.warehouseId ?? null,
+      binId: input.binId ?? null,
+      calibrationIntervalDays: input.calibrationIntervalDays ?? 365,
+      lastCalibratedAt: input.lastCalibratedAt ?? null,
+      nextCalibrationDue: input.nextCalibrationDue ?? null,
+      certificateNumber: input.certificateNumber ?? null,
+      restrictedUse: input.restrictedUse ?? false,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    });
+  }
+
+  checkoutTool(input: {
+    toolId: string;
+    userId: string;
+    workOrderId?: string | null;
+    notes?: string | null;
+  }) {
+    const tool = this.repository.listTools(['ALL']).find((t) => t.id === input.toolId);
+    if (!tool) throw notFound('Tool', input.toolId);
+    if (tool.isExpired) {
+      throw new DomainError(
+        'CALIBRATION_ERROR',
+        `Cannot check out tool ${tool.toolNumber} because its calibration is EXPIRED on ${tool.nextCalibrationDue}`
+      );
+    }
+    if (tool.status !== 'AVAILABLE') {
+      throw new DomainError(
+        'TOOL_STATUS_ERROR',
+        `Tool ${tool.toolNumber} is not available for check-out (current status: ${tool.status})`
+      );
+    }
+    const logId = `tlog_${nanoid(10)}`;
+    return this.repository.checkoutTool(
+      logId,
+      input.toolId,
+      input.userId,
+      now(),
+      input.workOrderId ?? null,
+      input.notes ?? null
+    );
+  }
+
+  returnTool(input: {
+    toolId: string;
+    conditionOnReturn?: string;
+    missingReported?: boolean;
+    notes?: string | null;
+  }) {
+    return this.repository.returnTool(
+      input.toolId,
+      now(),
+      input.conditionOnReturn ?? 'SERVICEABLE',
+      input.missingReported ?? false,
+      input.notes ?? null
+    );
+  }
+
+  calibrateTool(input: {
+    toolId: string;
+    calibratedAt: string;
+    nextCalibrationDue: string;
+    certificateNumber: string;
+  }) {
+    return this.repository.calibrateTool(
+      input.toolId,
+      input.calibratedAt,
+      input.nextCalibrationDue,
+      input.certificateNumber,
+      now()
+    );
+  }
+
+  listSoftwareNavdb() {
+    return this.repository.listSoftwareNavdb();
+  }
+
+  upsertSoftwareNavdb(input: {
+    id?: string;
+    partId?: string | null;
+    softwareName: string;
+    systemType: string;
+    version: string;
+    airacCycle?: string | null;
+    effectiveDate: string;
+    expirationDate: string;
+  }) {
+    const id = input.id ?? `sdb_${nanoid(10)}`;
+    return this.repository.upsertSoftwareNavdb({
+      id,
+      partId: input.partId ?? null,
+      softwareName: input.softwareName,
+      systemType: input.systemType,
+      version: input.version,
+      airacCycle: input.airacCycle ?? null,
+      effectiveDate: input.effectiveDate,
+      expirationDate: input.expirationDate,
+      nowIso: now()
+    });
+  }
+
+  listFlyAwayKits(scope: readonly string[]) {
+    return this.repository.listFlyAwayKits(scope);
+  }
+
+  createFlyAwayKit(input: {
+    kitNumber: string;
+    aircraftId?: string | null;
+    stationId?: string | null;
+    items?: Array<{
+      partId: string;
+      serialId?: string | null;
+      requiredQuantity: number;
+      currentQuantity: number;
+      condition?: string;
+    }>;
+  }) {
+    const id = `fak_${nanoid(10)}`;
+    const nowIso = now();
+    const items = (input.items ?? []).map((i) => ({
+      id: `faki_${nanoid(10)}`,
+      partId: i.partId,
+      serialId: i.serialId ?? null,
+      requiredQuantity: i.requiredQuantity,
+      currentQuantity: i.currentQuantity,
+      condition: i.condition ?? 'SERVICEABLE'
+    }));
+    return this.repository.createFlyAwayKit({
+      id,
+      kitNumber: input.kitNumber,
+      aircraftId: input.aircraftId ?? null,
+      stationId: input.stationId ?? null,
+      nowIso,
+      items
+    });
+  }
+
+  listQuarantineItems(scope: readonly string[]) {
+    return this.repository.listQuarantineItems(scope);
+  }
+
+  releaseQuarantineItem(
+    input: { serialId: string; targetBinId: string; certificateReference: string },
+    userId?: string
+  ) {
+    void userId;
+    return this.repository.releaseQuarantineItem(
+      input.serialId,
+      input.targetBinId,
+      input.certificateReference,
+      now()
+    );
+  }
+
+  listSmsAlerts() {
+    return this.repository.listSmsAlerts();
+  }
 }

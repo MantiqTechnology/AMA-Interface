@@ -24,6 +24,12 @@ const blankForm = (): InventoryPartInput => ({
   criticality: 'STANDARD',
   certificateRequired: false,
   shelfLifeDays: null,
+  partCategory: 'CONSUMABLE',
+  isAircraftPart: true,
+  isLifeLimited: false,
+  maxFlightHours: null,
+  maxFlightCycles: null,
+  onCondition: false,
   aircraftApplicability: []
 });
 const form = reactive<InventoryPartInput>(blankForm());
@@ -277,8 +283,16 @@ async function save() {
             <VCol cols="12" md="3">
               <VSelect
                 v-model="form.lifecycleType"
-                :items="['CONSUMABLE', 'EXPENDABLE', 'REPAIRABLE', 'ROTABLE']"
-                label="Lifecycle"
+                :items="[
+                  'CONSUMABLE',
+                  'EXPENDABLE',
+                  'REPAIRABLE',
+                  'ROTABLE',
+                  'TOOL_GSE',
+                  'SOFTWARE_NAVDB',
+                  'MISSION_SPECIFIC'
+                ]"
+                label="Part Category"
                 variant="outlined"
               />
             </VCol>
@@ -295,6 +309,30 @@ async function save() {
                 v-model="form.criticality"
                 :items="['STANDARD', 'ESSENTIAL', 'CRITICAL']"
                 label="Criticality"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12" md="3">
+              <VSwitch
+                v-model="form.isLifeLimited"
+                color="warning"
+                label="Life-Limited Part (LLP)"
+                hide-details
+              />
+            </VCol>
+            <VCol v-if="form.isLifeLimited" cols="12" md="6">
+              <VTextField
+                v-model.number="form.maxFlightHours"
+                type="number"
+                label="Max Flight Hours (FH Limit)"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol v-if="form.isLifeLimited" cols="12" md="6">
+              <VTextField
+                v-model.number="form.maxFlightCycles"
+                type="number"
+                label="Max Flight Cycles (FC Limit)"
                 variant="outlined"
               />
             </VCol>

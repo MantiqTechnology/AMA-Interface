@@ -108,6 +108,15 @@ export class InventoryRepository {
         criticality: String(row.criticality) as InventoryPartDto['criticality'],
         certificateRequired: bool(row.certificate_required),
         shelfLifeDays,
+        partCategory: (str(row.part_category) ?? 'ROTABLE') as InventoryPartDto['partCategory'],
+        isAircraftPart:
+          row.is_aircraft_part === null || row.is_aircraft_part === undefined
+            ? true
+            : bool(row.is_aircraft_part),
+        isLifeLimited: bool(row.is_life_limited),
+        maxFlightHours: row.max_flight_hours === null ? null : num(row.max_flight_hours),
+        maxFlightCycles: row.max_flight_cycles === null ? null : num(row.max_flight_cycles),
+        onCondition: bool(row.on_condition),
         expiryProfile: {
           lotNumber: expiry ? str(expiry.lot_number) : null,
           expiresAt,
@@ -871,5 +880,559 @@ export class InventoryRepository {
       fifoValuationIdr: valuation,
       recentMovements: this.listMovements({ ...query, limit: 8 }, scope)
     };
+  }
+
+  listInterchangeabilities(partId?: string) {
+    const sql = partId
+      ? `SELECT i.*, p1.part_number part_number, p1.part_name part_name,
+                p2.part_number alternate_part_number, p2.part_name alternate_part_name
+         FROM inventory_part_interchangeabilities i
+         JOIN inventory_parts p1 ON p1.id = i.part_id
+         JOIN inventory_parts p2 ON p2.id = i.alternate_part_id
+         WHERE i.part_id = ? OR i.alternate_part_id = ?
+         ORDER BY i.created_at DESC`
+      : `SELECT i.*, p1.part_number part_number, p1.part_name part_name,
+                p2.part_number alternate_part_number, p2.part_name alternate_part_name
+         FROM inventory_part_interchangeabilities i
+         JOIN inventory_parts p1 ON p1.id = i.part_id
+         JOIN inventory_parts p2 ON p2.id = i.alternate_part_id
+         ORDER BY i.created_at DESC`;
+    const params = partId ? [partId, partId] : [];
+    const rows = this.sqlite.prepare(sql).all(...params) as SqlRow[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      partId: String(r.part_id),
+      partNumber: String(r.part_number),
+      partName: String(r.part_name),
+      alternatePartId: String(r.alternate_part_id),
+      alternatePartNumber: String(r.alternate_part_number),
+      alternatePartName: String(r.alternate_part_name),
+      interchangeabilityType: String(r.interchangeability_type),
+      notes: str(r.notes),
+      createdAt: String(r.created_at)
+    }));
+  }
+
+  createInterchangeability(
+    id: string,
+    partId: string,
+    alternatePartId: string,
+    type: string,
+    notes: string | null,
+    createdAt: string
+  ) {
+    this.sqlite
+      .prepare(
+        `INSERT INTO inventory_part_interchangeabilities (id, part_id, alternate_part_id, interchangeability_type, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, partId, alternatePartId, type, notes, createdAt);
+    return this.listInterchangeabilities(partId).find((i) => i.id === id);
+  }
+
+  listCoreReturns(scope?: readonly string[]) {
+    void scope;
+    const rows = this.sqlite
+      .prepare(
+        `SELECT c.*, v.vendor_name, p.part_number, p.part_name, s.serial_number
+         FROM inventory_core_returns c
+         JOIN vendors v ON v.id = c.vendor_id
+         JOIN inventory_parts p ON p.id = c.part_id
+         LEFT JOIN inventory_serialized_parts s ON s.id = c.serial_id
+         ORDER BY c.created_at DESC`
+      )
+      .all() as SqlRow[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      returnNumber: String(r.return_number),
+      vendorId: String(r.vendor_id),
+      vendorName: String(r.vendor_name),
+      partId: String(r.part_id),
+      partNumber: String(r.part_number),
+      partName: String(r.part_name),
+      serialId: str(r.serial_id),
+      serialNumber: str(r.serial_number),
+      repairOrderId: str(r.repair_order_id),
+      coreDueDate: String(r.core_due_date),
+      depositAmountIdr: num(r.deposit_amount_idr),
+      status: String(r.status),
+      shippedAt: str(r.shipped_at),
+      vendorReceiptAt: str(r.vendor_receipt_at),
+      notes: str(r.notes),
+      isOverdue:
+        String(r.status) === 'PENDING_RETURN' &&
+        String(r.core_due_date) < new Date().toISOString().slice(0, 10),
+      createdAt: String(r.created_at)
+    }));
+  }
+
+  createCoreReturn(row: {
+    id: string;
+    returnNumber: string;
+    vendorId: string;
+    partId: string;
+    serialId: string | null;
+    repairOrderId: string | null;
+    coreDueDate: string;
+    depositAmountIdr: number;
+    notes: string | null;
+    nowIso: string;
+  }) {
+    this.sqlite
+      .prepare(
+        `INSERT INTO inventory_core_returns (id, return_number, vendor_id, part_id, serial_id, repair_order_id, core_due_date, deposit_amount_idr, status, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_RETURN', ?, ?, ?)`
+      )
+      .run(
+        row.id,
+        row.returnNumber,
+        row.vendorId,
+        row.partId,
+        row.serialId,
+        row.repairOrderId,
+        row.coreDueDate,
+        row.depositAmountIdr,
+        row.notes,
+        row.nowIso,
+        row.nowIso
+      );
+    return this.listCoreReturns(['ALL']).find((c) => c.id === row.id);
+  }
+
+  updateCoreReturnStatus(
+    id: string,
+    status: string,
+    shippedAt?: string,
+    vendorReceiptAt?: string,
+    notes?: string,
+    updatedAt = new Date().toISOString()
+  ) {
+    this.sqlite
+      .prepare(
+        `UPDATE inventory_core_returns
+         SET status = ?,
+             shipped_at = COALESCE(?, shipped_at),
+             vendor_receipt_at = COALESCE(?, vendor_receipt_at),
+             notes = COALESCE(?, notes),
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(status, shippedAt, vendorReceiptAt, notes ?? null, updatedAt, id);
+    return this.listCoreReturns(['ALL']).find((c) => c.id === id);
+  }
+
+  listTools(scope?: readonly string[]) {
+    void scope;
+    const rows = this.sqlite
+      .prepare(
+        `SELECT t.*, w.warehouse_name, b.bin_code
+         FROM inventory_tools t
+         LEFT JOIN inventory_warehouses w ON w.id = t.warehouse_id
+         LEFT JOIN inventory_bins b ON b.id = t.bin_id
+         ORDER BY t.tool_number ASC`
+      )
+      .all() as SqlRow[];
+    const today = new Date().toISOString().slice(0, 10);
+    return rows.map((r) => {
+      const nextDue = str(r.next_calibration_due);
+      const isExpired = nextDue !== null && nextDue < today;
+      return {
+        id: String(r.id),
+        toolNumber: String(r.tool_number),
+        serialNumber: String(r.serial_number),
+        toolName: String(r.tool_name),
+        category: String(r.category),
+        warehouseId: str(r.warehouse_id),
+        warehouseName: str(r.warehouse_name),
+        binId: str(r.bin_id),
+        binCode: str(r.bin_code),
+        calibrationIntervalDays: num(r.calibration_interval_days),
+        lastCalibratedAt: str(r.last_calibrated_at),
+        nextCalibrationDue: nextDue,
+        certificateNumber: str(r.certificate_number),
+        status: isExpired && r.status === 'AVAILABLE' ? 'EXPIRED' : String(r.status),
+        isExpired,
+        restrictedUse: bool(r.restricted_use),
+        createdAt: String(r.created_at),
+        updatedAt: String(r.updated_at)
+      };
+    });
+  }
+
+  createTool(row: {
+    id: string;
+    toolNumber: string;
+    serialNumber: string;
+    toolName: string;
+    category: string;
+    warehouseId: string | null;
+    binId: string | null;
+    calibrationIntervalDays: number;
+    lastCalibratedAt: string | null;
+    nextCalibrationDue: string | null;
+    certificateNumber: string | null;
+    restrictedUse: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }) {
+    this.sqlite
+      .prepare(
+        `INSERT INTO inventory_tools
+         (id, tool_number, serial_number, tool_name, category, warehouse_id, bin_id, calibration_interval_days,
+          last_calibrated_at, next_calibration_due, certificate_number, status, restricted_use, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, ?, ?)`
+      )
+      .run(
+        row.id,
+        row.toolNumber,
+        row.serialNumber,
+        row.toolName,
+        row.category,
+        row.warehouseId,
+        row.binId,
+        row.calibrationIntervalDays,
+        row.lastCalibratedAt,
+        row.nextCalibrationDue,
+        row.certificateNumber,
+        row.restrictedUse ? 1 : 0,
+        row.createdAt,
+        row.updatedAt
+      );
+    return this.listTools(['ALL']).find((t) => t.id === row.id);
+  }
+
+  checkoutTool(
+    logId: string,
+    toolId: string,
+    userId: string,
+    nowIso: string,
+    workOrderId: string | null,
+    notes: string | null
+  ) {
+    this.sqlite
+      .prepare(
+        `INSERT INTO inventory_tool_logs (id, tool_id, work_order_id, issued_to_user_id, issued_at, notes)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(logId, toolId, workOrderId, userId, nowIso, notes);
+    this.sqlite
+      .prepare(`UPDATE inventory_tools SET status = 'CHECKED_OUT', updated_at = ? WHERE id = ?`)
+      .run(nowIso, toolId);
+    return this.listTools(['ALL']).find((t) => t.id === toolId);
+  }
+
+  returnTool(
+    toolId: string,
+    nowIso: string,
+    conditionOnReturn: string,
+    missingReported: boolean,
+    notes: string | null
+  ) {
+    this.sqlite
+      .prepare(
+        `UPDATE inventory_tool_logs
+         SET returned_at = ?, condition_on_return = ?, missing_reported = ?, notes = COALESCE(?, notes)
+         WHERE tool_id = ? AND returned_at IS NULL`
+      )
+      .run(nowIso, conditionOnReturn, missingReported ? 1 : 0, notes, toolId);
+    const newStatus = missingReported
+      ? 'LOST'
+      : conditionOnReturn === 'UNSERVICEABLE'
+        ? 'UNSERVICEABLE'
+        : 'AVAILABLE';
+    this.sqlite
+      .prepare(`UPDATE inventory_tools SET status = ?, updated_at = ? WHERE id = ?`)
+      .run(newStatus, nowIso, toolId);
+    return this.listTools(['ALL']).find((t) => t.id === toolId);
+  }
+
+  calibrateTool(
+    toolId: string,
+    calibratedAt: string,
+    nextDue: string,
+    certNo: string,
+    nowIso: string
+  ) {
+    this.sqlite
+      .prepare(
+        `UPDATE inventory_tools
+         SET last_calibrated_at = ?, next_calibration_due = ?, certificate_number = ?, status = 'AVAILABLE', updated_at = ?
+         WHERE id = ?`
+      )
+      .run(calibratedAt, nextDue, certNo, nowIso, toolId);
+    return this.listTools(['ALL']).find((t) => t.id === toolId);
+  }
+
+  listSoftwareNavdb() {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT s.*, p.part_number, p.part_name
+         FROM inventory_software_navdb s
+         LEFT JOIN inventory_parts p ON p.id = s.part_id
+         ORDER BY s.expiration_date ASC`
+      )
+      .all() as SqlRow[];
+    const today = new Date().toISOString().slice(0, 10);
+    return rows.map((r) => {
+      const exp = String(r.expiration_date);
+      const daysLeft = daysUntilDate(exp, today) ?? 0;
+      const status = daysLeft < 0 ? 'EXPIRED' : daysLeft <= 7 ? 'EXPIRING_SOON' : 'ACTIVE';
+      return {
+        id: String(r.id),
+        partId: str(r.part_id),
+        partNumber: str(r.part_number),
+        partName: str(r.part_name),
+        softwareName: String(r.software_name),
+        systemType: String(r.system_type),
+        version: String(r.version),
+        airacCycle: str(r.airac_cycle),
+        effectiveDate: String(r.effective_date),
+        expirationDate: exp,
+        daysLeft,
+        status,
+        updatedAt: String(r.updated_at)
+      };
+    });
+  }
+
+  upsertSoftwareNavdb(row: {
+    id: string;
+    partId: string | null;
+    softwareName: string;
+    systemType: string;
+    version: string;
+    airacCycle: string | null;
+    effectiveDate: string;
+    expirationDate: string;
+    nowIso: string;
+  }) {
+    const today = new Date().toISOString().slice(0, 10);
+    const status = row.expirationDate < today ? 'EXPIRED' : 'ACTIVE';
+    this.sqlite
+      .prepare(
+        `INSERT INTO inventory_software_navdb
+         (id, part_id, software_name, system_type, version, airac_cycle, effective_date, expiration_date, status, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           version = excluded.version,
+           airac_cycle = excluded.airac_cycle,
+           effective_date = excluded.effective_date,
+           expiration_date = excluded.expiration_date,
+           status = excluded.status,
+           updated_at = excluded.updated_at`
+      )
+      .run(
+        row.id,
+        row.partId,
+        row.softwareName,
+        row.systemType,
+        row.version,
+        row.airacCycle,
+        row.effectiveDate,
+        row.expirationDate,
+        status,
+        row.nowIso
+      );
+    return this.listSoftwareNavdb().find((s) => s.id === row.id);
+  }
+
+  listFlyAwayKits(scope?: readonly string[]) {
+    void scope;
+    const rows = this.sqlite
+      .prepare(
+        `SELECT k.*, a.registration_number AS registration, st.station_code
+         FROM inventory_fly_away_kits k
+         LEFT JOIN aircraft a ON a.id = k.aircraft_id
+         LEFT JOIN stations st ON st.id = k.station_id
+         ORDER BY k.kit_number ASC`
+      )
+      .all() as SqlRow[];
+    const itemsStmt = this.sqlite.prepare(
+      `SELECT i.*, p.part_number, p.part_name, s.serial_number
+       FROM inventory_fly_away_kit_items i
+       JOIN inventory_parts p ON p.id = i.part_id
+       LEFT JOIN inventory_serialized_parts s ON s.id = i.serial_id
+       WHERE i.kit_id = ?`
+    );
+    return rows.map((r) => {
+      const items = (itemsStmt.all(r.id) as SqlRow[]).map((item) => ({
+        id: String(item.id),
+        partId: String(item.part_id),
+        partNumber: String(item.part_number),
+        partName: String(item.part_name),
+        serialId: str(item.serial_id),
+        serialNumber: str(item.serial_number),
+        requiredQuantity: num(item.required_quantity),
+        currentQuantity: num(item.current_quantity),
+        condition: String(item.condition)
+      }));
+      const isComplete = items.every((i) => i.currentQuantity >= i.requiredQuantity);
+      return {
+        id: String(r.id),
+        kitNumber: String(r.kit_number),
+        aircraftId: str(r.aircraft_id),
+        aircraftRegistration: str(r.registration),
+        stationId: str(r.station_id),
+        stationCode: str(r.station_code),
+        status: !isComplete ? 'REPLENISHMENT_NEEDED' : String(r.status),
+        isComplete,
+        assignedAt: String(r.assigned_at),
+        lastInspectedAt: str(r.last_inspected_at),
+        items,
+        createdAt: String(r.created_at)
+      };
+    });
+  }
+
+  createFlyAwayKit(row: {
+    id: string;
+    kitNumber: string;
+    aircraftId: string | null;
+    stationId: string | null;
+    nowIso: string;
+    items: Array<{
+      id: string;
+      partId: string;
+      serialId: string | null;
+      requiredQuantity: number;
+      currentQuantity: number;
+      condition: string;
+    }>;
+  }) {
+    this.sqlite
+      .prepare(
+        `INSERT INTO inventory_fly_away_kits (id, kit_number, aircraft_id, station_id, status, assigned_at, created_at)
+         VALUES (?, ?, ?, ?, 'ONBOARD', ?, ?)`
+      )
+      .run(row.id, row.kitNumber, row.aircraftId, row.stationId, row.nowIso, row.nowIso);
+    const itemStmt = this.sqlite.prepare(
+      `INSERT INTO inventory_fly_away_kit_items (id, kit_id, part_id, serial_id, required_quantity, current_quantity, condition)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const item of row.items) {
+      itemStmt.run(
+        item.id,
+        row.id,
+        item.partId,
+        item.serialId,
+        item.requiredQuantity,
+        item.currentQuantity,
+        item.condition
+      );
+    }
+    return this.listFlyAwayKits(['ALL']).find((k) => k.id === row.id);
+  }
+
+  listQuarantineItems(scope?: readonly string[]) {
+    void scope;
+    const rows = this.sqlite
+      .prepare(
+        `SELECT s.id serial_id, s.serial_number, s.quarantine_reason, s.is_suspected_unapproved, s.created_at,
+                p.id part_id, p.part_number, p.part_name, p.manufacturer,
+                b.id bin_id, b.bin_code, w.id warehouse_id, w.warehouse_name, st.station_code
+         FROM inventory_serialized_parts s
+         JOIN inventory_parts p ON p.id = s.part_id
+         LEFT JOIN inventory_bins b ON b.id = s.bin_id
+         LEFT JOIN inventory_warehouses w ON w.id = b.warehouse_id
+         LEFT JOIN stations st ON st.id = w.station_id
+         WHERE s.condition = 'QUARANTINE' OR s.lifecycle_status = 'QUARANTINE' OR s.is_suspected_unapproved = 1
+         ORDER BY s.created_at DESC`
+      )
+      .all() as SqlRow[];
+    return rows.map((r) => ({
+      serialId: String(r.serial_id),
+      serialNumber: String(r.serial_number),
+      partId: String(r.part_id),
+      partNumber: String(r.part_number),
+      partName: String(r.part_name),
+      manufacturer: String(r.manufacturer),
+      binId: str(r.bin_id),
+      binCode: str(r.bin_code),
+      warehouseId: str(r.warehouse_id),
+      warehouseName: str(r.warehouse_name),
+      stationCode: str(r.station_code),
+      quarantineReason: str(r.quarantine_reason) ?? 'Incoming inspection pending CoC/Form 8130-3',
+      isSuspectedUnapproved: bool(r.is_suspected_unapproved),
+      tagColor: bool(r.is_suspected_unapproved) ? 'ORANGE_QUARANTINE' : 'ORANGE_QUARANTINE',
+      createdAt: String(r.created_at)
+    }));
+  }
+
+  releaseQuarantineItem(
+    serialId: string,
+    targetBinId: string,
+    certificateReference: string,
+    nowIso: string
+  ) {
+    this.sqlite
+      .prepare(
+        `UPDATE inventory_serialized_parts
+         SET condition = 'SERVICEABLE',
+             tag_color = 'YELLOW_SERVICEABLE',
+             lifecycle_status = 'AVAILABLE',
+             bin_id = ?,
+             certificate_reference = ?,
+             certificate_verified = 1,
+             is_suspected_unapproved = 0,
+             quarantine_reason = NULL,
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(targetBinId, certificateReference, nowIso, serialId);
+    return true;
+  }
+
+  listSmsAlerts() {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT a.*, p.part_number, p.part_name, w.warehouse_name
+         FROM inventory_sms_alerts a
+         LEFT JOIN inventory_parts p ON p.id = a.part_id
+         LEFT JOIN inventory_warehouses w ON w.id = a.warehouse_id
+         ORDER BY a.created_at DESC`
+      )
+      .all() as SqlRow[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      alertType: String(r.alert_type),
+      severity: String(r.severity),
+      partId: str(r.part_id),
+      partNumber: str(r.part_number),
+      partName: str(r.part_name),
+      serialId: str(r.serial_id),
+      warehouseId: str(r.warehouse_id),
+      warehouseName: str(r.warehouse_name),
+      message: String(r.message),
+      status: String(r.status),
+      createdAt: String(r.createdAt ?? r.created_at)
+    }));
+  }
+
+  createSmsAlert(
+    alertType: string,
+    severity: string,
+    message: string,
+    partId?: string | null,
+    serialId?: string | null,
+    warehouseId?: string | null
+  ) {
+    const id = `sms_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const nowIso = new Date().toISOString();
+    this.sqlite
+      .prepare(
+        `INSERT INTO inventory_sms_alerts (id, alert_type, severity, part_id, serial_id, warehouse_id, message, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`
+      )
+      .run(
+        id,
+        alertType,
+        severity,
+        partId ?? null,
+        serialId ?? null,
+        warehouseId ?? null,
+        message,
+        nowIso
+      );
+    return id;
   }
 }

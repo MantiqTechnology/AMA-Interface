@@ -26,7 +26,10 @@ export const inventoryLifecycleTypes = [
   'CONSUMABLE',
   'EXPENDABLE',
   'REPAIRABLE',
-  'ROTABLE'
+  'ROTABLE',
+  'TOOL_GSE',
+  'SOFTWARE_NAVDB',
+  'MISSION_SPECIFIC'
 ] as const;
 export const inventoryTrackingTypes = ['QUANTITY', 'LOT', 'SERIAL'] as const;
 export const inventoryBinTypes = ['USABLE', 'QUARANTINE', 'REPAIR', 'TRANSIT'] as const;
@@ -37,6 +40,19 @@ export const inventoryConditions = [
   'IN_REPAIR',
   'INSTALLED',
   'SCRAPPED'
+] as const;
+export const inventoryTagColors = [
+  'YELLOW_SERVICEABLE',
+  'RED_UNSERVICEABLE',
+  'ORANGE_QUARANTINE',
+  'BLACK_SCRAP'
+] as const;
+export const inventoryInterchangeabilityTypes = [
+  'ONE_WAY',
+  'TWO_WAY',
+  'SUPERSEDED',
+  'ALTERNATE',
+  'EQUIVALENT'
 ] as const;
 export const inventoryMovementTypes = [
   'RECEIPT',
@@ -57,6 +73,8 @@ export type InventoryLifecycleType = (typeof inventoryLifecycleTypes)[number];
 export type InventoryTrackingType = (typeof inventoryTrackingTypes)[number];
 export type InventoryBinType = (typeof inventoryBinTypes)[number];
 export type InventoryCondition = (typeof inventoryConditions)[number];
+export type InventoryTagColor = (typeof inventoryTagColors)[number];
+export type InventoryInterchangeabilityType = (typeof inventoryInterchangeabilityTypes)[number];
 export type InventoryMovementType = (typeof inventoryMovementTypes)[number];
 
 export const inventoryIdParamsSchema = z.object({ id: z.string().trim().min(1) });
@@ -65,6 +83,7 @@ export const inventoryListQuerySchema = z.object({
   stationId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
   warehouseId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
   status: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  category: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
   lowStock: z.preprocess(
     (value) => (value === 'true' || value === true ? true : undefined),
     z.boolean().optional()
@@ -102,6 +121,12 @@ export const inventoryPartInputSchema = z
     criticality: z.enum(['STANDARD', 'ESSENTIAL', 'CRITICAL']),
     certificateRequired: z.boolean().default(false),
     shelfLifeDays: z.coerce.number().int().positive().nullable().default(null),
+    partCategory: z.enum(inventoryLifecycleTypes).default('ROTABLE').optional(),
+    isAircraftPart: z.boolean().default(true).optional(),
+    isLifeLimited: z.boolean().default(false).optional(),
+    maxFlightHours: z.coerce.number().positive().nullable().default(null).optional(),
+    maxFlightCycles: z.coerce.number().int().positive().nullable().default(null).optional(),
+    onCondition: z.boolean().default(false).optional(),
     aircraftApplicability: z
       .array(
         z.object({
@@ -115,11 +140,12 @@ export const inventoryPartInputSchema = z
   .superRefine((part, context) => {
     if (
       part.trackingType === 'QUANTITY' &&
-      (part.certificateRequired || part.shelfLifeDays !== null)
+      (part.certificateRequired || part.shelfLifeDays !== null || part.isLifeLimited)
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'Shelf-life or certificate-controlled parts require lot or serial tracking.',
+        message:
+          'Shelf-life, life-limited, or certificate-controlled parts require lot or serial tracking.',
         path: ['trackingType']
       });
     }
@@ -144,7 +170,15 @@ export const inventoryWarehouseInputSchema = z.object({
           .max(40)
           .transform((value) => value.toUpperCase()),
         binName: z.string().trim().min(1).max(120),
-        binType: z.enum(inventoryBinTypes)
+        binType: z.enum(inventoryBinTypes),
+        tempMinCelsius: z.coerce.number().nullable().default(null),
+        tempMaxCelsius: z.coerce.number().nullable().default(null),
+        humidityMinPercent: z.coerce.number().nullable().default(null),
+        humidityMaxPercent: z.coerce.number().nullable().default(null),
+        isEsdSensitive: z.boolean().default(false),
+        isHazmat: z.boolean().default(false),
+        hazmatClass: nullableText.default(null),
+        isQuarantineBin: z.boolean().default(false)
       })
     )
     .min(1)
@@ -178,6 +212,10 @@ export const purchaseOrderInputSchema = z.object({
   currencyId: z.string().trim().min(1),
   exchangeRateToIdrMicros: z.coerce.number().int().positive().default(1_000_000),
   expectedAt: dateOnly,
+  poType: z.enum(['AIRCRAFT_PART', 'NON_AIRCRAFT_PART']).default('AIRCRAFT_PART').optional(),
+  isAogProcurement: z.boolean().default(false).optional(),
+  cocRequired: z.boolean().default(true).optional(),
+  certificateType: nullableText.default(null).optional(),
   lines: z
     .array(
       z.object({
@@ -198,6 +236,8 @@ export const goodsReceiptInputSchema = z.object({
   warehouseId: z.string().trim().min(1),
   receivedAt: z.string().datetime({ offset: true }),
   documentReference: z.string().trim().min(2).max(100),
+  inspectionStatus: z.enum(['PASSED', 'QUARANTINED', 'REJECTED']).default('PASSED').optional(),
+  quarantineReason: nullableText.default(null).optional(),
   lines: z
     .array(
       z.object({
@@ -213,6 +253,106 @@ export const goodsReceiptInputSchema = z.object({
       })
     )
     .min(1)
+});
+
+export const inventoryPartInterchangeabilityInputSchema = z.object({
+  partId: z.string().trim().min(1),
+  alternatePartId: z.string().trim().min(1),
+  interchangeabilityType: z.enum(inventoryInterchangeabilityTypes),
+  notes: nullableText.default(null)
+});
+
+export const inventoryCoreReturnInputSchema = z.object({
+  vendorId: z.string().trim().min(1),
+  partId: z.string().trim().min(1),
+  serialId: nullableText.default(null),
+  repairOrderId: nullableText.default(null),
+  coreDueDate: dateOnly,
+  depositAmountIdr: z.coerce.number().int().nonnegative().default(0),
+  notes: nullableText.default(null)
+});
+
+export const inventoryToolInputSchema = z.object({
+  toolNumber: z
+    .string()
+    .trim()
+    .min(2)
+    .max(80)
+    .transform((val) => val.toUpperCase()),
+  serialNumber: z
+    .string()
+    .trim()
+    .min(2)
+    .max(100)
+    .transform((val) => val.toUpperCase()),
+  toolName: z.string().trim().min(2).max(160),
+  category: z.string().trim().min(2).default('SPECIAL_TOOL'),
+  warehouseId: nullableText.default(null),
+  binId: nullableText.default(null),
+  calibrationIntervalDays: z.coerce.number().int().positive().default(365),
+  lastCalibratedAt: nullableDate.default(null),
+  nextCalibrationDue: nullableDate.default(null),
+  certificateNumber: nullableText.default(null),
+  restrictedUse: z.boolean().default(false)
+});
+
+export const inventoryToolCheckoutSchema = z.object({
+  toolId: z.string().trim().min(1),
+  workOrderId: nullableText.default(null),
+  notes: nullableText.default(null)
+});
+
+export const inventoryToolReturnSchema = z.object({
+  toolId: z.string().trim().min(1),
+  conditionOnReturn: z.string().trim().min(2).default('SERVICEABLE'),
+  missingReported: z.boolean().default(false),
+  notes: nullableText.default(null)
+});
+
+export const inventoryToolCalibrateSchema = z.object({
+  toolId: z.string().trim().min(1),
+  calibratedAt: dateOnly,
+  nextCalibrationDue: dateOnly,
+  certificateNumber: z.string().trim().min(2)
+});
+
+export const inventorySoftwareNavdbInputSchema = z.object({
+  partId: nullableText.default(null),
+  softwareName: z.string().trim().min(2).max(160),
+  systemType: z.string().trim().min(2).max(100),
+  version: z.string().trim().min(1).max(80),
+  airacCycle: nullableText.default(null),
+  effectiveDate: dateOnly,
+  expirationDate: dateOnly
+});
+
+export const inventoryFlyAwayKitInputSchema = z.object({
+  kitNumber: z
+    .string()
+    .trim()
+    .min(2)
+    .max(80)
+    .transform((val) => val.toUpperCase()),
+  aircraftId: nullableText.default(null),
+  stationId: nullableText.default(null),
+  items: z
+    .array(
+      z.object({
+        partId: z.string().trim().min(1),
+        serialId: nullableText.default(null),
+        requiredQuantity: z.coerce.number().positive(),
+        currentQuantity: z.coerce.number().nonnegative(),
+        condition: z.enum(inventoryConditions).default('SERVICEABLE')
+      })
+    )
+    .default([])
+});
+
+export const inventoryQuarantineReleaseSchema = z.object({
+  serialId: z.string().trim().min(1),
+  targetBinId: z.string().trim().min(1),
+  certificateReference: z.string().trim().min(2),
+  notes: nullableText.default(null)
 });
 
 export const inventoryTransferInputSchema = z.object({
@@ -650,4 +790,104 @@ export type InventoryAccountingEventDto = {
   integrationStatus: 'PENDING_INTEGRATION';
   payload: Record<string, unknown>;
   createdAt: string;
+};
+
+export type InventoryPartInterchangeabilityInput = z.infer<
+  typeof inventoryPartInterchangeabilityInputSchema
+>;
+export type InventoryCoreReturnInput = z.infer<typeof inventoryCoreReturnInputSchema>;
+export type InventoryToolInput = z.infer<typeof inventoryToolInputSchema>;
+export type InventoryToolCheckoutInput = z.infer<typeof inventoryToolCheckoutSchema>;
+export type InventoryToolReturnInput = z.infer<typeof inventoryToolReturnSchema>;
+export type InventoryToolCalibrateInput = z.infer<typeof inventoryToolCalibrateSchema>;
+export type InventorySoftwareNavdbInput = z.infer<typeof inventorySoftwareNavdbInputSchema>;
+export type InventoryFlyAwayKitInput = z.infer<typeof inventoryFlyAwayKitInputSchema>;
+export type InventoryQuarantineReleaseInput = z.infer<typeof inventoryQuarantineReleaseSchema>;
+
+export type InventoryQuarantineItemDto = {
+  serialId: string;
+  serialNumber: string;
+  quarantineReason: string | null;
+  partId: string;
+  partNumber: string;
+  partName: string;
+  manufacturer: string;
+  warehouseName: string | null;
+  binCode: string | null;
+  isSuspectedUnapproved: boolean;
+};
+
+export type InventoryToolDto = {
+  id: string;
+  toolNumber: string;
+  serialNumber: string;
+  toolName: string;
+  category: string;
+  warehouseId: string | null;
+  binId: string | null;
+  calibrationIntervalDays: number;
+  lastCalibratedAt: string | null;
+  nextCalibrationDue: string | null;
+  certificateNumber: string | null;
+  status: string;
+  restrictedUse: boolean;
+  isExpired: boolean;
+};
+
+export type InventoryCoreReturnDto = {
+  id: string;
+  returnNumber: string;
+  vendorId: string;
+  vendorName: string;
+  partId: string;
+  partNumber: string;
+  partName: string;
+  serialId: string | null;
+  serialNumber: string | null;
+  repairOrderId: string | null;
+  coreDueDate: string;
+  depositAmountIdr: number;
+  status: string;
+  shippedAt: string | null;
+  vendorReceiptAt: string | null;
+  notes: string | null;
+  isOverdue: boolean;
+};
+
+export type InventorySoftwareNavdbDto = {
+  id: string;
+  partId: string | null;
+  softwareName: string;
+  systemType: string;
+  version: string;
+  airacCycle: string | null;
+  effectiveDate: string;
+  expirationDate: string;
+  status: string;
+  daysLeft: number;
+};
+
+export type InventoryFlyAwayKitDto = {
+  id: string;
+  kitNumber: string;
+  aircraftId: string | null;
+  aircraftRegistration: string | null;
+  stationId: string | null;
+  stationCode: string | null;
+  status: string;
+  assignedAt: string;
+  lastInspectedAt: string | null;
+  items: Array<{
+    id: string;
+    partId: string;
+    partNumber: string;
+    partName: string;
+    serialId: string | null;
+    serialNumber: string | null;
+    unitOfMeasure: string;
+    requiredQuantity: number;
+    currentQuantity: number;
+    condition: string;
+  }>;
+  isComplete: boolean;
 };
