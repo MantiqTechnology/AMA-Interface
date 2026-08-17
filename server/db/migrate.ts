@@ -1446,6 +1446,7 @@ export function runMigrations(sqlite: Database.Database) {
         (SELECT id FROM stations ORDER BY station_code LIMIT 1)
       )
       WHERE station_id IS NULL`);
+    enforceInventoryCoreReturnStationOwnership(sqlite);
     sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_tool_open_checkout
       ON inventory_tool_logs(tool_id) WHERE returned_at IS NULL`);
     sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_interchangeability_pair
@@ -2762,6 +2763,45 @@ function ensureColumn(
   if (!columns.some((item) => item.name === column)) {
     sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+function enforceInventoryCoreReturnStationOwnership(sqlite: Database.Database) {
+  const stationColumn = (
+    sqlite.pragma('table_info(inventory_core_returns)') as Array<{
+      name: string;
+      notnull: number;
+    }>
+  ).find((column) => column.name === 'station_id');
+  if (stationColumn?.notnull === 1) return;
+
+  sqlite.exec(`CREATE TABLE inventory_core_returns_rebuild (
+    id TEXT PRIMARY KEY,
+    return_number TEXT NOT NULL UNIQUE,
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    vendor_id TEXT NOT NULL REFERENCES vendors(id),
+    part_id TEXT NOT NULL REFERENCES inventory_parts(id),
+    serial_id TEXT REFERENCES inventory_serialized_parts(id),
+    repair_order_id TEXT REFERENCES inventory_repair_orders(id),
+    core_due_date TEXT NOT NULL,
+    deposit_amount_idr INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'PENDING_RETURN',
+    shipped_at TEXT,
+    vendor_receipt_at TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  INSERT INTO inventory_core_returns_rebuild (
+    id, return_number, station_id, vendor_id, part_id, serial_id, repair_order_id,
+    core_due_date, deposit_amount_idr, status, shipped_at, vendor_receipt_at,
+    notes, created_at, updated_at
+  ) SELECT
+    id, return_number, station_id, vendor_id, part_id, serial_id, repair_order_id,
+    core_due_date, deposit_amount_idr, status, shipped_at, vendor_receipt_at,
+    notes, created_at, updated_at
+  FROM inventory_core_returns;
+  DROP TABLE inventory_core_returns;
+  ALTER TABLE inventory_core_returns_rebuild RENAME TO inventory_core_returns;`);
 }
 
 function migrateMaintenanceIssueTargets(sqlite: Database.Database) {

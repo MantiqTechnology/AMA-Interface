@@ -97,6 +97,14 @@ describe('database migrations', () => {
       expect.arrayContaining(['inspection_status', 'quarantine_reason'])
     );
     expect(tableColumns(sqlite, 'inventory_core_returns')).toContain('station_id');
+    expect(
+      (
+        sqlite.prepare('PRAGMA table_info(inventory_core_returns)').all() as Array<{
+          name: string;
+          notnull: number;
+        }>
+      ).find((column) => column.name === 'station_id')?.notnull
+    ).toBe(1);
     expect(foreignKeysEnabled(sqlite)).toBe(1);
     sqlite.close();
   });

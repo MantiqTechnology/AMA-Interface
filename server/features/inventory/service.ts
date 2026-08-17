@@ -4151,8 +4151,13 @@ export class InventoryService {
       .get(id) as SqlRow | undefined;
     if (!row) throw notFound('Core return', id);
     this.assertStationCode(String(row.station_code), scope);
-    const expectedStatus = row.status === 'PENDING_RETURN' ? 'SHIPPED' : 'ACCEPTED_BY_VENDOR';
-    if (input.status !== expectedStatus) {
+    const expectedStatus =
+      row.status === 'PENDING_RETURN'
+        ? 'SHIPPED'
+        : row.status === 'SHIPPED'
+          ? 'ACCEPTED_BY_VENDOR'
+          : null;
+    if (!expectedStatus || input.status !== expectedStatus) {
       throw new DomainError(
         'INVENTORY_CORE_TRANSITION_INVALID',
         `Core return cannot transition from ${String(row.status)} to ${input.status}.`,
@@ -4243,7 +4248,10 @@ export class InventoryService {
     if (tool.isExpired) {
       throw new DomainError(
         'CALIBRATION_ERROR',
-        `Cannot check out tool ${tool.toolNumber} because its calibration is EXPIRED on ${tool.nextCalibrationDue}`
+        tool.nextCalibrationDue
+          ? `Cannot check out tool ${tool.toolNumber} because its calibration expired on ${tool.nextCalibrationDue}.`
+          : `Cannot check out tool ${tool.toolNumber} before an initial calibration is recorded.`,
+        409
       );
     }
     if (tool.status !== 'AVAILABLE') {
@@ -4262,7 +4270,15 @@ export class InventoryService {
         input.notes ?? null
       )
     );
-    return transaction.immediate();
+    const checkedOut = transaction.immediate();
+    if (!checkedOut) {
+      throw new DomainError(
+        'TOOL_STATUS_ERROR',
+        `Tool ${tool.toolNumber} is no longer available for check-out.`,
+        409
+      );
+    }
+    return checkedOut;
   }
 
   returnTool(
@@ -4302,6 +4318,13 @@ export class InventoryService {
   ) {
     const tool = this.repository.listTools(scope).find((item) => item.id === input.toolId);
     if (!tool) throw notFound('Tool', input.toolId);
+    if (!['AVAILABLE', 'EXPIRED'].includes(tool.status)) {
+      throw new DomainError(
+        'INVENTORY_TOOL_CALIBRATION_CUSTODY_INVALID',
+        `Tool ${tool.toolNumber} must be returned and serviceable before calibration.`,
+        409
+      );
+    }
     if (input.nextCalibrationDue <= input.calibratedAt) {
       throw new DomainError(
         'INVENTORY_TOOL_CALIBRATION_RANGE_INVALID',
@@ -4427,7 +4450,7 @@ export class InventoryService {
     return this.repository.listQuarantineItems(scope);
   }
 
-  releaseQuarantineItem(
+  async releaseQuarantineItem(
     input: {
       serialId: string;
       targetBinId: string;
@@ -4439,10 +4462,10 @@ export class InventoryService {
   ) {
     const sqlite = this.repository.sqlite;
     const serial = this.requireSerial(input.serialId);
-    if (String(serial.condition) !== 'QUARANTINE' && !Boolean(serial.is_suspected_unapproved)) {
+    if (String(serial.condition) !== 'QUARANTINE') {
       throw new DomainError(
         'INVENTORY_QUARANTINE_RELEASE_INVALID',
-        'Only quarantined or suspected-unapproved parts can be released.',
+        'Only parts physically held in quarantine can be released.',
         409
       );
     }
@@ -4471,7 +4494,35 @@ export class InventoryService {
         422
       );
     }
+    await this.requireVerifiedCertificateDocument(
+      String(serial.part_id),
+      input.certificateReference,
+      [
+        { ownerType: 'inventory_serial', ownerId: input.serialId },
+        ...(serial.lot_id
+          ? [{ ownerType: 'inventory_lot' as const, ownerId: String(serial.lot_id) }]
+          : [])
+      ]
+    );
     const transaction = sqlite.transaction(() => {
+      const releasedAt = now();
+      const released = sqlite
+        .prepare(
+          `UPDATE inventory_serialized_parts
+           SET condition = 'SERVICEABLE', tag_color = 'YELLOW_SERVICEABLE',
+               lifecycle_status = 'AVAILABLE', bin_id = ?, certificate_reference = ?,
+               certificate_verified = 1, is_suspected_unapproved = 0,
+               quarantine_reason = NULL, updated_at = ?
+           WHERE id = ? AND condition = 'QUARANTINE'`
+        )
+        .run(input.targetBinId, input.certificateReference, releasedAt, input.serialId);
+      if (released.changes !== 1) {
+        throw new DomainError(
+          'INVENTORY_QUARANTINE_RELEASE_CONFLICT',
+          'The serialized part has already been released or changed by another user.',
+          409
+        );
+      }
       const cost = this.latestSerialCost(input.serialId);
       const movementId = this.insertMovement({
         movementType: 'TRANSFER',
@@ -4479,9 +4530,9 @@ export class InventoryService {
         sourceId: `quarantine-release-${input.serialId}-${nanoid(6)}`,
         stationId: String(sourceWarehouse.station_id),
         destinationStationId: String(targetWarehouse.station_id),
-        reason:
-          input.notes?.trim() ||
-          `QA quarantine release with certificate ${input.certificateReference}.`,
+        reason: `QA quarantine release with certificate ${input.certificateReference}.${
+          input.notes?.trim() ? ` ${input.notes.trim()}` : ''
+        }`,
         actorUserId: userId
       });
       this.changeBalance(
@@ -4510,16 +4561,6 @@ export class InventoryService {
         quantity: 1,
         cost
       });
-      sqlite
-        .prepare(
-          `UPDATE inventory_serialized_parts
-           SET condition = 'SERVICEABLE', tag_color = 'YELLOW_SERVICEABLE',
-               lifecycle_status = 'AVAILABLE', bin_id = ?, certificate_reference = ?,
-               certificate_verified = 1, is_suspected_unapproved = 0,
-               quarantine_reason = NULL, updated_at = ?
-           WHERE id = ? AND (condition = 'QUARANTINE' OR is_suspected_unapproved = 1)`
-        )
-        .run(input.targetBinId, input.certificateReference, now(), input.serialId);
       this.finalizeMovement(movementId, cost.baseUnitCostIdr);
       return movementId;
     });

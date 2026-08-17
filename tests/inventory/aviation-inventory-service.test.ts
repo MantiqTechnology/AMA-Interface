@@ -1,10 +1,54 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { inventoryToolReturnSchema } from '../../shared/features/inventory';
 import { createSeededTestServices } from '../helpers/demo-db';
 import { InventoryRepository } from '../../server/features/inventory/repository';
 import { InventoryService } from '../../server/features/inventory/service';
 
 describe('Aviation Inventory Standards & Extensions', () => {
+  let documentDirectory: string | null = null;
+
+  afterEach(() => {
+    if (documentDirectory) rmSync(documentDirectory, { recursive: true, force: true });
+    documentDirectory = null;
+    delete process.env.AMA_DOCUMENT_MANIFEST;
+  });
+
   it('enforces Digital Quarantine Lock & Quarantine Release workflow', async () => {
+    documentDirectory = mkdtempSync(join(tmpdir(), 'ama-aviation-inventory-docs-'));
+    process.env.AMA_DOCUMENT_MANIFEST = join(documentDirectory, 'documents.json');
+    const timestamp = '2026-08-17T00:00:00.000Z';
+    writeFileSync(
+      process.env.AMA_DOCUMENT_MANIFEST,
+      JSON.stringify({
+        documents: [
+          {
+            id: 'doc-quarantine-release',
+            ownerType: 'inventory_serial',
+            ownerId: 'inv-serial-brake-001',
+            uploadId: 'upload-quarantine-release',
+            documentType: 'AUTHORIZED_RELEASE_CERTIFICATE',
+            title: 'Quarantine release certificate',
+            documentNumber: 'FAA-8130-2026-RELEASE-001',
+            issuer: 'FAA',
+            issuedAt: '2026-08-01',
+            validFrom: '2026-08-01',
+            expiresAt: '2028-08-01',
+            verificationStatus: 'VERIFIED',
+            visibility: 'INTERNAL',
+            version: 1,
+            uploadedBy: 'Inventory test',
+            uploadedAt: timestamp,
+            verifiedBy: 'Inventory test',
+            verifiedAt: timestamp,
+            createdAt: timestamp,
+            updatedAt: timestamp
+          }
+        ]
+      })
+    );
     const { sqlite } = await createSeededTestServices();
     const service = new InventoryService(new InventoryRepository(sqlite));
     sqlite
@@ -31,15 +75,27 @@ describe('Aviation Inventory Standards & Extensions', () => {
       )
       .run(new Date().toISOString());
 
-    const result = await service.releaseQuarantineItem(
-      {
-        serialId: 'inv-serial-brake-001',
-        targetBinId: 'inv-bin-djj-usable',
-        certificateReference: 'FAA-8130-2026-RELEASE-001'
-      },
-      'USR-CERTIFYING-STAFF',
-      ['DJJ']
-    );
+    await expect(
+      service.releaseQuarantineItem(
+        {
+          serialId: 'inv-serial-brake-001',
+          targetBinId: 'inv-bin-djj-usable',
+          certificateReference: 'UNVERIFIED-CERTIFICATE'
+        },
+        'USR-CERTIFYING-STAFF',
+        ['DJJ']
+      )
+    ).rejects.toThrow(/verified and unexpired certificate/u);
+
+    const releaseInput = {
+      serialId: 'inv-serial-brake-001',
+      targetBinId: 'inv-bin-djj-usable',
+      certificateReference: 'FAA-8130-2026-RELEASE-001',
+      notes: 'QA inspection completed.'
+    };
+    const result = await service.releaseQuarantineItem(releaseInput, 'USR-CERTIFYING-STAFF', [
+      'DJJ'
+    ]);
 
     expect(result.item.condition).toBe('SERVICEABLE');
     expect(result.movement?.sourceType).toBe('QUARANTINE_RELEASE');
@@ -52,6 +108,11 @@ describe('Aviation Inventory Standards & Extensions', () => {
         )
         .get()
     ).toMatchObject({ quantity: 1 });
+    expect(result.movement?.reason).toContain(releaseInput.certificateReference);
+    await expect(
+      service.releaseQuarantineItem(releaseInput, 'USR-CERTIFYING-STAFF', ['DJJ'])
+    ).rejects.toThrow(/physically held in quarantine/u);
+    sqlite.close();
   });
 
   it('blocks tool check-out if calibration is EXPIRED', async () => {
@@ -113,6 +174,58 @@ describe('Aviation Inventory Standards & Extensions', () => {
     expect(returned.status).toBe('AVAILABLE');
   });
 
+  it('requires initial calibration and preserves checked-out tool custody', async () => {
+    const { sqlite } = await createSeededTestServices();
+    const service = new InventoryService(new InventoryRepository(sqlite));
+    const uncalibrated = service.createTool({
+      toolNumber: 'TL-UNCALIBRATED-01',
+      serialNumber: 'SN-UNCALIBRATED-01',
+      toolName: 'Uncalibrated Gauge',
+      calibrationIntervalDays: 365
+    })!;
+
+    expect(() => service.checkoutTool({ toolId: uncalibrated.id, userId: 'USR-TECH-01' })).toThrow(
+      /initial calibration/u
+    );
+
+    const calibrated = service.createTool({
+      toolNumber: 'TL-CUSTODY-01',
+      serialNumber: 'SN-CUSTODY-01',
+      toolName: 'Custody Torque Wrench',
+      calibrationIntervalDays: 365,
+      lastCalibratedAt: '2026-01-01',
+      nextCalibrationDue: '2027-01-01',
+      certificateNumber: 'CERT-CUSTODY-01'
+    })!;
+    service.checkoutTool({ toolId: calibrated.id, userId: 'USR-TECH-01' });
+
+    expect(() =>
+      service.calibrateTool({
+        toolId: calibrated.id,
+        calibratedAt: '2026-08-17',
+        nextCalibrationDue: '2027-08-17',
+        certificateNumber: 'CERT-CUSTODY-02'
+      })
+    ).toThrow(/must be returned/u);
+    expect(service.listTools(['ALL']).find((tool) => tool.id === calibrated.id)?.status).toBe(
+      'CHECKED_OUT'
+    );
+    expect(
+      sqlite
+        .prepare(
+          'SELECT COUNT(*) count FROM inventory_tool_logs WHERE tool_id = ? AND returned_at IS NULL'
+        )
+        .get(calibrated.id)
+    ).toMatchObject({ count: 1 });
+  });
+
+  it('rejects arbitrary tool return conditions', () => {
+    expect(
+      inventoryToolReturnSchema.safeParse({ toolId: 'tool-1', conditionOnReturn: 'DAMAGED' })
+        .success
+    ).toBe(false);
+  });
+
   it('tracks vendor Core Returns & updates status', async () => {
     const { sqlite } = await createSeededTestServices();
     const service = new InventoryService(new InventoryRepository(sqlite));
@@ -137,6 +250,17 @@ describe('Aviation Inventory Standards & Extensions', () => {
     );
     expect(updated?.status).toBe('SHIPPED');
     expect(updated?.shippedAt).toBeDefined();
+    const accepted = service.updateCoreReturnStatus(
+      core.id,
+      { status: 'ACCEPTED_BY_VENDOR', notes: 'Vendor accepted the core' },
+      ['DJJ']
+    );
+    expect(accepted?.status).toBe('ACCEPTED_BY_VENDOR');
+    expect(() =>
+      service.updateCoreReturnStatus(core.id, { status: 'ACCEPTED_BY_VENDOR', notes: 'Replay' }, [
+        'DJJ'
+      ])
+    ).toThrow(/cannot transition/u);
   });
 
   it('manages Part Interchangeability (Cross-reference P/N)', async () => {

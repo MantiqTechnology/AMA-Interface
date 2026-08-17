@@ -1043,7 +1043,7 @@ export class InventoryRepository {
     const today = new Date().toISOString().slice(0, 10);
     return rows.map((r) => {
       const nextDue = str(r.next_calibration_due);
-      const isExpired = nextDue !== null && nextDue < today;
+      const isExpired = nextDue === null || nextDue < today;
       return {
         id: String(r.id),
         toolNumber: String(r.tool_number),
@@ -1118,15 +1118,22 @@ export class InventoryRepository {
     workOrderId: string | null,
     notes: string | null
   ) {
+    const today = nowIso.slice(0, 10);
+    const claimed = this.sqlite
+      .prepare(
+        `UPDATE inventory_tools
+         SET status = 'CHECKED_OUT', updated_at = ?
+         WHERE id = ? AND status = 'AVAILABLE'
+           AND next_calibration_due IS NOT NULL AND next_calibration_due >= ?`
+      )
+      .run(nowIso, toolId, today);
+    if (claimed.changes !== 1) return undefined;
     this.sqlite
       .prepare(
         `INSERT INTO inventory_tool_logs (id, tool_id, work_order_id, issued_to_user_id, issued_at, notes)
          VALUES (?, ?, ?, ?, ?, ?)`
       )
       .run(logId, toolId, workOrderId, userId, nowIso, notes);
-    this.sqlite
-      .prepare(`UPDATE inventory_tools SET status = 'CHECKED_OUT', updated_at = ? WHERE id = ?`)
-      .run(nowIso, toolId);
     return this.listTools(['ALL']).find((t) => t.id === toolId);
   }
 

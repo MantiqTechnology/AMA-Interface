@@ -322,7 +322,7 @@ export const inventoryToolCheckoutSchema = z.object({
 
 export const inventoryToolReturnSchema = z.object({
   toolId: z.string().trim().min(1),
-  conditionOnReturn: z.string().trim().min(2).default('SERVICEABLE'),
+  conditionOnReturn: z.enum(['SERVICEABLE', 'UNSERVICEABLE']).default('SERVICEABLE'),
   missingReported: z.boolean().default(false),
   notes: nullableText.default(null)
 });
@@ -380,7 +380,7 @@ export const inventoryFlyAwayKitInputSchema = z.object({
 export const inventoryQuarantineReleaseSchema = z.object({
   serialId: z.string().trim().min(1),
   targetBinId: z.string().trim().min(1),
-  certificateReference: z.string().trim().min(2),
+  certificateReference: z.string().trim().min(3).max(120),
   notes: nullableText.default(null)
 });
 
