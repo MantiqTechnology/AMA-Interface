@@ -24,6 +24,8 @@ const internalAogRoles = new Set([
   'Inventory Controller'
 ]);
 const showInternalAogCoach = computed(() => internalAogRoles.has(session.role.value));
+const internalAog = showInternalAogCoach.value ? await useInternalAogDemo() : null;
+const internalAogScenario = computed(() => internalAog?.data.value ?? null);
 
 const createDialog = ref(false);
 const createStep = ref(0);
@@ -406,7 +408,60 @@ async function createPackage() {
       </template>
     </DsOperationalPageHeader>
 
-    <MaintenanceInternalAogDemoCoach v-if="showInternalAogCoach" />
+    <template v-if="showInternalAogCoach">
+      <MaintenanceInternalAogDemoCoach
+        v-if="internalAogScenario && internalAog"
+        :scenario="internalAogScenario"
+        :role="session.role.value"
+        :continue-scenario="internalAog.continueScenario"
+        :reset-scenario="internalAog.resetScenario"
+      />
+      <VAlert v-else-if="internalAog?.error.value" type="warning" variant="tonal" class="mb-4">
+        Panduan Internal AOG belum dapat dimuat. Fitur MRO utama tetap dapat digunakan.
+      </VAlert>
+
+      <VCard
+        v-if="internalAogScenario"
+        data-testid="internal-aog-spotlight"
+        border
+        elevation="0"
+        class="mb-4"
+      >
+        <VCardText class="d-flex flex-wrap align-center ga-5">
+          <div>
+            <div class="text-overline text-error">AOG · Prioritas langsung</div>
+            <div class="text-h5 font-weight-bold">
+              {{ internalAogScenario.aircraft.registrationNumber }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis">
+              {{ internalAogScenario.workPackage.packageNumber }}
+            </div>
+          </div>
+          <VDivider vertical />
+          <div class="flex-grow-1">
+            <div class="text-caption text-medium-emphasis">Penghambat saat ini</div>
+            <div class="font-weight-medium">
+              {{ internalAogScenario.blocker?.reason ?? 'Tidak ada penghambat aktif.' }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis mt-1">
+              Dampak: {{ internalAogScenario.blocker?.impact ?? 'Alur siap dilanjutkan.' }}
+            </div>
+          </div>
+          <div>
+            <div class="text-caption text-medium-emphasis">Penanggung jawab</div>
+            <VChip color="warning" prepend-icon="mdi-account-hard-hat" variant="tonal">
+              {{ internalAogScenario.nextRole ?? 'Selesai' }}
+            </VChip>
+          </div>
+          <VBtn
+            :to="`/maintenance/work-packages/${internalAogScenario.workPackage.id}`"
+            variant="outlined"
+          >
+            Buka Work Package
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </template>
 
     <VAlert type="info" variant="tonal" class="mb-4" density="comfortable">
       {{ authorizationWording }}

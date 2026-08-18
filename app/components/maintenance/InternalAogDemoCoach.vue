@@ -1,29 +1,30 @@
 <script setup lang="ts">
-const {
-  data: scenario,
-  pending,
-  error,
-  role,
-  continueScenario,
-  resetScenario
-} = await useInternalAogDemo();
+import type { InternalAogDemoDto } from '#shared/features/maintenance';
+import type { DemoRole } from '#shared/types/roles';
+
+const props = defineProps<{
+  scenario: InternalAogDemoDto;
+  role: DemoRole;
+  continueScenario: () => Promise<void>;
+  resetScenario: () => Promise<void>;
+}>();
 
 const resetDialog = ref(false);
 const resetPending = ref(false);
 const resetError = ref('');
 
-const canReset = computed(() => ['Maintenance Manager', 'Demo Admin'].includes(role.value));
+const canReset = computed(() => ['Maintenance Manager', 'Demo Admin'].includes(props.role));
 const primaryActionLabel = computed(() => {
-  if (!scenario.value?.nextRole || !scenario.value.nextAction) return 'Skenario selesai';
-  if (scenario.value.nextRole !== role.value) return `Lanjut sebagai ${scenario.value.nextRole}`;
-  return scenario.value.nextAction.label;
+  if (!props.scenario.nextRole || !props.scenario.nextAction) return 'Skenario selesai';
+  if (props.scenario.nextRole !== props.role) return `Lanjut sebagai ${props.scenario.nextRole}`;
+  return props.scenario.nextAction.label;
 });
 
 async function confirmReset() {
   resetPending.value = true;
   resetError.value = '';
   try {
-    await resetScenario();
+    await props.resetScenario();
     resetDialog.value = false;
   } catch (caught) {
     resetError.value = caught instanceof Error ? caught.message : 'Skenario belum dapat direset.';
@@ -34,7 +35,7 @@ async function confirmReset() {
 </script>
 
 <template>
-  <VCard v-if="scenario" data-testid="internal-aog-demo-coach" class="aog-coach mb-4" elevation="0">
+  <VCard data-testid="internal-aog-demo-coach" class="aog-coach mb-4" elevation="0">
     <div class="aog-coach__rail" aria-hidden="true">
       <span
         v-for="step in scenario.totalSteps"
@@ -76,7 +77,7 @@ async function confirmReset() {
           color="primary"
           :disabled="!scenario.nextAction"
           :prepend-icon="scenario.nextRole === role ? 'mdi-arrow-right' : 'mdi-account-switch'"
-          @click="continueScenario"
+          @click="props.continueScenario"
         >
           {{ primaryActionLabel }}
         </VBtn>
@@ -111,11 +112,6 @@ async function confirmReset() {
       </VCard>
     </VDialog>
   </VCard>
-
-  <VAlert v-else-if="error" type="warning" variant="tonal" class="mb-4">
-    Panduan Internal AOG belum dapat dimuat. Fitur MRO utama tetap dapat digunakan.
-  </VAlert>
-  <VSkeletonLoader v-else-if="pending" type="article" class="mb-4" />
 </template>
 
 <style scoped>

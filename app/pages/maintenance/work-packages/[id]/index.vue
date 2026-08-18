@@ -41,6 +41,9 @@ const session = useDemoSession();
 const { can } = useAuthorization();
 const format = useLocaleFormat();
 const ui = useMaintenanceUi();
+const isInternalAogPackage = computed(() => id.value === 'mroaog-work-package');
+const internalAog = isInternalAogPackage.value ? await useInternalAogDemo() : null;
+const internalAogScenario = computed(() => internalAog?.data.value ?? null);
 
 function formatDate(value: string | null | undefined) {
   return value ? format.date(value) : '-';
@@ -822,6 +825,7 @@ async function runAction(name: string, fn: () => Promise<void>) {
   try {
     await fn();
     await refresh();
+    await internalAog?.refresh();
   } catch (errorValue) {
     actionError.value = ui.presentError(errorValue);
   } finally {
@@ -1293,6 +1297,7 @@ async function runResourceMutation(action: () => Promise<void>) {
   resourceError.value = null;
   try {
     await action();
+    await internalAog?.refresh();
   } catch (err: any) {
     resourceError.value = err?.data?.message || err?.message || 'Gagal menjalankan aksi resource.';
   } finally {
@@ -1471,6 +1476,50 @@ async function declareResourceType(
   }
 }
 
+async function runInternalAogPrimaryAction() {
+  const scenario = internalAogScenario.value;
+  const card = workPackage.value?.jobCards.find((item) => item.id === 'mroaog-job-card');
+  if (!scenario || !card || scenario.nextRole !== session.role.value) return;
+
+  if (scenario.phase === 'READY_FOR_EXECUTION') {
+    const requirement = materialRequirements.value.find(
+      (item) => item.id === 'mroaog-material-requirement'
+    );
+    const reservation = reservationForRequirement('mroaog-material-requirement', ['ISSUED']);
+    if (!requirement || !reservation) return;
+    await runResourceMutation(async () => {
+      await resource.installMaterial({
+        reservationId: reservation.id,
+        quantity: reservation.issuedQuantity || reservation.quantity,
+        jobCardId: card.id,
+        position: 'MAIN WHEEL',
+        idempotencyKey: newResourceActionKey('mroaog-install')
+      });
+      await loadResourceData();
+    });
+    await start(card);
+    return;
+  }
+  if (scenario.phase === 'WORK_IN_PROGRESS') {
+    workLicenseNumber.value =
+      signerLicenses.value.find((license) => license.isUsableNow)?.licenseNumber ??
+      'AME-TECH-MRO-001';
+    workStatement.value =
+      'Main wheel tire replacement completed using controlled data; installation evidence attached.';
+    await signWork(card);
+    return;
+  }
+  if (scenario.phase === 'INSPECTION_REQUIRED') {
+    openInspectionDialog(card);
+    return;
+  }
+  if (scenario.phase === 'RELEASE_REVIEW_REQUIRED') {
+    await requestRelease();
+    return;
+  }
+  if (scenario.phase === 'READY_FOR_RELEASE') openReleaseDialog();
+}
+
 function toolCalibrationState(allocation: MaintenanceToolAllocationV2Dto) {
   if (!allocation.calibrationRequired) return 'NOT_REQUIRED';
   if (!allocation.calibrationExpiresAt) return 'UNKNOWN';
@@ -1498,6 +1547,64 @@ watch(
       <VBtn to="/maintenance/work-packages" variant="text">Paket Pekerjaan</VBtn>
       <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
     </div>
+
+    <template v-if="isInternalAogPackage && internalAogScenario && internalAog">
+      <MaintenanceInternalAogDemoCoach
+        :scenario="internalAogScenario"
+        :role="session.role.value"
+        :continue-scenario="internalAog.continueScenario"
+        :reset-scenario="internalAog.resetScenario"
+      />
+
+      <VCard border elevation="0" class="mb-4" data-testid="internal-aog-work-package-overview">
+        <VCardText class="d-flex flex-wrap align-center ga-5">
+          <div>
+            <div class="text-overline text-error">AOG · Internal maintenance</div>
+            <div class="text-h5 font-weight-bold">
+              {{ internalAogScenario.workPackage.packageNumber }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis">
+              {{ internalAogScenario.aircraft.registrationNumber }} ·
+              {{ internalAogScenario.jobCard.cardNumber }}
+            </div>
+          </div>
+          <VDivider vertical />
+          <div class="flex-grow-1">
+            <div class="text-caption text-medium-emphasis">Status / dampak</div>
+            <div class="font-weight-medium">
+              {{ internalAogScenario.blocker?.reason ?? internalAogScenario.nextAction?.label }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis">
+              {{
+                internalAogScenario.blocker?.impact ??
+                  `Penanggung jawab: ${internalAogScenario.nextRole ?? 'Selesai'}`
+              }}
+            </div>
+          </div>
+          <VBtn
+            v-if="internalAogScenario.nextRole === session.role.value"
+            color="primary"
+            :loading="Boolean(actionLoading) || resourceLoading"
+            @click="runInternalAogPrimaryAction"
+          >
+            {{
+              internalAogScenario.phase === 'READY_FOR_EXECUTION'
+                ? 'Pasang material & mulai pekerjaan'
+                : internalAogScenario.nextAction?.label
+            }}
+          </VBtn>
+        </VCardText>
+      </VCard>
+
+      <VRow class="mb-1">
+        <VCol cols="12" xl="7">
+          <MaintenanceInternalAogReadinessCard :readiness="internalAogScenario.readiness" />
+        </VCol>
+        <VCol cols="12" xl="5">
+          <MaintenanceInternalAogTimeline :events="internalAogScenario.timeline" />
+        </VCol>
+      </VRow>
+    </template>
 
     <VAlert v-if="error" type="error" variant="tonal" class="mb-4">
       Paket pekerjaan belum dapat dimuat.
