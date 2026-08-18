@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { DemoRole } from './types/roles';
 
 const emptyToNull = (value: unknown) =>
   typeof value === 'string' && value.trim() === '' ? null : value;
@@ -1076,6 +1077,50 @@ export type MaintenanceReadinessPanelDto = {
     blockers: MaintenanceEligibilityBlockerDto[];
     warnings: MaintenanceEligibilityBlockerDto[];
   }>;
+};
+
+export type InternalAogDemoPhase =
+  | 'MATERIAL_REQUIRED'
+  | 'MATERIAL_RESERVED'
+  | 'READY_FOR_EXECUTION'
+  | 'WORK_IN_PROGRESS'
+  | 'INSPECTION_REQUIRED'
+  | 'RELEASE_REVIEW_REQUIRED'
+  | 'READY_FOR_RELEASE'
+  | 'RELEASED';
+
+export type InternalAogDemoTimelineEventDto = {
+  id: string;
+  occurredAt: string;
+  domain: 'MRO' | 'INVENTORY';
+  title: string;
+  detail: string;
+  actorRole: string | null;
+};
+
+export type InternalAogDemoDto = {
+  scenarioId: 'INTERNAL_AOG_MATERIAL';
+  title: string;
+  phase: InternalAogDemoPhase;
+  currentStep: number;
+  totalSteps: 8;
+  nextRole: DemoRole | null;
+  nextAction: { label: string; href: string } | null;
+  aircraft: { id: string; registrationNumber: string; aog: boolean };
+  workPackage: { id: string; packageNumber: string; status: string; version: number };
+  jobCard: { id: string; cardNumber: string; status: string; version: number };
+  materialRequirement: {
+    id: string;
+    status: string;
+    partNumber: string;
+    partName: string;
+    requiredQuantity: number;
+    reservedQuantity: number;
+    issuedQuantity: number;
+  };
+  readiness: MaintenanceReadinessPanelDto;
+  blocker: { reason: string; owner: DemoRole; impact: string } | null;
+  timeline: InternalAogDemoTimelineEventDto[];
 };
 
 export type MaintenanceAuditPackDto = {
