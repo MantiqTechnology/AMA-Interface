@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DemoRole } from './types/roles';
+import type { DemoRole } from '../types/roles';
 
 const emptyToNull = (value: unknown) =>
   typeof value === 'string' && value.trim() === '' ? null : value;
