@@ -434,6 +434,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
   ],
   'Maintenance Technician': [
     'maintenance.demo.internal_aog.read',
+    'maintenance.package.read',
     'platform.dashboard.view',
     'flight.read',
     'document.read',
@@ -447,6 +448,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
   ],
   'Certifying Staff': [
     'maintenance.demo.internal_aog.read',
+    'maintenance.package.read',
     'platform.dashboard.view',
     'flight.read',
     'master_data.read',

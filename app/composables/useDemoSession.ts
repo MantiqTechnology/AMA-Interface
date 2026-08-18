@@ -104,7 +104,7 @@ export function useDemoSession() {
     loaded.value = true;
   }
 
-  async function switchRole(nextRole: DemoRole) {
+  async function switchRole(nextRole: DemoRole, redirect = true) {
     const session = await fetchApi<DemoSessionDto>('/api/auth/role', {
       method: 'POST',
       body: { role: nextRole }
@@ -114,7 +114,7 @@ export function useDemoSession() {
 
     if (import.meta.client) {
       const redirectPath = safeDemoRoleRedirectPath(session.role, window.location.pathname);
-      if (redirectPath) {
+      if (redirect && redirectPath) {
         await navigateTo(redirectPath, { replace: true });
       }
       await refreshNuxtData();
