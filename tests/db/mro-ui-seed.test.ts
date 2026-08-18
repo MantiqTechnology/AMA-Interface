@@ -85,4 +85,61 @@ describe('MRO UI alignment seed', () => {
     expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     sqlite.close();
   });
+
+  it('seeds the Internal AOG material scenario at its deterministic blocked baseline', () => {
+    const sqlite = createDbClient(dbPath).sqlite;
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT wp.package_number AS packageNumber,
+                  wp.status,
+                  a.registration_number AS registrationNumber,
+                  mr.status AS materialStatus,
+                  mr.required_quantity AS requiredQuantity,
+                  COALESCE((
+                    SELECT SUM(r.issued_quantity)
+                    FROM maintenance_inventory_reservations r
+                    WHERE r.material_requirement_id = mr.id
+                  ), 0) AS issuedQuantity
+           FROM maintenance_work_packages wp
+           JOIN aircraft a ON a.id = wp.aircraft_id
+           JOIN maintenance_work_package_material_requirements mr ON mr.work_package_id = wp.id
+           WHERE wp.id = 'mroaog-work-package'`
+        )
+        .get()
+    ).toEqual({
+      packageNumber: 'MWP-AOG-INT-001',
+      status: 'IN_PROGRESS',
+      registrationNumber: 'PK-AMD',
+      materialStatus: 'REQUESTED',
+      requiredQuantity: 1,
+      issuedQuantity: 0
+    });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT status,
+                  requires_independent_inspection AS requiresIndependentInspection
+           FROM maintenance_job_cards
+           WHERE id = 'mroaog-job-card'`
+        )
+        .get()
+    ).toEqual({ status: 'READY', requiresIndependentInspection: 1 });
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT on_hand_quantity AS quantity
+           FROM inventory_stock_balances
+           WHERE id = 'inv-bal-tire-c208-reserve'
+             AND condition = 'SERVICEABLE'`
+        )
+        .get()
+    ).toEqual({ quantity: 4 });
+
+    expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    sqlite.close();
+  });
 });

@@ -16,7 +16,7 @@
 - Do not add Component Shop, customer MRO, procurement, finance, external integrations, production authentication, or legal electronic signatures.
 - Reuse canonical reservation, issue, readiness, sign-work, inspection, request-release, and release commands.
 - The browser must never manufacture readiness or timeline state; all visible progress comes from persisted server data.
-- Use the stable scenario key `INTERNAL_AOG_MATERIAL` and stable record prefix `demo-aog-`.
+- Use the stable scenario key `INTERNAL_AOG_MATERIAL` and integrity-safe record prefix `mroaog-`.
 - Keep all existing MRO and Inventory scenarios usable.
 - Every task follows red-green-refactor and ends with its focused tests passing before commit.
 - Do not stage unrelated `.vercel/` or `artifacts/` files.
@@ -81,14 +81,14 @@ expect(
     FROM maintenance_work_packages wp
     JOIN aircraft a ON a.id = wp.aircraft_id
     JOIN maintenance_material_requirements mr ON mr.work_package_id = wp.id
-    WHERE wp.id = 'demo-aog-work-package'
+    WHERE wp.id = 'mroaog-work-package'
   `
     )
     .get()
 ).toEqual({
-  packageNumber: 'MWP-DEMO-AOG-001',
+  packageNumber: 'MWP-AOG-INT-001',
   status: 'IN_PROGRESS',
-  registrationNumber: 'PK-MRB',
+  registrationNumber: 'PK-AMD',
   materialStatus: 'REQUESTED',
   requiredQuantity: 1,
   issuedQuantity: 0
@@ -100,7 +100,7 @@ expect(
       `
     SELECT status, requires_independent_inspection AS requiresIndependentInspection
     FROM maintenance_job_cards
-    WHERE id = 'demo-aog-job-card'
+    WHERE id = 'mroaog-job-card'
   `
     )
     .get()
@@ -117,17 +117,17 @@ Run:
 pnpm exec vitest run tests/db/mro-ui-seed.test.ts
 ```
 
-Expected: failure because `demo-aog-work-package` does not exist.
+Expected: failure because `mroaog-work-package` does not exist.
 
 - [ ] **Step 3: Implement a dedicated idempotent seed**
 
 Create `seedInternalAogDemo(sqlite, context)` using the existing `insertIgnore` style. Seed exactly:
 
 - aircraft `ac-pk-mrb` as the grounded aircraft;
-- defect `demo-aog-defect` linked to the aircraft;
-- work package `demo-aog-work-package` / `MWP-DEMO-AOG-001`;
-- job card `demo-aog-job-card` / `MWP-DEMO-AOG-001-JC-001`, initially `READY`, requiring independent inspection;
-- material requirement `demo-aog-material-requirement`, initially `REQUESTED` for quantity `1`;
+- defect `mroaog-defect` linked to the aircraft;
+- work package `mroaog-work-package` / `MWP-AOG-INT-001`;
+- job card `mroaog-job-card` / `MWP-AOG-INT-001-JC-001`, initially `READY`, requiring independent inspection;
+- material requirement `mroaog-material-requirement`, initially `REQUESTED` for quantity `1`;
 - a dedicated serviceable inventory item/lot in an existing DJJ warehouse and bin with quantity greater than or equal to `1`;
 - active approved-data, tool, personnel, AMO-scope, and authorization records or declarations by referencing existing valid seeded masters;
 - audit records for defect detection, package creation, and readiness evaluation.
@@ -139,20 +139,20 @@ export function seedInternalAogDemo(sqlite: Database.Database, context: DemoSeed
   const now = context.now;
   const seed = sqlite.transaction(() => {
     insertIgnore(sqlite, 'aircraft_defects', {
-      id: 'demo-aog-defect',
-      aircraftId: 'ac-pk-mrb',
-      defectNumber: 'DEF-DEMO-AOG-001',
+      id: 'mroaog-defect',
+      aircraftId: 'ac-pk-amd',
+      defectNumber: 'DEF-AOG-INT-001',
       title: 'AOG brake assembly replacement',
       description:
         'Aircraft grounded pending issue and installation of the required brake assembly.',
       detectedAt: now,
       detectedByUserId: 'USR-MAINTENANCE-TECHNICIAN',
-      sourceReference: 'DEMO-INTERNAL-AOG',
+      sourceReference: 'INTERNAL-AOG-SCENARIO',
       status: 'OPEN',
       createdAt: now,
       updatedAt: now
     });
-    // Insert the remaining records with stable demo-aog-* identifiers.
+    // Insert the remaining records with stable mroaog-* identifiers.
   });
   seed.immediate();
 }
@@ -592,7 +592,7 @@ git commit -m "feat: spotlight internal AOG flow in MRO"
 
 Navigate via the coach as Inventory Controller and assert:
 
-- the `demo-aog-material-requirement` row is focused;
+- the `mroaog-material-requirement` row is focused;
 - the part, quantity, source warehouse/bin, aircraft, and Work Package are visible;
 - reservation preview shows post-reservation ATP;
 - issue confirmation shows source, destination, quantity, and resulting stock;
@@ -625,7 +625,7 @@ Before reserve and issue display values already supplied by `InventoryMaintenanc
 ```text
 Part / lot: <part number> / <lot>
 From: <station> / <warehouse> / <bin>
-To: MWP-DEMO-AOG-001 / PK-MRB
+To: MWP-AOG-INT-001 / PK-AMD
 Quantity: 1 EA
 Available after action: <server/candidate quantity minus submitted quantity>
 Impact: clears the material readiness gate after successful issue

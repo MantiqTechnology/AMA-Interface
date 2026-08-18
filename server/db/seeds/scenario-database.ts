@@ -11,6 +11,7 @@ import { seedAccountingScenarioData } from './accounting-scenarios';
 import { seedCorporateAssets } from './corporate-assets';
 import { seedMroFoundationData } from './mro-foundation';
 import { seedMroV21Foundation } from './mro-v21-foundation';
+import { seedInternalAogDemo } from './mro-internal-aog-demo';
 import { seedVerificationScenarios } from './verification-scenarios';
 
 export type SeedScenarioDatabaseOptions = {
@@ -33,6 +34,7 @@ export async function seedScenarioDatabase(
     seedAccountingScenarioData(client.sqlite, context);
     seedMroFoundationData(client.sqlite, context);
     seedMroV21Foundation(client.sqlite, context);
+    seedInternalAogDemo(client.sqlite, context);
     assertScenarioSeedIntegrity(client.sqlite, context);
   });
   seedScenarios.immediate();
