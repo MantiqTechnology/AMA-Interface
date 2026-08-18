@@ -157,6 +157,6 @@ export default defineNuxtConfig({
   },
   typescript: {
     strict: true,
-    typeCheck: process.env.NODE_ENV !== 'test'
+    typeCheck: process.env.NUXT_TYPECHECK === 'true'
   }
 });
