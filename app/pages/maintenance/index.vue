@@ -16,6 +16,14 @@ const route = useRoute();
 const { can } = useAuthorization();
 const ui = useMaintenanceUi();
 const { resolveAircraftImageUrl } = useAircraftImageUrl();
+const internalAogRoles = new Set([
+  'Demo Admin',
+  'Maintenance Manager',
+  'Maintenance Technician',
+  'Certifying Staff',
+  'Inventory Controller'
+]);
+const showInternalAogCoach = computed(() => internalAogRoles.has(session.role.value));
 
 const createDialog = ref(false);
 const createStep = ref(0);
@@ -397,6 +405,8 @@ async function createPackage() {
         />
       </template>
     </DsOperationalPageHeader>
+
+    <MaintenanceInternalAogDemoCoach v-if="showInternalAogCoach" />
 
     <VAlert type="info" variant="tonal" class="mb-4" density="comfortable">
       {{ authorizationWording }}
