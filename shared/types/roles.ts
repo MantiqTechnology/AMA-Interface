@@ -408,6 +408,8 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     ...commercialContractPermissions
   ],
   'Maintenance Manager': [
+    'maintenance.demo.internal_aog.read',
+    'maintenance.demo.internal_aog.reset',
     'platform.dashboard.view',
     'flight.read',
     'maintenance.handoff.update',
@@ -431,6 +433,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     ...maintenanceQualityPermissions
   ],
   'Maintenance Technician': [
+    'maintenance.demo.internal_aog.read',
     'platform.dashboard.view',
     'flight.read',
     'document.read',
@@ -443,6 +446,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     ...maintenanceExecutionPermissions
   ],
   'Certifying Staff': [
+    'maintenance.demo.internal_aog.read',
     'platform.dashboard.view',
     'flight.read',
     'master_data.read',
@@ -458,6 +462,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read'
   ],
   'Inventory Controller': [
+    'maintenance.demo.internal_aog.read',
     'platform.dashboard.view',
     'inventory.read',
     'inventory.catalog.manage',

@@ -4,7 +4,9 @@ import Database from 'better-sqlite3';
 import { setup, $fetch } from '@nuxt/test-utils/e2e';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ApiResponse } from '../../shared/contracts/api';
+import type { InventoryMaintenanceDemandDto } from '../../shared/features/inventory';
 import type {
+  InternalAogDemoDto,
   MaintenanceCommandCenterDto,
   MaintenanceSelectorDataDto,
   MaintenanceTechnicalRecordPackageDto,
@@ -38,6 +40,92 @@ await setup({
 });
 
 describe('maintenance command-center APIs', () => {
+  it.each([
+    'Maintenance Manager',
+    'Maintenance Technician',
+    'Certifying Staff',
+    'Inventory Controller'
+  ])('lets %s read the Internal AOG scenario snapshot', async (role) => {
+    const response = await $fetch<ApiResponse<InternalAogDemoDto>>(
+      '/api/maintenance/demo/internal-aog',
+      { headers: { cookie: `ama_demo_role=${encodeURIComponent(role)}` } }
+    );
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) throw new Error(response.error.message);
+    expect(response.data).toMatchObject({
+      scenarioId: 'INTERNAL_AOG_MATERIAL',
+      workPackage: { id: 'mroaog-work-package' },
+      aircraft: { registrationNumber: 'PK-AMD' }
+    });
+  });
+
+  it('restricts reset to the Maintenance Manager and restores a partially-run scenario', async () => {
+    const inventoryCookie = 'ama_demo_role=Inventory%20Controller';
+    const managerCookie = 'ama_demo_role=Maintenance%20Manager';
+    const demand = await $fetch<ApiResponse<InventoryMaintenanceDemandDto[]>>(
+      '/api/inventory/maintenance-demand',
+      {
+        headers: { cookie: inventoryCookie }
+      }
+    );
+    expect(demand.ok).toBe(true);
+    if (!demand.ok) throw new Error(demand.error.message);
+    const scenarioDemand = demand.data.find(
+      (row) => row.requirement.id === 'mroaog-material-requirement'
+    );
+    const candidate = scenarioDemand?.candidates[0];
+    expect(candidate).toBeTruthy();
+
+    await $fetch('/api/inventory/maintenance-demand/reservations', {
+      method: 'POST',
+      headers: { cookie: inventoryCookie },
+      body: {
+        materialRequirementId: 'mroaog-material-requirement',
+        inventoryItemId: candidate!.inventoryItemId,
+        lotNumber: candidate!.lotNumber ?? undefined,
+        quantity: 1,
+        unit: scenarioDemand!.requirement.unit,
+        stationId: candidate!.stationId,
+        inventoryLocationId: candidate!.binId,
+        certificateReference: candidate!.certificateReference ?? undefined,
+        idempotencyKey: 'api-mroaog-partial-reserve'
+      }
+    });
+
+    const partial = await $fetch<ApiResponse<InternalAogDemoDto>>(
+      '/api/maintenance/demo/internal-aog',
+      { headers: { cookie: inventoryCookie } }
+    );
+    expect(partial.ok && partial.data.phase).toBe('MATERIAL_RESERVED');
+
+    const forbidden = await $fetch<ApiResponse<unknown>>(
+      '/api/maintenance/demo/internal-aog/reset',
+      {
+        method: 'POST',
+        headers: { cookie: inventoryCookie },
+        ignoreResponseError: true
+      }
+    );
+    expect(forbidden.ok).toBe(false);
+    if (forbidden.ok) throw new Error('Inventory Controller unexpectedly reset the scenario.');
+    expect(forbidden.error.code).toBe('FORBIDDEN');
+
+    const reset = await $fetch<ApiResponse<{ resetAt: string; scenario: InternalAogDemoDto }>>(
+      '/api/maintenance/demo/internal-aog/reset',
+      {
+        method: 'POST',
+        headers: { cookie: managerCookie }
+      }
+    );
+    expect(reset.ok).toBe(true);
+    if (!reset.ok) throw new Error(reset.error.message);
+    expect(reset.data.scenario).toMatchObject({
+      phase: 'MATERIAL_REQUIRED',
+      materialRequirement: { reservedQuantity: 0, issuedQuantity: 0 }
+    });
+  });
+
   it('returns authoritative seeded MRO queues without client-side placeholder metrics', async () => {
     const response = await $fetch<ApiResponse<MaintenanceCommandCenterDto>>(
       '/api/maintenance/command-center',
