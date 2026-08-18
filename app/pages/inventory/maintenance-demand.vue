@@ -13,11 +13,15 @@ const actionMessage = ref('');
 const working = ref(false);
 const reserveDialog = ref(false);
 const returnDialog = ref(false);
+const issueDialog = ref(false);
 const selected = ref<InventoryMaintenanceDemandDto | null>(null);
 const selectedCandidateId = ref('');
 const reserveQuantity = ref(1);
 const returnReservation = ref<MaintenanceInventoryReservationDto | null>(null);
 const returnForm = reactive({ condition: 'SERVICEABLE', reason: '' });
+const internalAog = await useInternalAogDemo();
+const internalAogScenario = computed(() => internalAog.data.value);
+const focusedRequirementId = computed(() => String(route.query.requirement ?? ''));
 
 const query = computed(() => ({
   ...(search.value.trim() ? { search: search.value.trim() } : {}),
@@ -61,6 +65,17 @@ const metrics = computed(() => {
     }
   ];
 });
+const displayRows = computed(() => {
+  const rows = [...(data.value ?? [])];
+  return rows.sort((left, right) => {
+    if (left.requirement.id === focusedRequirementId.value) return -1;
+    if (right.requirement.id === focusedRequirementId.value) return 1;
+    return 0;
+  });
+});
+const selectedCandidate = computed(() =>
+  selected.value?.candidates.find((item) => item.inventoryItemId === selectedCandidateId.value)
+);
 const eligibleCandidateItems = computed(() =>
   (selected.value?.candidates ?? [])
     .filter((item) => item.eligible)
@@ -110,21 +125,28 @@ async function reserve() {
   });
 }
 
-async function issue(row: InventoryMaintenanceDemandDto) {
-  const reservation = row.reservations.find((item) =>
+function openIssue(row: InventoryMaintenanceDemandDto) {
+  selected.value = row;
+  issueDialog.value = true;
+}
+
+async function issue() {
+  if (!selected.value) return;
+  const reservation = selected.value.reservations.find((item) =>
     ['ACTIVE', 'PARTIALLY_ISSUED'].includes(item.status)
   );
   if (!reservation) return;
-  await runAction('Material berhasil dikeluarkan untuk MRO.', () =>
-    fetchApi('/api/inventory/maintenance-demand/issues', {
+  await runAction('Material berhasil dikeluarkan untuk MRO.', async () => {
+    await fetchApi('/api/inventory/maintenance-demand/issues', {
       method: 'POST',
       body: {
         reservationId: reservation.id,
         quantity: reservation.quantity,
         idempotencyKey: crypto.randomUUID()
       }
-    })
-  );
+    });
+    issueDialog.value = false;
+  });
 }
 
 function openReturn(row: InventoryMaintenanceDemandDto) {
@@ -159,6 +181,7 @@ async function runAction(message: string, action: () => Promise<unknown>) {
     await action();
     actionMessage.value = message;
     await refresh();
+    await internalAog.refresh();
   } catch (value) {
     actionError.value = errorMessage(value, 'Tindakan material gagal diproses.');
   } finally {
@@ -192,6 +215,14 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
     <VAlert v-if="actionMessage" closable class="mb-4" type="success" variant="tonal">
       {{ actionMessage }}
     </VAlert>
+
+    <MaintenanceInternalAogDemoCoach
+      v-if="internalAogScenario"
+      :scenario="internalAogScenario"
+      :role="internalAog.role.value"
+      :continue-scenario="internalAog.continueScenario"
+      :reset-scenario="internalAog.resetScenario"
+    />
 
     <DsMetricStrip class="mb-4" :items="metrics" />
 
@@ -242,7 +273,16 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in data ?? []" :key="row.requirement.id">
+            <tr
+              v-for="row in displayRows"
+              :key="row.requirement.id"
+              :class="{ 'demand-row--focused': row.requirement.id === focusedRequirementId }"
+              :data-testid="
+                row.requirement.id === focusedRequirementId
+                  ? 'internal-aog-inventory-demand'
+                  : undefined
+              "
+            >
               <td>
                 <strong>{{ row.requirement.partNumber ?? 'Part belum ditentukan' }}</strong>
                 <div class="text-caption text-medium-emphasis">{{ row.requirement.partName }}</div>
@@ -281,7 +321,7 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
                 <VBtn
                   v-if="row.nextAction === 'RESERVE'"
                   size="small"
-                  text="Reservasi"
+                  text="Reservasi stok"
                   variant="tonal"
                   @click="openReserve(row)"
                 />
@@ -289,9 +329,9 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
                   v-else-if="row.nextAction === 'ISSUE'"
                   :loading="working"
                   size="small"
-                  text="Issue"
+                  text="Issue ke MRO"
                   variant="tonal"
-                  @click="issue(row)"
+                  @click="openIssue(row)"
                 />
                 <VBtn
                   v-else-if="row.nextAction === 'WAIT_INSTALL'"
@@ -307,7 +347,12 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
       </VCard>
 
       <div class="d-sm-none d-grid ga-3">
-        <VCard v-for="row in data ?? []" :key="row.requirement.id" border>
+        <VCard
+          v-for="row in displayRows"
+          :key="row.requirement.id"
+          border
+          :class="{ 'demand-row--focused': row.requirement.id === focusedRequirementId }"
+        >
           <VCardText>
             <div class="d-flex align-start justify-space-between ga-3">
               <div>
@@ -346,7 +391,7 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
               block
               text="Issue ke MRO"
               variant="tonal"
-              @click="issue(row)"
+              @click="openIssue(row)"
             />
             <VBtn
               v-else-if="row.nextAction === 'WAIT_INSTALL'"
@@ -370,9 +415,21 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
       </VCard>
     </template>
 
-    <VDialog v-model="reserveDialog" max-width="600">
+    <VDialog v-model="reserveDialog" aria-label="Reservasi stok untuk MRO" max-width="600">
       <VCard title="Reservasi stok untuk MRO">
         <VCardText>
+          <VAlert v-if="selected" type="info" variant="tonal" class="mb-4">
+            <div class="font-weight-bold">Dampak setelah reservasi</div>
+            <div>
+              {{ selected.workPackageNumber }} / {{ selected.aircraftRegistration }} ·
+              {{ number(reserveQuantity) }} {{ selected.requirement.unit }}
+            </div>
+            <div v-if="selectedCandidate" class="text-caption mt-1">
+              {{ selectedCandidate.stationCode }}-{{ selectedCandidate.warehouseCode }} /
+              {{ selectedCandidate.binCode }} · tersedia setelah aksi:
+              {{ number(selectedCandidate.availableQuantity - reserveQuantity) }}
+            </div>
+          </VAlert>
           <VSelect
             v-model="selectedCandidateId"
             class="mb-3"
@@ -395,6 +452,30 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
             text="Reservasi stok"
             @click="reserve"
           />
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="issueDialog" aria-label="Issue material ke Work Package" max-width="600">
+      <VCard title="Issue material ke Work Package">
+        <VCardText v-if="selected">
+          <VAlert type="warning" variant="tonal" class="mb-4">
+            <div class="font-weight-bold">Konfirmasi dampak operasional</div>
+            <div>{{ selected.workPackageNumber }} / {{ selected.aircraftRegistration }}</div>
+            <div class="mt-1">
+              {{ selected.requirement.partNumber }} ·
+              {{ number(selected.requirement.reservedQuantity) }} {{ selected.requirement.unit }}
+            </div>
+            <div class="text-caption mt-2">
+              Gate material menjadi siap setelah command issue berhasil disimpan. Pemasangan tetap
+              menjadi tanggung jawab Maintenance Technician.
+            </div>
+          </VAlert>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn text="Batal" variant="text" @click="issueDialog = false" />
+          <VBtn color="primary" :loading="working" @click="issue">Issue material</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
@@ -439,5 +520,10 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
 }
 .demand-table table {
   min-width: 980px;
+}
+
+.demand-row--focused {
+  background: rgba(var(--v-theme-primary), 0.08);
+  box-shadow: inset 4px 0 rgb(var(--v-theme-primary));
 }
 </style>
