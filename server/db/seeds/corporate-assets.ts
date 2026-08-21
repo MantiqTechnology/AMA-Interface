@@ -264,7 +264,7 @@ export function seedCorporateAssets(
       currencyCode: 'IDR',
       exchangeRateToIdrMicros: 1000000,
       baseAmountIdr: 850000000,
-      postingStatus: 'DRAFT',
+      postingStatus: 'POSTED',
       journalEntryId: 'journal-corporate-gpu',
       stationId: 'st-djj',
       aircraftId: null,
@@ -327,6 +327,33 @@ export function seedCorporateAssets(
           description: 'Ground Power Unit GPU-01 acquisition.'
         });
     }
+    insert(sqlite, 'supplier_invoices', {
+      id: 'supplier-invoice-corporate-gpu',
+      supplierId: 'vendor-maintenance',
+      invoiceNumber: `ASSET-GPU-${context.compactDate(-30)}-001`,
+      invoiceDate: acquisitionDate,
+      dueDate: context.date(0),
+      currencyCode: 'IDR',
+      subtotalMinor: 850000000,
+      taxMinor: 0,
+      totalMinor: 850000000,
+      sourceType: 'NON_PO',
+      purchaseOrderId: null,
+      goodsReceiptId: null,
+      expenseAccountId: 'coa-1300',
+      matchStatus: 'NOT_APPLICABLE',
+      matchDetailsJson: JSON.stringify({
+        managedAssetId: 'asset-gse-gpu-01',
+        seededOpeningItem: true
+      }),
+      lifecycleStatus: 'AP_OPEN',
+      accountingEventId: 'accounting-event-corporate-gpu',
+      journalId: 'journal-corporate-gpu',
+      evidenceDocumentId: null,
+      createdBy: 'USR-FINANCE-REVIEWER',
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
     insert(sqlite, 'asset_register', {
       id: 'financial-asset-gpu-01',
       assetNumber: 'FA-GSE-00001',

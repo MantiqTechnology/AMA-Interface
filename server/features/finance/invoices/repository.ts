@@ -17,6 +17,7 @@ export type InvoiceRow = {
   tax: number;
   total: number;
   currency: string;
+  recognitionMode: 'BILLING_ONLY' | 'AR_ON_ISSUE';
   createdByUserId: string;
   approvedByUserId: string | null;
   approvedAt: string | null;
@@ -87,11 +88,13 @@ export type CharterTaxSnapshot = {
 const invoiceSelect = `
   SELECT invoice.id, invoice.flight_operation_id AS flightOperationId,
     invoice.invoice_number AS invoiceNumber, invoice.status, invoice.subtotal, invoice.tax,
-    invoice.total, invoice.currency, invoice.created_by_user_id AS createdByUserId,
+    invoice.total, invoice.currency, invoice.recognition_mode AS recognitionMode,
+    invoice.created_by_user_id AS createdByUserId,
     invoice.approved_by_user_id AS approvedByUserId, invoice.approved_at AS approvedAt,
     invoice.issued_at AS issuedAt, invoice.due_at AS dueAt,
     invoice.created_at AS createdAt, invoice.updated_at AS updatedAt,
-    COALESCE((SELECT SUM(payment.amount) FROM payments payment WHERE payment.invoice_id = invoice.id), 0) AS paidAmount,
+    COALESCE((SELECT SUM(allocation.amount_minor) FROM ar_allocations allocation
+      WHERE allocation.invoice_id = invoice.id AND allocation.status = 'POSTED'), 0) AS paidAmount,
     customer.id AS customerId, customer.account_name AS customerName,
     customer.email AS customerEmail, term.due_days AS paymentTermDays,
     flight.flight_number AS flightNumber, flight.order_number AS orderNumber,
@@ -386,15 +389,16 @@ export class InvoiceRepository {
     total: number;
     currency: string;
     actorId: string;
+    recognitionMode: 'BILLING_ONLY' | 'AR_ON_ISSUE';
     timestamp: string;
   }) {
     this.sqlite
       .prepare(
         `INSERT INTO invoices (
            id, customer_id, flight_operation_id, invoice_number, status, subtotal, tax, total,
-           currency, created_by_user_id, created_at, updated_at
+           currency, recognition_mode, created_by_user_id, created_at, updated_at
          ) VALUES (@id, @customerId, @flightId, @invoiceNumber, 'draft', @subtotal, @tax, @total,
-           @currency, @actorId, @timestamp, @timestamp)`
+           @currency, @recognitionMode, @actorId, @timestamp, @timestamp)`
       )
       .run(input);
   }

@@ -105,6 +105,9 @@ export type InvoiceSummaryDto = {
   tax: number;
   total: number;
   currency: string;
+  recognitionMode: 'BILLING_ONLY' | 'AR_ON_ISSUE';
+  settlementStatus: 'NOT_APPLICABLE' | 'OPEN' | 'PARTIALLY_SETTLED' | 'SETTLED';
+  outstandingAmount: number;
   createdByUserId: string;
   approvedByUserId: string | null;
   approvedAt: string | null;

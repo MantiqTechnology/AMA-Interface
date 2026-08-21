@@ -8,10 +8,14 @@ import type {
   PayrollRunQuery
 } from '../../../../shared/features/hris';
 import { DomainError, notFound } from '../../../utils/errors';
+import type { FinanceHandoffService } from '../../finance/handoffs/service';
 import { calculatePph21Ter, generateNextNumber, now, num, str, type Row } from './types';
 
 export class PayrollModule {
-  constructor(public readonly sqlite: Database.Database) {}
+  constructor(
+    public readonly sqlite: Database.Database,
+    private readonly financeHandoffs?: FinanceHandoffService
+  ) {}
 
   listPayrollComponents() {
     const rows = this.sqlite
@@ -881,6 +885,11 @@ export class PayrollModule {
 
   postPayrollJournal(runId: string) {
     const run = this.getPayrollRun(runId);
+    const existing = this.sqlite
+      .prepare(
+        "SELECT id, journal_id FROM finance_handoffs WHERE source_module = 'HRIS' AND source_type = 'PAYROLL_RUN' AND source_event_id = ?"
+      )
+      .get(runId) as { id: string; journal_id: string | null } | undefined;
     if (run.status !== 'APPROVED') {
       throw new DomainError(
         'INVALID_STATE',
@@ -888,92 +897,42 @@ export class PayrollModule {
         400
       );
     }
-    if (run.journalId) {
-      return { success: true, journalId: run.journalId, alreadyPosted: true };
+    if (!this.financeHandoffs) {
+      throw new DomainError(
+        'FINANCE_HANDOFF_UNAVAILABLE',
+        'Payroll posting requires the canonical Finance handoff service.',
+        503
+      );
     }
-
-    const timestamp = now();
-    const journalId = `jrn-pay-${nanoid(8)}`;
-
-    const tx = this.sqlite.transaction(() => {
-      const tableInfo = this.sqlite.prepare("PRAGMA table_info('journal_entries')").all() as Array<{
-        name: string;
-      }>;
-      if (tableInfo.length > 0) {
-        const colNames = tableInfo.map((c) => c.name);
-        if (colNames.includes('journal_date')) {
-          this.sqlite
-            .prepare(
-              `INSERT INTO journal_entries
-               (id, journal_number, journal_date, description, total_debit, total_credit, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'POSTED', ?, ?)`
-            )
-            .run(
-              journalId,
-              `JRN-PAY-${run.periodYear}${String(run.periodMonth).padStart(2, '0')}`,
-              timestamp.slice(0, 10),
-              `Payroll Expense Period ${run.periodMonth}/${run.periodYear}`,
-              run.totalGross,
-              run.totalGross,
-              timestamp,
-              timestamp
-            );
-        } else if (colNames.includes('transaction_date')) {
-          const actEventId = `evt-${journalId}`;
-          const periodId = `period-${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}`;
-
-          this.sqlite
-            .prepare(
-              "INSERT OR IGNORE INTO accounting_periods (id, period_code, period_name, start_date, end_date, status, created_at, updated_at) VALUES (?, ?, ?, '2026-01-01', '2026-12-31', 'OPEN', ?, ?)"
-            )
-            .run(periodId, periodId, `Period ${periodId}`, timestamp, timestamp);
-          this.sqlite
-            .prepare(
-              `INSERT OR IGNORE INTO accounting_events
-               (id, event_number, event_type, source_type, source_id, idempotency_key, accounting_date, transaction_date, amount_minor, currency_code, base_amount_idr, created_at, updated_at)
-               VALUES (?, ?, 'PAYROLL_POSTED', 'HRIS', ?, ?, ?, ?, ?, 'IDR', ?, ?, ?)`
-            )
-            .run(
-              actEventId,
-              `EVT-${journalId}`,
-              runId,
-              `idem-${journalId}`,
-              timestamp.slice(0, 10),
-              timestamp.slice(0, 10),
-              run.totalGross,
-              run.totalGross,
-              timestamp,
-              timestamp
-            );
-
-          this.sqlite
-            .prepare(
-              `INSERT INTO journal_entries
-               (id, journal_number, accounting_event_id, period_id, status, source_type, source_id, transaction_date, currency_code, policy_code, policy_version, created_by_user_id, memo, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'POSTED', 'HRIS', ?, ?, 'IDR', 'HRIS_PAYROLL', 1, 'usr-admin', ?, ?, ?)`
-            )
-            .run(
-              journalId,
-              `JRN-PAY-${run.periodYear}${String(run.periodMonth).padStart(2, '0')}`,
-              actEventId,
-              periodId,
-              runId,
-              timestamp.slice(0, 10),
-              `Payroll Expense Period ${run.periodMonth}/${run.periodYear}`,
-              timestamp,
-              timestamp
-            );
-        }
-      }
-
-      this.sqlite
-        .prepare(
-          "UPDATE hris_payroll_runs SET status = 'PAID', journal_id = ?, updated_at = ? WHERE id = ?"
-        )
-        .run(journalId, timestamp, runId);
-    });
-
-    tx.immediate();
-    return { success: true, journalId, alreadyPosted: false };
+    const month = String(run.periodMonth).padStart(2, '0');
+    const endDate = new Date(Date.UTC(run.periodYear, run.periodMonth, 0))
+      .toISOString()
+      .slice(0, 10);
+    const handoff = existing
+      ? this.financeHandoffs.get(existing.id)
+      : this.financeHandoffs.receive({
+          sourceModule: 'HRIS',
+          sourceType: 'PAYROLL_RUN',
+          sourceId: runId,
+          sourceEventId: runId,
+          transactionDate: `${endDate}T23:59:59.000Z`,
+          currencyCode: 'IDR',
+          amountMinor: run.totalGross,
+          dimensions: { DEPARTMENT: 'ALL' },
+          payload: {
+            runNumber: run.runNumber,
+            period: `${run.periodYear}-${month}`,
+            totalNet: run.totalNet
+          },
+          createdBy: 'SYSTEM-HRIS'
+        });
+    return {
+      success: true,
+      handoffId: handoff.id,
+      journalId: null,
+      alreadyPosted: false,
+      status: handoff.status,
+      limitationCode: 'PAYROLL_POSTING_POLICY_NOT_CONFIGURED'
+    };
   }
 }

@@ -10,6 +10,10 @@ import type {
   RecordPaymentBody
 } from '../../../../shared/features/finance/invoices';
 import { DomainError, notFound } from '../../../utils/errors';
+import { getApplicationNow } from '../../../utils/time';
+import type { AccountingService, CanonicalAccountingInput } from '../accounting/service';
+import type { FinanceTransactionsService } from '../transactions/service';
+import { FinanceAuditService } from '../audit/service';
 import {
   InvoiceRepository,
   type FlightBillingContext,
@@ -22,10 +26,17 @@ function sum(values: number[]) {
 }
 
 export class InvoiceService {
+  private readonly audit: FinanceAuditService;
+
   constructor(
     private readonly sqlite: Database.Database,
-    private readonly repository: InvoiceRepository
-  ) {}
+    private readonly repository: InvoiceRepository,
+    private readonly accounting: AccountingService,
+    private readonly financeTransactions: FinanceTransactionsService,
+    private readonly now: () => string = getApplicationNow
+  ) {
+    this.audit = new FinanceAuditService(sqlite, now);
+  }
 
   list(query: InvoiceListQuery): InvoiceSummaryDto[] {
     return this.repository.list(query).map((row) => this.toSummary(row));
@@ -45,7 +56,7 @@ export class InvoiceService {
   finalizeClosedFlight(flightId: string, actorId: string): InvoiceDetailDto {
     const finalize = () => {
       const existing = this.repository.getByFlight(flightId);
-      const handoffTimestamp = new Date().toISOString();
+      const handoffTimestamp = this.now();
       if (existing) {
         this.repository.upsertClosureHandoff(
           `invoice-handoff-${nanoid(10)}`,
@@ -142,6 +153,9 @@ export class InvoiceService {
         tax: taxAmount,
         total: invoiceTotal,
         currency: flight.currencyCode,
+        recognitionMode: lines.every((line) => line.sourceType === 'CHARTER')
+          ? 'AR_ON_ISSUE'
+          : 'BILLING_ONLY',
         actorId,
         timestamp
       });
@@ -181,7 +195,7 @@ export class InvoiceService {
           403
         );
       }
-      const issuedAt = new Date();
+      const issuedAt = new Date(this.now());
       const dueAt = new Date(
         issuedAt.getTime() + (invoice.paymentTermDays ?? 14) * 24 * 60 * 60 * 1000
       );
@@ -194,6 +208,18 @@ export class InvoiceService {
       if (result.changes !== 1) {
         throw new DomainError('INVOICE_APPROVAL_CONFLICT', 'Invoice approval conflicted.', 409);
       }
+      const approved = this.repository.get(id)!;
+      if (approved.recognitionMode === 'AR_ON_ISSUE') {
+        this.postInvoiceAccounting(approved, actorId, issuedAt.toISOString());
+      }
+      this.audit.record({
+        actorId,
+        action: 'CUSTOMER_INVOICE_ISSUED',
+        entityType: 'CUSTOMER_INVOICE',
+        entityId: id,
+        sourceReference: approved.flightOperationId,
+        after: { recognitionMode: approved.recognitionMode }
+      });
       return this.get(id);
     };
     if (this.sqlite.inTransaction) return approve();
@@ -201,52 +227,79 @@ export class InvoiceService {
   }
 
   recordPayment(id: string, input: RecordPaymentBody): PaymentDto {
-    const save = this.sqlite.transaction(() => {
-      const invoice = this.repository.get(id);
-      if (!invoice) throw notFound('Invoice', id);
-      if (!['issued', 'partially_paid', 'overdue'].includes(invoice.status)) {
-        throw new DomainError(
-          'INVOICE_NOT_PAYABLE',
-          'Only an issued invoice with an outstanding balance can receive payment.',
-          409
-        );
-      }
-      const currency = input.currency.toUpperCase();
-      if (currency !== invoice.currency) {
-        throw new DomainError(
-          'FINANCE_CURRENCY_MISMATCH',
-          `Payment currency ${currency} does not match invoice currency ${invoice.currency}.`,
-          422
-        );
-      }
-      const balance = Math.max(invoice.total - invoice.paidAmount, 0);
-      if (input.amount > balance) {
-        throw new DomainError(
-          'INVOICE_PAYMENT_EXCEEDS_BALANCE',
-          'Payment cannot exceed the current invoice balance.',
-          422,
-          { balance, amount: input.amount }
-        );
-      }
-      const payment: PaymentDto = {
-        id: `payment-${nanoid(12)}`,
-        invoiceId: id,
-        amount: input.amount,
-        currency,
-        paidAt: input.paidAt,
-        method: input.method,
-        reference: input.reference
-      };
-      this.repository.insertPayment(payment);
-      const paidAmount = invoice.paidAmount + input.amount;
-      this.repository.updatePaymentStatus(
-        id,
-        paidAmount >= invoice.total ? 'paid' : 'partially_paid',
-        input.paidAt
+    const invoice = this.repository.get(id);
+    if (!invoice) throw notFound('Invoice', id);
+    if (!['issued', 'partially_paid', 'overdue'].includes(invoice.status)) {
+      throw new DomainError(
+        'INVOICE_NOT_PAYABLE',
+        'Only an issued invoice with an outstanding balance can receive payment.',
+        409
       );
-      return payment;
+    }
+    const currency = input.currency.toUpperCase();
+    if (currency !== invoice.currency) {
+      throw new DomainError(
+        'FINANCE_CURRENCY_MISMATCH',
+        `Payment currency ${currency} does not match invoice currency ${invoice.currency}.`,
+        422
+      );
+    }
+    const balance = Math.max(invoice.total - invoice.paidAmount, 0);
+    if (input.amount > balance) {
+      throw new DomainError(
+        'INVOICE_PAYMENT_EXCEEDS_BALANCE',
+        'Payment cannot exceed the current invoice balance.',
+        422,
+        { balance, amount: input.amount }
+      );
+    }
+    const receipt = this.financeTransactions.createReceipt({
+      customerId: invoice.customerId,
+      receiptDate: input.paidAt,
+      currencyCode: currency,
+      amountMinor: input.amount,
+      paymentMethod: input.method.toUpperCase(),
+      cashBankAccountId: 'cash-bank-main',
+      reference: input.reference,
+      createdBy: 'SYSTEM-INVOICE-PAYMENT'
     });
-    return save.immediate();
+    const allocation = this.financeTransactions.allocateReceipt(
+      receipt.id,
+      id,
+      input.amount,
+      'SYSTEM-INVOICE-PAYMENT'
+    );
+    if (allocation.status !== 'POSTED') {
+      throw new DomainError(
+        'RECEIPT_ACCOUNTING_FAILED',
+        'Receipt allocation was not posted.',
+        422,
+        {
+          receiptId: receipt.id,
+          allocationId: allocation.id,
+          exceptionCode: allocation.exceptionCode
+        }
+      );
+    }
+    const payment: PaymentDto = {
+      id: `payment-${nanoid(12)}`,
+      invoiceId: id,
+      amount: input.amount,
+      currency,
+      paidAt: input.paidAt,
+      method: input.method,
+      reference: input.reference
+    };
+    this.repository.insertPayment(payment);
+    this.audit.record({
+      actorId: 'SYSTEM-INVOICE-PAYMENT',
+      action: 'CUSTOMER_PAYMENT_RECORDED',
+      entityType: 'CUSTOMER_INVOICE',
+      entityId: id,
+      sourceReference: allocation.journalEntryId,
+      after: { receiptId: receipt.id, amountMinor: input.amount }
+    });
+    return payment;
   }
 
   private revenueLines(
@@ -292,6 +345,69 @@ export class InvoiceService {
         total: flight.estimatedRevenue + taxAmount
       }
     ];
+  }
+
+  private postInvoiceAccounting(invoice: InvoiceRow, actorId: string, issuedAt: string) {
+    const event = (
+      eventType: string,
+      amountMinor: number,
+      memo: string
+    ): CanonicalAccountingInput => ({
+      eventType,
+      sourceType: 'INVOICE',
+      sourceId: invoice.id,
+      productAccountingProfileId:
+        eventType === 'CHARTER_INVOICE_ISSUED' ? 'pap-charter-invoice' : null,
+      accountingDate: issuedAt.slice(0, 10),
+      transactionDate: issuedAt,
+      documentDate: issuedAt.slice(0, 10),
+      serviceDate: issuedAt.slice(0, 10),
+      amountMinor,
+      currencyId: invoice.currency === 'IDR' ? 'cur-idr' : null,
+      currencyCode: invoice.currency,
+      exchangeRateToIdrMicros: 1_000_000,
+      baseAmountIdr: amountMinor,
+      stationId: null,
+      aircraftId: null,
+      flightId: invoice.flightOperationId,
+      workOrderReference: null,
+      costCenterId: null,
+      payload: { invoiceNumber: invoice.invoiceNumber, recognitionMode: invoice.recognitionMode },
+      memo,
+      idempotencyKey: `finance:${eventType}:INVOICE:${invoice.id}:v1`
+    });
+    const revenue = this.accounting.postCanonicalEvent(
+      event(
+        'CHARTER_INVOICE_ISSUED',
+        invoice.subtotal,
+        `Recognize invoice ${invoice.invoiceNumber}`
+      ),
+      actorId
+    );
+    if (revenue.journalStatus !== 'POSTED') {
+      throw new DomainError(
+        'INVOICE_ACCOUNTING_FAILED',
+        revenue.exceptionMessage ?? 'Invoice revenue posting failed.',
+        422
+      );
+    }
+    if (invoice.tax > 0) {
+      const tax = this.accounting.postCanonicalEvent(
+        event(
+          'CUSTOMER_INVOICE_TAX',
+          invoice.tax,
+          `Recognize output tax for ${invoice.invoiceNumber}`
+        ),
+        actorId
+      );
+      if (tax.journalStatus !== 'POSTED') {
+        throw new DomainError(
+          'INVOICE_TAX_ACCOUNTING_FAILED',
+          tax.exceptionMessage ?? 'Invoice tax posting failed.',
+          422
+        );
+      }
+    }
   }
 
   private sourceLine(
@@ -350,15 +466,33 @@ export class InvoiceService {
         500
       );
     }
+    const financiallyApplicable =
+      row.recognitionMode === 'AR_ON_ISSUE' && !['draft', 'void'].includes(row.status);
     return {
       id: row.id,
       flightOperationId: row.flightOperationId,
       invoiceNumber: row.invoiceNumber,
-      status: row.status,
+      status:
+        row.recognitionMode !== 'AR_ON_ISSUE' || ['draft', 'void'].includes(row.status)
+          ? row.status
+          : row.paidAmount >= row.total
+            ? 'paid'
+            : row.paidAmount > 0
+              ? 'partially_paid'
+              : 'issued',
       subtotal: row.subtotal,
       tax: row.tax,
       total: row.total,
       currency: row.currency,
+      recognitionMode: row.recognitionMode,
+      settlementStatus: !financiallyApplicable
+        ? 'NOT_APPLICABLE'
+        : row.paidAmount <= 0
+          ? 'OPEN'
+          : row.paidAmount >= row.total
+            ? 'SETTLED'
+            : 'PARTIALLY_SETTLED',
+      outstandingAmount: financiallyApplicable ? Math.max(row.total - row.paidAmount, 0) : 0,
       createdByUserId: row.createdByUserId,
       approvedByUserId: row.approvedByUserId,
       approvedAt: row.approvedAt,
@@ -367,7 +501,7 @@ export class InvoiceService {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       paidAmount: row.paidAmount,
-      balanceDue: Math.max(row.total - row.paidAmount, 0),
+      balanceDue: financiallyApplicable ? Math.max(row.total - row.paidAmount, 0) : 0,
       customer: {
         id: row.customerId,
         name: row.customerName,

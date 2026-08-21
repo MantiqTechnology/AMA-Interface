@@ -16,6 +16,7 @@ import type {
 import { DomainError } from '../../../utils/errors';
 import { getApplicationNow } from '../../../utils/time';
 import { AccountingJournalDetailReader } from './journal-detail';
+import { FinanceAuditService } from '../audit/service';
 
 type SqlRow = Record<string, unknown>;
 
@@ -23,6 +24,7 @@ type PolicyRow = {
   id: string;
   policy_code: string;
   policy_name: string;
+  source_module: string | null;
   version: number;
   debit_account_id: string;
   credit_account_id: string;
@@ -85,7 +87,15 @@ export type StationCostAccountingResult = JournalCreateResult & {
   journalStatus: string | null;
 };
 
-type SourceEvent = {
+export type CanonicalAccountingResult = {
+  accountingEventId: string | null;
+  journalEntryId: string | null;
+  journalStatus: string | null;
+  exceptionCode: string | null;
+  exceptionMessage: string | null;
+};
+
+export type CanonicalAccountingInput = {
   eventType: string;
   sourceType: string;
   sourceId: string;
@@ -104,10 +114,13 @@ type SourceEvent = {
   flightId: string | null;
   workOrderReference: string | null;
   costCenterId: string | null;
+  dimensions?: Record<string, string | null | undefined>;
   payload: Record<string, unknown>;
   memo: string;
   idempotencyKey?: string;
 };
+
+type SourceEvent = CanonicalAccountingInput;
 
 const num = (value: unknown) => Number(value ?? 0);
 const str = (value: unknown) => (value === null || value === undefined ? null : String(value));
@@ -116,10 +129,14 @@ const notFoundJournal = (id: string) =>
   new DomainError('NOT_FOUND', `Journal entry ${id} was not found`, 404);
 
 export class AccountingService {
+  private readonly audit: FinanceAuditService;
+
   constructor(
     private readonly sqlite: Database.Database,
     private readonly now: () => string = getApplicationNow
-  ) {}
+  ) {
+    this.audit = new FinanceAuditService(sqlite, now);
+  }
 
   postDemoEvents(
     input: AccountingPostDemoEventsInput,
@@ -183,6 +200,98 @@ export class AccountingService {
     });
     process.immediate();
     return summary;
+  }
+
+  processInventoryEvent(inventoryEventId: string, actorUserId: string): CanonicalAccountingResult {
+    const process = () => {
+      const event = this.inventoryOperationalEvent(inventoryEventId);
+      if (!event) {
+        throw new DomainError(
+          'SOURCE_NOT_READY',
+          `Inventory accounting event ${inventoryEventId} is not ready.`,
+          409
+        );
+      }
+      const result = this.createJournalFromSourceEvent(event, actorUserId, false);
+      this.markInventoryEvent(
+        inventoryEventId,
+        result.exceptionCreated ? 'EXCEPTION' : result.duplicate ? 'DUPLICATE' : 'INTEGRATED'
+      );
+      const chain = this.sqlite
+        .prepare(
+          `SELECT event.id AS accounting_event_id, journal.id AS journal_entry_id,
+                  journal.status AS journal_status, exception.reason_code, exception.message
+           FROM accounting_events event
+           LEFT JOIN journal_entries journal ON journal.accounting_event_id = event.id
+           LEFT JOIN accounting_exceptions exception ON exception.accounting_event_id = event.id
+           WHERE event.event_type = ? AND event.source_type = ? AND event.source_id = ?
+           ORDER BY event.created_at DESC LIMIT 1`
+        )
+        .get(event.eventType, event.sourceType, event.sourceId) as SqlRow | undefined;
+      return {
+        accountingEventId: str(chain?.accounting_event_id),
+        journalEntryId: str(chain?.journal_entry_id),
+        journalStatus: str(chain?.journal_status),
+        exceptionCode: str(chain?.reason_code),
+        exceptionMessage: str(chain?.message)
+      };
+    };
+    return this.sqlite.inTransaction ? process() : this.sqlite.transaction(process).immediate();
+  }
+
+  postCanonicalEvent(
+    event: CanonicalAccountingInput,
+    actorUserId: string
+  ): CanonicalAccountingResult {
+    const post = () => {
+      this.createJournalFromSourceEvent(event, actorUserId, true);
+      const chain = this.sqlite
+        .prepare(
+          `SELECT event.id AS accounting_event_id, journal.id AS journal_entry_id,
+                  journal.status AS journal_status, exception.reason_code, exception.message
+           FROM accounting_events event
+           LEFT JOIN journal_entries journal ON journal.accounting_event_id = event.id
+           LEFT JOIN accounting_exceptions exception
+             ON exception.accounting_event_id = event.id AND exception.status = 'OPEN'
+           WHERE event.event_type = ? AND event.source_type = ? AND event.source_id = ?
+           ORDER BY event.created_at DESC LIMIT 1`
+        )
+        .get(event.eventType, event.sourceType, event.sourceId) as SqlRow | undefined;
+      return {
+        accountingEventId: str(chain?.accounting_event_id),
+        journalEntryId: str(chain?.journal_entry_id),
+        journalStatus: str(chain?.journal_status),
+        exceptionCode: str(chain?.reason_code),
+        exceptionMessage: str(chain?.message)
+      };
+    };
+    return this.sqlite.inTransaction ? post() : this.sqlite.transaction(post).immediate();
+  }
+
+  canonicalLineage(
+    eventType: string,
+    sourceType: string,
+    sourceId: string
+  ): CanonicalAccountingResult {
+    const chain = this.sqlite
+      .prepare(
+        `SELECT event.id AS accounting_event_id, journal.id AS journal_entry_id,
+                journal.status AS journal_status, exception.reason_code, exception.message
+         FROM accounting_events event
+         LEFT JOIN journal_entries journal ON journal.accounting_event_id = event.id
+         LEFT JOIN accounting_exceptions exception
+           ON exception.accounting_event_id = event.id AND exception.status = 'OPEN'
+         WHERE event.event_type = ? AND event.source_type = ? AND event.source_id = ?
+         ORDER BY event.created_at DESC LIMIT 1`
+      )
+      .get(eventType, sourceType, sourceId) as SqlRow | undefined;
+    return {
+      accountingEventId: str(chain?.accounting_event_id),
+      journalEntryId: str(chain?.journal_entry_id),
+      journalStatus: str(chain?.journal_status),
+      exceptionCode: str(chain?.reason_code),
+      exceptionMessage: str(chain?.message)
+    };
   }
 
   listPolicies(query: AccountingListQuery): AccountingPolicyDto[] {
@@ -326,7 +435,7 @@ export class AccountingService {
                 cost.approved_amount, cost.approved_at, cost.approval_snapshot_json,
                 approved_currency.currency_code,
                 service_type.code AS service_type,
-                service.completed_at, flight.flight_date,
+                service.completed_at, flight.flight_date, flight.aircraft_id, flight.route_id,
                 handoff.id AS handoff_id, handoff.snapshot_json AS handoff_snapshot_json
          FROM flight_station_costs cost
          JOIN station_cost_statuses cost_status ON cost_status.id = cost.status_id
@@ -376,10 +485,11 @@ export class AccountingService {
       exchangeRateToIdrMicros: 1_000_000,
       baseAmountIdr: num(row.approved_amount),
       stationId: String(row.station_id),
-      aircraftId: null,
+      aircraftId: str(row.aircraft_id),
       flightId: String(row.flight_id),
       workOrderReference: null,
       costCenterId: String(row.station_id),
+      dimensions: { ROUTE: str(row.route_id) },
       payload: {
         stationCostId,
         sourceServiceId: String(row.source_service_id),
@@ -496,7 +606,12 @@ export class AccountingService {
         "UPDATE journal_entries SET status = 'PENDING_APPROVAL', updated_at = ? WHERE id = ?"
       )
       .run(now, id);
-    void actorUserId;
+    this.audit.record({
+      actorId: actorUserId,
+      action: 'JOURNAL_SUBMITTED',
+      entityType: 'JOURNAL_ENTRY',
+      entityId: id
+    });
     return this.getJournalDto(id);
   }
 
@@ -522,6 +637,12 @@ export class AccountingService {
         "UPDATE journal_entries SET status = 'APPROVED', approved_by_user_id = ?, updated_at = ? WHERE id = ?"
       )
       .run(actorUserId, now, id);
+    this.audit.record({
+      actorId: actorUserId,
+      action: 'JOURNAL_APPROVED',
+      entityType: 'JOURNAL_ENTRY',
+      entityId: id
+    });
     return this.getJournalDto(id);
   }
 
@@ -617,6 +738,13 @@ export class AccountingService {
       );
       throw error;
     }
+    this.audit.record({
+      actorId: actorUserId,
+      action: 'JOURNAL_POSTED',
+      entityType: 'JOURNAL_ENTRY',
+      entityId: id,
+      sourceReference: current.accounting_event_id
+    });
     return this.getJournalDto(id);
   }
 
@@ -639,9 +767,18 @@ export class AccountingService {
         409
       );
     }
-    const postingDate = input.postingDate ?? dateOnly(this.now());
-    const periodId = this.openPeriodId(postingDate);
     const now = this.now();
+    const postingDate = input.postingDate ?? dateOnly(now);
+    const originalPostingDate = dateOnly(original.posting_date ?? original.transaction_date);
+    if (postingDate < originalPostingDate || postingDate > dateOnly(now)) {
+      throw new DomainError(
+        'REVERSAL_DATE_INVALID',
+        `Reversal date must be between ${originalPostingDate} and ${dateOnly(now)}.`,
+        422
+      );
+    }
+    this.assertSourceReversalAllowed(original);
+    const periodId = this.openPeriodId(postingDate);
     const reversalEventId = `acct-event-${nanoid(12)}`;
     const reversalJournalId = `journal-${nanoid(12)}`;
     const total = this.journalAmount(id);
@@ -773,9 +910,145 @@ export class AccountingService {
              )`
         )
         .run(id);
+      this.reverseSettlementProjection(original, reversalJournalId, postingDate, postedAt);
     });
     reverse.immediate();
+    this.audit.record({
+      actorId: actorUserId,
+      action: 'JOURNAL_REVERSED',
+      entityType: 'JOURNAL_ENTRY',
+      entityId: id,
+      reason: input.reason,
+      sourceReference: reversalJournalId,
+      after: { reversalJournalId }
+    });
     return this.getJournalDto(reversalJournalId);
+  }
+
+  private assertSourceReversalAllowed(original: JournalRow) {
+    if (original.source_type === 'INVOICE') {
+      const allocationCount = num(
+        (
+          this.sqlite
+            .prepare(
+              "SELECT COUNT(*) AS count FROM ar_allocations WHERE invoice_id = ? AND status = 'POSTED'"
+            )
+            .get(original.source_id) as SqlRow
+        ).count
+      );
+      if (allocationCount > 0) {
+        throw new DomainError(
+          'INVOICE_REVERSAL_BLOCKED',
+          'Reverse all posted receipt allocations before reversing invoice recognition.',
+          409
+        );
+      }
+      const activeRecognitionCount = num(
+        (
+          this.sqlite
+            .prepare(
+              `SELECT COUNT(*) AS count
+        FROM journal_entries journal
+        WHERE journal.source_type = 'INVOICE' AND journal.source_id = ? AND journal.status = 'POSTED'
+          AND NOT EXISTS (SELECT 1 FROM journal_entries reversal
+            WHERE reversal.reversal_of_journal_entry_id = journal.id AND reversal.status = 'POSTED')`
+            )
+            .get(original.source_id) as SqlRow
+        ).count
+      );
+      if (activeRecognitionCount > 1) {
+        throw new DomainError(
+          'INVOICE_REVERSAL_REQUIRES_COMPLETE_SET',
+          'This invoice has multiple recognition journals; use a controlled credit note or grouped correction.',
+          409
+        );
+      }
+    }
+    if (original.source_type === 'SUPPLIER_INVOICE') {
+      const paymentCount = num(
+        (
+          this.sqlite
+            .prepare(
+              `SELECT COUNT(*) AS count
+        FROM supplier_payment_requests
+        WHERE supplier_invoice_id = ? AND status = 'EXECUTED' AND reversal_journal_id IS NULL`
+            )
+            .get(original.source_id) as SqlRow
+        ).count
+      );
+      if (paymentCount > 0) {
+        throw new DomainError(
+          'SUPPLIER_INVOICE_REVERSAL_BLOCKED',
+          'Reverse all executed supplier payments before reversing invoice recognition.',
+          409
+        );
+      }
+    }
+  }
+
+  private reverseSettlementProjection(
+    original: SqlRow,
+    reversalJournalId: string,
+    reversalDate: string,
+    updatedAt: string
+  ) {
+    if (original.source_type === 'AR_ALLOCATION') {
+      const allocation = this.sqlite
+        .prepare(
+          'SELECT receipt_id FROM ar_allocations WHERE id = ? AND journal_id = ? AND status = ?'
+        )
+        .get(original.source_id, original.id, 'POSTED') as { receipt_id: string } | undefined;
+      if (!allocation) return;
+      this.sqlite
+        .prepare("UPDATE ar_allocations SET status = 'REVERSED', updated_at = ? WHERE id = ?")
+        .run(updatedAt, original.source_id);
+      const receipt = this.sqlite
+        .prepare(
+          `SELECT receipt.amount_minor,
+        COALESCE(SUM(CASE WHEN allocation.status='POSTED' THEN allocation.amount_minor ELSE 0 END),0) allocated
+        FROM customer_receipts receipt LEFT JOIN ar_allocations allocation ON allocation.receipt_id=receipt.id
+        WHERE receipt.id=? GROUP BY receipt.id`
+        )
+        .get(allocation.receipt_id) as SqlRow;
+      const allocated = num(receipt.allocated);
+      const status =
+        allocated <= 0
+          ? 'UNALLOCATED'
+          : allocated >= num(receipt.amount_minor)
+            ? 'ALLOCATED'
+            : 'PARTIALLY_ALLOCATED';
+      this.sqlite
+        .prepare(
+          'UPDATE customer_receipts SET status = ?, error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?'
+        )
+        .run(status, updatedAt, allocation.receipt_id);
+      return;
+    }
+    if (original.source_type === 'PAYMENT_REQUEST') {
+      this.sqlite
+        .prepare(
+          `UPDATE supplier_payment_requests
+        SET reversal_journal_id = ?, reversed_at = ?, updated_at = ?
+        WHERE id = ? AND journal_id = ? AND status = 'EXECUTED' AND reversal_journal_id IS NULL`
+        )
+        .run(reversalJournalId, reversalDate, updatedAt, original.source_id, original.id);
+      return;
+    }
+    if (original.source_type === 'INVOICE') {
+      this.sqlite
+        .prepare(
+          "UPDATE invoices SET status = 'void', updated_at = ? WHERE id = ? AND recognition_mode = 'AR_ON_ISSUE'"
+        )
+        .run(updatedAt, original.source_id);
+      return;
+    }
+    if (original.source_type === 'SUPPLIER_INVOICE') {
+      this.sqlite
+        .prepare(
+          "UPDATE supplier_invoices SET lifecycle_status = 'VOID', updated_at = ? WHERE id = ? AND lifecycle_status = 'AP_OPEN'"
+        )
+        .run(updatedAt, original.source_id);
+    }
   }
 
   private createJournalFromSourceEvent(
@@ -785,20 +1058,42 @@ export class AccountingService {
   ): JournalCreateResult {
     const idempotencyKey =
       event.idempotencyKey ?? `${event.eventType}:${event.sourceType}:${event.sourceId}`;
-    if (this.existsByIdempotency(idempotencyKey)) {
+    const existing = this.sqlite
+      .prepare(
+        `SELECT id, event_type, source_type, source_id,
+      posting_status, journal_entry_id FROM accounting_events
+      WHERE idempotency_key = ? OR (event_type = ? AND source_type = ? AND source_id = ?)
+      ORDER BY CASE WHEN event_type = ? AND source_type = ? AND source_id = ? THEN 0 ELSE 1 END
+      LIMIT 1`
+      )
+      .get(
+        idempotencyKey,
+        event.eventType,
+        event.sourceType,
+        event.sourceId,
+        event.eventType,
+        event.sourceType,
+        event.sourceId
+      ) as SqlRow | undefined;
+    const retryEventId =
+      existing &&
+      existing.event_type === event.eventType &&
+      existing.source_type === event.sourceType &&
+      existing.source_id === event.sourceId &&
+      existing.posting_status === 'EXCEPTION' &&
+      !existing.journal_entry_id
+        ? String(existing.id)
+        : null;
+    if (existing && !retryEventId) {
       return { eventCreated: false, journalPosted: false, skipped: true, duplicate: true };
     }
-    if (this.existsBySource(event.eventType, event.sourceType, event.sourceId)) {
-      return { eventCreated: false, journalPosted: false, skipped: true, duplicate: true };
-    }
+    const persistEvent = (policy: PolicyRow | null, status: 'DRAFT' | 'EXCEPTION') =>
+      retryEventId
+        ? this.updateAccountingEventForRetry(retryEventId, event, policy, status)
+        : this.insertAccountingEvent(event, idempotencyKey, policy, status);
     const conditionProblem = this.validatePolicyConditions(event);
     if (conditionProblem) {
-      const accountingEventId = this.insertAccountingEvent(
-        event,
-        idempotencyKey,
-        null,
-        'EXCEPTION'
-      );
+      const accountingEventId = persistEvent(null, 'EXCEPTION');
       this.recordException(
         accountingEventId,
         event,
@@ -810,27 +1105,18 @@ export class AccountingService {
     const policyResult = this.resolvePolicy(
       event.eventType,
       event.accountingDate,
-      event.productAccountingProfileId
+      event.productAccountingProfileId,
+      this.sourceModuleFor(event)
     );
     if (policyResult.reason) {
-      const accountingEventId = this.insertAccountingEvent(
-        event,
-        idempotencyKey,
-        null,
-        'EXCEPTION'
-      );
+      const accountingEventId = persistEvent(null, 'EXCEPTION');
       this.recordException(accountingEventId, event, policyResult.reason, policyResult.message);
       return { eventCreated: true, journalPosted: false, skipped: true, exceptionCreated: true };
     }
     const policy = policyResult.policy!;
     const inventoryCreditConflict = this.inventoryCreditConflict(event);
     if (inventoryCreditConflict) {
-      const accountingEventId = this.insertAccountingEvent(
-        event,
-        idempotencyKey,
-        policy,
-        'EXCEPTION'
-      );
+      const accountingEventId = persistEvent(policy, 'EXCEPTION');
       this.recordException(
         accountingEventId,
         event,
@@ -841,12 +1127,7 @@ export class AccountingService {
     }
     const missingDimension = this.missingRequiredDimension(policy, event);
     if (missingDimension) {
-      const accountingEventId = this.insertAccountingEvent(
-        event,
-        idempotencyKey,
-        policy,
-        'EXCEPTION'
-      );
+      const accountingEventId = persistEvent(policy, 'EXCEPTION');
       this.recordException(
         accountingEventId,
         event,
@@ -856,12 +1137,7 @@ export class AccountingService {
       return { eventCreated: true, journalPosted: false, skipped: true, exceptionCreated: true };
     }
     if (!this.accountsArePostable(policy.debit_account_id, policy.credit_account_id)) {
-      const accountingEventId = this.insertAccountingEvent(
-        event,
-        idempotencyKey,
-        policy,
-        'EXCEPTION'
-      );
+      const accountingEventId = persistEvent(policy, 'EXCEPTION');
       this.recordException(
         accountingEventId,
         event,
@@ -874,12 +1150,7 @@ export class AccountingService {
     try {
       periodId = this.openPeriodId(event.accountingDate);
     } catch (error) {
-      const accountingEventId = this.insertAccountingEvent(
-        event,
-        idempotencyKey,
-        policy,
-        'EXCEPTION'
-      );
+      const accountingEventId = persistEvent(policy, 'EXCEPTION');
       this.recordException(
         accountingEventId,
         event,
@@ -888,7 +1159,14 @@ export class AccountingService {
       );
       return { eventCreated: true, journalPosted: false, skipped: true, exceptionCreated: true };
     }
-    const accountingEventId = this.insertAccountingEvent(event, idempotencyKey, policy, 'DRAFT');
+    const accountingEventId = persistEvent(policy, 'DRAFT');
+    if (retryEventId) {
+      this.sqlite
+        .prepare(
+          "UPDATE accounting_exceptions SET status = 'RESOLVED', updated_at = ? WHERE accounting_event_id = ? AND status = 'OPEN'"
+        )
+        .run(this.now(), accountingEventId);
+    }
     const journalEntryId = this.insertDraftJournal(
       event,
       accountingEventId,
@@ -898,7 +1176,7 @@ export class AccountingService {
     );
     this.insertLine(journalEntryId, 1, policy.debit_account_id, event.amountMinor, 0, event);
     this.insertLine(journalEntryId, 2, policy.credit_account_id, 0, event.amountMinor, event);
-    if (!autoPost) return { eventCreated: true, journalPosted: false, skipped: false };
+    if (!autoPost) return { eventCreated: !retryEventId, journalPosted: false, skipped: false };
     const postedAt = this.now();
     try {
       this.sqlite
@@ -928,7 +1206,83 @@ export class AccountingService {
     if (policy.capitalization_candidate) {
       this.createAssetRegister(journalEntryId, event, policy.debit_account_id);
     }
-    return { eventCreated: true, journalPosted: true, skipped: false };
+    this.audit.record({
+      actorId: actorUserId,
+      action: 'JOURNAL_POSTED',
+      entityType: 'JOURNAL_ENTRY',
+      entityId: journalEntryId,
+      sourceReference: accountingEventId,
+      after: { eventType: event.eventType, sourceType: event.sourceType, sourceId: event.sourceId }
+    });
+    return { eventCreated: !retryEventId, journalPosted: true, skipped: false };
+  }
+
+  private updateAccountingEventForRetry(
+    accountingEventId: string,
+    event: SourceEvent,
+    policy: PolicyRow | null,
+    status: 'DRAFT' | 'EXCEPTION'
+  ) {
+    const updatedAt = this.now();
+    this.sqlite
+      .prepare(
+        `UPDATE accounting_events SET
+      product_accounting_profile_id = ?, policy_id = ?, policy_code = ?, policy_version = ?,
+      accounting_date = ?, transaction_date = ?, document_date = ?, service_date = ?,
+      amount_minor = ?, currency_id = ?, currency_code = ?, exchange_rate_to_idr_micros = ?,
+      base_amount_idr = ?, posting_status = ?, journal_entry_id = NULL, station_id = ?,
+      aircraft_id = ?, flight_id = ?, work_order_reference = ?, cost_center_id = ?,
+      payload_json = ?, updated_at = ? WHERE id = ?`
+      )
+      .run(
+        event.productAccountingProfileId,
+        policy?.id ?? null,
+        policy?.policy_code ?? null,
+        policy?.version ?? null,
+        event.accountingDate,
+        event.transactionDate,
+        event.documentDate,
+        event.serviceDate,
+        event.amountMinor,
+        event.currencyId,
+        event.currencyCode,
+        event.exchangeRateToIdrMicros,
+        event.baseAmountIdr,
+        status,
+        event.stationId,
+        event.aircraftId,
+        event.flightId,
+        event.workOrderReference,
+        event.costCenterId,
+        JSON.stringify({
+          ...event.payload,
+          accountingPolicySnapshot: policy
+            ? {
+                policyId: policy.id,
+                policyCode: policy.policy_code,
+                policyName: policy.policy_name,
+                policyVersion: policy.version,
+                treatment: policy.treatment,
+                capitalizationCandidate: Boolean(policy.capitalization_candidate),
+                debitAccountId: policy.debit_account_id,
+                creditAccountId: policy.credit_account_id,
+                priority: policy.priority,
+                effectiveFrom: policy.effective_from,
+                effectiveTo: policy.effective_to,
+                approvalStatus: policy.approval_status
+              }
+            : null
+        }),
+        updatedAt,
+        accountingEventId
+      );
+    this.sqlite
+      .prepare(
+        "DELETE FROM financial_dimension_values WHERE owner_type = 'ACCOUNTING_EVENT' AND owner_id = ?"
+      )
+      .run(accountingEventId);
+    this.persistDimensions('ACCOUNTING_EVENT', accountingEventId, event);
+    return accountingEventId;
   }
 
   private insertAccountingEvent(
@@ -999,6 +1353,7 @@ export class AccountingService {
         createdAt,
         createdAt
       );
+    this.persistDimensions('ACCOUNTING_EVENT', accountingEventId, event);
     return accountingEventId;
   }
 
@@ -1290,7 +1645,7 @@ export class AccountingService {
   private ticketingEvents(): SourceEvent[] {
     const passengerRows = this.sqlite
       .prepare(
-        `SELECT ticket.*, flight.origin_station_id, flight.aircraft_id
+        `SELECT ticket.*, flight.origin_station_id, flight.aircraft_id, flight.route_id
          FROM passenger_tickets ticket
          JOIN flight_operations flight ON flight.id = ticket.flight_operation_id
          WHERE ticket.payment_status = 'PAID'
@@ -1299,7 +1654,7 @@ export class AccountingService {
       .all() as SqlRow[];
     const cargoRows = this.sqlite
       .prepare(
-        `SELECT booking.*, flight.origin_station_id, flight.aircraft_id
+        `SELECT booking.*, flight.origin_station_id, flight.aircraft_id, flight.route_id
          FROM cargo_bookings booking
          JOIN flight_operations flight ON flight.id = booking.flight_operation_id
          WHERE booking.payment_status = 'PAID'
@@ -1308,7 +1663,7 @@ export class AccountingService {
       .all() as SqlRow[];
     const refundRows = this.sqlite
       .prepare(
-        `SELECT refund.*, flight.origin_station_id, flight.aircraft_id
+        `SELECT refund.*, flight.origin_station_id, flight.aircraft_id, flight.route_id
          FROM ticketing_refund_requests refund
          JOIN flight_operations flight ON flight.id = refund.flight_operation_id
          WHERE refund.status = 'APPROVED'
@@ -1340,6 +1695,7 @@ export class AccountingService {
         flightId: String(row.flight_operation_id),
         workOrderReference: null,
         costCenterId: str(row.origin_station_id),
+        dimensions: { ROUTE: str(row.route_id) },
         payload: { subjectType: row.subject_type },
         memo: `Approved ${String(row.subject_type).toLowerCase()} ticket refund`
       }))
@@ -1429,6 +1785,7 @@ export class AccountingService {
       flightId: String(row.flight_operation_id),
       workOrderReference: null,
       costCenterId: str(row.origin_station_id),
+      dimensions: { ROUTE: str(row.route_id) },
       payload: { paymentMethod: row.payment_method },
       memo: `${sourceType.replace('_', ' ').toLowerCase()} payment received`
     };
@@ -1439,6 +1796,7 @@ export class AccountingService {
       .prepare(
         `SELECT flight.id AS flight_id, flight.actual_arrival_at, flight.flight_date,
                 flight.origin_station_id, flight.aircraft_id, flight.currency_code,
+                flight.route_id,
                 SUM(ticket.${amountColumn}) AS amount
          FROM ${table} ticket
          JOIN flight_operations flight ON flight.id = ticket.flight_operation_id
@@ -1472,6 +1830,7 @@ export class AccountingService {
       flightId: String(row.flight_id),
       workOrderReference: null,
       costCenterId: str(row.origin_station_id),
+      dimensions: { ROUTE: str(row.route_id) },
       payload: { profileId },
       memo: `Recognize ${profileId === 'pap-cargo-booking' ? 'cargo' : 'passenger'} revenue at flight completion`
     };
@@ -1562,21 +1921,36 @@ export class AccountingService {
     return null;
   }
 
-  private resolvePolicy(eventType: string, accountingDate: string, profileId: string | null) {
+  private resolvePolicy(
+    eventType: string,
+    accountingDate: string,
+    profileId: string | null,
+    sourceModule: string
+  ) {
     const rows = this.sqlite
       .prepare(
         `SELECT * FROM accounting_policies
          WHERE event_type = ?
+           AND (source_module IS NULL OR source_module = ?)
            AND approval_status = 'APPROVED'
            AND is_active = 1
            AND effective_from <= ?
            AND (effective_to IS NULL OR effective_to >= ?)
            AND (product_accounting_profile_id IS NULL OR product_accounting_profile_id IS ?)
-         ORDER BY priority ASC,
+         ORDER BY CASE WHEN source_module = ? THEN 0 ELSE 1 END,
+                  priority ASC,
                   CASE WHEN product_accounting_profile_id IS ? THEN 0 ELSE 1 END,
                   version DESC, effective_from DESC`
       )
-      .all(eventType, accountingDate, accountingDate, profileId, profileId) as PolicyRow[];
+      .all(
+        eventType,
+        sourceModule,
+        accountingDate,
+        accountingDate,
+        profileId,
+        profileId,
+        sourceModule
+      ) as PolicyRow[];
     if (!rows.length) {
       return {
         policy: null,
@@ -1597,6 +1971,29 @@ export class AccountingService {
       };
     }
     return { policy: first, reason: null, message: null };
+  }
+
+  private sourceModuleFor(event: SourceEvent) {
+    if (
+      [
+        'INVENTORY_RECEIVED',
+        'MAINTENANCE_PART_ISSUED',
+        'AIRCRAFT_COMPONENT_READY_FOR_USE'
+      ].includes(event.eventType)
+    ) {
+      return 'INVENTORY';
+    }
+    if (event.eventType.startsWith('STATION_') || event.eventType === 'FLIGHT_COMPLETED_REVENUE') {
+      return 'FLIGHT_OPERATIONS';
+    }
+    if (
+      ['TICKET_PAYMENT_RECEIVED', 'TICKET_REFUND_APPROVED', 'PASSENGER_SERVICE_FULFILLED'].includes(
+        event.eventType
+      )
+    ) {
+      return 'TICKETING';
+    }
+    return 'FINANCE';
   }
 
   private missingRequiredDimension(policy: PolicyRow, event: SourceEvent) {
@@ -1674,10 +2071,16 @@ export class AccountingService {
     const now = this.now();
     this.sqlite
       .prepare(
-        `INSERT OR IGNORE INTO accounting_exceptions (
+        `INSERT INTO accounting_exceptions (
           id, accounting_event_id, event_type, source_type, source_id, reason_code,
           message, context_snapshot_json, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)
+        ON CONFLICT(event_type, source_type, source_id, reason_code) DO UPDATE SET
+          accounting_event_id = excluded.accounting_event_id,
+          message = excluded.message,
+          context_snapshot_json = excluded.context_snapshot_json,
+          status = 'OPEN',
+          updated_at = excluded.updated_at`
       )
       .run(
         `acct-exception-${nanoid(12)}`,
@@ -1719,6 +2122,7 @@ export class AccountingService {
     creditMinor: number,
     event: SourceEvent
   ) {
+    const journalLineId = `journal-line-${nanoid(12)}`;
     this.sqlite
       .prepare(
         `INSERT INTO journal_lines (
@@ -1728,7 +2132,7 @@ export class AccountingService {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        `journal-line-${nanoid(12)}`,
+        journalLineId,
         journalEntryId,
         lineNumber,
         accountId,
@@ -1743,6 +2147,38 @@ export class AccountingService {
         event.costCenterId,
         event.memo
       );
+    this.persistDimensions('JOURNAL_LINE', journalLineId, event);
+  }
+
+  private persistDimensions(
+    ownerType: 'ACCOUNTING_EVENT' | 'JOURNAL_LINE' | 'FINANCE_HANDOFF',
+    ownerId: string,
+    event: SourceEvent
+  ) {
+    const dimensions = {
+      FLIGHT: event.flightId,
+      AIRCRAFT: event.aircraftId,
+      STATION: event.stationId,
+      COST_CENTER: event.costCenterId,
+      WORK_PACKAGE: event.workOrderReference,
+      ...event.dimensions
+    };
+    const insert = this.sqlite.prepare(
+      `INSERT OR REPLACE INTO financial_dimension_values (
+        id, owner_type, owner_id, dimension_type, dimension_value, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`
+    );
+    for (const [dimensionType, dimensionValue] of Object.entries(dimensions)) {
+      if (!dimensionValue) continue;
+      insert.run(
+        `dimension-${nanoid(12)}`,
+        ownerType,
+        ownerId,
+        dimensionType,
+        dimensionValue,
+        this.now()
+      );
+    }
   }
 
   private createAssetRegister(journalEntryId: string, event: SourceEvent, assetAccountId: string) {

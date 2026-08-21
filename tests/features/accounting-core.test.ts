@@ -309,7 +309,7 @@ describe('policy-driven accounting core', () => {
 
     const reversal = services.accounting.reverseJournal(
       'journal-draft-test',
-      { reason: 'Correction', postingDate: '2026-07-01' },
+      { reason: 'Correction' },
       'USR-CHECKER'
     );
     expect(reversal.sourceType).toBe('JOURNAL_ENTRY');
@@ -324,10 +324,41 @@ describe('policy-driven accounting core', () => {
     expect(() =>
       services.accounting.reverseJournal(
         'journal-draft-test',
-        { reason: 'Duplicate correction', postingDate: '2026-07-01' },
+        { reason: 'Duplicate correction' },
         'USR-CHECKER'
       )
     ).toThrow(/already has a reversal/u);
+  });
+
+  it('rejects reversal dates before the original posting date or after the application date', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    insertDraftJournal(sqlite);
+    services.accounting.submitJournal('journal-draft-test', 'USR-MAKER');
+    services.accounting.approveJournal('journal-draft-test', 'USR-CHECKER');
+    services.accounting.postJournal('journal-draft-test', 'USR-POSTER');
+
+    expect(() =>
+      services.accounting.reverseJournal(
+        'journal-draft-test',
+        { reason: 'Predated reversal', postingDate: '2020-01-01' },
+        'USR-CHECKER'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'REVERSAL_DATE_INVALID' }));
+    expect(() =>
+      services.accounting.reverseJournal(
+        'journal-draft-test',
+        { reason: 'Future reversal', postingDate: '2099-01-01' },
+        'USR-CHECKER'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'REVERSAL_DATE_INVALID' }));
+    expect(
+      sqlite
+        .prepare(
+          'SELECT COUNT(*) AS count FROM journal_entries WHERE reversal_of_journal_entry_id = ?'
+        )
+        .get('journal-draft-test')
+    ).toEqual({ count: 0 });
+    sqlite.close();
   });
 
   it('preserves foreign-currency base amounts in reversal lines', async () => {
@@ -354,7 +385,7 @@ describe('policy-driven accounting core', () => {
     services.accounting.postJournal('journal-draft-test', 'USR-POSTER');
     const reversal = services.accounting.reverseJournal(
       'journal-draft-test',
-      { reason: 'FX correction', postingDate: '2026-07-01' },
+      { reason: 'FX correction' },
       'USR-CHECKER'
     );
 

@@ -1,5 +1,9 @@
 import type Database from 'better-sqlite3';
 import type {
+  AviationProfitabilityDto,
+  AviationProfitabilityEvidenceDto,
+  AviationProfitabilityUnitDto,
+  BalanceSheetDto,
   FinanceActionDto,
   FinanceBusinessLineDto,
   FinanceDashboardDto,
@@ -9,6 +13,8 @@ import type {
   FinanceReportingQuery,
   FinanceRouteRevenueDto,
   FinanceTrialBalanceDto,
+  FinancialStatementAccountDto,
+  ProfitAndLossDto,
   TrialBalanceAccountDto
 } from '../../../../shared/features/finance/reporting';
 import { DomainError } from '../../../utils/errors';
@@ -18,39 +24,9 @@ type SqlRow = Record<string, unknown>;
 
 const amount = (value: unknown) => Math.trunc(Number(value ?? 0));
 
-function percentChange(current: number, previous: number) {
-  if (previous === 0) return null;
-  return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
-}
-
-function direction(change: number | null): FinanceMetricDto['direction'] {
-  if (change === null) return 'NOT_AVAILABLE';
-  if (change > 0) return 'UP';
-  if (change < 0) return 'DOWN';
-  return 'FLAT';
-}
-
 function grossMargin(revenue: number, cost: number) {
   if (revenue === 0) return null;
   return Math.round(((revenue - cost) / revenue) * 1000) / 10;
-}
-
-function allocateMinor(total: number, weights: number[]) {
-  const zero = BigInt(0);
-  const safeTotal = BigInt(Math.max(0, Math.trunc(total)));
-  const safeWeights = weights.map((value) => BigInt(Math.max(0, Math.trunc(value))));
-  const weightTotal = safeWeights.reduce((sum, value) => sum + value, zero);
-  if (safeTotal === zero || weightTotal === zero) return weights.map(() => 0);
-
-  const shares = safeWeights.map((weight) => (safeTotal * weight) / weightTotal);
-  const allocated = shares.reduce((sum, value) => sum + value, zero);
-  const remainder = safeTotal - allocated;
-  const largestIndex = safeWeights.reduce(
-    (best, value, index) => (value > (safeWeights[best] ?? zero) ? index : best),
-    0
-  );
-  shares[largestIndex] = (shares[largestIndex] ?? zero) + remainder;
-  return shares.map(Number);
 }
 
 export class FinanceReportingService {
@@ -74,6 +50,267 @@ export class FinanceReportingService {
                   start_date`
       )
       .all({ date: this.now().slice(0, 10) }) as FinanceReportingPeriodDto[];
+  }
+
+  profitAndLoss(query: FinanceReportingQuery): ProfitAndLossDto {
+    const period = this.resolvePeriod(query.period);
+    const rows = this.sqlite
+      .prepare(
+        `SELECT account.account_code, account.account_name,
+        account.account_type, SUM(line.base_debit_idr) AS debit_minor,
+        SUM(line.base_credit_idr) AS credit_minor
+      FROM journal_lines line
+      JOIN journal_entries journal ON journal.id = line.journal_entry_id
+      JOIN chart_of_accounts account ON account.id = line.account_id
+      WHERE journal.status = 'POSTED'
+        AND journal.posting_date BETWEEN @startDate AND @endDate
+        AND account.account_type IN ('REVENUE', 'EXPENSE')
+      GROUP BY account.id ORDER BY account.account_code`
+      )
+      .all({
+        startDate: period.startDate,
+        endDate: `${period.endDate}T23:59:59.999Z`
+      }) as SqlRow[];
+    const lines: FinancialStatementAccountDto[] = rows.map((row) => ({
+      accountCode: String(row.account_code),
+      accountName: String(row.account_name),
+      accountType: this.accountType(row.account_type),
+      amountMinor:
+        row.account_type === 'REVENUE'
+          ? amount(row.credit_minor) - amount(row.debit_minor)
+          : amount(row.debit_minor) - amount(row.credit_minor),
+      source: 'POSTED_GL'
+    }));
+    const revenueMinor = lines
+      .filter((line) => line.accountType === 'REVENUE')
+      .reduce((sum, line) => sum + line.amountMinor, 0);
+    const directOperatingExpense = lines
+      .filter((line) => line.accountType === 'EXPENSE' && /^5[1-5]/u.test(line.accountCode))
+      .reduce((sum, line) => sum + line.amountMinor, 0);
+    const otherOperatingExpense = lines
+      .filter((line) => line.accountType === 'EXPENSE' && !/^5[1-5]/u.test(line.accountCode))
+      .reduce((sum, line) => sum + line.amountMinor, 0);
+    const expenseMinor = directOperatingExpense + otherOperatingExpense;
+    return {
+      period,
+      currencyCode: 'IDR',
+      lines,
+      sections: [
+        { code: 'REVENUE', label: 'Revenue', amountMinor: revenueMinor },
+        {
+          code: 'DIRECT_OPERATING_EXPENSE',
+          label: 'Direct Operating Expense',
+          amountMinor: directOperatingExpense
+        },
+        {
+          code: 'OTHER_OPERATING_EXPENSE',
+          label: 'Other Operating Expense',
+          amountMinor: otherOperatingExpense
+        }
+      ],
+      totals: { revenueMinor, expenseMinor, profitLossMinor: revenueMinor - expenseMinor },
+      asOf: this.now()
+    };
+  }
+
+  balanceSheet(query: FinanceReportingQuery): BalanceSheetDto {
+    const period = this.resolvePeriod(query.period);
+    const rows = this.sqlite
+      .prepare(
+        `SELECT account.account_code, account.account_name,
+        account.account_type, SUM(line.base_debit_idr) AS debit_minor,
+        SUM(line.base_credit_idr) AS credit_minor
+      FROM journal_lines line
+      JOIN journal_entries journal ON journal.id = line.journal_entry_id
+      JOIN chart_of_accounts account ON account.id = line.account_id
+      WHERE journal.status = 'POSTED' AND journal.posting_date <= @endDate
+      GROUP BY account.id ORDER BY account.account_code`
+      )
+      .all({
+        endDate: `${period.endDate}T23:59:59.999Z`
+      }) as SqlRow[];
+    const statementRows = rows.filter((row) =>
+      ['ASSET', 'LIABILITY', 'EQUITY'].includes(String(row.account_type))
+    );
+    const accounts: FinancialStatementAccountDto[] = statementRows.map((row) => ({
+      accountCode: String(row.account_code),
+      accountName: String(row.account_name),
+      accountType: this.accountType(row.account_type),
+      amountMinor:
+        row.account_type === 'ASSET'
+          ? amount(row.debit_minor) - amount(row.credit_minor)
+          : amount(row.credit_minor) - amount(row.debit_minor),
+      source: 'POSTED_GL'
+    }));
+    const currentEarningsMinor =
+      rows
+        .filter((row) => row.account_type === 'REVENUE')
+        .reduce((sum, row) => sum + amount(row.credit_minor) - amount(row.debit_minor), 0) -
+      rows
+        .filter((row) => row.account_type === 'EXPENSE')
+        .reduce((sum, row) => sum + amount(row.debit_minor) - amount(row.credit_minor), 0);
+    const assets = accounts.filter((line) => line.accountType === 'ASSET');
+    const liabilities = accounts.filter((line) => line.accountType === 'LIABILITY');
+    const equityAccounts = accounts.filter((line) => line.accountType === 'EQUITY');
+    const assetsMinor = assets.reduce((sum, line) => sum + line.amountMinor, 0);
+    const liabilitiesMinor = liabilities.reduce((sum, line) => sum + line.amountMinor, 0);
+    const equityMinor =
+      equityAccounts.reduce((sum, line) => sum + line.amountMinor, 0) + currentEarningsMinor;
+    const differenceMinor = assetsMinor - liabilitiesMinor - equityMinor;
+    return {
+      period,
+      currencyCode: 'IDR',
+      currentEarningsMinor,
+      sections: [
+        { code: 'ASSETS', label: 'Assets', amountMinor: assetsMinor, accounts: assets },
+        {
+          code: 'LIABILITIES',
+          label: 'Liabilities',
+          amountMinor: liabilitiesMinor,
+          accounts: liabilities
+        },
+        { code: 'EQUITY', label: 'Equity', amountMinor: equityMinor, accounts: equityAccounts }
+      ],
+      totals: {
+        assetsMinor,
+        liabilitiesMinor,
+        equityMinor,
+        differenceMinor,
+        balanced: differenceMinor === 0
+      },
+      asOf: this.now()
+    };
+  }
+
+  aviationProfitability(query: FinanceReportingQuery): AviationProfitabilityDto {
+    const period = this.resolvePeriod(query.period);
+    const conditions = [
+      "journal.status = 'POSTED'",
+      'journal.posting_date BETWEEN @startDate AND @endDate',
+      "account.account_type IN ('REVENUE', 'EXPENSE')",
+      'line.flight_id IS NOT NULL'
+    ];
+    const params: Record<string, unknown> = {
+      startDate: period.startDate,
+      endDate: `${period.endDate}T23:59:59.999Z`
+    };
+    for (const [key, column] of [
+      ['flightId', 'line.flight_id'],
+      ['aircraftId', 'line.aircraft_id'],
+      ['stationId', 'line.station_id'],
+      ['routeId', 'flight.route_id']
+    ] as const) {
+      if (query[key]) {
+        conditions.push(`${column} = @${key}`);
+        params[key] = query[key];
+      }
+    }
+    const rows = this.sqlite
+      .prepare(
+        `SELECT line.id AS journal_line_id, line.flight_id,
+        line.station_id, line.aircraft_id, line.base_debit_idr, line.base_credit_idr,
+        account.account_code, account.account_name, account.account_type,
+        journal.id AS journal_id, journal.journal_number,
+        event.id AS accounting_event_id, event.event_type, event.source_type, event.source_id,
+        flight.flight_number, flight.route_id,
+        origin.station_code || ' - ' || destination.station_code AS route_label,
+        COALESCE(station.station_code, line.station_id) AS station_label
+      FROM journal_lines line
+      JOIN journal_entries journal ON journal.id = line.journal_entry_id
+      JOIN accounting_events event ON event.id = journal.accounting_event_id
+      JOIN chart_of_accounts account ON account.id = line.account_id
+      LEFT JOIN flight_operations flight ON flight.id = line.flight_id
+      LEFT JOIN routes route ON route.id = flight.route_id
+      LEFT JOIN stations origin ON origin.id = route.origin_station_id
+      LEFT JOIN stations destination ON destination.id = route.destination_station_id
+      LEFT JOIN stations station ON station.id = line.station_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY flight.flight_number, account.account_code, journal.journal_number`
+      )
+      .all(params) as SqlRow[];
+
+    const aggregate = (key: (row: SqlRow) => string, label: (row: SqlRow) => string) => {
+      const grouped = new Map<string, AviationProfitabilityUnitDto>();
+      for (const row of rows) {
+        const id = key(row);
+        if (!id) continue;
+        let unit = grouped.get(id);
+        if (!unit) {
+          unit = {
+            id,
+            label: label(row),
+            revenueMinor: 0,
+            costMinor: 0,
+            marginMinor: 0,
+            marginPercent: null,
+            costs: {
+              fuelMinor: 0,
+              handlingMinor: 0,
+              airportStationMinor: 0,
+              maintenanceMinor: 0,
+              otherDirectMinor: 0
+            },
+            flightIds: [],
+            evidence: []
+          };
+          grouped.set(id, unit);
+        }
+        const accountType = String(row.account_type);
+        const value =
+          accountType === 'REVENUE'
+            ? amount(row.base_credit_idr) - amount(row.base_debit_idr)
+            : amount(row.base_debit_idr) - amount(row.base_credit_idr);
+        if (accountType === 'REVENUE') unit.revenueMinor += value;
+        else {
+          unit.costMinor += value;
+          const code = String(row.account_code);
+          if (code === '5100') unit.costs.fuelMinor += value;
+          else if (code === '5200') unit.costs.handlingMinor += value;
+          else if (code === '5300' || code === '5500') unit.costs.airportStationMinor += value;
+          else if (code === '5400') unit.costs.maintenanceMinor += value;
+          else unit.costs.otherDirectMinor += value;
+        }
+        const flightId = String(row.flight_id);
+        if (!unit.flightIds.includes(flightId)) unit.flightIds.push(flightId);
+        unit.evidence.push(this.profitabilityEvidence(row, value));
+      }
+      for (const unit of grouped.values()) {
+        unit.marginMinor = unit.revenueMinor - unit.costMinor;
+        unit.marginPercent = grossMargin(unit.revenueMinor, unit.costMinor);
+      }
+      return [...grouped.values()].sort(
+        (a, b) => b.marginMinor - a.marginMinor || a.label.localeCompare(b.label)
+      );
+    };
+    const flights = aggregate(
+      (row) => String(row.flight_id),
+      (row) => String(row.flight_number ?? row.flight_id)
+    );
+    const routes = aggregate(
+      (row) => String(row.route_id ?? ''),
+      (row) => String(row.route_label ?? row.route_id ?? 'Unattributed route')
+    );
+    const stations = aggregate(
+      (row) => String(row.station_id ?? ''),
+      (row) => String(row.station_label ?? row.station_id ?? 'Unattributed station')
+    );
+    const revenueMinor = flights.reduce((sum, unit) => sum + unit.revenueMinor, 0);
+    const costMinor = flights.reduce((sum, unit) => sum + unit.costMinor, 0);
+    return {
+      period,
+      currencyCode: 'IDR',
+      attributionMethod: 'POSTED_GL_DIMENSIONS',
+      flights,
+      routes,
+      stations,
+      totals: {
+        revenueMinor,
+        costMinor,
+        marginMinor: revenueMinor - costMinor,
+        marginPercent: grossMargin(revenueMinor, costMinor)
+      },
+      asOf: this.now()
+    };
   }
 
   trialBalance(query: FinanceReportingQuery): FinanceTrialBalanceDto {
@@ -181,43 +418,35 @@ export class FinanceReportingService {
     const period = this.resolvePeriod(query.period);
     const rows = this.sqlite
       .prepare(
-        `SELECT snapshot.ticket_revenue AS passengerRevenue,
-                snapshot.cargo_revenue AS cargoRevenue,
-                snapshot.charter_revenue AS charterRevenue,
-                snapshot.fuel_cost AS fuelCost,
-                snapshot.station_cost AS stationCost,
-                snapshot.maintenance_cost AS maintenanceCost
-         FROM invoice_finance_snapshots snapshot
-         JOIN flight_operations flight ON flight.id = snapshot.flight_operation_id
-         WHERE snapshot.currency_code = 'IDR'
-           AND flight.flight_date BETWEEN @startDate AND @endDate`
+        `SELECT type.code AS business_line,
+        COALESCE(SUM(CASE WHEN account.account_type = 'REVENUE'
+          THEN line.base_credit_idr-line.base_debit_idr ELSE 0 END), 0) AS revenue,
+        COALESCE(SUM(CASE WHEN account.account_code = '5100'
+          THEN line.base_debit_idr-line.base_credit_idr ELSE 0 END), 0) AS fuel,
+        COALESCE(SUM(CASE WHEN account.account_code IN ('5200','5300','5500')
+          THEN line.base_debit_idr-line.base_credit_idr ELSE 0 END), 0) AS station,
+        COALESCE(SUM(CASE WHEN account.account_code = '5400'
+          THEN line.base_debit_idr-line.base_credit_idr ELSE 0 END), 0) AS maintenance
+      FROM journal_lines line
+      JOIN journal_entries journal ON journal.id=line.journal_entry_id
+      JOIN chart_of_accounts account ON account.id=line.account_id
+      JOIN flight_operations flight ON flight.id=line.flight_id
+      JOIN flight_types type ON type.id=flight.flight_type_id
+      WHERE journal.status='POSTED' AND journal.posting_date BETWEEN @startDate AND @endDate
+        AND account.account_type IN ('REVENUE','EXPENSE')
+      GROUP BY type.code`
       )
-      .all(period) as SqlRow[];
-
+      .all({ startDate: period.startDate, endDate: `${period.endDate}T23:59:59.999Z` }) as SqlRow[];
     const ids = ['CHARTER', 'PASSENGER', 'CARGO'] as const;
-    const revenueKeys = ['charterRevenue', 'passengerRevenue', 'cargoRevenue'] as const;
-    const costs = ids.map(() => ({ fuelMinor: 0, stationMinor: 0, maintenanceMinor: 0 }));
-    const revenue = ids.map(() => 0);
-
-    for (const row of rows) {
-      const weights = revenueKeys.map((key) => amount(row[key]));
-      weights.forEach((value, index) => {
-        revenue[index] = (revenue[index] ?? 0) + value;
-      });
-      const fuel = allocateMinor(amount(row.fuelCost), weights);
-      const station = allocateMinor(amount(row.stationCost), weights);
-      const maintenance = allocateMinor(amount(row.maintenanceCost), weights);
-      costs.forEach((entry, index) => {
-        entry.fuelMinor += fuel[index] ?? 0;
-        entry.stationMinor += station[index] ?? 0;
-        entry.maintenanceMinor += maintenance[index] ?? 0;
-      });
-    }
-
     const labels = { CHARTER: 'Charter', PASSENGER: 'Passenger', CARGO: 'Cargo' } as const;
-    const lines: FinanceBusinessLineDto[] = ids.map((id, index) => {
-      const revenueMinor = revenue[index] ?? 0;
-      const cost = costs[index] ?? { fuelMinor: 0, stationMinor: 0, maintenanceMinor: 0 };
+    const lines: FinanceBusinessLineDto[] = ids.map((id) => {
+      const row = rows.find((item) => item.business_line === id);
+      const revenueMinor = amount(row?.revenue);
+      const cost = {
+        fuelMinor: amount(row?.fuel),
+        stationMinor: amount(row?.station),
+        maintenanceMinor: amount(row?.maintenance)
+      };
       const costMinor = cost.fuelMinor + cost.stationMinor + cost.maintenanceMinor;
       return {
         id,
@@ -235,7 +464,7 @@ export class FinanceReportingService {
     return {
       period,
       currencyCode: 'IDR',
-      allocationMethod: 'REVENUE_SHARE_PER_FLIGHT',
+      allocationMethod: 'POSTED_GL_DIMENSIONS',
       lines,
       totals: {
         revenueMinor,
@@ -258,38 +487,35 @@ export class FinanceReportingService {
       .filter((row) => row.code.startsWith('10') || row.name.toLowerCase().includes('cash'))
       .reduce((sum, row) => sum + row.balanceMinor, 0);
     const overdue = this.overdueReceivables(period.endDate);
-    const revenueChange = percentChange(currentActivity.revenue, previousActivity.revenue);
-    const expenseChange = percentChange(currentActivity.expense, previousActivity.expense);
-    const netIncome = currentActivity.revenue - currentActivity.expense;
-    const previousNetIncome = previousActivity.revenue - previousActivity.expense;
-    const netChange = percentChange(netIncome, previousNetIncome);
+    const arOutstanding = this.controlAccountBalance('1100', period.endDate);
+    const apOutstanding = this.controlAccountBalance('2000', period.endDate);
     const metrics: FinanceMetricDto[] = [
       {
         key: 'REVENUE',
-        label: 'Recognized Revenue',
+        label: 'Revenue',
         valueMinor: currentActivity.revenue,
-        changePercent: revenueChange,
-        direction: direction(revenueChange),
+        changePercent: this.changePercent(currentActivity.revenue, previousActivity.revenue),
+        direction: this.direction(currentActivity.revenue, previousActivity.revenue),
         tone: 'SUCCESS',
-        caption: 'Posted revenue accounts for the selected period.'
+        caption: 'Posted revenue GL activity for the selected period.'
       },
       {
         key: 'EXPENSE',
         label: 'Operating Expense',
         valueMinor: currentActivity.expense,
-        changePercent: expenseChange,
-        direction: direction(expenseChange),
-        tone: expenseChange !== null && expenseChange > 0 ? 'WARNING' : 'NEUTRAL',
-        caption: 'Posted expense accounts for the selected period.'
+        changePercent: this.changePercent(currentActivity.expense, previousActivity.expense),
+        direction: this.direction(currentActivity.expense, previousActivity.expense),
+        tone: 'WARNING',
+        caption: 'Posted expense GL activity for the selected period.'
       },
       {
         key: 'NET_INCOME',
-        label: 'Net Result',
-        valueMinor: netIncome,
-        changePercent: netChange,
-        direction: direction(netChange),
-        tone: netIncome >= 0 ? 'SUCCESS' : 'DANGER',
-        caption: 'Recognized revenue less posted expenses.'
+        label: 'Profit / Loss',
+        valueMinor: currentActivity.revenue - currentActivity.expense,
+        changePercent: null,
+        direction: 'NOT_AVAILABLE',
+        tone: currentActivity.revenue - currentActivity.expense >= 0 ? 'SUCCESS' : 'DANGER',
+        caption: 'Revenue less expense from the same posted GL source.'
       },
       {
         key: 'CASH',
@@ -301,13 +527,22 @@ export class FinanceReportingService {
         caption: `Posted cash balance as of ${period.endDate}.`
       },
       {
-        key: 'OVERDUE_AR',
-        label: 'Overdue Receivables',
-        valueMinor: overdue.balance,
+        key: 'AR',
+        label: 'AR Outstanding',
+        valueMinor: arOutstanding,
         changePercent: null,
         direction: 'NOT_AVAILABLE',
-        tone: overdue.balance > 0 ? 'WARNING' : 'SUCCESS',
-        caption: `${overdue.count} issued invoices past due.`
+        tone: arOutstanding > 0 ? 'WARNING' : 'SUCCESS',
+        caption: 'Posted Accounts Receivable control-account balance.'
+      },
+      {
+        key: 'AP',
+        label: 'AP Outstanding',
+        valueMinor: apOutstanding,
+        changePercent: null,
+        direction: 'NOT_AVAILABLE',
+        tone: apOutstanding > 0 ? 'WARNING' : 'SUCCESS',
+        caption: 'Posted Accounts Payable control-account balance.'
       }
     ];
 
@@ -321,22 +556,37 @@ export class FinanceReportingService {
         route: `/finance/trial-balance?period=${period.code}`
       },
       {
-        label: 'Open exceptions',
+        label: 'Unposted journals',
+        value: String(this.unpostedJournalCount()),
+        status: this.unpostedJournalCount() > 0 ? ('WARNING' as const) : ('SUCCESS' as const),
+        route: '/finance/accounting?tab=general-journal'
+      },
+      {
+        label: 'Handoff exceptions',
+        value: String(this.handoffExceptionCount()),
+        status: this.handoffExceptionCount() > 0 ? ('WARNING' as const) : ('SUCCESS' as const),
+        route: '/finance/handoffs?status=EXCEPTION'
+      },
+      {
+        label: 'Finance handoff pending',
+        value: String(this.handoffPendingCount()),
+        status: this.handoffPendingCount() > 0 ? ('WARNING' as const) : ('SUCCESS' as const),
+        route: '/finance/handoffs'
+      },
+      {
+        label: 'Bank reconciliation',
+        value: this.bankReconciliationStatus(period),
+        status:
+          this.bankReconciliationStatus(period) === 'Reconciled'
+            ? ('SUCCESS' as const)
+            : ('WARNING' as const),
+        route: '/finance/reconciliation'
+      },
+      {
+        label: 'Open accounting exceptions',
         value: String(this.openExceptionCount()),
         status: this.openExceptionCount() > 0 ? ('WARNING' as const) : ('SUCCESS' as const),
         route: '/finance/accounting?tab=exceptions'
-      },
-      {
-        label: 'Period status',
-        value: period.status,
-        status: period.status === 'OPEN' ? ('NEUTRAL' as const) : ('WARNING' as const),
-        route: null
-      },
-      {
-        label: 'Posted journals',
-        value: String(this.postedJournalCount(period)),
-        status: 'NEUTRAL' as const,
-        route: '/finance/accounting?tab=general-journal'
       }
     ];
 
@@ -357,6 +607,43 @@ export class FinanceReportingService {
       actions,
       asOf: this.now()
     };
+  }
+
+  private profitabilityEvidence(row: SqlRow, value: number): AviationProfitabilityEvidenceDto {
+    const sourceType = String(row.source_type);
+    const sourceId = String(row.source_id);
+    const flightId = String(row.flight_id);
+    let sourceRoute: string | null = null;
+    if (sourceType === 'INVOICE') sourceRoute = `/invoices/${sourceId}`;
+    else if (sourceType === 'STATION_COST') sourceRoute = `/flights/${flightId}?tab=station`;
+    else if (['FUEL_COST', 'MAINTENANCE_COST', 'MAINTENANCE_PART_ISSUE'].includes(sourceType)) {
+      sourceRoute = `/flights/${flightId}`;
+    }
+    return {
+      journalLineId: String(row.journal_line_id),
+      journalId: String(row.journal_id),
+      journalNumber: String(row.journal_number),
+      accountingEventId: String(row.accounting_event_id),
+      eventType: String(row.event_type),
+      sourceType,
+      sourceId,
+      accountCode: String(row.account_code),
+      accountName: String(row.account_name),
+      amountMinor: value,
+      sourceRoute
+    };
+  }
+
+  private changePercent(current: number, previous: number) {
+    if (previous === 0) return null;
+    return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
+  }
+
+  private direction(current: number, previous: number): FinanceMetricDto['direction'] {
+    if (previous === 0) return 'NOT_AVAILABLE';
+    if (current > previous) return 'UP';
+    if (current < previous) return 'DOWN';
+    return 'FLAT';
   }
 
   private resolvePeriod(code?: string) {
@@ -416,7 +703,7 @@ export class FinanceReportingService {
          GROUP BY account.account_type`
       )
       .all({
-        startDate: `${period.startDate}T00:00:00.000Z`,
+        startDate: period.startDate,
         endDateTime: `${period.endDate}T23:59:59.999Z`
       }) as SqlRow[];
     const row = (type: string) => rows.find((item) => item.accountType === type);
@@ -435,36 +722,87 @@ export class FinanceReportingService {
                 COALESCE(SUM(MAX(invoice.total - COALESCE(payment.paid, 0), 0)), 0) AS balance
          FROM invoices invoice
          LEFT JOIN (
-           SELECT invoice_id, SUM(amount) AS paid
-           FROM payments
+           SELECT invoice_id, SUM(amount_minor) AS paid
+           FROM ar_allocations
+           WHERE status = 'POSTED'
            GROUP BY invoice_id
          ) payment ON payment.invoice_id = invoice.id
          WHERE invoice.currency = 'IDR'
-           AND invoice.status NOT IN ('paid', 'void', 'draft')
+           AND invoice.recognition_mode = 'AR_ON_ISSUE'
+           AND invoice.status NOT IN ('void', 'draft')
            AND invoice.due_at IS NOT NULL
            AND invoice.due_at <= ?`
       )
       .get(`${endDate}T23:59:59.999Z`) as { count: number; balance: number };
   }
 
-  private routeRevenue(period: FinanceReportingPeriodDto): FinanceRouteRevenueDto[] {
-    const rows = this.sqlite
+  private controlAccountBalance(accountCode: string, endDate: string) {
+    const row = this.sqlite
       .prepare(
-        `SELECT origin.station_code || ' - ' || destination.station_code AS route,
-                SUM(snapshot.total_revenue) AS revenueMinor
-         FROM invoice_finance_snapshots snapshot
-         JOIN flight_operations flight ON flight.id = snapshot.flight_operation_id
-         JOIN stations origin ON origin.id = flight.origin_station_id
-         JOIN stations destination ON destination.id = flight.destination_station_id
-         WHERE snapshot.currency_code = 'IDR'
-           AND flight.flight_date BETWEEN @startDate AND @endDate
-         GROUP BY origin.station_code, destination.station_code
-         ORDER BY revenueMinor DESC, route`
+        `SELECT COALESCE(SUM(
+        CASE WHEN account.normal_balance = 'DEBIT'
+          THEN line.base_debit_idr - line.base_credit_idr
+          ELSE line.base_credit_idr - line.base_debit_idr END
+      ), 0) AS balance
+      FROM journal_lines line
+      JOIN journal_entries journal ON journal.id = line.journal_entry_id
+      JOIN chart_of_accounts account ON account.id = line.account_id
+      WHERE journal.status = 'POSTED' AND journal.posting_date <= ? AND account.account_code = ?`
       )
-      .all(period) as Array<{ route: string; revenueMinor: number }>;
-    return rows.map((row, index) => ({
+      .get(`${endDate}T23:59:59.999Z`, accountCode) as { balance: number };
+    return amount(row.balance);
+  }
+
+  private unpostedJournalCount() {
+    return amount(
+      (
+        this.sqlite
+          .prepare(
+            "SELECT COUNT(*) AS count FROM journal_entries WHERE status <> 'POSTED' AND status <> 'REVERSED'"
+          )
+          .get() as { count: number }
+      ).count
+    );
+  }
+
+  private handoffExceptionCount() {
+    return amount(
+      (
+        this.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM finance_handoffs WHERE status = 'EXCEPTION'")
+          .get() as { count: number }
+      ).count
+    );
+  }
+
+  private handoffPendingCount() {
+    return amount(
+      (
+        this.sqlite
+          .prepare(
+            "SELECT COUNT(*) AS count FROM finance_handoffs WHERE status NOT IN ('POSTED', 'REJECTED', 'EXCEPTION')"
+          )
+          .get() as { count: number }
+      ).count
+    );
+  }
+
+  private bankReconciliationStatus(period: FinanceReportingPeriodDto) {
+    const row = this.sqlite
+      .prepare(
+        `SELECT COUNT(*) AS statements,
+        SUM(CASE WHEN status = 'RECONCILED' THEN 1 ELSE 0 END) AS reconciled
+      FROM bank_statements WHERE period_start <= ? AND period_end >= ?`
+      )
+      .get(period.endDate, period.startDate) as { statements: number; reconciled: number | null };
+    if (!row.statements) return 'Not imported';
+    return row.statements === amount(row.reconciled) ? 'Reconciled' : 'Review required';
+  }
+
+  private routeRevenue(period: FinanceReportingPeriodDto): FinanceRouteRevenueDto[] {
+    return this.aviationProfitability({ period: period.code }).routes.map((row, index) => ({
       rank: index + 1,
-      route: row.route,
+      route: row.label,
       revenueMinor: amount(row.revenueMinor)
     }));
   }

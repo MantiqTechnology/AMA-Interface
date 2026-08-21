@@ -462,6 +462,36 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('finance.invoice.read').allowed
         },
         {
+          label: t('nav.financeHandoffs'),
+          to: '/finance/handoffs',
+          icon: 'mdi-inbox-arrow-down-outline',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: t('nav.accountsReceivable'),
+          to: '/finance/receivables',
+          icon: 'mdi-account-cash-outline',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: t('nav.accountsPayable'),
+          to: '/finance/payables',
+          icon: 'mdi-file-document-arrow-right-outline',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: t('nav.cashBank'),
+          to: '/finance/cash-bank',
+          icon: 'mdi-bank-outline',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: t('nav.bankReconciliation'),
+          to: '/finance/reconciliation',
+          icon: 'mdi-bank-check',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
           label: t('nav.accountingWorkbench'),
           to: '/finance/accounting',
           icon: 'mdi-book-open-page-variant-outline',
@@ -474,9 +504,27 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('finance.accounting.read').allowed
         },
         {
-          label: t('nav.hppMargin'),
+          label: t('nav.periodClosing'),
+          to: '/finance/closing',
+          icon: 'mdi-lock-clock',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: t('nav.financialStatements'),
+          to: '/finance/statements',
+          icon: 'mdi-file-chart-outline',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: t('nav.aviationProfitability'),
           to: '/finance/hpp',
           icon: 'mdi-chart-bar-stacked',
+          visible: can('finance.accounting.read').allowed
+        },
+        {
+          label: t('nav.financeAudit'),
+          to: '/finance/audit',
+          icon: 'mdi-shield-search',
           visible: can('finance.accounting.read').allowed
         }
       ].filter((child) => child.visible)

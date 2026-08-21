@@ -8,6 +8,7 @@ import { LeaveModule } from './modules/leave';
 import { OrganizationModule } from './modules/organization';
 import { OvertimeModule } from './modules/overtime';
 import { PayrollModule } from './modules/payroll';
+import type { FinanceHandoffService } from '../finance/handoffs/service';
 import { RecruitmentModule } from './modules/recruitment';
 import { ScheduleModule } from './modules/schedule';
 
@@ -24,14 +25,17 @@ export class HrisService {
   private orgMod: OrganizationModule;
   private dashMod: DashboardModule;
 
-  constructor(public readonly sqlite: Database.Database) {
+  constructor(
+    public readonly sqlite: Database.Database,
+    financeHandoffs?: FinanceHandoffService
+  ) {
     this.employeeMod = new EmployeeModule(sqlite);
     this.certMod = new CertificationModule(sqlite);
     this.attendanceMod = new AttendanceModule(sqlite);
     this.leaveMod = new LeaveModule(sqlite);
     this.overtimeMod = new OvertimeModule(sqlite);
     this.scheduleMod = new ScheduleModule(sqlite);
-    this.payrollMod = new PayrollModule(sqlite);
+    this.payrollMod = new PayrollModule(sqlite, financeHandoffs);
     this.recruitmentMod = new RecruitmentModule(sqlite);
     this.kpiMod = new KpiModule(sqlite);
     this.orgMod = new OrganizationModule(sqlite);

@@ -4,6 +4,7 @@ import { seedDemoData } from '../../server/db/seed';
 import { seedFlightOperationsData } from '../../server/db/seed-flight-operations';
 import { seedTicketingData } from '../../server/db/seeds/ticketing';
 import { seedInventoryData } from '../../server/db/seeds/inventory';
+import { seedScenarioDatabase } from '../../server/db/seeds/scenario-database';
 import { createServices } from '../../server/services';
 
 export async function createSeededTestServices() {
@@ -14,6 +15,18 @@ export async function createSeededTestServices() {
   seedFlightOperationsData(client.sqlite);
   seedTicketingData(client.sqlite);
   seedInventoryData(client.sqlite);
+
+  return {
+    ...client,
+    services: createServices(client.sqlite)
+  };
+}
+
+export async function createScenarioTestServices() {
+  const client = createDbClient(':memory:');
+  dropDemoDatabase(client.sqlite);
+  runMigrations(client.sqlite);
+  await seedScenarioDatabase(client, { resetDocuments: false });
 
   return {
     ...client,

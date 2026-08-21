@@ -19,6 +19,7 @@ export const invoices = sqliteTable(
     tax: real('tax').notNull(),
     total: real('total').notNull(),
     currency: text('currency').notNull().default('IDR'),
+    recognitionMode: text('recognition_mode').notNull().default('BILLING_ONLY'),
     createdByUserId: text('created_by_user_id').notNull(),
     approvedByUserId: text('approved_by_user_id'),
     approvedAt: text('approved_at'),

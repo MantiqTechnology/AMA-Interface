@@ -76,10 +76,10 @@ describe('InvoicesService', () => {
       charterRevenue: 28_000_000,
       fuelCost: 9_250_000,
       stationCost: 2_750_000,
-      maintenanceCost: 0,
-      totalOperationalCost: 12_000_000,
+      maintenanceCost: 650_000,
+      totalOperationalCost: 12_650_000,
       taxAmount: 3_080_000,
-      grossMargin: 16_000_000
+      grossMargin: 15_350_000
     });
 
     expect(

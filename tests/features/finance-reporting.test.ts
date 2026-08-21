@@ -55,24 +55,28 @@ describe('Finance reporting read model', () => {
     expect(report.totals).toMatchObject({ balanced: true, differenceMinor: 0 });
   });
 
-  it('allocates immutable invoice snapshot cost without changing the total', async () => {
+  it('reports profitability from attributed posted GL without using invoice snapshots', async () => {
     const context = await createSeededTestServices();
+    context.services.accounting.postDemoEvents({ source: 'all' }, 'USR-FINANCE-REVIEWER');
     const report = context.services.financeReporting.profitability({ period: '2026-07' });
-    const snapshot = context.sqlite
+    const gl = context.sqlite
       .prepare(
-        `SELECT COALESCE(SUM(snapshot.total_revenue), 0) AS revenue,
-                COALESCE(SUM(snapshot.total_operational_cost), 0) AS cost
-         FROM invoice_finance_snapshots snapshot
-         JOIN flight_operations flight ON flight.id = snapshot.flight_operation_id
-         WHERE snapshot.currency_code = 'IDR'
-           AND flight.flight_date BETWEEN '2026-07-01' AND '2026-07-31'`
+        `SELECT COALESCE(SUM(CASE WHEN account.account_type='REVENUE'
+                  THEN line.base_credit_idr-line.base_debit_idr ELSE 0 END), 0) AS revenue,
+                COALESCE(SUM(CASE WHEN account.account_type='EXPENSE'
+                  THEN line.base_debit_idr-line.base_credit_idr ELSE 0 END), 0) AS cost
+         FROM journal_lines line
+         JOIN journal_entries journal ON journal.id=line.journal_entry_id
+         JOIN chart_of_accounts account ON account.id=line.account_id
+         WHERE journal.status='POSTED' AND line.flight_id IS NOT NULL
+           AND journal.posting_date BETWEEN '2026-07-01' AND '2026-07-31T23:59:59.999Z'`
       )
       .get() as { revenue: number; cost: number };
 
-    expect(report.allocationMethod).toBe('REVENUE_SHARE_PER_FLIGHT');
-    expect(report.totals.revenueMinor).toBe(snapshot.revenue);
-    expect(report.totals.costMinor).toBe(snapshot.cost);
-    expect(report.lines.reduce((sum, line) => sum + line.costMinor, 0)).toBe(snapshot.cost);
+    expect(report.allocationMethod).toBe('POSTED_GL_DIMENSIONS');
+    expect(report.totals.revenueMinor).toBe(gl.revenue);
+    expect(report.totals.costMinor).toBe(gl.cost);
+    expect(report.lines.reduce((sum, line) => sum + line.costMinor, 0)).toBe(gl.cost);
   });
 
   it('returns dashboard controls and metrics without persisting a second balance', async () => {
@@ -92,7 +96,8 @@ describe('Finance reporting read model', () => {
       'EXPENSE',
       'NET_INCOME',
       'CASH',
-      'OVERDUE_AR'
+      'AR',
+      'AP'
     ]);
     expect(dashboard.controls).toContainEqual(
       expect.objectContaining({ label: 'Trial balance', value: 'Balanced' })

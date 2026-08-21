@@ -384,12 +384,42 @@ const createStatements = [
     period_name TEXT NOT NULL,
     start_date TEXT NOT NULL,
     end_date TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'LOCKED')),
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSING', 'CLOSED', 'LOCKED')),
     locked_at TEXT,
     locked_by_user_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK (end_date >= start_date)
+  )`,
+  `CREATE TABLE IF NOT EXISTS approval_authority_rules (
+    id TEXT PRIMARY KEY,
+    transaction_type TEXT NOT NULL,
+    amount_from_base_idr INTEGER NOT NULL CHECK (amount_from_base_idr >= 0),
+    amount_to_base_idr INTEGER CHECK (amount_to_base_idr IS NULL OR amount_to_base_idr >= amount_from_base_idr),
+    required_role TEXT NOT NULL,
+    required_approval_level INTEGER NOT NULL CHECK (required_approval_level > 0),
+    effective_from TEXT NOT NULL,
+    effective_to TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (effective_to IS NULL OR effective_to >= effective_from)
+  )`,
+  `CREATE TABLE IF NOT EXISTS approval_decisions (
+    id TEXT PRIMARY KEY,
+    transaction_type TEXT NOT NULL,
+    transaction_id TEXT NOT NULL,
+    rule_id TEXT NOT NULL REFERENCES approval_authority_rules(id),
+    amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
+    currency_code TEXT NOT NULL,
+    exchange_rate_to_idr_micros INTEGER NOT NULL CHECK (exchange_rate_to_idr_micros > 0),
+    base_amount_idr INTEGER NOT NULL CHECK (base_amount_idr >= 0),
+    decision TEXT NOT NULL CHECK (decision IN ('APPROVED', 'REJECTED')),
+    actor_user_id TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    reason TEXT,
+    UNIQUE (transaction_type, transaction_id, rule_id, actor_user_id)
   )`,
   `CREATE TABLE IF NOT EXISTS product_accounting_profiles (
     id TEXT PRIMARY KEY,
@@ -414,6 +444,7 @@ const createStatements = [
     id TEXT PRIMARY KEY,
     policy_code TEXT NOT NULL UNIQUE,
     policy_name TEXT NOT NULL,
+    source_module TEXT,
     event_type TEXT NOT NULL,
     product_accounting_profile_id TEXT REFERENCES product_accounting_profiles(id),
     debit_account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
@@ -528,6 +559,183 @@ const createStatements = [
     UNIQUE (journal_entry_id, line_number),
     CHECK ((debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0))
   )`,
+  `CREATE TABLE IF NOT EXISTS financial_dimension_values (
+    id TEXT PRIMARY KEY,
+    owner_type TEXT NOT NULL CHECK (owner_type IN ('ACCOUNTING_EVENT', 'JOURNAL_LINE', 'FINANCE_HANDOFF')),
+    owner_id TEXT NOT NULL,
+    dimension_type TEXT NOT NULL,
+    dimension_value TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (owner_type, owner_id, dimension_type)
+  )`,
+  `CREATE TABLE IF NOT EXISTS finance_handoffs (
+    id TEXT PRIMARY KEY,
+    source_module TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    transaction_date TEXT NOT NULL,
+    currency_code TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    station_id TEXT,
+    flight_id TEXT,
+    aircraft_id TEXT,
+    route_id TEXT,
+    cost_center_id TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'RECEIVED' CHECK (status IN (
+      'RECEIVED', 'VALIDATING', 'VALIDATED', 'ACCEPTED',
+      'ACCOUNTING_EVENT_CREATED', 'JOURNAL_CREATED', 'POSTED', 'EXCEPTION', 'REJECTED'
+    )),
+    received_at TEXT NOT NULL,
+    validated_at TEXT,
+    accepted_at TEXT,
+    rejected_at TEXT,
+    accounting_event_id TEXT REFERENCES accounting_events(id),
+    journal_id TEXT REFERENCES journal_entries(id),
+    error_code TEXT,
+    error_message TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (source_module, source_type, source_event_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS finance_handoff_status_history (
+    id TEXT PRIMARY KEY,
+    handoff_id TEXT NOT NULL REFERENCES finance_handoffs(id) ON DELETE CASCADE,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    error_code TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS cash_bank_accounts (
+    id TEXT PRIMARY KEY,
+    account_code TEXT NOT NULL UNIQUE,
+    account_name TEXT NOT NULL,
+    account_type TEXT NOT NULL CHECK (account_type IN ('CASH', 'BANK')),
+    currency_code TEXT NOT NULL,
+    gl_account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS customer_receipts (
+    id TEXT PRIMARY KEY,
+    receipt_number TEXT NOT NULL UNIQUE,
+    customer_id TEXT NOT NULL REFERENCES customers(id),
+    receipt_date TEXT NOT NULL,
+    currency_code TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    payment_method TEXT NOT NULL,
+    cash_bank_account_id TEXT NOT NULL REFERENCES cash_bank_accounts(id),
+    reference TEXT NOT NULL UNIQUE,
+    evidence_document_id TEXT,
+    status TEXT NOT NULL DEFAULT 'UNALLOCATED' CHECK (status IN ('UNALLOCATED', 'PARTIALLY_ALLOCATED', 'ALLOCATED', 'EXCEPTION')),
+    error_code TEXT,
+    error_message TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS ar_allocations (
+    id TEXT PRIMARY KEY,
+    receipt_id TEXT NOT NULL REFERENCES customer_receipts(id),
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    status TEXT NOT NULL DEFAULT 'PROCESSING' CHECK (status IN ('PROCESSING', 'POSTED', 'REVERSED', 'EXCEPTION')),
+    accounting_event_id TEXT REFERENCES accounting_events(id),
+    journal_id TEXT REFERENCES journal_entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (receipt_id, invoice_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS supplier_invoices (
+    id TEXT PRIMARY KEY,
+    supplier_id TEXT NOT NULL REFERENCES vendors(id),
+    invoice_number TEXT NOT NULL UNIQUE,
+    invoice_date TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    currency_code TEXT NOT NULL,
+    subtotal_minor INTEGER NOT NULL CHECK (subtotal_minor >= 0),
+    tax_minor INTEGER NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
+    total_minor INTEGER NOT NULL CHECK (total_minor > 0),
+    source_type TEXT NOT NULL CHECK (source_type IN ('PURCHASE_ORDER', 'NON_PO')),
+    purchase_order_id TEXT REFERENCES inventory_purchase_orders(id),
+    goods_receipt_id TEXT REFERENCES inventory_goods_receipts(id),
+    expense_account_id TEXT REFERENCES chart_of_accounts(id),
+    match_status TEXT NOT NULL CHECK (match_status IN ('MATCHED', 'QUANTITY_VARIANCE', 'PRICE_VARIANCE', 'MISSING_RECEIPT', 'MISSING_PO', 'NOT_APPLICABLE')),
+    match_details_json TEXT NOT NULL DEFAULT '{}',
+    lifecycle_status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (lifecycle_status IN ('DRAFT', 'AP_OPEN', 'EXCEPTION', 'VOID')),
+    accounting_event_id TEXT REFERENCES accounting_events(id),
+    journal_id TEXT REFERENCES journal_entries(id),
+    evidence_document_id TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS supplier_payment_requests (
+    id TEXT PRIMARY KEY,
+    request_number TEXT NOT NULL UNIQUE,
+    supplier_invoice_id TEXT NOT NULL REFERENCES supplier_invoices(id),
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    currency_code TEXT NOT NULL,
+    cash_bank_account_id TEXT NOT NULL REFERENCES cash_bank_accounts(id),
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'EXECUTED', 'EXCEPTION', 'REJECTED')),
+    created_by TEXT NOT NULL,
+    submitted_by TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    executed_by TEXT,
+    executed_at TEXT,
+    accounting_event_id TEXT REFERENCES accounting_events(id),
+    journal_id TEXT REFERENCES journal_entries(id),
+    reversal_journal_id TEXT REFERENCES journal_entries(id),
+    reversed_at TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS bank_statements (
+    id TEXT PRIMARY KEY,
+    cash_bank_account_id TEXT NOT NULL REFERENCES cash_bank_accounts(id),
+    statement_number TEXT NOT NULL UNIQUE,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    opening_balance_minor INTEGER NOT NULL,
+    closing_balance_minor INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'IMPORTED' CHECK (status IN ('IMPORTED', 'IN_PROGRESS', 'RECONCILED', 'EXCEPTION')),
+    imported_by TEXT NOT NULL,
+    imported_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS bank_statement_lines (
+    id TEXT PRIMARY KEY,
+    statement_id TEXT NOT NULL REFERENCES bank_statements(id) ON DELETE CASCADE,
+    line_number INTEGER NOT NULL,
+    booking_date TEXT NOT NULL,
+    value_date TEXT,
+    reference TEXT,
+    description TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    balance_minor INTEGER,
+    status TEXT NOT NULL DEFAULT 'UNMATCHED' CHECK (status IN ('UNMATCHED', 'MATCHED', 'PARTIAL', 'EXCEPTION', 'RECONCILED')),
+    created_at TEXT NOT NULL,
+    UNIQUE (statement_id, line_number)
+  )`,
+  `CREATE TABLE IF NOT EXISTS bank_reconciliation_matches (
+    id TEXT PRIMARY KEY,
+    statement_line_id TEXT NOT NULL UNIQUE REFERENCES bank_statement_lines(id),
+    journal_line_id TEXT NOT NULL UNIQUE REFERENCES journal_lines(id),
+    matched_amount_minor INTEGER NOT NULL CHECK (matched_amount_minor > 0),
+    match_method TEXT NOT NULL CHECK (match_method IN ('AUTO', 'MANUAL')),
+    status TEXT NOT NULL DEFAULT 'RECONCILED',
+    matched_by TEXT NOT NULL,
+    matched_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS asset_register (
     id TEXT PRIMARY KEY,
     asset_number TEXT NOT NULL UNIQUE,
@@ -560,12 +768,142 @@ const createStatements = [
     created_at TEXT NOT NULL,
     UNIQUE (asset_id, period_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS finance_adjustments (
+    id TEXT PRIMARY KEY,
+    adjustment_number TEXT NOT NULL UNIQUE,
+    adjustment_type TEXT NOT NULL CHECK (adjustment_type IN ('ACCRUAL', 'PREPAYMENT')),
+    accounting_date TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    currency_code TEXT NOT NULL,
+    description TEXT NOT NULL,
+    evidence_reference TEXT,
+    cash_bank_account_id TEXT REFERENCES cash_bank_accounts(id),
+    station_id TEXT,
+    flight_id TEXT,
+    aircraft_id TEXT,
+    cost_center_id TEXT,
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'PROCESSING', 'POSTED', 'PARTIALLY_RECOGNIZED', 'RECOGNIZED', 'REVERSED', 'EXCEPTION')),
+    accounting_event_id TEXT REFERENCES accounting_events(id),
+    journal_id TEXT REFERENCES journal_entries(id),
+    reversal_journal_id TEXT REFERENCES journal_entries(id),
+    error_code TEXT,
+    error_message TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS prepayment_schedules (
+    id TEXT PRIMARY KEY,
+    adjustment_id TEXT NOT NULL REFERENCES finance_adjustments(id) ON DELETE CASCADE,
+    period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+    recognition_date TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED', 'PROCESSING', 'POSTED', 'EXCEPTION', 'CANCELLED')),
+    accounting_event_id TEXT REFERENCES accounting_events(id),
+    journal_id TEXT REFERENCES journal_entries(id),
+    error_code TEXT,
+    error_message TEXT,
+    recognized_by TEXT,
+    recognized_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (adjustment_id, period_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS depreciation_runs (
+    id TEXT PRIMARY KEY,
+    period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+    status TEXT NOT NULL DEFAULT 'PROCESSING' CHECK (status IN ('PROCESSING', 'COMPLETED', 'COMPLETED_WITH_EXCEPTIONS')),
+    posted_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
+    exception_count INTEGER NOT NULL DEFAULT 0,
+    run_by TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS period_closing_runs (
+    id TEXT PRIMARY KEY,
+    period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+    status TEXT NOT NULL DEFAULT 'IN_PROGRESS' CHECK (status IN ('IN_PROGRESS', 'CLOSED', 'CANCELLED')),
+    started_by TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    closed_by TEXT,
+    closed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS period_closing_checklist_items (
+    id TEXT PRIMARY KEY,
+    closing_run_id TEXT NOT NULL REFERENCES period_closing_runs(id) ON DELETE CASCADE,
+    item_code TEXT NOT NULL,
+    item_label TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'CLEARED', 'BLOCKED')),
+    blocker TEXT,
+    source_reference TEXT,
+    note TEXT,
+    checked_by TEXT,
+    checked_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (closing_run_id, item_code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS period_reopen_requests (
+    id TEXT PRIMARY KEY,
+    period_id TEXT NOT NULL REFERENCES accounting_periods(id),
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'REQUESTED' CHECK (status IN ('REQUESTED', 'APPROVED', 'REJECTED')),
+    requester_id TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    approver_id TEXT,
+    approved_at TEXT,
+    reopened_at TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS financial_audit_logs (
+    id TEXT PRIMARY KEY,
+    actor_id TEXT NOT NULL,
+    actor_role TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    reason TEXT,
+    source_reference TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    occurred_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS financial_exports (
+    id TEXT PRIMARY KEY,
+    report_type TEXT NOT NULL,
+    format TEXT NOT NULL CHECK (format = 'CSV'),
+    period_code TEXT,
+    requested_by TEXT NOT NULL,
+    requested_role TEXT NOT NULL,
+    row_count INTEGER NOT NULL CHECK (row_count >= 0),
+    filename TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_finance_audit_entity ON financial_audit_logs(entity_type, entity_id, occurred_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_period_closing_period ON period_closing_runs(period_id, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_prepayment_schedule_period ON prepayment_schedules(period_id, status)`,
   `CREATE INDEX IF NOT EXISTS idx_accounting_events_status ON accounting_events(posting_status)`,
+  `CREATE INDEX IF NOT EXISTS idx_approval_authority_lookup
+    ON approval_authority_rules(transaction_type, amount_from_base_idr, amount_to_base_idr)`,
+  `CREATE INDEX IF NOT EXISTS idx_approval_decisions_transaction
+    ON approval_decisions(transaction_type, transaction_id)`,
   `CREATE INDEX IF NOT EXISTS idx_accounting_events_source ON accounting_events(source_type, source_id)`,
   `CREATE INDEX IF NOT EXISTS idx_accounting_exceptions_status ON accounting_exceptions(status)`,
   `CREATE INDEX IF NOT EXISTS idx_journal_entries_status ON journal_entries(status)`,
   `CREATE INDEX IF NOT EXISTS idx_journal_entries_period ON journal_entries(period_id)`,
   `CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_financial_dimension_lookup
+    ON financial_dimension_values(dimension_type, dimension_value)`,
+  `CREATE INDEX IF NOT EXISTS idx_finance_handoffs_workbench
+    ON finance_handoffs(status, source_module, transaction_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_ar_allocations_invoice ON ar_allocations(invoice_id, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_supplier_invoices_status ON supplier_invoices(lifecycle_status, due_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_supplier_payments_invoice ON supplier_payment_requests(supplier_invoice_id, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_bank_statement_lines_match ON bank_statement_lines(statement_id, status, booking_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_finance_handoff_history
+    ON finance_handoff_status_history(handoff_id, created_at)`,
   `CREATE VIEW IF NOT EXISTS general_ledger AS
     SELECT
       line.id AS journal_line_id,
@@ -1170,14 +1508,35 @@ const dropStatements = [
   ...inventoryDropStatements,
   ...ticketingDropStatements,
   'DROP VIEW IF EXISTS general_ledger',
+  'DROP TABLE IF EXISTS financial_exports',
+  'DROP TABLE IF EXISTS financial_audit_logs',
+  'DROP TABLE IF EXISTS period_reopen_requests',
+  'DROP TABLE IF EXISTS period_closing_checklist_items',
+  'DROP TABLE IF EXISTS period_closing_runs',
+  'DROP TABLE IF EXISTS depreciation_runs',
+  'DROP TABLE IF EXISTS prepayment_schedules',
+  'DROP TABLE IF EXISTS finance_adjustments',
   'DROP TABLE IF EXISTS depreciation_schedules',
   'DROP TABLE IF EXISTS asset_register',
+  'DROP TABLE IF EXISTS supplier_payment_requests',
+  'DROP TABLE IF EXISTS bank_reconciliation_matches',
+  'DROP TABLE IF EXISTS bank_statement_lines',
+  'DROP TABLE IF EXISTS bank_statements',
+  'DROP TABLE IF EXISTS supplier_invoices',
+  'DROP TABLE IF EXISTS ar_allocations',
+  'DROP TABLE IF EXISTS customer_receipts',
+  'DROP TABLE IF EXISTS cash_bank_accounts',
+  'DROP TABLE IF EXISTS finance_handoff_status_history',
+  'DROP TABLE IF EXISTS finance_handoffs',
+  'DROP TABLE IF EXISTS financial_dimension_values',
   'DROP TABLE IF EXISTS journal_lines',
   'DROP TABLE IF EXISTS journal_entries',
   'DROP TABLE IF EXISTS accounting_exceptions',
   'DROP TABLE IF EXISTS accounting_events',
   'DROP TABLE IF EXISTS accounting_policies',
   'DROP TABLE IF EXISTS product_accounting_profiles',
+  'DROP TABLE IF EXISTS approval_decisions',
+  'DROP TABLE IF EXISTS approval_authority_rules',
   'DROP TABLE IF EXISTS accounting_periods',
   'DROP TABLE IF EXISTS aircraft_current_positions',
   'DROP TABLE IF EXISTS aircraft_position_reports',
@@ -1303,7 +1662,7 @@ const accountingIntegrityStatements = [
      SELECT RAISE(ABORT, 'accounting period is locked')
      WHERE EXISTS (
        SELECT 1 FROM accounting_periods period
-       WHERE period.id = NEW.period_id AND period.status = 'LOCKED'
+       WHERE period.id = NEW.period_id AND period.status <> 'OPEN'
      );
    END`,
   `CREATE TRIGGER IF NOT EXISTS journal_entries_posted_immutable
@@ -1364,6 +1723,16 @@ export function runMigrations(sqlite: Database.Database) {
     for (const statement of createStatements) {
       sqlite.exec(statement);
     }
+    ensureAccountingPeriodLifecycleStatus(sqlite);
+    ensureColumn(sqlite, 'accounting_policies', 'source_module', 'TEXT');
+    ensureColumn(sqlite, 'invoices', 'recognition_mode', "TEXT NOT NULL DEFAULT 'BILLING_ONLY'");
+    ensureColumn(
+      sqlite,
+      'supplier_payment_requests',
+      'reversal_journal_id',
+      'TEXT REFERENCES journal_entries(id)'
+    );
+    ensureColumn(sqlite, 'supplier_payment_requests', 'reversed_at', 'TEXT');
     ensureColumn(sqlite, 'inventory_parts', 'part_category', "TEXT NOT NULL DEFAULT 'ROTABLE'");
     ensureColumn(sqlite, 'inventory_parts', 'is_aircraft_part', 'INTEGER NOT NULL DEFAULT 1');
     ensureColumn(sqlite, 'inventory_parts', 'is_life_limited', 'INTEGER NOT NULL DEFAULT 0');
@@ -2399,6 +2768,7 @@ export function runMigrations(sqlite: Database.Database) {
     for (const statement of inventoryImmutabilityStatements) {
       sqlite.exec(statement);
     }
+    sqlite.exec('DROP TRIGGER IF EXISTS journal_entries_post_balance');
     for (const statement of accountingIntegrityStatements) {
       sqlite.exec(statement);
     }
@@ -3018,6 +3388,39 @@ function ensureDepreciationScheduleCancellationStatus(sqlite: Database.Database)
     SELECT id, asset_id, period_id, depreciation_amount_minor, status, journal_entry_id, created_at
     FROM depreciation_schedules_legacy;
     DROP TABLE depreciation_schedules_legacy;
+  `);
+}
+
+function ensureAccountingPeriodLifecycleStatus(sqlite: Database.Database) {
+  const table = sqlite
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'accounting_periods'")
+    .get() as { sql: string } | undefined;
+  if (!table || table.sql.includes("'CLOSING'")) return;
+
+  sqlite.exec(`
+    DROP TRIGGER IF EXISTS journal_entries_post_balance;
+    CREATE TABLE accounting_periods_phase2 (
+      id TEXT PRIMARY KEY,
+      period_code TEXT NOT NULL UNIQUE,
+      period_name TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSING', 'CLOSED', 'LOCKED')),
+      locked_at TEXT,
+      locked_by_user_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK (end_date >= start_date)
+    );
+    INSERT INTO accounting_periods_phase2 (
+      id, period_code, period_name, start_date, end_date, status, locked_at,
+      locked_by_user_id, created_at, updated_at
+    )
+    SELECT id, period_code, period_name, start_date, end_date, status, locked_at,
+           locked_by_user_id, created_at, updated_at
+    FROM accounting_periods;
+    DROP TABLE accounting_periods;
+    ALTER TABLE accounting_periods_phase2 RENAME TO accounting_periods;
   `);
 }
 

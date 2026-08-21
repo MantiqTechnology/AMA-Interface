@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 import { createAccountingService } from '../../features/finance/accounting';
+import { createApprovalAuthorityService } from '../../features/finance/approvals';
+import { createFinanceTransactionsService } from '../../features/finance/transactions';
 import { createDemoSeedContext, type DemoSeedContext } from './context';
 
 type Row = Record<string, string | number | null>;
@@ -771,6 +773,82 @@ export function seedAccountingScenarioData(
 
     accounting.postDemoEvents({ source: 'ticketing' }, makerUserId);
     accounting.fulfillPassengerServicesForFlight('finance-flight-month-crossing', makerUserId);
+
+    const invoiceDate = context.at(-10, '11:00');
+    accounting.postCanonicalEvent(
+      {
+        eventType: 'CHARTER_INVOICE_ISSUED',
+        sourceType: 'INVOICE',
+        sourceId: 'inv-closed-djj-wmx',
+        productAccountingProfileId: 'pap-charter-invoice',
+        accountingDate: invoiceDate.slice(0, 10),
+        transactionDate: invoiceDate,
+        documentDate: invoiceDate.slice(0, 10),
+        serviceDate: invoiceDate.slice(0, 10),
+        amountMinor: 28_000_000,
+        currencyId: 'cur-idr',
+        currencyCode: 'IDR',
+        exchangeRateToIdrMicros: 1_000_000,
+        baseAmountIdr: 28_000_000,
+        stationId: 'st-djj',
+        aircraftId: null,
+        flightId: 'fop-closed-djj-wmx',
+        workOrderReference: null,
+        costCenterId: 'st-djj',
+        payload: { invoiceNumber: 'SEEDED-CHARTER-INVOICE' },
+        memo: 'Seeded charter invoice receivable',
+        idempotencyKey: 'finance:CHARTER_INVOICE_ISSUED:INVOICE:inv-closed-djj-wmx:v1'
+      },
+      makerUserId
+    );
+    accounting.postCanonicalEvent(
+      {
+        eventType: 'CUSTOMER_INVOICE_TAX',
+        sourceType: 'INVOICE',
+        sourceId: 'inv-closed-djj-wmx',
+        productAccountingProfileId: null,
+        accountingDate: invoiceDate.slice(0, 10),
+        transactionDate: invoiceDate,
+        documentDate: invoiceDate.slice(0, 10),
+        serviceDate: invoiceDate.slice(0, 10),
+        amountMinor: 3_080_000,
+        currencyId: 'cur-idr',
+        currencyCode: 'IDR',
+        exchangeRateToIdrMicros: 1_000_000,
+        baseAmountIdr: 3_080_000,
+        stationId: 'st-djj',
+        aircraftId: null,
+        flightId: 'fop-closed-djj-wmx',
+        workOrderReference: null,
+        costCenterId: 'st-djj',
+        payload: { invoiceNumber: 'SEEDED-CHARTER-INVOICE' },
+        memo: 'Seeded charter invoice output tax',
+        idempotencyKey: 'finance:CUSTOMER_INVOICE_TAX:INVOICE:inv-closed-djj-wmx:v1'
+      },
+      makerUserId
+    );
+    const financeTransactions = createFinanceTransactionsService(
+      sqlite,
+      accounting,
+      createApprovalAuthorityService(sqlite, () => context.now),
+      () => context.now
+    );
+    const seededReceipt = financeTransactions.createReceipt({
+      customerId: 'cust-papua-logistics',
+      receiptDate: context.at(-9, '09:00'),
+      currencyCode: 'IDR',
+      amountMinor: 10_000_000,
+      paymentMethod: 'BANK_TRANSFER',
+      cashBankAccountId: 'cash-bank-main',
+      reference: `BPD-AR-${context.compactDate(-9)}-001`,
+      createdBy: makerUserId
+    });
+    financeTransactions.allocateReceipt(
+      seededReceipt.id,
+      'inv-closed-djj-wmx',
+      10_000_000,
+      makerUserId
+    );
   });
   seed.immediate();
 }

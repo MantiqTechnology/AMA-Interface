@@ -39,13 +39,15 @@ describe('HrisService Unit & Engine Tests', () => {
     const approved = hris.approvePayrollRun(run.id, 'emp-004');
     expect(approved.status).toBe('APPROVED');
 
-    // Post journal to Finance
+    // Stage the approved payroll in Finance pending a reviewed accounting split.
     const journalRes = hris.postPayrollJournal(run.id);
     expect(journalRes.success).toBe(true);
-    expect(journalRes.journalId).toContain('jrn-pay-');
+    expect(journalRes.journalId).toBeNull();
+    expect(journalRes.handoffId).toContain('finance-handoff-');
+    expect(journalRes.limitationCode).toBe('PAYROLL_POSTING_POLICY_NOT_CONFIGURED');
 
-    const paidRun = hris.getPayrollRun(run.id);
-    expect(paidRun.status).toBe('PAID');
+    const approvedRun = hris.getPayrollRun(run.id);
+    expect(approvedRun.status).toBe('APPROVED');
   });
 
   it('correctly detects expiring pilot certifications', async () => {

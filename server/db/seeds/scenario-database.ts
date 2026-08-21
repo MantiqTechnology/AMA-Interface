@@ -8,6 +8,7 @@ import { assertScenarioSeedIntegrity } from './integrity';
 import { seedInventoryData } from './inventory';
 import { seedTicketingData } from './ticketing';
 import { seedAccountingScenarioData } from './accounting-scenarios';
+import { seedFinanceGovernanceScenario } from './finance-governance';
 import { seedCorporateAssets } from './corporate-assets';
 import { seedMroFoundationData } from './mro-foundation';
 import { seedMroV21Foundation } from './mro-v21-foundation';
@@ -32,6 +33,7 @@ export async function seedScenarioDatabase(
     seedInventoryData(client.sqlite, context);
     seedCorporateAssets(client.sqlite, context);
     seedAccountingScenarioData(client.sqlite, context);
+    seedFinanceGovernanceScenario(client.sqlite, context);
     seedMroFoundationData(client.sqlite, context);
     seedMroV21Foundation(client.sqlite, context);
     seedInternalAogDemo(client.sqlite, context);

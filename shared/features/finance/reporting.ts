@@ -5,7 +5,11 @@ export const financeReportingQuerySchema = z.object({
     .string()
     .trim()
     .regex(/^\d{4}-\d{2}$/u)
-    .optional()
+    .optional(),
+  flightId: z.string().trim().min(1).optional(),
+  routeId: z.string().trim().min(1).optional(),
+  stationId: z.string().trim().min(1).optional(),
+  aircraftId: z.string().trim().min(1).optional()
 });
 
 export type FinanceReportingQuery = z.infer<typeof financeReportingQuerySchema>;
@@ -19,7 +23,7 @@ export type FinanceReportingPeriodDto = {
 };
 
 export type FinanceMetricDto = {
-  key: 'REVENUE' | 'EXPENSE' | 'NET_INCOME' | 'CASH' | 'OVERDUE_AR';
+  key: 'REVENUE' | 'EXPENSE' | 'NET_INCOME' | 'CASH' | 'OVERDUE_AR' | 'AR' | 'AP';
   label: string;
   valueMinor: number;
   changePercent: number | null;
@@ -67,13 +71,98 @@ export type FinanceBusinessLineDto = {
 export type FinanceProfitabilityDto = {
   period: FinanceReportingPeriodDto;
   currencyCode: 'IDR';
-  allocationMethod: 'REVENUE_SHARE_PER_FLIGHT';
+  allocationMethod: 'POSTED_GL_DIMENSIONS';
   lines: FinanceBusinessLineDto[];
   totals: {
     revenueMinor: number;
     costMinor: number;
     grossProfitMinor: number;
     grossMarginPercent: number | null;
+  };
+  asOf: string;
+};
+
+export type FinancialStatementAccountDto = {
+  accountCode: string;
+  accountName: string;
+  accountType: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+  amountMinor: number;
+  source: 'POSTED_GL';
+};
+
+export type ProfitAndLossDto = {
+  period: FinanceReportingPeriodDto;
+  currencyCode: 'IDR';
+  lines: FinancialStatementAccountDto[];
+  sections: Array<{ code: string; label: string; amountMinor: number }>;
+  totals: { revenueMinor: number; expenseMinor: number; profitLossMinor: number };
+  asOf: string;
+};
+
+export type BalanceSheetDto = {
+  period: FinanceReportingPeriodDto;
+  currencyCode: 'IDR';
+  sections: Array<{
+    code: 'ASSETS' | 'LIABILITIES' | 'EQUITY';
+    label: string;
+    amountMinor: number;
+    accounts: FinancialStatementAccountDto[];
+  }>;
+  currentEarningsMinor: number;
+  totals: {
+    assetsMinor: number;
+    liabilitiesMinor: number;
+    equityMinor: number;
+    differenceMinor: number;
+    balanced: boolean;
+  };
+  asOf: string;
+};
+
+export type AviationProfitabilityEvidenceDto = {
+  journalLineId: string;
+  journalId: string;
+  journalNumber: string;
+  accountingEventId: string;
+  eventType: string;
+  sourceType: string;
+  sourceId: string;
+  accountCode: string;
+  accountName: string;
+  amountMinor: number;
+  sourceRoute: string | null;
+};
+
+export type AviationProfitabilityUnitDto = {
+  id: string;
+  label: string;
+  revenueMinor: number;
+  costMinor: number;
+  marginMinor: number;
+  marginPercent: number | null;
+  costs: {
+    fuelMinor: number;
+    handlingMinor: number;
+    airportStationMinor: number;
+    maintenanceMinor: number;
+    otherDirectMinor: number;
+  };
+  flightIds: string[];
+  evidence: AviationProfitabilityEvidenceDto[];
+};
+
+export type AviationProfitabilityDto = {
+  period: FinanceReportingPeriodDto;
+  currencyCode: 'IDR';
+  attributionMethod: 'POSTED_GL_DIMENSIONS';
+  flights: AviationProfitabilityUnitDto[];
+  routes: AviationProfitabilityUnitDto[];
+  stations: AviationProfitabilityUnitDto[];
+  totals: {
+    revenueMinor: number;
+    costMinor: number;
+    marginMinor: number;
+    marginPercent: number | null;
   };
   asOf: string;
 };

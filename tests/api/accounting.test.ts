@@ -26,9 +26,10 @@ beforeAll(async () => {
 
 await setup({
   rootDir: fileURLToPath(new URL('../..', import.meta.url)),
+  buildDir: `/tmp/ama-nuxt-test-accounting-${process.pid}`,
   server: true,
   browser: false,
-  setupTimeout: 300_000
+  setupTimeout: 600_000
 });
 
 describe('accounting journal detail API', () => {
