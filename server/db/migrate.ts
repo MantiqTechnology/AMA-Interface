@@ -16,6 +16,7 @@ import {
   cargoMasterDataDropStatements
 } from './migrations/master-data/cargo';
 import { ticketingDropStatements, ticketingStatements } from './migrations/ticketing';
+import { smsDropStatements, smsStatements } from './migrations/sms';
 import {
   inventoryDropStatements,
   inventoryImmutabilityStatements,
@@ -1469,6 +1470,7 @@ const createStatements = [
   ...corporateAssetStatements,
   ...maintenanceStatements,
   ...hrisStatements,
+  ...smsStatements,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_due_at ON invoices(due_at)`,
@@ -1507,6 +1509,7 @@ const dropStatements = [
   ...corporateAssetDropStatements,
   ...inventoryDropStatements,
   ...ticketingDropStatements,
+  ...smsDropStatements,
   'DROP VIEW IF EXISTS general_ledger',
   'DROP TABLE IF EXISTS financial_exports',
   'DROP TABLE IF EXISTS financial_audit_logs',

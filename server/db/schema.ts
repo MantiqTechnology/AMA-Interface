@@ -7,3 +7,4 @@ export * from './schema/billing';
 export * from './schema/ticketing';
 export * from './schema/inventory';
 export * from './schema/hris';
+export * from './schema/sms';

@@ -4,6 +4,7 @@ import { seedCommercialMasterData } from './seeds/master-data/commercial';
 import { seedFinanceMasterData } from './seeds/master-data/finance';
 import { seedOperationsMasterData } from './seeds/master-data/operations';
 import { createDemoSeedContext, type DemoSeedContext } from './seeds/context';
+import { seedSmsData } from './seeds/sms';
 
 import { seedHrisData } from './seeds/hris';
 
@@ -16,4 +17,5 @@ export async function seedDemoData(
   await seedCommercialMasterData(db, context);
   await seedCargoMasterData(db, context);
   await seedHrisData(db, context);
+  await seedSmsData(db, context);
 }

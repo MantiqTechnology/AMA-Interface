@@ -1,0 +1,18 @@
+services:
+  ama-sms-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ama-sms-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/.nuxt
+    environment:
+      - NODE_ENV=development
+      - HOST=0.0.0.0
+    stdin_open: true
+    tty: true

@@ -1,6 +1,7 @@
 .nuxt
 .nuxt-*
 .output
+.pnpm-store/
 node_modules
 data/*.sqlite
 data/*.sqlite-*
