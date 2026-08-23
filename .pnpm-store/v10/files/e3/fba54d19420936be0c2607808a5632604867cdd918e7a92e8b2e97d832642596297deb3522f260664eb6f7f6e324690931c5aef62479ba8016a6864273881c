@@ -1,0 +1,191 @@
+import { createRequire } from "node:module";
+import fs, { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, isAbsolute, relative, resolve } from "pathe";
+import { createHash } from "node:crypto";
+import fsp from "node:fs/promises";
+
+//#region src/shared/template.ts
+function getTemplate(source, settings, isSCSS) {
+	const suffix = isSCSS ? ";\n" : "\n";
+	return `@use "${settings}"${suffix}@use "${source}"${suffix}`;
+}
+
+//#endregion
+//#region src/shared/cache.ts
+const require = createRequire(import.meta.url);
+const CACHE_NAMESPACE = "@vuetify/unplugin-styles";
+const DEFAULT_CACHE_SUBDIR = "node_modules/.cache";
+function createCacheInfo(options) {
+	const settingsContent = readFileSync(options.settingsPath, "utf8");
+	const hash = createHash("sha256").update(settingsContent).update("\0").update(options.sassOptions ? JSON.stringify(options.sassOptions) : "").digest("hex").slice(0, 10);
+	const key = `${options.pluginVersion}-${options.vuetifyVersion}-${hash}`;
+	return {
+		dir: resolve(options.cacheDir ? resolve(options.cwd, options.cacheDir) : resolve(options.cwd, DEFAULT_CACHE_SUBDIR, CACHE_NAMESPACE), key),
+		key
+	};
+}
+function cachePathFor(info, relFromVuetify) {
+	const withoutExt = relFromVuetify.replace(/\.(sass|scss|css)$/, "");
+	return resolve(info.dir, `${withoutExt}.css`);
+}
+const inflight = /* @__PURE__ */ new Map();
+function depsHash(deps) {
+	const h = createHash("sha256");
+	for (const p of deps) {
+		h.update(p).update("\0");
+		try {
+			h.update(readFileSync(p));
+		} catch {
+			h.update("__missing__");
+		}
+		h.update("\0");
+	}
+	return h.digest("hex").slice(0, 16);
+}
+function atomicWrite(target, content) {
+	const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+	writeFileSync(tmp, content);
+	renameSync(tmp, target);
+}
+function getOrCompile(cachePath, sassPath, settingsPath, loadPaths, sassOptions) {
+	if (!cachePath) return compile(sassPath, settingsPath, loadPaths, sassOptions);
+	const existing = inflight.get(cachePath);
+	if (existing) return existing;
+	const task = (async () => {
+		const depsPath = `${cachePath}.deps`;
+		if (existsSync(cachePath) && existsSync(depsPath)) try {
+			const meta = JSON.parse(readFileSync(depsPath, "utf8"));
+			if (meta.hash === depsHash(meta.deps)) return {
+				css: readFileSync(cachePath, "utf8"),
+				deps: meta.deps
+			};
+		} catch {}
+		const result = await compile(sassPath, settingsPath, loadPaths, sassOptions);
+		mkdirSync(dirname(cachePath), { recursive: true });
+		atomicWrite(cachePath, result.css);
+		atomicWrite(depsPath, JSON.stringify({
+			hash: depsHash(result.deps),
+			deps: result.deps
+		}));
+		return result;
+	})();
+	inflight.set(cachePath, task);
+	task.finally(() => inflight.delete(cachePath));
+	return task;
+}
+let cachedCompileStringAsync;
+function loadCompileStringAsync() {
+	if (cachedCompileStringAsync) return cachedCompileStringAsync;
+	const errors = [];
+	for (const name of ["sass-embedded", "sass"]) try {
+		cachedCompileStringAsync = require(name).compileStringAsync;
+		return cachedCompileStringAsync;
+	} catch (error) {
+		errors.push(error);
+	}
+	throw new Error(`[@vuetify/unplugin-styles] Styled mode requires \`sass-embedded\` or \`sass\` to be installed as a peer dependency. Underlying errors: ${errors.map((error) => error?.message ?? String(error)).join(" | ")}`);
+}
+async function compile(sassPath, settingsPath, loadPaths, sassOptions) {
+	const compileStringAsync = loadCompileStringAsync();
+	const isSCSS = sassPath.endsWith(".scss");
+	const result = await compileStringAsync(getTemplate(pathToFileURL(sassPath).href, pathToFileURL(settingsPath).href, isSCSS), {
+		quietDeps: true,
+		...sassOptions,
+		syntax: isSCSS ? "scss" : "indented",
+		loadPaths
+	});
+	const deps = result.loadedUrls.filter((u) => u.protocol === "file:").map((u) => fileURLToPath(u)).filter((p) => !/[\\/]node_modules[\\/]/.test(p));
+	return {
+		css: result.css,
+		deps
+	};
+}
+
+//#endregion
+//#region src/shared/constants.ts
+const VUETIFY_STYLES_PREFIX = "vuetify-styles/";
+const VUETIFY_STYLE_PATH = "vuetify/lib/styles/main.css";
+const VUETIFY_STYLES_EMPTY = "vuetify-styles-empty.css";
+
+//#endregion
+//#region src/shared/options.ts
+function resolveCacheConfig(cache) {
+	if (cache === false) return { enabled: false };
+	if (cache === void 0 || cache === true) return { enabled: true };
+	if (typeof cache === "string") throw new TypeError("[@vuetify/unplugin-styles] `cache: string` was removed. Use `cache: { path: \"<dir>\" }` instead.");
+	const config = { enabled: true };
+	if (cache.path !== void 0) config.path = cache.path;
+	if (cache.sassOptions !== void 0) config.sassOptions = cache.sassOptions;
+	return config;
+}
+function hasFunctionValues(obj) {
+	if (!obj) return false;
+	for (const value of Object.values(obj)) {
+		if (typeof value === "function") return true;
+		if (Array.isArray(value) && value.some((item) => typeof item === "function")) return true;
+	}
+	return false;
+}
+
+//#endregion
+//#region src/shared/resolver.ts
+function createResolver(context, meta) {
+	if (isViteLike(meta)) return { resolve: async (path, importer) => {
+		return (await context.resolve(path, importer))?.id;
+	} };
+	else if (isRspackLike(meta)) {
+		const resolver = (context.getNativeBuildContext?.())?.compiler.resolverFactory.get("normal");
+		return { resolve: async (path, importer) => {
+			if (!resolver) return;
+			return resolvePath(resolver, {}, importer ? dirname(importer) : process.cwd(), path);
+		} };
+	}
+	return { resolve: async () => void 0 };
+}
+
+//#endregion
+//#region src/shared/utils.ts
+function isViteLike(meta) {
+	return meta.framework === "vite" || meta.framework === "rolldown" || meta.framework === "rollup" || meta.framework === "farm";
+}
+function isRspackLike(meta) {
+	return meta.framework === "rspack" || meta.framework === "webpack";
+}
+async function resolvePath(resolver, ctx, context, request) {
+	return new Promise((resolve, reject) => {
+		resolver.resolve(ctx, context, request, {}, (err, res) => {
+			if (err) reject(err);
+			else resolve(res === false ? void 0 : res);
+		});
+	});
+}
+function isSubdir(root, test) {
+	const rel = relative(root, test);
+	return !!rel && !rel.startsWith("..") && !isAbsolute(rel);
+}
+function resolveCssFactory() {
+	const mappings = /* @__PURE__ */ new Map();
+	return async (source) => {
+		let mapping = mappings.get(source);
+		if (!mapping) {
+			try {
+				mapping = source.replace(/\.css$/, ".sass");
+				await fsp.access(mapping, fs.constants.R_OK);
+			} catch (error) {
+				if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+				try {
+					mapping = source.replace(/\.css$/, ".scss");
+					await fsp.access(mapping, fs.constants.R_OK);
+				} catch {
+					mapping = source;
+				}
+			}
+			mappings.set(source, mapping);
+		}
+		return mapping;
+	};
+}
+
+//#endregion
+export { resolveCacheConfig as a, VUETIFY_STYLE_PATH as c, getOrCompile as d, getTemplate as f, hasFunctionValues as i, cachePathFor as l, resolveCssFactory as n, VUETIFY_STYLES_EMPTY as o, createResolver as r, VUETIFY_STYLES_PREFIX as s, isSubdir as t, createCacheInfo as u };

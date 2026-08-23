@@ -1,0 +1,8 @@
+import { Options } from "./types.mjs";
+import { UnpluginFactory } from "unplugin";
+
+//#region src/index.d.ts
+declare const unpluginFactory: UnpluginFactory<Options | undefined>;
+declare const unplugin: unplugin.UnpluginInstance<Options | undefined, boolean>;
+//#endregion
+export { unplugin as default, unplugin, unpluginFactory };

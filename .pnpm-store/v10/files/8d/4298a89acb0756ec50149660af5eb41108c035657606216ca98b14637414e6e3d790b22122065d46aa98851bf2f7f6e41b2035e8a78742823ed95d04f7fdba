@@ -1,0 +1,148 @@
+@layer vuetify-components {
+  .v-month-picker {
+    width: 360px;
+  }
+  .v-month-picker > .v-picker__body {
+    flex-direction: column;
+  }
+  .v-month-picker .v-date-picker-years {
+    flex-grow: 1;
+  }
+  .v-month-picker .v-date-picker-years__content {
+    width: 100%;
+    grid-template-columns: repeat(var(--v-month-picker-years-columns, 4), 1fr);
+    padding: 16px;
+  }
+  .v-month-picker .v-date-picker-years__content > .v-btn {
+    padding: 6px;
+  }
+  .v-month-picker__controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-grow: 1;
+    padding: 12px 12px 0;
+  }
+  .v-month-picker__controls .v-btn > .v-btn__append > .v-icon {
+    transition-property: transform;
+    transition-duration: 0.28s;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .v-month-picker--years .v-month-picker__controls .v-btn > .v-btn__append > .v-icon {
+    transform: rotate(180deg);
+  }
+  .v-month-picker__months {
+    position: relative;
+    overflow: hidden;
+  }
+  .v-month-picker__months-content {
+    width: 100%;
+    padding: 16px;
+  }
+  .v-month-picker--list .v-month-picker__months {
+    overflow-y: auto;
+    max-height: 336px;
+  }
+  .v-month-picker--list .v-month-picker__months-content {
+    padding: 0px;
+  }
+  .v-month-picker--list .v-month-picker__month {
+    padding: 0px;
+  }
+  .v-month-picker--list .v-month-picker__month > .v-btn {
+    justify-content: start;
+    height: 48px;
+  }
+  .v-month-picker--list .v-month-picker__month:not(.v-month-picker--list .v-month-picker__month--selected) > .v-btn {
+    padding-inline-start: 38px;
+  }
+  .v-month-picker__months-row {
+    display: grid;
+    grid-template-columns: repeat(var(--v-month-picker-months-columns, 4), 1fr);
+  }
+  .v-month-picker__month {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 6px;
+    --range-selection-rounding: 999px;
+    --range-selection-inset: 2px;
+  }
+  .v-month-picker--list .v-month-picker__month {
+    --range-selection-rounding: 0px;
+    --range-selection-inset: 0px;
+  }
+  .v-month-picker__month > .v-btn {
+    width: 100%;
+  }
+}
+@layer vuetify-final.trumps {
+  @media (forced-colors: active) {
+    .v-month-picker__month--current > .v-btn {
+      border-color: buttontext !important;
+    }
+    .v-month-picker__month--selected:not(.v-month-picker__month--range-middle) > .v-btn, .v-month-picker__month--range-start > .v-btn, .v-month-picker__month--range-end > .v-btn {
+      border-color: highlight !important;
+      background: none !important;
+    }
+  }
+}
+@layer vuetify-components {
+  .v-month-picker__month--range-start > .v-btn, .v-month-picker__month--range-end > .v-btn, .v-month-picker__month--preview-start > .v-btn, .v-month-picker__month--preview-end > .v-btn {
+    position: relative;
+    z-index: 1;
+  }
+  .v-month-picker__month--selected .v-btn {
+    background-color: rgb(var(--v-theme-surface-variant));
+    color: rgb(var(--v-theme-on-surface-variant));
+  }
+  .v-month-picker__month .v-month-picker__range-bg {
+    position: absolute;
+    inset: var(--range-selection-inset) 0;
+    pointer-events: none;
+    background-color: rgb(var(--v-theme-surface-variant));
+  }
+}
+@layer vuetify-final.trumps {
+  @media (forced-colors: active) {
+    .v-month-picker__month .v-month-picker__range-bg {
+      background-color: highlight !important;
+      opacity: 0.2;
+    }
+  }
+}
+@layer vuetify-components {
+  .v-month-picker__month .v-month-picker__range-bg--range {
+    opacity: 0.12;
+  }
+  .v-month-picker__month .v-month-picker__range-bg--preview {
+    opacity: 0.06;
+  }
+  .v-month-picker__month--range-start > .v-month-picker__range-bg {
+    left: var(--range-selection-inset);
+    border-radius: var(--range-selection-rounding) 0 0 var(--range-selection-rounding);
+  }
+  .v-month-picker__month--range-end > .v-month-picker__range-bg {
+    right: var(--range-selection-inset);
+    border-radius: 0 var(--range-selection-rounding) var(--range-selection-rounding) 0;
+  }
+  .v-month-picker__month--preview-start > .v-month-picker__range-bg {
+    left: var(--range-selection-inset);
+    border-radius: var(--range-selection-rounding) 0 0 var(--range-selection-rounding);
+  }
+  .v-month-picker__month--preview-end > .v-month-picker__range-bg {
+    right: var(--range-selection-inset);
+    border-radius: 0 var(--range-selection-rounding) var(--range-selection-rounding) 0;
+  }
+  .v-month-picker__month--range-middle:last-of-type > .v-month-picker__range-bg, .v-month-picker__month--range-start:last-of-type > .v-month-picker__range-bg, .v-month-picker__month--preview-middle:last-of-type > .v-month-picker__range-bg, .v-month-picker__month--preview-start:last-of-type > .v-month-picker__range-bg {
+    right: var(--range-selection-inset);
+    border-top-right-radius: var(--range-selection-rounding);
+    border-bottom-right-radius: var(--range-selection-rounding);
+  }
+  .v-month-picker__month--range-middle:first-of-type > .v-month-picker__range-bg, .v-month-picker__month--range-end:first-of-type > .v-month-picker__range-bg, .v-month-picker__month--preview-middle:first-of-type > .v-month-picker__range-bg, .v-month-picker__month--preview-end:first-of-type > .v-month-picker__range-bg {
+    left: var(--range-selection-inset);
+    border-top-left-radius: var(--range-selection-rounding);
+    border-bottom-left-radius: var(--range-selection-rounding);
+  }
+}

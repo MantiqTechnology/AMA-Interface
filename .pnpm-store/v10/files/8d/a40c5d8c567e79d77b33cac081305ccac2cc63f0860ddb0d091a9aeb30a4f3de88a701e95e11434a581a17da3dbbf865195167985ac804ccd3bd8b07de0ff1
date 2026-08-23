@@ -1,0 +1,9 @@
+import { StringOptions } from "sass-embedded";
+
+//#region src/shared/options.d.ts
+type CacheOption = boolean | {
+  path?: string;
+  sassOptions?: Partial<StringOptions<'async'>>;
+};
+//#endregion
+export { CacheOption as t };

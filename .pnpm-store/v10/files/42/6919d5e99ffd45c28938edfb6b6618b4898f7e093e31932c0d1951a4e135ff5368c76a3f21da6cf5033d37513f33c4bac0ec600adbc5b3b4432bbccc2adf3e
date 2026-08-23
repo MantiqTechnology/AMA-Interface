@@ -1,0 +1,193 @@
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://cdn.vuetifyjs.com/docs/images/one/logos/vloader-logo-dark.png">
+    <img alt="Vuetify Loader Logo" src="https://cdn.vuetifyjs.com/docs/images/one/logos/vloader-logo-light.png" height="100">
+  </picture>
+</div>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@vuetify/unplugin-styles">
+    <img src="https://img.shields.io/npm/dt/@vuetify/unplugin-styles.svg" alt="Downloads">
+  </a>
+  <a href="https://www.npmjs.com/package/@vuetify/unplugin-styles">
+    <img src="https://img.shields.io/npm/dm/@vuetify/unplugin-styles.svg" alt="Downloads">
+  </a>
+  <br>
+  <a href="https://github.com/vuetifyjs/unplugin-styles/blob/main/LICENSE">
+    <img src="https://img.shields.io/npm/l/@vuetify/unplugin-styles.svg" alt="License">
+  </a>
+  <a href="https://community.vuetifyjs.com">
+    <img src="https://discordapp.com/api/guilds/340160225338195969/widget.png" alt="Chat">
+  </a>
+</p>
+
+# @vuetify/unplugin-styles
+
+Unified Vuetify styles plugin for Vite, Nuxt, Webpack, Rspack, Rsbuild, Astro, and vite-ssg. Works with Vuetify 3 and Vuetify 4.
+
+Customize Vuetify styles through a single sass settings file — both the global `vuetify/styles` entry and per-component styles pick up your overrides. Compiled CSS is cached on disk for instant subsequent builds.
+
+## Install
+
+```bash
+npm i -D @vuetify/unplugin-styles
+npm i -D sass-embedded   # or `sass`
+```
+
+`sass-embedded` and `sass` are both optional peer dependencies. Pick whichever is already in your toolchain; `sass-embedded` is faster.
+
+## Modes
+
+The plugin has three stylization modes, selected by the options object.
+
+| Mode        | Options                                     | Effect                                                        |
+|-------------|---------------------------------------------|---------------------------------------------------------------|
+| **default** | `undefined`                                 | Vuetify's shipped CSS is loaded as-is.                        |
+| **styled**  | `{ settings: './vuetify.settings.scss' }`   | Vuetify styles are recompiled from sass with your overrides.  |
+| **none**    | `{ styles: 'none' }`                        | All Vuetify styles are stripped — you ship only your own CSS. |
+
+`settings` and `styles: 'none'` are mutually exclusive.
+
+## Usage
+
+Register the plugin in your bundler config. The plugin factory takes the same `Options` for every builder; only the import path differs.
+
+```ts
+import VuetifyStyles from '@vuetify/unplugin-styles/vite'
+
+VuetifyStyles({ settings: './src/vuetify.settings.scss' })
+```
+
+| Bundler            | Import                                    | Notes                                                                                      |
+|--------------------|-------------------------------------------|--------------------------------------------------------------------------------------------|
+| Vite / vite-ssg    | `@vuetify/unplugin-styles/vite`           |                                                                                            |
+| Astro              | `@vuetify/unplugin-styles/astro`          | Registers as an integration.                                                               |
+| Webpack            | `@vuetify/unplugin-styles/webpack`        | Requires a `.sass` loader rule (e.g. `['vue-style-loader', 'css-loader', 'sass-loader']`). |
+| Rspack / Rsbuild   | `@vuetify/unplugin-styles/rspack`         | Plug into `tools.rspack.plugins` for Rsbuild.                                              |
+| Nuxt               | `@vuetify/unplugin-styles/nuxt` (module)  | Auto-detects the active Nuxt builder.                                                      |
+
+### Nuxt module
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@vuetify/unplugin-styles/nuxt'],
+  vuetifyStyles: {
+    settings: '@/vuetify.settings.scss',
+    // For Vuetify 4 without a settings file — toggle modular entries:
+    // colors: true,     // default, includes vuetify/styles/colors
+    // utilities: true,  // default, includes vuetify/styles/utilities
+  },
+})
+```
+
+> `colors` and `utilities` affect Vuetify 4 only. On Vuetify 3 the styles are bundled into a single `vuetify/styles` entry — use the `settings` file to customize them.
+
+## Settings file
+
+A settings file is a plain sass file that configures `vuetify/settings`:
+
+```scss
+// src/vuetify.settings.scss
+@use 'vuetify/settings' with (
+  $body-font-family: 'Inter, sans-serif',
+  $border-radius-root: 8px,
+  $button-height: 40px,
+  $color-pack: false,
+);
+```
+
+Both global variables (`$border-radius-root`, `$body-font-family`, `$color-pack` …) and component-level variables (`$button-height`, `$alert-padding` …) are configurable from this file — `vuetify/settings` re-forwards every component's `!default` variables.
+
+## Options
+
+```ts
+interface Options {
+  // Path to the user settings sass file. Required for styled mode.
+  settings?: string
+
+  // Set to 'none' to strip all Vuetify CSS imports.
+  // Mutually exclusive with `settings`.
+  styles?: 'none'
+
+  // Cache control for compiled Vuetify styles. See [Caching](#caching).
+  //  - true / undefined — our compile + disk cache (default)
+  //  - false            — passthrough; the host bundler compiles
+  //  - { path?, sassOptions? } — our compile with overrides
+  // @default true
+  cache?:
+    | boolean
+    | {
+      path?: string
+      sassOptions?: Partial<import('sass-embedded').StringOptions<'async'>>
+    }
+}
+```
+
+## Caching
+
+Two modes:
+
+### Our-compile + disk cache (default, `cache: true`)
+
+The plugin compiles Vuetify styles directly with `sass-embedded` and writes the result to `node_modules/.cache/@vuetify/unplugin-styles/<key>/`. The cache key fingerprints the plugin version, the installed Vuetify version, the contents of your settings file, and your `cache.sassOptions` (via `JSON.stringify`). Identical inputs reuse the cache instantly. Editing the settings file in dev hot-reloads every affected Vuetify style without a page refresh.
+
+Because we compile directly, the host bundler's sass configuration (`css.preprocessorOptions`, `sass-loader` options) is **not** applied. Configure sass for the Vuetify compile via `cache.sassOptions`:
+
+```ts
+Unplugin({
+  settings: './src/vuetify.settings.scss',
+  cache: {
+    sassOptions: {
+      silenceDeprecations: ['legacy-js-api'],
+      quietDeps: true,
+    },
+  },
+})
+```
+
+`syntax` and `loadPaths` cannot be overridden — the plugin owns those.
+
+For monorepo task runners (Nx / Turborepo / Bazel) point `cache.path` at a declared task output to travel the compiled CSS with the rest of the build cache.
+
+**Function values caveat.** `cache.sassOptions` is hashed via `JSON.stringify`, which silently drops function-typed values like `importers` and `logger`. If you change those functions' behaviour, the cache key won't notice, and you'll see stale output. The plugin prints a warning at startup if it detects function values; either delete `node_modules/.cache/@vuetify` after edits, or use `cache: false` for projects that rely on custom importers.
+
+### Passthrough (`cache: false`)
+
+The plugin's `load` hook emits the sass source (your settings + the underlying Vuetify file) and the bundler compiles it through its normal CSS pipeline. Vite's `css.preprocessorOptions`, webpack/rspack's `sass-loader` options, custom importers — all apply naturally:
+
+```ts
+// vite.config.ts
+import Unplugin from '@vuetify/unplugin-styles/vite'
+
+export default defineConfig({
+  plugins: [Unplugin({ settings: '...', cache: false })],
+  css: {
+    preprocessorOptions: {
+      sass: {
+        additionalData: '@use "@/_shared.sass"\n',
+        silenceDeprecations: ['legacy-js-api'],
+      },
+    },
+  },
+})
+```
+
+Trade-offs:
+
+- ✅ Bundler sass config is the source of truth.
+- ✅ No disk cache to invalidate or delete.
+- ❌ No cross-project cache reuse — every project recompiles from source.
+- ❌ Cold builds are slower than the cached path on identical inputs (typically ~2× for a fresh Vuetify project; warm builds depend on the bundler's own caching layer).
+
+Requires the host bundler to handle `.sass`/`.scss` natively (Vite ≥ 3 with `sass`/`sass-embedded` installed; webpack/rspack with a `sass-loader` rule; rolldown/farm/rollup require a sass-capable plugin in the chain).
+
+## Limitations
+
+- The settings file must `@use 'vuetify/settings' with (...)` (or `@forward` it) — otherwise the plugin warns on start-up and uses Vuetify defaults.
+- Among Nuxt builders, the vite path is the most battle-tested.
+- **Bundler sass config does not reach our-compile mode.** When `cache: true` (default), the plugin invokes `sass-embedded` directly, bypassing Vite's `css.preprocessorOptions`, webpack/rspack's `sass-loader` options, and any custom sass plugins. Configure sass for Vuetify via `cache.sassOptions`, or switch to `cache: false` to delegate compilation to the bundler. See [Caching](#caching).
+
+## License
+
+MIT License © 2026-PRESENT [Andrei Elkin](https://github.com/andreyyolkin)

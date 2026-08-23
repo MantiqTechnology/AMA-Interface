@@ -1,0 +1,16 @@
+import "./shared-CCwvuKDw.mjs";
+import unplugin from "./index.mjs";
+
+//#region src/astro.ts
+function astro(options) {
+	return {
+		name: "@vuetify/unplugin-styles",
+		hooks: { "astro:config:setup": ({ config }) => {
+			config.vite.plugins ||= [];
+			config.vite.plugins.push(unplugin.vite(options));
+		} }
+	};
+}
+
+//#endregion
+export { astro as default };

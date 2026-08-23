@@ -1,0 +1,299 @@
+import {
+  defineNuxtPlugin,
+  useCookie,
+  useNuxtApp,
+  useRequestEvent,
+  useRequestHeaders,
+  useState
+} from "#imports";
+import { setResponseHeader } from "h3";
+import {
+  ssrClientHintsConfiguration
+} from "virtual:vuetify-ssr-client-hints-configuration";
+import { reactive } from "vue";
+import { VuetifyHTTPClientHints } from "./client-hints.js";
+import { parseUserAgent } from "./detect-browser.js";
+const AcceptClientHintsHeaders = {
+  prefersColorScheme: "Sec-CH-Prefers-Color-Scheme",
+  prefersReducedMotion: "Sec-CH-Prefers-Reduced-Motion",
+  viewportHeight: "Sec-CH-Viewport-Height",
+  viewportWidth: "Sec-CH-Viewport-Width",
+  devicePixelRatio: "Sec-CH-DPR"
+};
+const AcceptClientHintsRequestHeaders = Object.entries(AcceptClientHintsHeaders).reduce((acc, [key, value]) => {
+  acc[key] = value.toLowerCase();
+  return acc;
+}, {});
+const SecChUaMobile = "Sec-CH-UA-Mobile".toLowerCase();
+const HttpRequestHeaders = Array.from(Object.values(AcceptClientHintsRequestHeaders)).concat("user-agent", "cookie", SecChUaMobile);
+const plugin = defineNuxtPlugin({
+  name: "vuetify:client-hints:server:plugin",
+  order: 24,
+  parallel: true,
+  setup(nuxtApp) {
+    const state = useState(VuetifyHTTPClientHints);
+    const requestHeaders = useRequestHeaders(HttpRequestHeaders);
+    const userAgentHeader = requestHeaders["user-agent"];
+    const userAgent = userAgentHeader ? parseUserAgent(userAgentHeader) : null;
+    const clientHintsRequest = collectClientHints(userAgent, ssrClientHintsConfiguration, requestHeaders);
+    writeClientHintsResponseHeaders(clientHintsRequest, ssrClientHintsConfiguration);
+    state.value = clientHintsRequest;
+    state.value.colorSchemeCookie = writeThemeCookie(
+      clientHintsRequest,
+      ssrClientHintsConfiguration
+    );
+    nuxtApp.hook("vuetify:before-create", async ({ vuetifyOptions }) => {
+      const clientWidth = clientHintsRequest.viewportWidth;
+      const clientHeight = clientHintsRequest.viewportHeight;
+      vuetifyOptions.ssr = typeof clientWidth === "number" ? {
+        clientWidth,
+        clientHeight
+      } : true;
+      if (clientHintsRequest.colorSchemeFromCookie) {
+        if (vuetifyOptions.theme === false) {
+          vuetifyOptions.theme = { defaultTheme: clientHintsRequest.colorSchemeFromCookie };
+        } else {
+          vuetifyOptions.theme ??= {};
+          vuetifyOptions.theme.defaultTheme = clientHintsRequest.colorSchemeFromCookie;
+        }
+      }
+      await nuxtApp.hooks.callHook("vuetify:ssr-client-hints", {
+        vuetifyOptions,
+        ssrClientHintsConfiguration: {
+          ...ssrClientHintsConfiguration,
+          enabled: true
+        },
+        ssrClientHints: state.value
+      });
+    });
+    return {
+      provide: reactive({
+        ssrClientHints: state
+      })
+    };
+  }
+});
+const chromiumBasedBrowserFeatures = {
+  prefersColorScheme: (_, v) => v[0] >= 93,
+  prefersReducedMotion: (_, v) => v[0] >= 108,
+  viewportHeight: (_, v) => v[0] >= 108,
+  viewportWidth: (_, v) => v[0] >= 108,
+  devicePixelRatio: (_, v) => v[0] >= 46
+};
+const allowedBrowsers = [
+  // 'edge',
+  // 'edge-ios',
+  ["chrome", chromiumBasedBrowserFeatures],
+  ["edge-chromium", {
+    ...chromiumBasedBrowserFeatures,
+    devicePixelRatio: (_, v) => v[0] >= 79
+  }],
+  ["chromium-webview", chromiumBasedBrowserFeatures],
+  ["opera", {
+    prefersColorScheme: (android, v) => v[0] >= (android ? 66 : 79),
+    prefersReducedMotion: (android, v) => v[0] >= (android ? 73 : 94),
+    viewportHeight: (android, v) => v[0] >= (android ? 73 : 94),
+    viewportWidth: (android, v) => v[0] >= (android ? 73 : 94),
+    devicePixelRatio: (_, v) => v[0] >= 33
+  }]
+];
+const ClientHeaders = ["Accept-CH", "Vary", "Critical-CH"];
+function browserFeatureAvailable(userAgent, feature) {
+  if (userAgent == null || userAgent.type !== "browser") {
+    return false;
+  }
+  try {
+    const browserName = userAgent.name;
+    const android = userAgent.os?.toLowerCase().startsWith("android") ?? false;
+    const versions = userAgent.version.split(".").map((v) => Number.parseInt(v));
+    return allowedBrowsers.some(([name, check]) => {
+      if (browserName !== name) {
+        return false;
+      }
+      try {
+        return check[feature](android, versions);
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+function lookupClientHints(userAgent, ssrClientHintsConfiguration2, headers) {
+  const features = {
+    firstRequest: true,
+    prefersColorSchemeAvailable: false,
+    prefersReducedMotionAvailable: false,
+    viewportHeightAvailable: false,
+    viewportWidthAvailable: false,
+    devicePixelRatioAvailable: false
+  };
+  if (userAgent == null || userAgent.type !== "browser") {
+    return features;
+  }
+  if (ssrClientHintsConfiguration2.prefersColorScheme) {
+    features.prefersColorSchemeAvailable = browserFeatureAvailable(userAgent, "prefersColorScheme");
+  }
+  if (ssrClientHintsConfiguration2.prefersReducedMotion) {
+    features.prefersReducedMotionAvailable = browserFeatureAvailable(userAgent, "prefersReducedMotion");
+  }
+  if (ssrClientHintsConfiguration2.viewportSize) {
+    features.viewportHeightAvailable = browserFeatureAvailable(userAgent, "viewportHeight");
+    features.viewportWidthAvailable = browserFeatureAvailable(userAgent, "viewportWidth");
+    const mobileHeader = headers[SecChUaMobile];
+    if (mobileHeader === "?1") {
+      features.devicePixelRatioAvailable = browserFeatureAvailable(userAgent, "devicePixelRatio");
+    }
+  }
+  return features;
+}
+function collectClientHints(userAgent, ssrClientHintsConfiguration2, headers) {
+  const hints = lookupClientHints(userAgent, ssrClientHintsConfiguration2, headers);
+  if (ssrClientHintsConfiguration2.prefersColorScheme) {
+    if (ssrClientHintsConfiguration2.prefersColorSchemeOptions) {
+      const cookieName = ssrClientHintsConfiguration2.prefersColorSchemeOptions.cookieName;
+      const cookieValue = headers.cookie?.split(";").find((c) => c.trim().startsWith(`${cookieName}=`));
+      if (cookieValue) {
+        const value = cookieValue.split("=")?.[1].trim();
+        if (ssrClientHintsConfiguration2.prefersColorSchemeOptions.themeNames.includes(value)) {
+          hints.colorSchemeFromCookie = value;
+          hints.firstRequest = false;
+        }
+      }
+    }
+    if (!hints.colorSchemeFromCookie) {
+      const value = hints.prefersColorSchemeAvailable ? headers[AcceptClientHintsRequestHeaders.prefersColorScheme]?.toLowerCase() : void 0;
+      if (value === "dark" || value === "light" || value === "no-preference") {
+        hints.prefersColorScheme = value;
+        hints.firstRequest = false;
+      }
+      if (ssrClientHintsConfiguration2.prefersColorSchemeOptions) {
+        if (!value || value === "no-preference") {
+          hints.colorSchemeFromCookie = ssrClientHintsConfiguration2.prefersColorSchemeOptions.defaultTheme;
+        } else {
+          hints.colorSchemeFromCookie = value === "dark" ? ssrClientHintsConfiguration2.prefersColorSchemeOptions.darkThemeName : ssrClientHintsConfiguration2.prefersColorSchemeOptions.lightThemeName;
+        }
+      }
+    }
+  }
+  if (hints.prefersReducedMotionAvailable && ssrClientHintsConfiguration2.prefersReducedMotion) {
+    const value = headers[AcceptClientHintsRequestHeaders.prefersReducedMotion]?.toLowerCase();
+    if (value === "no-preference" || value === "reduce") {
+      hints.prefersReducedMotion = value;
+      hints.firstRequest = false;
+    }
+  }
+  if (hints.viewportHeightAvailable && ssrClientHintsConfiguration2.viewportSize) {
+    const header = headers[AcceptClientHintsRequestHeaders.viewportHeight];
+    if (header) {
+      hints.firstRequest = false;
+      try {
+        hints.viewportHeight = Number.parseInt(header);
+      } catch {
+        hints.viewportHeight = ssrClientHintsConfiguration2.clientHeight;
+      }
+    }
+  } else {
+    hints.viewportHeight = ssrClientHintsConfiguration2.clientHeight;
+  }
+  if (hints.viewportWidthAvailable && ssrClientHintsConfiguration2.viewportSize) {
+    const header = headers[AcceptClientHintsRequestHeaders.viewportWidth];
+    if (header) {
+      hints.firstRequest = false;
+      try {
+        hints.viewportWidth = Number.parseInt(header);
+      } catch {
+        hints.viewportWidth = ssrClientHintsConfiguration2.clientWidth;
+      }
+    }
+  } else {
+    hints.viewportWidth = ssrClientHintsConfiguration2.clientWidth;
+  }
+  if (hints.devicePixelRatioAvailable && ssrClientHintsConfiguration2.viewportSize) {
+    const header = headers[AcceptClientHintsRequestHeaders.devicePixelRatio];
+    if (header) {
+      hints.firstRequest = false;
+      try {
+        hints.devicePixelRatio = Number.parseFloat(header);
+        if (!Number.isNaN(hints.devicePixelRatio) && hints.devicePixelRatio > 0) {
+          if (typeof hints.viewportWidth === "number") {
+            hints.viewportWidth = Math.round(hints.viewportWidth / hints.devicePixelRatio);
+          }
+          if (typeof hints.viewportHeight === "number") {
+            hints.viewportHeight = Math.round(hints.viewportHeight / hints.devicePixelRatio);
+          }
+        }
+      } catch {
+      }
+    }
+  }
+  return hints;
+}
+function writeClientHintHeaders(key, headers) {
+  for (const header of ClientHeaders) {
+    headers[header] = (headers[header] ?? []).concat(key);
+  }
+}
+function writeClientHintsResponseHeaders(clientHintsRequest, ssrClientHintsConfiguration2) {
+  const headers = {};
+  if (ssrClientHintsConfiguration2.prefersColorScheme && clientHintsRequest.prefersColorSchemeAvailable) {
+    writeClientHintHeaders(AcceptClientHintsHeaders.prefersColorScheme, headers);
+  }
+  if (ssrClientHintsConfiguration2.prefersReducedMotion && clientHintsRequest.prefersReducedMotionAvailable) {
+    writeClientHintHeaders(AcceptClientHintsHeaders.prefersReducedMotion, headers);
+  }
+  if (ssrClientHintsConfiguration2.viewportSize && clientHintsRequest.viewportHeightAvailable && clientHintsRequest.viewportWidthAvailable) {
+    writeClientHintHeaders(AcceptClientHintsHeaders.viewportHeight, headers);
+    writeClientHintHeaders(AcceptClientHintsHeaders.viewportWidth, headers);
+    if (clientHintsRequest.devicePixelRatioAvailable) {
+      writeClientHintHeaders(AcceptClientHintsHeaders.devicePixelRatio, headers);
+    }
+  }
+  if (Object.keys(headers).length === 0) {
+    return;
+  }
+  const nuxtApp = useNuxtApp();
+  const callback = () => {
+    const event = useRequestEvent(nuxtApp);
+    for (const [key, value] of Object.entries(headers)) {
+      setResponseHeader(event, key, value);
+    }
+  };
+  const unhook = nuxtApp.hooks.hookOnce("app:rendered", callback);
+  nuxtApp.hooks.hookOnce("app:error", () => {
+    unhook();
+    return callback();
+  });
+}
+function writeThemeCookie(clientHintsRequest, ssrClientHintsConfiguration2) {
+  if (!ssrClientHintsConfiguration2.prefersColorScheme || !ssrClientHintsConfiguration2.prefersColorSchemeOptions) {
+    return;
+  }
+  const cookieName = ssrClientHintsConfiguration2.prefersColorSchemeOptions.cookieName;
+  const themeName = clientHintsRequest.colorSchemeFromCookie ?? ssrClientHintsConfiguration2.prefersColorSchemeOptions.defaultTheme;
+  const path = ssrClientHintsConfiguration2.prefersColorSchemeOptions.baseUrl;
+  const domain = ssrClientHintsConfiguration2.prefersColorSchemeOptions.cookieDomain;
+  const secure = ssrClientHintsConfiguration2.prefersColorSchemeOptions.cookieSecure;
+  const sameSite = ssrClientHintsConfiguration2.prefersColorSchemeOptions.cookieSameSite;
+  const date = /* @__PURE__ */ new Date();
+  const expires = new Date(date.setDate(date.getDate() + 365));
+  if (!clientHintsRequest.firstRequest || !ssrClientHintsConfiguration2.reloadOnFirstRequest) {
+    useCookie(cookieName, {
+      path,
+      domain,
+      expires,
+      sameSite,
+      secure
+    }).value = themeName;
+  }
+  let cookie = `${cookieName}=${themeName}; Path=${path}; Expires=${expires.toUTCString()}; SameSite=${sameSite[0].toUpperCase()}${sameSite.slice(1)}`;
+  if (domain) {
+    cookie += `; Domain=${domain}`;
+  }
+  if (secure) {
+    cookie += "; Secure";
+  }
+  return cookie;
+}
+export default plugin;

@@ -1,0 +1,49 @@
+@layer vuetify-components {
+  .v-video-volume--inline {
+    display: flex;
+    align-items: center;
+  }
+  .v-video-volume__menu {
+    background: rgb(var(--v-theme-surface));
+    color: rgb(var(--v-theme-on-surface));
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .v-video-volume__menu {
+    border-color: rgba(var(--v-border-color), var(--v-border-opacity));
+    border-style: solid;
+    border-width: thin;
+  }
+  .v-video-volume__menu--border {
+    border-width: thin;
+    box-shadow: none;
+  }
+  .v-video-volume__menu {
+    box-shadow: 0px 1px 2px 0px rgba(var(--v-shadow-color), var(--v-shadow-key-opacity, 0.3)), 0px 1px 3px 1px rgba(var(--v-shadow-color), var(--v-shadow-ambient-opacity, 0.15));
+    --v-elevation-overlay: color-mix(in srgb, var(--v-elevation-overlay-color) 2%, transparent);
+  }
+  .v-video-volume__menu {
+    border-radius: 4px;
+  }
+  .v-video-volume__menu:has(.v-input--horizontal) {
+    height: 40px;
+  }
+  .v-video-volume__menu:has(.v-input--vertical) {
+    width: 40px;
+  }
+  .v-video-volume__menu .v-slider.v-input--horizontal {
+    margin: 0 16px;
+    width: 100px;
+    height: 40px;
+  }
+  .v-video-volume__menu .v-slider.v-input--vertical {
+    margin: 16px 0;
+    height: 100px;
+    width: 40px;
+  }
+  .v-video-volume__menu .v-slider.v-input--vertical > .v-input__control {
+    min-height: 50px;
+  }
+}

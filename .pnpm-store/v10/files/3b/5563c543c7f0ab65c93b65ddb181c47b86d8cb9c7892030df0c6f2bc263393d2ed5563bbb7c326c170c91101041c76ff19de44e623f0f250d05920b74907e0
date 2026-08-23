@@ -1,0 +1,35 @@
+import { t as CacheOption } from "./options-CrOMiP1N.mjs";
+
+//#region src/types.d.ts
+interface BaseOptions {
+  /**
+   * Cache control for compiled Vuetify styles.
+   *
+   * - `true` / `undefined` (default) — compile Vuetify styles ourselves with
+   *   `sass-embedded` and persist the result on disk so subsequent builds with
+   *   identical inputs are near-instant. The host bundler's sass pipeline
+   *   (Vite `css.preprocessorOptions`, webpack/rspack `sass-loader`, etc.) is
+   *   bypassed for Vuetify styles in this mode. Configure sass behaviour via
+   *   `cache.sassOptions`.
+   * - `false` — passthrough: emit sass source from `load` and let the host
+   *   bundler compile it. The bundler's sass config applies. No disk cache.
+   * - `{ path?, sassOptions? }` — our-compile with overrides:
+   *   - `path` — relative directory for the disk cache.
+   *   - `sassOptions` — forwarded to `sass-embedded`. `syntax` and `loadPaths`
+   *     are controlled by the plugin and cannot be overridden.
+   *
+   * @default true
+   */
+  cache?: CacheOption;
+}
+interface StyledOptions extends BaseOptions {
+  styles?: undefined;
+  settings?: string;
+}
+interface UnstyledOptions extends BaseOptions {
+  styles: 'none';
+  settings?: never;
+}
+type Options = StyledOptions | UnstyledOptions;
+//#endregion
+export { Options };

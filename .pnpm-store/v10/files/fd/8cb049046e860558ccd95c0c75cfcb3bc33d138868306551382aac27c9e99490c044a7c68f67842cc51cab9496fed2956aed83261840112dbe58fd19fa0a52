@@ -1,0 +1,9 @@
+import "./shared-CCwvuKDw.mjs";
+import { unpluginFactory } from "./index.mjs";
+import { createWebpackPlugin } from "unplugin";
+
+//#region src/webpack.ts
+var webpack_default = createWebpackPlugin(unpluginFactory);
+
+//#endregion
+export { webpack_default as default };

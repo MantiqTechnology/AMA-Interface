@@ -1,0 +1,35 @@
+import type { Ref } from 'vue';
+export interface ElevationProps {
+    elevation?: number | string | null;
+    hoverElevation?: number | string | null;
+}
+export declare const makeElevationProps: <Defaults extends {
+    elevation?: unknown;
+    hoverElevation?: unknown;
+} = {}>(defaults?: Defaults | undefined) => {
+    elevation: unknown extends Defaults["elevation"] ? {
+        type: (NumberConstructor | StringConstructor)[];
+        validator: (value: string | number) => boolean;
+    } : Omit<{
+        type: (NumberConstructor | StringConstructor)[];
+        validator: (value: string | number) => boolean;
+    }, "default" | "type"> & {
+        type: import("vue").PropType<unknown extends Defaults["elevation"] ? string | number : string | number | Defaults["elevation"]>;
+        default: unknown extends Defaults["elevation"] ? string | number : Defaults["elevation"] | NonNullable<string | number>;
+    };
+    hoverElevation: unknown extends Defaults["hoverElevation"] ? {
+        type: (NumberConstructor | StringConstructor)[];
+        validator: (value: string | number) => boolean;
+    } : Omit<{
+        type: (NumberConstructor | StringConstructor)[];
+        validator: (value: string | number) => boolean;
+    }, "default" | "type"> & {
+        type: import("vue").PropType<unknown extends Defaults["hoverElevation"] ? string | number : string | number | Defaults["hoverElevation"]>;
+        default: unknown extends Defaults["hoverElevation"] ? string | number : Defaults["hoverElevation"] | NonNullable<string | number>;
+    };
+};
+type ElevationData = {
+    elevationClasses: Ref<string[]>;
+};
+export declare function useElevation(props: ElevationProps | Ref<number | string | undefined>): ElevationData;
+

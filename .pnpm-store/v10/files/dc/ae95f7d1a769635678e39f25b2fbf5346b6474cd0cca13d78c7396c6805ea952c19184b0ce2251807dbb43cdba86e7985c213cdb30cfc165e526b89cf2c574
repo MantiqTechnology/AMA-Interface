@@ -1,0 +1,187 @@
+import { t as version } from "./package-C5hwXWE1.mjs";
+import { a as resolveCacheConfig, c as VUETIFY_STYLE_PATH, d as getOrCompile, f as getTemplate, i as hasFunctionValues, l as cachePathFor, n as resolveCssFactory, o as VUETIFY_STYLES_EMPTY, r as createResolver, s as VUETIFY_STYLES_PREFIX, t as isSubdir, u as createCacheInfo } from "./shared-CCwvuKDw.mjs";
+import { readFileSync, statSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import { dirname, isAbsolute, normalize, relative, resolve } from "pathe";
+import { createUnplugin } from "unplugin";
+
+//#region src/index.ts
+const VUETIFY_STYLES_ID_RE = /^vuetify\/styles(?:\/|$)/;
+const PLUGIN_VERSION = version;
+/**
+* Vite's transformMiddleware strips the server base from virtual URLs
+* (e.g. `/_nuxt/vuetify-styles/...` → `/vuetify-styles/...`) and may also
+* append query strings (e.g. `?direct` for direct-CSS requests). Normalise
+* both into a clean `id` + the original `suffix` so callers can keep the
+* suffix on any id they return downstream.
+*/
+function stripBaseAndQuery(rawId) {
+	const withoutLead = rawId[0] === "/" ? rawId.slice(1) : rawId;
+	const q = withoutLead.indexOf("?");
+	return q === -1 ? {
+		id: withoutLead,
+		suffix: ""
+	} : {
+		id: withoutLead.slice(0, q),
+		suffix: withoutLead.slice(q)
+	};
+}
+const unpluginFactory = (options, meta) => {
+	const unstyled = options?.styles === "none";
+	const cacheConfig = resolveCacheConfig(options?.cache);
+	const passthrough = !cacheConfig.enabled;
+	let vuetifyBase;
+	let vuetifyVersion;
+	let configFile;
+	let cacheInfo;
+	const resolveCss = resolveCssFactory();
+	const loadedVirtualIds = /* @__PURE__ */ new Map();
+	const sassPathCache = /* @__PURE__ */ new Map();
+	let initPromise;
+	function findSassPath(rel) {
+		const cached = sassPathCache.get(rel);
+		if (cached) return cached;
+		const withoutExt = rel.replace(/\.(sass|scss|css)$/, "");
+		for (const ext of [".sass", ".scss"]) {
+			const candidate = resolve(vuetifyBase, `${withoutExt}${ext}`);
+			try {
+				statSync(candidate);
+				sassPathCache.set(rel, candidate);
+				return candidate;
+			} catch {}
+		}
+	}
+	function ensureInit(resolver) {
+		if (!initPromise) initPromise = (async () => {
+			const pkgPath = await resolver.resolve("vuetify/package.json", `${process.cwd()}/x`);
+			if (!pkgPath) throw new Error("[@vuetify/unplugin-styles] `vuetify` is not installed. Install it as a peer dependency.");
+			vuetifyBase = dirname(pkgPath);
+			vuetifyVersion = JSON.parse(readFileSync(pkgPath, "utf8")).version;
+			if (options?.settings) {
+				configFile = await resolver.resolve(options.settings, `${process.cwd()}/x`);
+				if (!configFile) throw new Error(`[@vuetify/unplugin-styles] Unable to resolve settings file "${options.settings}".`);
+				const settingsSource = readFileSync(configFile, "utf8");
+				if (!/vuetify\/(?:settings|_settings|lib\/styles\/settings)/.test(settingsSource)) console.warn(`[@vuetify/unplugin-styles] Settings file "${configFile}" does not import 'vuetify/settings'. Vuetify defaults will be used. Add \`@use 'vuetify/settings' with (...);\` to override them.`);
+			}
+			if (cacheConfig.enabled && hasFunctionValues(cacheConfig.sassOptions)) console.warn("[@vuetify/unplugin-styles] `cache.sassOptions` contains function values (e.g. `importers`, `logger`); these will not participate in cache invalidation. If you change their behaviour, delete `node_modules/.cache/@vuetify` to force recompile, or set `cache: false` so the bundler's sass pipeline handles them directly.");
+			rebuildCacheInfo();
+		})();
+		return initPromise;
+	}
+	function rebuildCacheInfo() {
+		if (!configFile || !vuetifyVersion || !cacheConfig.enabled) return;
+		cacheInfo = createCacheInfo({
+			cwd: process.cwd(),
+			cacheDir: cacheConfig.path,
+			settingsPath: configFile,
+			vuetifyVersion,
+			pluginVersion: PLUGIN_VERSION,
+			sassOptions: cacheConfig.sassOptions
+		});
+	}
+	function refreshCacheOnConfigChange(modified, removed) {
+		if (!configFile) return;
+		const normalizedConfig = normalize(configFile);
+		const hit = (set) => {
+			if (!set) return false;
+			for (const p of set) if (normalize(p) === normalizedConfig) return true;
+			return false;
+		};
+		if (hit(modified) || hit(removed)) rebuildCacheInfo();
+	}
+	function virtualCssIdFor(sassRelFromVuetify) {
+		if (passthrough) return `${VUETIFY_STYLES_PREFIX}${sassRelFromVuetify}`;
+		return `${VUETIFY_STYLES_PREFIX}${sassRelFromVuetify.replace(/\.(sass|scss)$/, "")}.css`;
+	}
+	return {
+		name: "@vuetify/unplugin-styles",
+		enforce: "pre",
+		resolveId: {
+			async handler(rawId, importer) {
+				const { id, suffix } = stripBaseAndQuery(rawId);
+				const resolver = createResolver(this, meta);
+				await ensureInit(resolver);
+				if (id === VUETIFY_STYLES_EMPTY || id.startsWith(VUETIFY_STYLES_PREFIX)) return id + suffix;
+				if (unstyled) {
+					if (VUETIFY_STYLES_ID_RE.test(id)) return VUETIFY_STYLES_EMPTY;
+					if (id.endsWith(".css") && vuetifyBase && importer && isSubdir(vuetifyBase, isAbsolute(id) ? id : importer)) return VUETIFY_STYLES_EMPTY;
+					return;
+				}
+				if (id === "vuetify/styles" && configFile && vuetifyBase) {
+					const cssPath = await resolver.resolve(VUETIFY_STYLE_PATH, `${process.cwd()}/x`);
+					if (!cssPath) return;
+					const sassPath = await resolveCss(cssPath);
+					return virtualCssIdFor(relative(vuetifyBase, sassPath));
+				}
+				if (id.endsWith(".css") && configFile && vuetifyBase && importer && isSubdir(vuetifyBase, isAbsolute(id) ? id : importer)) {
+					let cssPath;
+					if (id.startsWith(".")) cssPath = resolve(dirname(importer), id);
+					else if (isAbsolute(id)) cssPath = id;
+					else {
+						const res = await resolver.resolve(id, importer);
+						if (!res) return;
+						cssPath = res;
+					}
+					const sassPath = await resolveCss(cssPath);
+					return virtualCssIdFor(relative(vuetifyBase, sassPath));
+				}
+			},
+			filter: { id: /(?:^\/?vuetify\/styles(?:\/|$)|\.css$|^\/?vuetify-styles(?:\/|-empty))/ }
+		},
+		load: {
+			async handler(rawId) {
+				const { id } = stripBaseAndQuery(rawId);
+				if (id === VUETIFY_STYLES_EMPTY) return { code: "" };
+				await ensureInit(createResolver(this, meta));
+				if (!configFile || !vuetifyBase) return;
+				const rel = id.slice(VUETIFY_STYLES_PREFIX.length);
+				const sassPath = findSassPath(rel);
+				if (!sassPath) return;
+				const addWatchFile = this.addWatchFile;
+				if (passthrough) {
+					const isSCSS = sassPath.endsWith(".scss");
+					const source = getTemplate(pathToFileURL(sassPath).href, pathToFileURL(configFile).href, isSCSS);
+					if (addWatchFile) {
+						addWatchFile.call(this, configFile);
+						addWatchFile.call(this, sassPath);
+					}
+					return { code: source };
+				}
+				const result = await getOrCompile(cacheInfo ? cachePathFor(cacheInfo, rel) : void 0, sassPath, configFile, [dirname(vuetifyBase), resolve(process.cwd(), "node_modules")], cacheConfig.sassOptions);
+				loadedVirtualIds.set(id, result.deps);
+				if (addWatchFile) for (const dep of result.deps) addWatchFile.call(this, dep);
+				return { code: result.css };
+			},
+			filter: { id: /^\/?vuetify-styles(?:\/|-empty)/ }
+		},
+		webpack(compiler) {
+			compiler.hooks.watchRun.tap("@vuetify/unplugin-styles", (c) => {
+				refreshCacheOnConfigChange(c.modifiedFiles, c.removedFiles);
+			});
+		},
+		rspack(compiler) {
+			compiler.hooks.watchRun.tap("@vuetify/unplugin-styles", (c) => {
+				refreshCacheOnConfigChange(c.modifiedFiles, c.removedFiles);
+			});
+		},
+		vite: { handleHotUpdate(ctx) {
+			if (!configFile || !vuetifyVersion) return;
+			const changed = normalize(ctx.file);
+			const isConfig = changed === normalize(configFile);
+			const affected = [];
+			for (const [id, deps] of loadedVirtualIds) if (isConfig || deps.some((d) => normalize(d) === changed)) affected.push(id);
+			if (!isConfig && affected.length === 0) return;
+			if (isConfig) rebuildCacheInfo();
+			const extras = [];
+			for (const id of affected) {
+				const mod = ctx.server.moduleGraph.getModuleById(id);
+				if (mod) extras.push(mod);
+			}
+			return [...ctx.modules, ...extras];
+		} }
+	};
+};
+const unplugin = /* @__PURE__ */ createUnplugin(unpluginFactory);
+
+//#endregion
+export { unplugin as default, unplugin, unpluginFactory };

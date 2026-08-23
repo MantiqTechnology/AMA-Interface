@@ -1,0 +1,7 @@
+import { Options } from "./types.mjs";
+import { AstroIntegration } from "astro";
+
+//#region src/astro.d.ts
+declare function astro(options?: Options): AstroIntegration;
+//#endregion
+export { astro as default };

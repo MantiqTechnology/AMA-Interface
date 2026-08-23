@@ -1,0 +1,123 @@
+@layer vuetify-components {
+  .v-heatmap {
+    --v-heatmap-cell-width: 24px;
+    --v-heatmap-cell-height: 24px;
+    --v-heatmap-cell-gap: 6px;
+    --v-heatmap-cell-radius: 5px;
+    --v-heatmap-column-header-margin: 0 0 12px;
+    --v-heatmap-row-header-padding: 24px;
+    --v-heatmap-empty-color: rgba(var(--v-theme-surface-variant), 0.1);
+    display: inline-block;
+    line-height: 1;
+    padding: 12px;
+  }
+  .v-heatmap__body {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto 1fr;
+    overflow-x: auto;
+    padding: 0 0 12px;
+  }
+  .v-heatmap__row-headers {
+    grid-column: 1;
+    grid-row: 3;
+    display: grid;
+    grid-template-rows: repeat(var(--v-heatmap-rows-count), var(--v-heatmap-cell-height));
+    row-gap: var(--v-heatmap-cell-gap);
+    padding-right: var(--v-heatmap-row-header-padding);
+  }
+  .v-heatmap__row-header {
+    display: flex;
+    align-items: center;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+  .v-heatmap__group-labels {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .v-heatmap__column-headers {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .v-heatmap__group-labels,
+  .v-heatmap__column-headers {
+    position: relative;
+    line-height: 1.4;
+    min-height: calc(0.8125rem * 1.4);
+    margin: var(--v-heatmap-column-header-margin);
+  }
+  .v-heatmap__group-label,
+  .v-heatmap__column-header {
+    position: absolute;
+    top: 0;
+    box-sizing: border-box;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+  .v-heatmap__column-header {
+    text-align: center;
+  }
+  .v-heatmap__grid {
+    grid-column: 2;
+    grid-row: 3;
+    display: block;
+    overflow: visible;
+  }
+  .v-heatmap--hover .v-heatmap__cell {
+    cursor: pointer;
+  }
+  .v-heatmap--hover .v-heatmap__cell:hover > .v-heatmap__cell-content {
+    transform: scale(var(--v-heatmap-hover-scale, 0.85));
+  }
+  .v-heatmap__cell-content {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform 0.15s ease;
+  }
+  .v-heatmap__cell-rect {
+    rx: var(--v-heatmap-cell-radius, 5px);
+    ry: var(--v-heatmap-cell-radius, 5px);
+    fill: var(--v-heatmap-cell-color, var(--v-heatmap-empty-color, transparent));
+    transition: fill 0.15s ease;
+  }
+  .v-heatmap__cell--disabled .v-heatmap__cell-rect {
+    fill: var(--v-heatmap-empty-color, transparent);
+  }
+  .v-heatmap__cell-overlay > div {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: oklch(from var(--v-heatmap-cell-color) round(1.21 - L) 0 0);
+  }
+  .v-heatmap__cell-text {
+    font-size: 0.75rem;
+    user-select: none;
+  }
+  .v-heatmap-legend {
+    display: flex;
+    align-items: center;
+    justify-content: end;
+    gap: var(--v-heatmap-cell-gap);
+    padding: 12px 0 0;
+  }
+  .v-heatmap-legend > .v-heatmap-legend__label {
+    opacity: 0.6;
+    padding: 0 8px;
+  }
+  .v-heatmap-legend > .v-heatmap-legend__cell {
+    cursor: pointer;
+  }
+  .v-heatmap-legend > .v-heatmap-legend__gradient {
+    width: calc(var(--v-heatmap-cell-width) * 8);
+    height: var(--v-heatmap-cell-height);
+    border-radius: 5px;
+  }
+  @media (forced-colors: active) {
+    .v-heatmap-legend > .v-heatmap-legend__gradient {
+      forced-color-adjust: preserve-parent-color;
+    }
+  }
+}

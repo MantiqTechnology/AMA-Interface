@@ -1,0 +1,82 @@
+import { f as getTemplate } from "./shared-CCwvuKDw.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute } from "pathe";
+import { addRspackPlugin, addTemplate, addVitePlugin, addWebpackPlugin, defineNuxtModule, extendViteConfig, resolvePath } from "@nuxt/kit";
+import { lt } from "semver";
+
+//#region src/nuxt.ts
+/**
+* Resolve the settings file honouring Nuxt layers, mirroring vuetify-nuxt-module's
+* `resolveVuetifyConfigFile`. A relative settings path may live in any layer's
+* `srcDir`, so we walk the layers (root first) and return the first match that
+* exists. `resolvePath` is used per layer so aliases (e.g. `@/settings.scss`)
+* keep working, unlike the nuxt-module's plain `resolve`.
+*/
+async function resolveSettings(settings, nuxt) {
+	if (isAbsolute(settings)) return settings;
+	for (const layer of nuxt.options._layers) {
+		const resolved = await resolvePath(settings, { cwd: layer.config.srcDir });
+		if (existsSync(resolved)) return resolved;
+	}
+	return resolvePath(settings, { cwd: nuxt.options.srcDir });
+}
+var nuxt_default = defineNuxtModule({
+	meta: {
+		name: "nuxt-unplugin-vuetify",
+		configKey: "vuetifyStyles"
+	},
+	defaults: {
+		colors: true,
+		utilities: true
+	},
+	async setup(options, nuxt) {
+		const unstyled = options.styles === "none";
+		const vuetify = await resolvePath("vuetify/package.json");
+		const vuetifyVersion = JSON.parse(readFileSync(vuetify, "utf8")).version;
+		const resolvedSettings = options.settings ? await resolveSettings(options.settings, nuxt) : void 0;
+		if (unstyled) {} else if (resolvedSettings) {
+			const a = addTemplate({
+				write: true,
+				filename: "vuetify/vuetify.settings.scss",
+				getContents: () => getTemplate("vuetify/styles", resolvedSettings, true)
+			});
+			nuxt.options.css.unshift(a.dst);
+		} else if (lt(vuetifyVersion, "4.0.0-0")) {
+			nuxt.options.css.unshift("vuetify/styles");
+			if (!options.colors || !options.utilities) console.error("[unplugin-vuetify-styles] colors and utilities can only be disabled with Vuetify 4. For Vuetify 3, please use settings file");
+		} else {
+			if (options.colors) nuxt.options.css.unshift("vuetify/styles/colors");
+			if (options.utilities) nuxt.options.css.unshift("vuetify/styles/utilities");
+			nuxt.options.css.unshift("vuetify/styles/core");
+		}
+		let pluginOptions;
+		if (unstyled) pluginOptions = { styles: "none" };
+		else if (resolvedSettings) pluginOptions = { settings: resolvedSettings };
+		switch (nuxt.options.builder) {
+			case "@nuxt/vite-builder": {
+				const { default: VitePlugin } = await import("./vite.mjs");
+				addVitePlugin(VitePlugin(pluginOptions));
+				extendViteConfig((viteConfig) => {
+					viteConfig.ssr ??= {};
+					const existing = viteConfig.ssr.noExternal;
+					const merged = Array.isArray(existing) ? [...existing, "vuetify"] : existing ? [existing, "vuetify"] : ["vuetify"];
+					viteConfig.ssr.noExternal = merged;
+				});
+				break;
+			}
+			case "@nuxt/webpack-builder": {
+				const { default: WebpackPlugin } = await import("./webpack.mjs");
+				addWebpackPlugin(WebpackPlugin(pluginOptions));
+				break;
+			}
+			case "@nuxt/rspack-builder": {
+				const { default: RspackPlugin } = await import("./rspack.mjs");
+				addRspackPlugin(RspackPlugin(pluginOptions));
+				break;
+			}
+		}
+	}
+});
+
+//#endregion
+export { nuxt_default as default };

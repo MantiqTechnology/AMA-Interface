@@ -1,0 +1,76 @@
+{
+  "components": {
+    "VMonthPicker": {
+      "from": "labs/VMonthPicker",
+      "styles": []
+    },
+    "VAvatarGroup": {
+      "from": "labs/VAvatarGroup",
+      "styles": []
+    },
+    "VPie": {
+      "from": "labs/VPie",
+      "styles": []
+    },
+    "VPieSegment": {
+      "from": "labs/VPie",
+      "styles": []
+    },
+    "VPieTooltip": {
+      "from": "labs/VPie",
+      "styles": []
+    },
+    "VCommandPalette": {
+      "from": "labs/VCommandPalette",
+      "styles": []
+    },
+    "VCommandPaletteItem": {
+      "from": "labs/VCommandPalette",
+      "styles": []
+    },
+    "VVideo": {
+      "from": "labs/VVideo",
+      "styles": []
+    },
+    "VVideoControls": {
+      "from": "labs/VVideo",
+      "styles": []
+    },
+    "VVideoVolume": {
+      "from": "labs/VVideo",
+      "styles": []
+    },
+    "VHighlight": {
+      "from": "labs/VHighlight",
+      "styles": []
+    },
+    "VHeatmap": {
+      "from": "labs/VHeatmap",
+      "styles": []
+    },
+    "VHeatmapCell": {
+      "from": "labs/VHeatmap",
+      "styles": []
+    },
+    "VHeatmapLegend": {
+      "from": "labs/VHeatmap",
+      "styles": []
+    },
+    "VHeatmapLegendCell": {
+      "from": "labs/VHeatmap",
+      "styles": []
+    },
+    "VProgress": {
+      "from": "labs/VProgress",
+      "styles": []
+    },
+    "VMaskInput": {
+      "from": "labs/VMaskInput",
+      "styles": []
+    },
+    "VDateRangePicker": {
+      "from": "labs/VDateRangePicker",
+      "styles": []
+    }
+  }
+}

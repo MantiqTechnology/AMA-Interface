@@ -1,0 +1,2 @@
+import type { Ref } from 'vue';
+export declare function useFocusRepair(active: Ref<boolean>, content: () => HTMLElement | undefined, fallback: () => HTMLElement | undefined): (e: FocusEvent) => boolean;

@@ -1,0 +1,7 @@
+import { Options } from "./types.mjs";
+import * as webpack from "webpack";
+
+//#region src/webpack.d.ts
+declare const _default: (options?: Options | undefined) => webpack.WebpackPluginInstance;
+//#endregion
+export { _default as default };

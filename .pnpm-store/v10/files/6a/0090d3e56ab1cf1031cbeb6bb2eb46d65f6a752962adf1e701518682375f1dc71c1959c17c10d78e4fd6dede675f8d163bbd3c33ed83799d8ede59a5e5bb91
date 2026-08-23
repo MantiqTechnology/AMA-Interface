@@ -1,0 +1,35 @@
+@layer vuetify-components {
+  .v-date-range-picker.v-picker {
+    display: inline-grid;
+    width: auto;
+  }
+  .v-date-range-picker .v-picker__body {
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+  .v-date-range-picker .v-picker__actions {
+    align-items: center;
+    flex: none;
+    gap: 0.5rem;
+    min-height: 52px;
+    padding: 0.5rem;
+    border-top: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+    justify-content: flex-start;
+  }
+  .v-date-range-picker__panel {
+    display: flex;
+    flex-direction: column;
+  }
+  .v-date-range-picker__divider {
+    flex: 0 0 auto;
+    align-self: stretch;
+    border-inline-start: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+  }
+  .v-date-range-picker__nav-hidden {
+    opacity: 0;
+  }
+  .v-date-range-picker .v-date-picker {
+    box-shadow: none;
+    border-radius: 0;
+  }
+}

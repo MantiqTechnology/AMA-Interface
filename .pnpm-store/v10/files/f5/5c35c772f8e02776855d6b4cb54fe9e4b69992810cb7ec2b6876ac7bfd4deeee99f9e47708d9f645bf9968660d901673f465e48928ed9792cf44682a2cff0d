@@ -1,0 +1,213 @@
+@layer vuetify-components {
+  .v-otp-input {
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 0;
+    position: relative;
+  }
+  .v-otp-input {
+    border-radius: 4px;
+  }
+  .v-otp-input .v-field {
+    height: 100%;
+  }
+  .v-otp-input .v-field--variant-solo.v-field--focused .v-field__overlay, .v-otp-input .v-field--variant-plain.v-field--focused .v-field__overlay {
+    background-color: currentColor;
+    opacity: calc(var(--v-theme-overlay-multiplier) * 0.12);
+  }
+  .v-otp-input .v-field .v-field__outline__start, .v-otp-input .v-field .v-field__outline__end {
+    flex: 1;
+  }
+  .v-otp-input__field--highlighted .v-field__outline {
+    opacity: 0.5;
+  }
+  .v-otp-input__field--highlighted.v-field--focused.v-field--variant-filled .v-field__outline::after, .v-otp-input__field--highlighted.v-field--focused.v-field--variant-underlined .v-field__outline::after {
+    opacity: 0.5;
+  }
+  .v-otp-input__field--highlighted.v-field--focused.v-field--variant-plain .v-field__overlay, .v-otp-input__field--highlighted.v-field--focused.v-field--variant-solo .v-field__overlay, .v-otp-input__field--highlighted.v-field--focused.v-field--variant-solo-filled .v-field__overlay {
+    opacity: calc(var(--v-theme-overlay-multiplier) * 0.04);
+  }
+  .v-otp-input__field--highlighted.v-field--focused.v-field--variant-solo-inverted .v-field__overlay {
+    opacity: 0.5;
+  }
+  .v-otp-input__divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 8px;
+  }
+  .v-otp-input__divider:has(> .v-icon) {
+    margin: 0 -4px;
+  }
+  .v-otp-group {
+    display: contents;
+  }
+  .v-otp-group .v-field {
+    flex: 1;
+  }
+  .v-otp-group--merged {
+    display: flex;
+    gap: 0;
+    align-items: center;
+    height: 100%;
+    border-radius: inherit;
+  }
+  .v-otp-group--merged:has(.v-field--variant-solo), .v-otp-group--merged:has(.v-field--variant-solo-filled), .v-otp-group--merged:has(.v-field--variant-solo-inverted) {
+    box-shadow: 0px 1px 2px 0px rgba(var(--v-shadow-color), var(--v-shadow-key-opacity, 0.3)), 0px 1px 3px 1px rgba(var(--v-shadow-color), var(--v-shadow-ambient-opacity, 0.15));
+    --v-elevation-overlay: color-mix(in srgb, var(--v-elevation-overlay-color) 2%, transparent);
+  }
+  .v-otp-group--merged .v-field {
+    flex: 1;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .v-otp-group--merged .v-field .v-field__outline__start,
+  .v-otp-group--merged .v-field .v-field__outline__end {
+    border-radius: 0;
+  }
+  .v-otp-group--merged .v-field:not(:first-child) {
+    margin-inline-start: -1px;
+  }
+  .v-otp-group--merged .v-field:not(:first-child) .v-field__outline__start {
+    border-inline-start-width: 0;
+  }
+  .v-otp-group--merged .v-field:hover {
+    z-index: 1;
+  }
+  .v-otp-group--merged .v-field:hover .v-field__outline__start {
+    border-inline-start-width: var(--v-field-border-width);
+  }
+  .v-otp-group--merged .v-field.v-field--focused {
+    z-index: 2;
+  }
+  .v-otp-group--merged .v-field.v-field--focused .v-field__outline__start {
+    border-inline-start-width: var(--v-field-border-width);
+  }
+  .v-otp-group--merged .v-field:first-child {
+    border-start-start-radius: inherit;
+    border-end-start-radius: inherit;
+  }
+  .v-otp-group--merged .v-field:first-child .v-field__outline__start {
+    border-start-start-radius: inherit;
+    border-end-start-radius: inherit;
+  }
+  .v-otp-group--merged .v-field:last-child {
+    border-start-end-radius: inherit;
+    border-end-end-radius: inherit;
+  }
+  .v-otp-group--merged .v-field:last-child .v-field__outline__end {
+    border-start-end-radius: inherit;
+    border-end-end-radius: inherit;
+  }
+  .v-otp-input__input {
+    position: absolute;
+    bottom: 0;
+    inset-inline-start: 50%;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: transparent;
+    caret-color: transparent;
+    opacity: 0;
+    pointer-events: none;
+  }
+  @media (any-pointer: coarse) {
+    .v-otp-input__input {
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .v-otp-input__input::selection {
+      background: transparent;
+      color: transparent;
+    }
+    .v-otp-input__input:-webkit-autofill {
+      background: transparent !important;
+      color: transparent !important;
+      -webkit-text-fill-color: transparent !important;
+      box-shadow: none !important;
+    }
+  }
+  .v-otp-input__content {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    justify-content: center;
+    width: 100%;
+    max-width: 320px;
+    position: relative;
+    border-radius: inherit;
+  }
+  .v-otp-input--divided .v-otp-input__content {
+    max-width: 360px;
+  }
+  .v-otp-input--density-default .v-otp-input__content {
+    height: 64px;
+  }
+  .v-otp-input--density-comfortable .v-otp-input__content {
+    height: 60px;
+  }
+  .v-otp-input--density-compact .v-otp-input__content {
+    height: 56px;
+  }
+  .v-otp-input__field {
+    color: inherit;
+    font-size: 1.25rem;
+    height: 100%;
+    width: 100%;
+    display: grid;
+    place-items: center;
+    place-content: center;
+    position: relative;
+  }
+  .v-otp-input__field > * {
+    grid-area: 1/1;
+  }
+  .v-otp-input__placeholder {
+    color: currentColor;
+    opacity: var(--v-disabled-opacity);
+  }
+  .v-otp-input__composition {
+    color: currentColor;
+    opacity: 0.6;
+    font-style: italic;
+    text-decoration: underline;
+  }
+  .v-otp-input__caret {
+    width: 1px;
+    height: 1.2em;
+    background: currentColor;
+    animation: v-otp-blink 1s step-end infinite;
+  }
+  .v-otp-input__spacer {
+    display: block;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .v-otp-input__loader {
+    align-items: center;
+    display: flex;
+    height: 100%;
+    justify-content: center;
+    width: 100%;
+  }
+  .v-otp-input__loader .v-progress-linear {
+    position: absolute;
+  }
+  @keyframes v-otp-blink {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+}

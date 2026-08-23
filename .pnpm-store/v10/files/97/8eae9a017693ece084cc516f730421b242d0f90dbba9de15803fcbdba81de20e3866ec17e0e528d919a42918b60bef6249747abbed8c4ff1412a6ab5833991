@@ -1,0 +1,117 @@
+@layer vuetify-components {
+  .v-date-picker-month {
+    display: flex;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0 12px 8px;
+    position: relative;
+    --v-date-picker-month-day-diff: 4px;
+  }
+  .v-date-picker-month__weeks {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.875rem;
+  }
+  .v-date-picker-month__weekday {
+    font-size: 0.875rem;
+  }
+  .v-date-picker-month__days {
+    width: 100%;
+  }
+  .v-date-picker-month__days-row {
+    display: grid;
+    grid-template-columns: repeat(var(--v-date-picker-days-in-week), 1fr);
+    justify-items: center;
+  }
+  .v-date-picker-month__day {
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    height: calc(40px + 2 * 2px);
+    padding: 2px;
+    --range-selection-rounding: 999px;
+    width: 100%;
+  }
+  .v-date-picker-month__day--range-start > .v-btn, .v-date-picker-month__day--range-end > .v-btn, .v-date-picker-month__day--preview-start > .v-btn, .v-date-picker-month__day--preview-end > .v-btn {
+    position: relative;
+    z-index: 1;
+  }
+  .v-date-picker-month__day--selected:not(.v-date-picker-month__day--range-middle) .v-btn {
+    background-color: rgb(var(--v-theme-surface-variant));
+    color: rgb(var(--v-theme-on-surface-variant));
+  }
+  .v-date-picker-month__day .v-btn.v-date-picker-month__day-btn {
+    --v-btn-height: 24px;
+    --v-btn-size: 0.875rem;
+  }
+  .v-date-picker-month__day--week {
+    font-size: var(--v-btn-size);
+  }
+  .v-date-picker-month__range-bg {
+    position: absolute;
+    inset: 2px 0;
+    pointer-events: none;
+  }
+  .v-date-picker-month__range-bg--range {
+    opacity: 0.1;
+  }
+  .v-date-picker-month__range-bg--preview {
+    opacity: 0.06;
+  }
+  .v-date-picker-month__day--range-start > .v-date-picker-month__range-bg {
+    left: 2px;
+    border-radius: var(--range-selection-rounding) 0 0 var(--range-selection-rounding);
+  }
+  .v-date-picker-month__day--range-end > .v-date-picker-month__range-bg {
+    right: 2px;
+    border-radius: 0 var(--range-selection-rounding) var(--range-selection-rounding) 0;
+  }
+  .v-date-picker-month__day--preview-start > .v-date-picker-month__range-bg {
+    left: 2px;
+    border-radius: var(--range-selection-rounding) 0 0 var(--range-selection-rounding);
+  }
+  .v-date-picker-month__day--preview-end > .v-date-picker-month__range-bg {
+    right: 2px;
+    border-radius: 0 var(--range-selection-rounding) var(--range-selection-rounding) 0;
+  }
+  .v-date-picker-month__day--range-middle:last-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--range-middle:has(+ .v-date-picker-month__day--hide-adjacent) > .v-date-picker-month__range-bg, .v-date-picker-month__day--range-start:last-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--range-start:has(+ .v-date-picker-month__day--hide-adjacent) > .v-date-picker-month__range-bg, .v-date-picker-month__day--preview-middle:last-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--preview-middle:has(+ .v-date-picker-month__day--hide-adjacent) > .v-date-picker-month__range-bg, .v-date-picker-month__day--preview-start:last-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--preview-start:has(+ .v-date-picker-month__day--hide-adjacent) > .v-date-picker-month__range-bg {
+    right: 1px;
+    border-top-right-radius: var(--range-selection-rounding);
+    border-bottom-right-radius: var(--range-selection-rounding);
+  }
+  .v-date-picker-month__day--range-middle:first-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--hide-adjacent + .v-date-picker-month__day--range-middle > .v-date-picker-month__range-bg, .v-date-picker-month__day--range-end:first-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--hide-adjacent + .v-date-picker-month__day--range-end > .v-date-picker-month__range-bg, .v-date-picker-month__day--preview-middle:first-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--hide-adjacent + .v-date-picker-month__day--preview-middle > .v-date-picker-month__range-bg, .v-date-picker-month__day--preview-end:first-of-type > .v-date-picker-month__range-bg, .v-date-picker-month__day--hide-adjacent + .v-date-picker-month__day--preview-end > .v-date-picker-month__range-bg {
+    left: 1px;
+    border-top-left-radius: var(--range-selection-rounding);
+    border-bottom-left-radius: var(--range-selection-rounding);
+  }
+  .v-date-picker-month__day--adjacent {
+    opacity: 0.5;
+  }
+  .v-date-picker-month__day--hide-adjacent {
+    opacity: 0;
+  }
+  .v-date-picker-month__events {
+    height: 8px;
+    left: 0;
+    text-indent: 0;
+    position: absolute;
+    text-align: center;
+    white-space: pre;
+    width: 100%;
+  }
+  .v-date-picker-month__events > div {
+    height: 8px;
+    margin: 0 1px;
+    width: 8px;
+    margin-bottom: -1px;
+  }
+  .v-date-picker-month__events .v-badge--dot .v-badge__badge {
+    border-radius: 4px;
+    height: 8px;
+    width: 8px;
+  }
+  .v-date-picker-month__day .v-date-picker-month__events {
+    bottom: 8px;
+  }
+}

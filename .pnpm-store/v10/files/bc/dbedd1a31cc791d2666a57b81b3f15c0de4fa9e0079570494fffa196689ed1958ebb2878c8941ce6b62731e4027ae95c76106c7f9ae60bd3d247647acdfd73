@@ -1,0 +1,1752 @@
+import { existsSync, statSync, readFileSync } from 'node:fs';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { addPluginTemplate, resolvePath, addTemplate, extendWebpackConfig, isNuxtMajorVersion, addImports, addPlugin, addVitePlugin, useLogger, defineNuxtModule, getNuxtVersion, findPath, hasNuxtModule, createResolver } from '@nuxt/kit';
+import { isAbsolute, resolve, dirname } from 'pathe';
+import semver from 'semver';
+import { createFilter, version as version$1 } from 'vite';
+import defu from 'defu';
+import { transformAssetUrls, generateImports } from '@vuetify/loader-shared';
+import Styles from '@vuetify/unplugin-styles/vite';
+import { isPackageExists } from 'local-pkg';
+import { parseQuery, parseURL } from 'ufo';
+import { readFile } from 'node:fs/promises';
+import process from 'node:process';
+import { createConfigLoader } from 'unconfig';
+
+const version = "1.0.0-rc.2";
+
+const VIRTUAL_VUETIFY_CONFIGURATION = "virtual:vuetify-configuration";
+const RESOLVED_VIRTUAL_VUETIFY_CONFIGURATION = `\0${VIRTUAL_VUETIFY_CONFIGURATION}`;
+const VIRTUAL_VUETIFY_DATE_CONFIGURATION = "virtual:vuetify-date-configuration";
+const RESOLVED_VIRTUAL_VUETIFY_DATE_CONFIGURATION = `\0${VIRTUAL_VUETIFY_DATE_CONFIGURATION}`;
+const VIRTUAL_VUETIFY_ICONS_CONFIGURATION = "virtual:vuetify-icons-configuration";
+const RESOLVED_VIRTUAL_VUETIFY_ICONS_CONFIGURATION = `\0${VIRTUAL_VUETIFY_ICONS_CONFIGURATION}`;
+const VIRTUAL_VUETIFY_SSR_CLIENT_HINTS_CONFIGURATION = "virtual:vuetify-ssr-client-hints-configuration";
+const RESOLVED_VIRTUAL_VUETIFY_SSR_CLIENT_HINTS_CONFIGURATION = `\0${VIRTUAL_VUETIFY_SSR_CLIENT_HINTS_CONFIGURATION}`;
+const RESOLVED_VIRTUAL_MODULES = [
+  RESOLVED_VIRTUAL_VUETIFY_DATE_CONFIGURATION,
+  RESOLVED_VIRTUAL_VUETIFY_ICONS_CONFIGURATION,
+  RESOLVED_VIRTUAL_VUETIFY_CONFIGURATION,
+  RESOLVED_VIRTUAL_VUETIFY_SSR_CLIENT_HINTS_CONFIGURATION
+];
+
+function toKebabCase(str = "") {
+  if (toKebabCase.cache.has(str)) {
+    return toKebabCase.cache.get(str);
+  }
+  const kebab = str.replace(/[^a-z]/gi, "-").replace(/\B([A-Z])/g, "-$1").toLowerCase();
+  toKebabCase.cache.set(str, kebab);
+  return kebab;
+}
+toKebabCase.cache = /* @__PURE__ */ new Map();
+function camelize(str) {
+  if (camelize.cache.has(str)) {
+    return camelize.cache.get(str);
+  }
+  const camel = str.replace(/-([a-z0-9])/g, (g) => g[1].toUpperCase());
+  camelize.cache.set(str, camel);
+  return camel;
+}
+camelize.cache = /* @__PURE__ */ new Map();
+function pascalize(str) {
+  if (pascalize.cache.has(str)) {
+    return pascalize.cache.get(str);
+  }
+  let pascal = camelize(str);
+  pascal = pascal.slice(0, 1).toUpperCase() + pascal.slice(1);
+  pascalize.cache.set(str, pascal);
+  return pascal;
+}
+pascalize.cache = /* @__PURE__ */ new Map();
+function createTransformAssetUrls(ctx, viteInlineConfig) {
+  const { includeTransformAssetsUrls } = ctx.moduleOptions;
+  if (!includeTransformAssetsUrls) {
+    return void 0;
+  }
+  let existingTransformAssetUrls = viteInlineConfig.vue?.template?.transformAssetUrls ?? {};
+  let useURLOptions;
+  if (typeof existingTransformAssetUrls === "boolean") {
+    existingTransformAssetUrls = {};
+  } else if ("base" in existingTransformAssetUrls || "includeAbsolute" in existingTransformAssetUrls || "tags" in existingTransformAssetUrls) {
+    useURLOptions = {
+      base: existingTransformAssetUrls.base,
+      includeAbsolute: existingTransformAssetUrls.includeAbsolute
+    };
+    existingTransformAssetUrls = existingTransformAssetUrls.tags ?? {};
+  }
+  const transformAssetUrls$1 = normalizeTransformAssetUrls(
+    typeof includeTransformAssetsUrls === "object" ? defu(existingTransformAssetUrls, transformAssetUrls, includeTransformAssetsUrls) : defu(existingTransformAssetUrls, transformAssetUrls)
+  );
+  if (!useURLOptions) {
+    return transformAssetUrls$1;
+  }
+  useURLOptions.tags = transformAssetUrls$1;
+  return useURLOptions;
+}
+function normalizeTransformAssetUrls(transformAssetUrls) {
+  const names = new Set(Object.keys(transformAssetUrls));
+  let kebab;
+  let pascal;
+  for (const name of names) {
+    transformAssetUrls[name] = normalizeTransformAssetUrlsAttrs(transformAssetUrls[name]);
+    kebab = toKebabCase(name);
+    pascal = pascalize(name);
+    if (!names.has(kebab)) {
+      transformAssetUrls[kebab] = [...transformAssetUrls[name]];
+    }
+    if (!names.has(pascal)) {
+      transformAssetUrls[pascal] = [...transformAssetUrls[name]];
+    }
+  }
+  return transformAssetUrls;
+}
+function normalizeTransformAssetUrlsAttrs(attrs) {
+  const result = /* @__PURE__ */ new Set();
+  let kebab;
+  let camel;
+  let bind;
+  let idx;
+  for (const attr of attrs) {
+    result.add(attr);
+    idx = attr.indexOf(":");
+    if (idx > 0) {
+      continue;
+    }
+    bind = idx === 0;
+    kebab = toKebabCase(bind ? attr.slice(1) : attr);
+    camel = camelize(bind ? attr.slice(1) : attr);
+    result.add(kebab);
+    result.add(camel);
+    result.add(`:${kebab}`);
+    result.add(`:${camel}`);
+  }
+  return [...result];
+}
+
+function resolveVuetifyConfigFile(configFile, nuxt) {
+  if (typeof configFile === "string" && !isAbsolute(configFile)) {
+    for (const layer of nuxt.options._layers) {
+      const resolved = resolve(layer.config.srcDir, configFile);
+      if (existsSync(resolved)) {
+        return resolved;
+      }
+    }
+  }
+  return configFile;
+}
+
+function addVuetifyNuxtPlugins(nuxt, ctx) {
+  addVuetifyNuxtPlugin(nuxt, ctx, "client");
+  addVuetifyNuxtPlugin(nuxt, ctx, "server");
+}
+function addVuetifyNuxtPlugin(nuxt, ctx, mode) {
+  addPluginTemplate({
+    filename: `vuetify-nuxt-plugin.${mode}.mjs`,
+    name: `vuetify:nuxt:${mode}:plugin`,
+    write: false,
+    mode,
+    getContents() {
+      const dependsOn = ["vuetify:icons:plugin"];
+      if (ctx.ssrClientHints.enabled) {
+        if (mode === "client") {
+          dependsOn.push("vuetify:client-hints:client:plugin");
+        } else {
+          dependsOn.push("vuetify:client-hints:server:plugin");
+        }
+      }
+      if (ctx.i18n) {
+        dependsOn.push("vuetify:i18n:plugin");
+      }
+      if (nuxt.options.dev || ctx.dateAdapter) {
+        if (ctx.i18n) {
+          dependsOn.push("vuetify:date-i18n:plugin");
+        } else {
+          dependsOn.push("vuetify:date:plugin");
+        }
+      }
+      let rulesImports = "";
+      let rulesPlugin = "";
+      if (ctx.enableRules) {
+        rulesImports = [
+          "",
+          `import { rulesOptions } from '#build/vuetify/${ctx.rulesConfiguration.fromLabs ? "labs-" : ""}rules-configuration.mjs'`,
+          `import { createRulesPlugin } from 'vuetify/${ctx.rulesConfiguration.fromLabs ? "labs/" : ""}rules'`
+        ].join("\n");
+        rulesPlugin = [
+          "",
+          "    nuxtApp.vueApp.use(createRulesPlugin(rulesOptions, vuetify.locale))"
+        ].join("\n");
+      }
+      return `
+import { defineNuxtPlugin } from '#imports'
+import { isDev, vuetifyConfiguration } from 'virtual:vuetify-configuration'
+import { createVuetify } from 'vuetify'${rulesImports}
+
+export default defineNuxtPlugin({
+  name: 'vuetify:nuxt:${mode}:plugin',
+  order: 25,
+  dependsOn: ${JSON.stringify(dependsOn)},
+  parallel: true,
+  async setup(nuxtApp) {
+    const vuetifyOptions = vuetifyConfiguration()
+    await nuxtApp.hooks.callHook('vuetify:configuration', { isDev, vuetifyOptions })
+    await nuxtApp.hooks.callHook('vuetify:before-create', { isDev, vuetifyOptions })
+    const vuetify = createVuetify(vuetifyOptions)
+    nuxtApp.vueApp.use(vuetify)${rulesPlugin}
+    nuxtApp.provide('vuetify', vuetify)
+    await nuxtApp.hooks.callHook('vuetify:ready', vuetify)
+  },
+})
+`;
+    }
+  });
+}
+
+function getTemplate(source, settings) {
+  return [settings ? `@use '${settings}';` : "", `@use '${source}';`].filter(Boolean).join("\n");
+}
+async function configureNuxt(configKey, nuxt, ctx) {
+  const {
+    styles,
+    importComposables,
+    prefixComposables
+  } = ctx.moduleOptions;
+  const runtimeDir = ctx.resolver.resolve("./runtime");
+  if (ctx.enableRules === void 0) {
+    ctx.enableRules = ctx.vuetifyGte("3.8.0");
+  }
+  if (styles !== "none" && styles !== false) {
+    nuxt.options.css ??= [];
+    if (typeof styles === "object" && "configFile" in styles) {
+      const configFile = resolveVuetifyConfigFile(styles.configFile, nuxt);
+      ctx.stylesConfigFile = await resolvePath(configFile);
+      const a = addTemplate({
+        // Write to disk: without `write` Nuxt serves the template from its
+        // virtual FS, which 404s on Windows/SSR when the browser requests the
+        // real file (#363). Nest under `vuetify/` to match unplugin-styles.
+        write: true,
+        filename: "vuetify/vuetify.settings.scss",
+        getContents: async () => getTemplate("vuetify/styles", ctx.stylesConfigFile)
+      });
+      nuxt.options.css.push(a.dst);
+    } else if (ctx.vuetifyGte("4.0.0")) {
+      nuxt.options.css.push(await resolvePath("vuetify/styles/core"));
+      if (styles === true || typeof styles === "object" && styles?.utilities !== false) {
+        nuxt.options.css.push(await resolvePath("vuetify/styles/utilities"));
+      }
+      if (styles === true || typeof styles === "object" && styles?.colors !== false) {
+        nuxt.options.css.push(await resolvePath("vuetify/styles/colors"));
+      }
+    } else {
+      nuxt.options.css.push(await resolvePath("vuetify/styles"));
+    }
+  }
+  nuxt.options.build.transpile.push(configKey, runtimeDir);
+  if (ctx.enableRules) {
+    const rulesConfigurationFile = `vuetify/${ctx.rulesConfiguration.fromLabs ? "labs-" : ""}rules-configuration.mjs`;
+    nuxt.options.build.transpile.push(`#build/${rulesConfigurationFile}`);
+    addTemplate({
+      filename: rulesConfigurationFile,
+      getContents: async () => {
+        if (ctx.rulesConfiguration?.configFile) {
+          const resolvedPath = await resolvePath(ctx.rulesConfiguration.configFile);
+          return `export { default as rulesOptions } from '${resolvedPath}'`;
+        }
+        return "export const rulesOptions = {}";
+      },
+      write: true
+    });
+  }
+  nuxt.options.build.transpile.push(/\/vuetify-nuxt-plugin\.(client|server)\.mjs$/);
+  nuxt.options.imports.transform ??= {};
+  nuxt.options.imports.transform.include ??= [];
+  for (const virtual of RESOLVED_VIRTUAL_MODULES) {
+    nuxt.options.imports.transform.include.push(new RegExp(`${virtual}$`));
+  }
+  extendWebpackConfig(() => {
+    throw new Error("Webpack is not supported: vuetify-nuxt-module module can only be used with Vite!");
+  });
+  const v4Available = isNuxtMajorVersion(4, nuxt);
+  nuxt.hook("prepare:types", ({ references, nodeReferences }) => {
+    references.push({ types: "vuetify" }, { types: "vuetify-nuxt-module/custom-configuration" }, { types: "vuetify-nuxt-module/configuration" }, { path: ctx.resolver.resolve(runtimeDir, "plugins/types") });
+    if (ctx.enableRules) {
+      references.push({ types: `vuetify-nuxt-module/custom-${ctx.rulesConfiguration.fromLabs ? "labs-" : ""}rules-configuration` });
+    }
+    if (v4Available) {
+      nodeReferences.push({ types: "vuetify-nuxt-module/custom-configuration" });
+      if (ctx.enableRules) {
+        nodeReferences.push({ types: `vuetify-nuxt-module/custom-${ctx.rulesConfiguration.fromLabs ? "labs-" : ""}rules-configuration` });
+      }
+    }
+  });
+  if (importComposables) {
+    const composables = ["useDate", "useLocale", "useDefaults", "useDisplay", "useLayout", "useRtl", "useTheme"];
+    if (ctx.vuetifyGte("3.5.0")) {
+      composables.push("useGoTo");
+    }
+    if (ctx.vuetifyGte("3.8.0")) {
+      composables.push("useHotkey");
+      if (ctx.enableRules) {
+        composables.push("useRules");
+      }
+    }
+    if (ctx.vuetifyGte("3.10.0")) {
+      composables.push("useMask");
+    }
+    addImports(composables.map((name) => {
+      let from = ctx.vuetifyGte("3.4.0") || name !== "useDate" ? "vuetify" : "vuetify/labs/date";
+      if (name === "useRules" && ctx.rulesConfiguration?.fromLabs) {
+        from = "vuetify/labs/rules";
+      }
+      return {
+        name,
+        from,
+        as: prefixComposables ? name.replace(/^use/, "useV") : void 0,
+        meta: { docsUrl: name === "useRules" ? "https://vuetifyjs.com/en/features/rules/" : `https://vuetifyjs.com/en/api/${toKebabCase(name)}/` }
+      };
+    }));
+  }
+  if (ctx.ssrClientHints.enabled) {
+    addPlugin({
+      src: ctx.resolver.resolve(runtimeDir, "plugins/vuetify-client-hints.client"),
+      mode: "client"
+    });
+    addPlugin({
+      src: ctx.resolver.resolve(runtimeDir, "plugins/vuetify-client-hints.server"),
+      mode: "server"
+    });
+  } else {
+    addPlugin({
+      src: ctx.resolver.resolve(runtimeDir, "plugins/vuetify-no-client-hints")
+    });
+  }
+  addPlugin({
+    src: ctx.resolver.resolve(runtimeDir, "plugins/vuetify-icons")
+  });
+  if (ctx.i18n) {
+    addPlugin({
+      src: ctx.resolver.resolve(runtimeDir, "plugins/vuetify-i18n")
+    });
+  }
+  if (nuxt.options.dev || ctx.dateAdapter) {
+    if (ctx.i18n) {
+      addPlugin({
+        src: ctx.resolver.resolve(runtimeDir, "plugins/vuetify-i18n-date")
+      });
+    } else {
+      addPlugin({
+        src: ctx.resolver.resolve(runtimeDir, "plugins/vuetify-date")
+      });
+    }
+  }
+  addVuetifyNuxtPlugins(nuxt, ctx);
+}
+
+function vuetifyConfigurationPlugin(ctx) {
+  return {
+    name: "vuetify:configuration:nuxt",
+    enforce: "pre",
+    resolveId(id) {
+      if (id === VIRTUAL_VUETIFY_CONFIGURATION) {
+        return RESOLVED_VIRTUAL_VUETIFY_CONFIGURATION;
+      }
+    },
+    async load(id) {
+      if (id === RESOLVED_VIRTUAL_VUETIFY_CONFIGURATION) {
+        if (ctx.isDev && ctx.canHmrConfig) {
+          for (const file of ctx.vuetifyFilesToWatch) {
+            this.addWatchFile(file);
+          }
+        }
+        const {
+          directives: _directives,
+          date: _date,
+          icons: _icons,
+          localeMessages: _localeMessages,
+          components: _components,
+          labComponents: _labComponents,
+          ssr,
+          aliases: _aliases,
+          ...newVuetifyOptions
+        } = ctx.vuetifyOptions;
+        if (ctx.isSSR) {
+          newVuetifyOptions.ssr = ssr ?? true;
+        }
+        if (ctx.i18n && newVuetifyOptions.locale) {
+          delete newVuetifyOptions.locale.rtl;
+          delete newVuetifyOptions.locale.locale;
+          delete newVuetifyOptions.locale.fallback;
+        }
+        const result = await buildConfiguration(ctx);
+        const deepCopy = result.messages.length > 0;
+        let configDepImports = "";
+        if (ctx.isDev && ctx.canHmrConfig && this.environment?.name === "ssr") {
+          configDepImports = ctx.vuetifyFilesToWatch.map((file) => `import ${JSON.stringify(file)}`).join("\n");
+        }
+        return `${configDepImports}
+${result.imports}
+
+export const isDev = ${ctx.isDev}
+export function vuetifyConfiguration() {
+  const options = ${JSON.stringify(newVuetifyOptions)}
+  ${result.directives}
+  ${result.aliases}
+  ${result.components}
+  ${result.messages}
+  return options
+}
+${deepCopy ? `function deepCopy(src,des) {
+    for (const key in src) {
+      if (typeof src[key] === 'object') {
+        if (typeof des[key] !== 'object') des[key] = {}
+        deepCopy(src[key], des[key])
+      } else {
+        des[key] = src[key]
+      }
+    }
+  }
+  ` : ""}
+`;
+      }
+    }
+  };
+}
+async function buildConfiguration(ctx) {
+  const {
+    componentsPromise,
+    labComponentsPromise,
+    logger,
+    vuetifyOptions
+  } = ctx;
+  const {
+    aliases,
+    components,
+    directives,
+    localeMessages,
+    labComponents,
+    date: dateOptions
+  } = vuetifyOptions;
+  const config = {
+    directives: "",
+    imports: [],
+    aliasEntries: [],
+    aliases: aliases || {},
+    components: new Set(components ? Array.isArray(components) ? components : [components] : []),
+    labComponents: /* @__PURE__ */ new Set(),
+    messages: ""
+  };
+  if (directives) {
+    if (typeof directives === "boolean") {
+      config.imports.push("import * as directives from 'vuetify/directives'");
+      config.directives = "options.directives = directives";
+    } else {
+      const useDirectives = Array.isArray(directives) ? [...new Set(directives)] : [directives];
+      config.imports.push(useDirectives.map((d) => `import {${d}} from 'vuetify/directives/${toKebabCase(d)}'`).join("\n"));
+      config.directives = `options.directives = {${useDirectives.join(",")}}`;
+    }
+  }
+  const importMapComponents = await componentsPromise;
+  const componentsToImport = /* @__PURE__ */ new Map();
+  for (const component of config.components) {
+    const componentEntry = importMapComponents[component];
+    const from = componentEntry?.from;
+    if (!from) {
+      logger.warn(`Component ${component} not found in Vuetify.`);
+      continue;
+    }
+    const parts = from.split("/");
+    if (parts.length < 2) {
+      logger.warn(`Component ${component} not found in Vuetify, please report a new issue.`);
+      continue;
+    }
+    const bucket = parts[1];
+    if (!bucket) {
+      continue;
+    }
+    if (!componentsToImport.has(bucket)) {
+      componentsToImport.set(bucket, []);
+    }
+    const componentsArray = componentsToImport.get(bucket);
+    if (!componentsArray.includes(component)) {
+      componentsArray.push(component);
+    }
+  }
+  for (const [key, component] of Object.entries(config.aliases)) {
+    const componentEntry = importMapComponents[component];
+    const from = componentEntry?.from;
+    if (!from) {
+      logger.warn(`Component ${component} not found in Vuetify.`);
+      continue;
+    }
+    const parts = from.split("/");
+    if (parts.length < 2) {
+      logger.warn(`Component ${component} not found in Vuetify, please report a new issue.`);
+      continue;
+    }
+    const bucket = parts[1];
+    if (!bucket) {
+      continue;
+    }
+    if (!componentsToImport.has(bucket)) {
+      componentsToImport.set(bucket, []);
+    }
+    const componentsArray = componentsToImport.get(bucket);
+    if (!componentsArray.includes(component)) {
+      componentsArray.push(component);
+    }
+    config.aliasEntries.push(`'${key}': ${component}`);
+  }
+  for (const [from, componentsArray] of componentsToImport.entries()) {
+    config.imports.push(`import {${Array.from(new Set(componentsArray)).join(",")}} from 'vuetify/components/${from}'`);
+  }
+  let addDatePicker = ctx.vuetifyGte("3.4.0") ? !Array.from(componentsToImport.values()).some((components2) => components2.includes("VDatePicker")) : true;
+  if (labComponents) {
+    const useLabComponents = [];
+    if (typeof labComponents === "boolean") {
+      config.imports.push("import * as labsComponents from 'vuetify/labs/components'");
+      config.labComponents.add("*");
+      if (!ctx.vuetifyGte("3.4.0")) {
+        addDatePicker = false;
+      }
+    } else if (typeof labComponents === "string") {
+      useLabComponents.push(labComponents);
+    } else if (Array.isArray(labComponents)) {
+      useLabComponents.push(...labComponents);
+    }
+    if (useLabComponents.length > 0) {
+      componentsToImport.clear();
+      const importMapLabComponents = await labComponentsPromise;
+      for (const component of useLabComponents) {
+        const componentEntry = importMapLabComponents[component];
+        const from = componentEntry?.from;
+        if (!from) {
+          logger.warn(`Lab Component ${component} not found in Vuetify.`);
+          continue;
+        }
+        const parts = from.split("/");
+        if (parts.length < 2) {
+          logger.warn(`Lab Component ${component} not found in Vuetify, please report a new issue.`);
+          continue;
+        }
+        const bucket = parts[1];
+        if (!bucket) {
+          continue;
+        }
+        if (!componentsToImport.has(bucket)) {
+          componentsToImport.set(bucket, []);
+        }
+        const componentsArray = componentsToImport.get(bucket);
+        if (!componentsArray.includes(component)) {
+          componentsArray.push(component);
+        }
+        config.labComponents.add(component);
+      }
+      if (!ctx.vuetifyGte("3.4.0") && dateOptions && !addDatePicker) {
+        const entry = componentsToImport.get("VDatePicker");
+        if (entry) {
+          entry.push("VDatePicker");
+          config.labComponents.add("VDatePicker");
+          addDatePicker = false;
+        }
+      }
+      for (const [from, componentsArray] of componentsToImport.entries()) {
+        config.imports.push(`import {${Array.from(new Set(componentsArray)).join(",")}} from 'vuetify/labs/${from}'`);
+      }
+    }
+  }
+  if (dateOptions && addDatePicker) {
+    let warn = true;
+    if (ctx.vuetifyGte("3.0.0")) {
+      warn = false;
+      if (ctx.vuetifyGte("3.4.0")) {
+        config.components.add("VDatePicker");
+        config.imports.push("import {VDatePicker} from 'vuetify/components/VDatePicker'");
+      } else {
+        config.labComponents.add("VDatePicker");
+        config.imports.push("import {VDatePicker} from 'vuetify/labs/VDatePicker'");
+      }
+    }
+    warn && logger.warn("Unable to load Vuetify version from package.json, add VDatePicker to components or labComponents");
+  }
+  let componentsEntry = "";
+  if (config.components.size > 0) {
+    if (config.labComponents.size > 0) {
+      componentsEntry = config.labComponents.has("*") ? `options.components = {${Array.from(config.components).join(",")},...labsComponents}` : `options.components = {${Array.from(config.components).join(",")},${Array.from(config.labComponents).join(",")}}`;
+    } else {
+      componentsEntry = `options.components = {${Array.from(config.components).join(",")}}`;
+    }
+  } else if (config.labComponents.size > 0) {
+    componentsEntry = config.labComponents.has("*") ? "options.components = {...labsComponents}" : `options.components = {${Array.from(config.labComponents).join(",")}}`;
+  }
+  if (!ctx.i18n && localeMessages) {
+    const useLocales = Array.isArray(localeMessages) ? [...new Set(localeMessages)] : [localeMessages];
+    config.imports.push(`import {${useLocales.join(",")}} from 'vuetify/locale'`);
+    config.messages = `
+  options.locale = options.locale || {}
+  options.locale.messages = options.locale.messages || {}
+${useLocales.map((locale) => {
+      return `
+  if ('${locale}' in options.locale.messages)
+    deepCopy(options.locale.messages['${locale}'],${locale})
+
+  options.locale.messages['${locale}'] = ${locale}
+`;
+    }).join("")}
+`;
+  }
+  return {
+    imports: config.imports.length > 0 ? config.imports.join("\n") : "",
+    components: componentsEntry,
+    aliases: config.aliasEntries.length > 0 ? `options.aliases = {${config.aliasEntries.join(",")}}` : "",
+    directives: config.directives,
+    messages: config.messages
+  };
+}
+
+const VUETIFY_TO_DATE_FNS = {
+  en: "enUS",
+  fa: "faIR",
+  no: "nb",
+  srCyrl: "sr",
+  zhHans: "zhCN",
+  zhHant: "zhTW"
+};
+const DATE_FNS_SUPPORTED = /* @__PURE__ */ new Set([
+  "af",
+  "ar",
+  "az",
+  "bg",
+  "ca",
+  "ckb",
+  "cs",
+  "da",
+  "de",
+  "el",
+  "enUS",
+  "es",
+  "et",
+  "faIR",
+  "fi",
+  "fr",
+  "he",
+  "hr",
+  "hu",
+  "id",
+  "it",
+  "ja",
+  "km",
+  "ko",
+  "lt",
+  "lv",
+  "nb",
+  "nl",
+  "pl",
+  "pt",
+  "ro",
+  "ru",
+  "sk",
+  "sl",
+  "sr",
+  "srLatn",
+  "sv",
+  "th",
+  "tr",
+  "uk",
+  "vi",
+  "zhCN",
+  "zhTW"
+]);
+function resolveDateFnsLocaleName(code) {
+  if (!code) {
+    return { name: "enUS", fallback: true };
+  }
+  const candidate = VUETIFY_TO_DATE_FNS[code] ?? code;
+  if (DATE_FNS_SUPPORTED.has(candidate)) {
+    return { name: candidate, fallback: false };
+  }
+  return { name: "enUS", fallback: true };
+}
+
+function vuetifyDateConfigurationPlugin(ctx) {
+  return {
+    name: "vuetify:date-configuration:nuxt",
+    enforce: "pre",
+    resolveId(id) {
+      if (id === VIRTUAL_VUETIFY_DATE_CONFIGURATION) {
+        return RESOLVED_VIRTUAL_VUETIFY_DATE_CONFIGURATION;
+      }
+    },
+    async load(id) {
+      if (id === RESOLVED_VIRTUAL_VUETIFY_DATE_CONFIGURATION) {
+        if (ctx.isDev && ctx.canHmrConfig) {
+          for (const file of ctx.vuetifyFilesToWatch) {
+            this.addWatchFile(file);
+          }
+        }
+        if (!ctx.dateAdapter) {
+          return `
+export const enabled = false
+export const isDev = ${ctx.isDev}
+export const i18n = ${ctx.i18n}
+export const adapter = 'custom'
+export function dateConfiguration() {
+  return {}
+}
+`;
+        }
+        const { adapter: _adapter, ...newDateOptions } = ctx.vuetifyOptions.date ?? {};
+        let dateFnsLocale;
+        if (ctx.dateAdapter === "date-fns") {
+          const resolved = resolveDateFnsLocaleName(ctx.vuetifyOptions.locale?.locale);
+          dateFnsLocale = resolved.name;
+          if (resolved.fallback) {
+            ctx.logger.warn(`[vuetify-nuxt-module] date-fns locale for "${ctx.vuetifyOptions.locale?.locale ?? "(unset)"}" not found, falling back to "enUS". Set "vuetifyOptions.locale.locale" to a supported locale.`);
+          }
+        }
+        return `${buildImports(dateFnsLocale)}
+export const enabled = true
+export const isDev = ${ctx.isDev}
+export const i18n = ${ctx.i18n}
+export const adapter = '${ctx.dateAdapter}'
+export function dateConfiguration() {
+  const options = JSON.parse('${JSON.stringify(newDateOptions)}')
+  ${buildAdapter(dateFnsLocale)}
+  return options
+}
+`;
+      }
+    }
+  };
+  function buildAdapter(dateFnsLocale) {
+    if (ctx.dateAdapter === "custom" || ctx.dateAdapter === "vuetify" && ctx.vuetifyGte("3.4.0")) {
+      return "";
+    }
+    if (ctx.dateAdapter === "vuetify") {
+      return "options.adapter = VuetifyDateAdapter";
+    }
+    if (ctx.dateAdapter === "date-fns") {
+      return `options.adapter = new Adapter({ locale: ${dateFnsLocale} })`;
+    }
+    return "options.adapter = Adapter";
+  }
+  function buildImports(dateFnsLocale) {
+    if (ctx.dateAdapter === "custom" || ctx.dateAdapter === "vuetify" && ctx.vuetifyGte("3.4.0")) {
+      return "";
+    }
+    if (ctx.dateAdapter === "vuetify") {
+      return "import { VuetifyDateAdapter } from 'vuetify/labs/date/adapters/vuetify'";
+    }
+    const imports = [`import Adapter from '@date-io/${ctx.dateAdapter}'`];
+    if (ctx.dateAdapter === "date-fns") {
+      imports.push(`import { ${dateFnsLocale} } from 'date-fns/locale'`);
+    }
+    return imports.join("\n");
+  }
+}
+
+function vuetifyIconsPlugin(ctx) {
+  return {
+    name: "vuetify:icons-configuration:nuxt",
+    enforce: "pre",
+    resolveId(id) {
+      if (id === VIRTUAL_VUETIFY_ICONS_CONFIGURATION) {
+        return RESOLVED_VIRTUAL_VUETIFY_ICONS_CONFIGURATION;
+      }
+    },
+    async load(id) {
+      if (id === RESOLVED_VIRTUAL_VUETIFY_ICONS_CONFIGURATION) {
+        if (ctx.isDev && ctx.canHmrConfig) {
+          for (const file of ctx.vuetifyFilesToWatch) {
+            this.addWatchFile(file);
+          }
+        }
+        const {
+          enabled,
+          unocss,
+          aliases,
+          fa,
+          defaultSet,
+          imports,
+          sets
+        } = await prepareIcons();
+        if (!enabled) {
+          return `export const enabled = false
+export const isDev = ${ctx.isDev}
+export function iconsConfiguration() {
+  return {}
+}
+`;
+        }
+        if (!defaultSet) {
+          return `export const enabled = true
+export const isDev = ${ctx.isDev}
+export function iconsConfiguration() {
+  return {}
+}
+`;
+        }
+        return `${imports}
+export const enabled = true
+export const isDev = ${ctx.isDev}
+export function iconsConfiguration() {
+${fa.map((f) => `  ${f}`).join("\n")}
+  return {
+    defaultSet: '${defaultSet}',
+    ${aliases}
+    sets: { ${sets} }
+  }
+}
+${unocss}
+`;
+      }
+    }
+  };
+  async function prepareIcons() {
+    if (!ctx.icons.enabled) {
+      return {
+        enabled: false,
+        unocss: "",
+        defaultSet: void 0,
+        imports: "",
+        sets: "",
+        aliases: "",
+        fa: []
+      };
+    }
+    let aliases = "aliases,";
+    if (!ctx.icons.aliasesImportPresent || ctx.vuetifyOptions.icons && ctx.vuetifyOptions.icons.defaultSet === "custom") {
+      aliases = "";
+    } else {
+      const alias = ctx.icons.aliases;
+      if (alias.length > 0) {
+        aliases = `aliases: {
+      ...aliases,
+      ${alias.join(",\n")}
+    },
+`;
+      }
+    }
+    let unocss = "";
+    if (ctx.icons.unocss && ctx.icons.unocssAliases) {
+      ctx.icons.imports.unshift("// @unocss-include");
+      const prefix = `${ctx.icons.unocssIconPrefix}mdi:`;
+      const {
+        collapse = `${prefix}chevron-up`,
+        complete = `${prefix}check`,
+        cancel = `${prefix}close-circle`,
+        close = `${prefix}close`,
+        // delete (e.g. v-chip close)
+        clear = `${prefix}close-circle`,
+        success = `${prefix}check-circle`,
+        info = `${prefix}information`,
+        warning = `${prefix}alert-circle`,
+        error = `${prefix}close-circle`,
+        prev = `${prefix}chevron-left`,
+        next = `${prefix}chevron-right`,
+        checkboxOn = `${prefix}checkbox-marked`,
+        checkboxOff = `${prefix}checkbox-blank-outline`,
+        checkboxIndeterminate = `${prefix}minus-box`,
+        delimiter = `${prefix}circle`,
+        // for carousel
+        sortAsc = `${prefix}arrow-up`,
+        sortDesc = `${prefix}arrow-down`,
+        expand = `${prefix}chevron-down`,
+        menu = `${prefix}menu`,
+        subgroup = `${prefix}menu-down`,
+        dropdown = `${prefix}menu-down`,
+        radioOn = `${prefix}radiobox-marked`,
+        radioOff = `${prefix}radiobox-blank`,
+        edit = `${prefix}pencil`,
+        ratingEmpty = `${prefix}star-outline`,
+        ratingFull = `${prefix}star`,
+        ratingHalf = `${prefix}star-half-full`,
+        loading = `${prefix}cached`,
+        first = `${prefix}page-first`,
+        last = `${prefix}page-last`,
+        unfold = `${prefix}unfold-more-horizontal`,
+        file = `${prefix}paperclip`,
+        plus = `${prefix}plus`,
+        minus = `${prefix}minus`,
+        calendar = `${prefix}calendar`
+      } = ctx.icons.unocssIcons;
+      const useIcons = {
+        collapse,
+        complete,
+        cancel,
+        close,
+        delete: ctx.icons.unocssIcons.delete ?? `${prefix}close-circle`,
+        clear,
+        success,
+        info,
+        warning,
+        error,
+        prev,
+        next,
+        checkboxOn,
+        checkboxOff,
+        checkboxIndeterminate,
+        delimiter,
+        sortAsc,
+        sortDesc,
+        expand,
+        menu,
+        subgroup,
+        dropdown,
+        radioOn,
+        radioOff,
+        edit,
+        ratingEmpty,
+        ratingFull,
+        ratingHalf,
+        loading,
+        first,
+        last,
+        unfold,
+        file,
+        plus,
+        minus,
+        calendar
+      };
+      for (const [key, value] of Object.entries(ctx.icons.unocssAdditionalIcons)) {
+        useIcons[key] = value;
+      }
+      unocss = `const aliases = JSON.parse('${JSON.stringify(useIcons)}');
+`;
+    }
+    return {
+      enabled: true,
+      unocss,
+      fa: ctx.icons.svg?.fa ?? [],
+      defaultSet: ctx.icons.defaultSet,
+      imports: Object.values(ctx.icons.imports).join("\n"),
+      sets: ctx.icons.sets.join(","),
+      aliases
+    };
+  }
+}
+
+function parseId2(id) {
+  id = id.replace(/^(virtual:nuxt:|virtual:)/, "");
+  return parseURL(decodeURIComponent(isAbsolute(id) ? pathToFileURL(id).href : id));
+}
+function reviver(key, value) {
+  if (key === "__proto__" || key === "constructor") {
+    return void 0;
+  }
+  return value;
+}
+function parseProps(value) {
+  try {
+    const parsed = JSON.parse(value, reviver);
+    return parsed && typeof parsed === "object" ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function parseId(id) {
+  const { search, pathname } = parseId2(id);
+  const query = parseQuery(search);
+  const urlProps = query.props ? parseProps(query.props) : void 0;
+  return {
+    query: urlProps,
+    path: pathname ?? id
+  };
+}
+function vuetifyImportPlugin(options) {
+  let filter;
+  return {
+    name: "vuetify:import:nuxt",
+    configResolved(config) {
+      if (config.plugins.some((plugin) => plugin.name === "vuetify:import")) {
+        throw new Error("Remove vite-plugin-vuetify from your Nuxt config file, this module registers a modified version.");
+      }
+      const vueIdx = config.plugins.findIndex((plugin) => plugin.name === "vite:vue");
+      const vueOptions = vueIdx === -1 ? {} : config.plugins[vueIdx].api?.options;
+      filter = createFilter(vueOptions.include, vueOptions.exclude);
+    },
+    async transform(code, id) {
+      const { query, path } = parseId(id);
+      const isVueVirtual = query && "vue" in query;
+      const isVueFile = !isVueVirtual && filter(path) && !/^import { render as _sfc_render } from ".*"$/m.test(code);
+      const isVueTemplate = isVueVirtual && (query.type === "template" || query.type === "script" && query.setup === "true");
+      if (isVueFile || isVueTemplate) {
+        const { code: imports, source } = generateImports(code, options);
+        return {
+          code: source + imports,
+          map: null
+        };
+      }
+      return null;
+    }
+  };
+}
+
+function vuetifySSRClientHintsPlugin(ctx) {
+  return {
+    name: "vuetify:ssr-client-hints:nuxt",
+    enforce: "pre",
+    resolveId(id) {
+      if (id === VIRTUAL_VUETIFY_SSR_CLIENT_HINTS_CONFIGURATION) {
+        return RESOLVED_VIRTUAL_VUETIFY_SSR_CLIENT_HINTS_CONFIGURATION;
+      }
+    },
+    async load(id) {
+      if (id === RESOLVED_VIRTUAL_VUETIFY_SSR_CLIENT_HINTS_CONFIGURATION) {
+        const data = {
+          reloadOnFirstRequest: ctx.ssrClientHints.reloadOnFirstRequest,
+          viewportSize: ctx.ssrClientHints.viewportSize,
+          prefersColorScheme: ctx.ssrClientHints.prefersColorScheme,
+          prefersReducedMotion: ctx.ssrClientHints.prefersReducedMotion,
+          clientWidth: ctx.vuetifyOptions.ssr?.clientWidth,
+          clientHeight: ctx.vuetifyOptions.ssr?.clientHeight,
+          prefersColorSchemeOptions: ctx.ssrClientHints.prefersColorSchemeOptions
+        };
+        return `export const ssrClientHintsConfiguration = JSON.parse('${JSON.stringify(data)}');`;
+      }
+    }
+  };
+}
+
+function detectDate(paths) {
+  const result = [];
+  for (const adapter of [
+    "date-fns",
+    "moment",
+    "luxon",
+    "dayjs",
+    "js-joda",
+    "date-fns-jalali",
+    "jalaali",
+    "hijri"
+  ]) {
+    if (isPackageExists(`@date-io/${adapter}`, { paths })) {
+      result.push(adapter);
+    }
+  }
+  return result;
+}
+function multipleDateAdaptersError(adapters) {
+  return `Multiple date adapters found: ${adapters.map((adapter) => `@date-io/${adapter}`).join(", ")}, please specify the adapter to use in the "vuetifyOptions.date.adapter" option.`;
+}
+function cleanupBlueprint(vuetifyOptions) {
+  const blueprint = vuetifyOptions.blueprint;
+  if (blueprint) {
+    delete blueprint.ssr;
+    delete blueprint.components;
+    delete blueprint.directives;
+    delete blueprint.locale;
+    delete blueprint.date;
+    delete blueprint.icons;
+    vuetifyOptions.blueprint = blueprint;
+  }
+}
+function checkVuetifyPlugins(config) {
+  let plugin = config.plugins?.find((p) => p && typeof p === "object" && "name" in p && p.name === "vuetify:import");
+  if (plugin) {
+    throw new Error("Remove vite-plugin-vuetify plugin from Vite Plugins entry in Nuxt config file!");
+  }
+  plugin = config.plugins?.find((p) => p && typeof p === "object" && "name" in p && p.name === "vuetify:styles");
+  if (plugin) {
+    throw new Error("Remove vite-plugin-vuetify plugin from Vite Plugins entry in Nuxt config file!");
+  }
+}
+function resolveVuetifyComponents(resolver, vuetifyBase) {
+  const componentsPromise = importMapResolver();
+  const labComponentsPromise = importMapLabResolver();
+  return {
+    componentsPromise,
+    labComponentsPromise
+  };
+  async function importMapResolver() {
+    return JSON.parse(await readFile(resolver.resolve(vuetifyBase, "dist/json/importMap.json"), "utf8")).components;
+  }
+  async function importMapLabResolver() {
+    return JSON.parse(await readFile(resolver.resolve(vuetifyBase, "dist/json/importMap-labs.json"), "utf8")).components;
+  }
+}
+
+function resolveStylesCache(stylesOption) {
+  return stylesOption.cache ?? stylesOption.experimental?.cache;
+}
+function configureVite(configKey, nuxt, ctx) {
+  nuxt.hook("vite:extend", ({ config }) => checkVuetifyPlugins(config));
+  nuxt.hook("vite:extendConfig", (viteInlineConfig) => {
+    viteInlineConfig.plugins = viteInlineConfig.plugins || [];
+    checkVuetifyPlugins(viteInlineConfig);
+    if (!ctx.moduleOptions.disableModernSassCompiler) {
+      const enableModernSassCompiler = semver.gte(ctx.viteVersion, "5.4.0") && semver.lt(ctx.viteVersion, "7.0.0-0");
+      if (enableModernSassCompiler) {
+        const sassEmbedded = isPackageExists("sass-embedded", { paths: ctx.resolvePaths });
+        if (sassEmbedded) {
+          viteInlineConfig.css ??= {};
+          viteInlineConfig.css.preprocessorOptions ??= {};
+          viteInlineConfig.css.preprocessorOptions.sass ??= {};
+          viteInlineConfig.css.preprocessorOptions.sass.api = "modern-compiler";
+          viteInlineConfig.css.preprocessorOptions.scss ??= {};
+          viteInlineConfig.css.preprocessorOptions.scss.api = "modern-compiler";
+        } else {
+          viteInlineConfig.css ??= {};
+          viteInlineConfig.css.preprocessorOptions ??= {};
+          viteInlineConfig.css.preprocessorOptions.sass ??= {};
+          viteInlineConfig.css.preprocessorOptions.sass.api = "modern";
+          viteInlineConfig.css.preprocessorOptions.scss ??= {};
+          viteInlineConfig.css.preprocessorOptions.scss.api = "modern";
+          if (!("preprocessorMaxWorkers" in viteInlineConfig.css)) {
+            viteInlineConfig.css.preprocessorMaxWorkers = true;
+          }
+        }
+      }
+    }
+    viteInlineConfig.optimizeDeps = defu(viteInlineConfig.optimizeDeps, { exclude: ["vuetify"] });
+    if (ctx.isSSR) {
+      viteInlineConfig.ssr ||= {};
+      viteInlineConfig.ssr.noExternal = [
+        ...Array.isArray(viteInlineConfig.ssr.noExternal) ? viteInlineConfig.ssr.noExternal : viteInlineConfig.ssr.noExternal && typeof viteInlineConfig.ssr.noExternal !== "boolean" ? [viteInlineConfig.ssr.noExternal] : [],
+        configKey
+      ];
+    }
+    const transformAssetUrls = createTransformAssetUrls(
+      ctx,
+      viteInlineConfig
+    );
+    if (transformAssetUrls) {
+      viteInlineConfig.vue ??= {};
+      viteInlineConfig.vue.template ??= {};
+      viteInlineConfig.vue.template.transformAssetUrls = transformAssetUrls;
+    }
+    const autoImport = { labs: true };
+    const ignoreDirectives = ctx.moduleOptions.ignoreDirectives;
+    if (ignoreDirectives) {
+      autoImport.ignore = Array.isArray(ignoreDirectives) ? ignoreDirectives : [ignoreDirectives];
+    }
+    viteInlineConfig.plugins.push(vuetifyImportPlugin({ autoImport }));
+    const stylesOption = ctx.moduleOptions.styles;
+    if (stylesOption === "none") {
+      viteInlineConfig.plugins.push(Styles({ styles: "none" }));
+    } else if (typeof stylesOption === "object" && stylesOption !== null && "configFile" in stylesOption) {
+      if (!ctx.stylesConfigFile) {
+        throw new Error("vuetify-nuxt-module: styles.configFile could not be resolved");
+      }
+      const cache = resolveStylesCache(stylesOption);
+      viteInlineConfig.plugins.push(Styles({
+        settings: ctx.stylesConfigFile,
+        ...cache === void 0 ? {} : { cache }
+      }));
+    }
+    viteInlineConfig.plugins.push(vuetifyConfigurationPlugin(ctx), vuetifyIconsPlugin(ctx), vuetifyDateConfigurationPlugin(ctx));
+    if (ctx.ssrClientHints.enabled) {
+      viteInlineConfig.plugins.push(vuetifySSRClientHintsPlugin(ctx));
+    }
+  });
+}
+
+const cssFonts = ["unocss-mdi", "mdi", "md", "fa", "fa4"];
+const iconsPackageNames = {
+  "unocss-mdi": { name: "@mdi/font", css: "" },
+  "mdi": { name: "@mdi/font", css: "@mdi/font/css/materialdesignicons.css" },
+  "md": { name: "material-design-icons-iconfont", css: "@mdi/font/css/materialdesignicons.css" },
+  "fa": { name: "@fortawesome/fontawesome-free", css: "@fortawesome/fontawesome-free/css/all.css" },
+  "fa4": { name: "font-awesome@4.7.0", css: "font-awesome/css/font-awesome.min.css" }
+};
+const iconsCDN = {
+  "unocss-mdi": "",
+  "mdi": "https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css",
+  "md": "https://fonts.googleapis.com/css?family=Material+Icons",
+  "fa": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css",
+  "fa4": "https://cdn.jsdelivr.net/npm/font-awesome@4.x/css/font-awesome.min.css"
+};
+const disabledResolvedIcons = Object.freeze({
+  enabled: false,
+  unocss: false,
+  unocssAliases: false,
+  unocssIconPrefix: "i-",
+  unocssIcons: {},
+  unocssAdditionalIcons: {},
+  imports: [],
+  aliases: [],
+  aliasesImportPresent: false,
+  sets: [],
+  cdn: [],
+  local: [],
+  svg: {}
+});
+function prepareIcons(unocssPresent, logger, vuetifyOptions, paths) {
+  const iconPackageExists = (name) => isPackageExists(name, { paths });
+  if (vuetifyOptions.icons === false) {
+    return disabledResolvedIcons;
+  }
+  const icons = vuetifyOptions.icons || {};
+  let { defaultSet = "mdi", sets } = icons;
+  if (!defaultSet) {
+    defaultSet = icons.defaultSet = "mdi";
+  }
+  if (!sets && defaultSet !== "mdi-svg" && defaultSet !== "fa-svg" && defaultSet !== "custom") {
+    sets = [{ name: defaultSet || "mdi" }];
+  }
+  sets = sets ? convertFontSetsToObjectNotation(sets) : [];
+  const resolvedIcons = {
+    enabled: true,
+    unocss: unocssPresent && (defaultSet === "unocss-mdi" || sets.some((s) => s.name === "unocss-mdi")),
+    unocssAliases: defaultSet === "unocss-mdi",
+    unocssIconPrefix: icons.unocssIconPrefix ?? "i-",
+    unocssIcons: icons.unocssIcons ?? {},
+    unocssAdditionalIcons: icons.unocssAdditionalIcons ?? {},
+    defaultSet,
+    sets: [],
+    aliases: [],
+    aliasesImportPresent: false,
+    imports: [],
+    cdn: [],
+    local: [],
+    svg: {
+      mdi: false
+    }
+  };
+  if (sets) {
+    if (!unocssPresent && defaultSet === "unocss-mdi") {
+      logger.warn("Configured unocss-mdi as default icon set and @unocss/nuxt is not installed, reverting configuration to use mdi icon set: install @unocss/nuxt module or change the default icon set!");
+      defaultSet = "mdi";
+      sets = sets.filter((s) => s.name !== "unocss-mdi");
+    }
+    for (const { name, cdn } of sets.filter((s) => cssFonts.includes(s.name))) {
+      resolvedIcons.aliasesImportPresent ||= name === defaultSet;
+      if (name === "unocss-mdi") {
+        continue;
+      }
+      resolvedIcons.imports.push(`import {${name === defaultSet ? "aliases," : ""}${name}} from 'vuetify/iconsets/${name}'`);
+      resolvedIcons.sets.push(name);
+      if (iconPackageExists(iconsPackageNames[name].name)) {
+        resolvedIcons.local.push(iconsPackageNames[name].css);
+      } else {
+        resolvedIcons.cdn.push([name, cdn ?? iconsCDN[name]]);
+      }
+    }
+    if (resolvedIcons.unocss && defaultSet === "unocss-mdi") {
+      if (!resolvedIcons.sets.includes("mdi")) {
+        resolvedIcons.sets.push("mdi");
+        resolvedIcons.imports.push("import {mdi} from 'vuetify/iconsets/mdi'");
+      }
+      resolvedIcons.defaultSet = "mdi";
+    }
+  }
+  let faSvg = icons.svg?.fa;
+  if (defaultSet === "fa-svg" || faSvg) {
+    if (!faSvg) {
+      faSvg = {};
+    }
+    let faSvgExists = iconPackageExists("@fortawesome/fontawesome-svg-core");
+    if (!faSvgExists) {
+      logger.warn("Missing @fortawesome/fontawesome-svg-core dependency, install it!");
+    }
+    faSvgExists = iconPackageExists("@fortawesome/vue-fontawesome");
+    if (faSvgExists) {
+      if (!faSvg.libraries?.length) {
+        faSvg.libraries = [[false, "fas", "@fortawesome/free-solid-svg-icons"]];
+      }
+      for (const p in faSvg.libraries) {
+        const [_defaultExport, _name, library] = faSvg.libraries[p];
+        if (!iconPackageExists(library)) {
+          faSvgExists = false;
+          logger.warn(`Missing library ${library} dependency, install it!`);
+        }
+      }
+    } else {
+      logger.warn("Missing @fortawesome/vue-fontawesome dependency, install it!");
+    }
+    if (faSvgExists) {
+      resolvedIcons.aliasesImportPresent ||= defaultSet === "fa-svg";
+      resolvedIcons.imports.push(`import {${defaultSet === "fa-svg" ? "aliases," : ""}fa} from 'vuetify/iconsets/fa-svg'`, "import { library } from '@fortawesome/fontawesome-svg-core'", "import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'", "import { useNuxtApp } from '#imports'");
+      resolvedIcons.svg.fa = ["useNuxtApp().vueApp.component('font-awesome-icon', FontAwesomeIcon)"];
+      for (const [defaultExport, name, library] of faSvg.libraries) {
+        resolvedIcons.imports.push(`import ${defaultExport ? name : `{${name}}`} from '${library}'`);
+        resolvedIcons.svg.fa.push(`library.add(${name})`);
+      }
+      resolvedIcons.sets.push("fa");
+      if (defaultSet === "fa-svg") {
+        resolvedIcons.defaultSet = "fa";
+      }
+    }
+  }
+  let mdiSvg = icons.svg?.mdi;
+  if (defaultSet === "mdi-svg" || mdiSvg) {
+    if (!mdiSvg) {
+      mdiSvg = {};
+    }
+    const mdiSvgExists = iconPackageExists("@mdi/js");
+    if (mdiSvgExists) {
+      resolvedIcons.svg.mdi = true;
+      resolvedIcons.aliasesImportPresent ||= defaultSet === "mdi-svg";
+      resolvedIcons.imports.push(`import {${defaultSet === "mdi-svg" ? "aliases," : ""}mdi} from 'vuetify/iconsets/mdi-svg'`);
+      if (mdiSvg && mdiSvg.aliases) {
+        resolvedIcons.imports.push(`import {${Object.values(mdiSvg.aliases).join(",")}} from '@mdi/js'`);
+        for (const [alias, icon] of Object.entries(mdiSvg.aliases)) {
+          resolvedIcons.aliases.push(`${alias}: ${icon}`);
+        }
+      }
+      resolvedIcons.sets.push("mdi");
+      if (defaultSet === "mdi-svg") {
+        resolvedIcons.defaultSet = "mdi";
+      }
+    } else {
+      resolvedIcons.svg.mdi = false;
+      logger.warn("Missing @mdi/js dependency, install it!");
+    }
+  }
+  if (defaultSet !== "custom" && !resolvedIcons.unocss && !resolvedIcons.local?.length && !resolvedIcons.cdn?.length && !resolvedIcons.svg?.mdi && !resolvedIcons.svg?.fa?.length) {
+    logger.warn("No icons found, icons disabled!");
+    return disabledResolvedIcons;
+  }
+  return resolvedIcons;
+}
+function convertFontSetsToObjectNotation(sets) {
+  const result = [];
+  if (typeof sets === "string") {
+    result.push({ name: sets });
+  } else {
+    for (const set of sets) {
+      if (typeof set === "string") {
+        result.push({ name: set });
+      } else {
+        result.push(set);
+      }
+    }
+  }
+  return result;
+}
+
+async function loadVuetifyConfiguration(cwd = process.cwd(), configOrPath = cwd, defaults = {}, extraConfigSources = []) {
+  let inlineConfig = {};
+  if (typeof configOrPath !== "string") {
+    inlineConfig = configOrPath;
+    configOrPath = process.cwd();
+  }
+  const resolved = resolve(cwd, configOrPath);
+  let isFile = false;
+  if (existsSync(resolved) && statSync(resolved).isFile()) {
+    isFile = true;
+    cwd = dirname(resolved).replace(/\\/g, "/");
+  }
+  const rewrite = (config) => {
+    if (typeof config === "function") {
+      return config();
+    }
+    return config;
+  };
+  const loader = createConfigLoader({
+    sources: isFile ? [
+      {
+        files: resolved,
+        extensions: [],
+        rewrite
+      }
+    ] : [
+      {
+        files: [
+          "vuetify.config"
+        ],
+        // we don't want `package.json` to be loaded
+        extensions: ["mts", "cts", "ts", "mjs", "cjs", "js"],
+        rewrite
+      },
+      ...extraConfigSources
+    ],
+    cwd,
+    defaults: inlineConfig,
+    merge: false
+  });
+  const result = await loader.load();
+  result.config = result.config?.config === false ? Object.assign(defaults, inlineConfig) : Object.assign(defaults, result.config || inlineConfig);
+  if (result.config && typeof result.config === "object" && "vuetifyOptions" in result.config) {
+    const nestedOptions = result.config.vuetifyOptions;
+    if (typeof nestedOptions === "object" && nestedOptions !== null) {
+      console.warn('[@vuetify/nuxt-module] Detected nested "vuetifyOptions" in your configuration file. This usually happens when using a named export or wrapping options incorrectly. Please export the options directly using "export default".');
+      Object.assign(result.config, nestedOptions);
+      delete result.config.vuetifyOptions;
+    }
+  }
+  delete result.config.config;
+  return result;
+}
+
+const MODULE_DEFAULTS = {
+  moduleOptions: {
+    importComposables: true,
+    includeTransformAssetsUrls: true,
+    styles: true,
+    rulesConfiguration: {
+      fromLabs: true
+    }
+  },
+  vuetifyOptions: {
+    labComponents: false,
+    directives: false
+  }
+};
+function finalizeConfiguration(moduleOptions) {
+  if (moduleOptions.length > 1) {
+    const [app, ...rest] = moduleOptions;
+    const configuration = defu(app, ...rest, MODULE_DEFAULTS);
+    dedupeIcons(configuration, moduleOptions.toReversed());
+    return configuration;
+  }
+  return defu(moduleOptions[0] ?? {}, MODULE_DEFAULTS);
+}
+async function mergeVuetifyModules(options, nuxt) {
+  const moduleOptions = [];
+  const vuetifyConfigurationFilesToWatch = /* @__PURE__ */ new Set();
+  await nuxt.callHook("vuetify:registerModule", (layerModuleOptions) => moduleOptions.push(layerModuleOptions));
+  if (nuxt.options._layers.length > 1) {
+    for (let i = 1; i < nuxt.options._layers.length; i++) {
+      const layer = nuxt.options._layers[i];
+      const resolvedOptions2 = await loadVuetifyConfiguration(
+        layer.config.rootDir,
+        layer.config.vuetify?.vuetifyOptions
+      );
+      if (resolvedOptions2.sources.length > 0) {
+        for (const s of resolvedOptions2.sources.map((s2) => s2.replace(/\\/g, "/")).filter((s2) => !s2.includes("/node_modules/"))) {
+          vuetifyConfigurationFilesToWatch.add(s);
+        }
+      }
+      moduleOptions.push({
+        moduleOptions: layer.config.vuetify?.moduleOptions,
+        vuetifyOptions: resolvedOptions2.config
+      });
+    }
+  }
+  const resolvedOptions = await loadVuetifyConfiguration(
+    nuxt.options.rootDir,
+    options.vuetifyOptions
+  );
+  if (nuxt.options.dev && resolvedOptions.sources.length > 0) {
+    for (const s of resolvedOptions.sources) {
+      vuetifyConfigurationFilesToWatch.add(s.replace(/\\/g, "/"));
+    }
+  }
+  moduleOptions.unshift({
+    moduleOptions: options.moduleOptions,
+    vuetifyOptions: resolvedOptions.config
+  });
+  return {
+    configuration: finalizeConfiguration(moduleOptions),
+    vuetifyConfigurationFilesToWatch
+  };
+}
+function dedupeIcons(configuration, moduleOptions) {
+  const vuetifyOptions = configuration.vuetifyOptions;
+  if (vuetifyOptions.icons && vuetifyOptions.icons.sets) {
+    const sets = /* @__PURE__ */ new Map();
+    for (const { vuetifyOptions: vuetifyOptions2 } of moduleOptions) {
+      if (vuetifyOptions2.icons && vuetifyOptions2.icons.sets) {
+        const mSets = vuetifyOptions2.icons.sets;
+        if (typeof mSets === "string") {
+          sets.set(mSets, { name: mSets });
+        } else {
+          for (const set of mSets) {
+            if (typeof set === "string") {
+              sets.set(set, { name: set });
+            } else {
+              sets.set(set.name, set);
+            }
+          }
+        }
+      }
+    }
+    vuetifyOptions.icons.sets = Array.from(sets.values());
+  }
+}
+
+const disabledClientHints = Object.freeze({
+  enabled: false,
+  reloadOnFirstRequest: false,
+  viewportSize: false,
+  prefersColorScheme: false,
+  prefersReducedMotion: false
+});
+function resolveColorSchemeCookie(options, logger) {
+  if (options.cookieName !== void 0) {
+    logger.warn("[vuetify-nuxt-module] `prefersColorSchemeOptions.cookieName` is deprecated, use `prefersColorSchemeOptions.cookie.name` instead.");
+  }
+  const cookieSameSite = options.cookie?.sameSite ?? "lax";
+  return {
+    cookieName: options.cookie?.name ?? options.cookieName ?? "color-scheme",
+    cookieDomain: options.cookie?.domain,
+    cookieSecure: cookieSameSite === "none" ? true : options.cookie?.secure,
+    cookieSameSite
+  };
+}
+function resolveDefaultTheme(defaultTheme, themes, lightThemeName, logger) {
+  if (defaultTheme === "system") {
+    logger.warn(`Vuetify "system" theme cannot be resolved during SSR; using "${lightThemeName}" as the server-side fallback. The browser preference is applied on the client via prefersColorScheme client hints. To avoid a flash of the wrong theme, set explicit dark/light themes and enable moduleOptions.ssrClientHints.prefersColorSchemeOptions.useBrowserThemeOnly.`);
+    return lightThemeName;
+  }
+  if (!themes[defaultTheme]) {
+    throw new Error(`Missing default theme ${defaultTheme} in the Vuetify themes!`);
+  }
+  return defaultTheme;
+}
+function prepareSSRClientHints(baseUrl, ctx) {
+  if (!ctx.isSSR || ctx.isNuxtGenerate) {
+    return disabledClientHints;
+  }
+  const { ssrClientHints: ssrClientHintsConfiguration } = ctx.moduleOptions;
+  const clientHints = {
+    enabled: false,
+    reloadOnFirstRequest: ssrClientHintsConfiguration?.reloadOnFirstRequest ?? false,
+    viewportSize: ssrClientHintsConfiguration?.viewportSize ?? false,
+    prefersColorScheme: ssrClientHintsConfiguration?.prefersColorScheme ?? false,
+    prefersReducedMotion: ssrClientHintsConfiguration?.prefersReducedMotion ?? false
+  };
+  clientHints.enabled = clientHints.viewportSize || clientHints.prefersColorScheme || clientHints.prefersReducedMotion;
+  if (clientHints.enabled && clientHints.prefersColorScheme && ssrClientHintsConfiguration?.prefersColorSchemeOptions) {
+    const theme = ctx.vuetifyOptions.theme;
+    if (!theme) {
+      throw new Error("Vuetify theme is disabled");
+    }
+    const themes = theme.themes;
+    if (!themes) {
+      throw new Error("Vuetify themes is missing in theme!");
+    }
+    const defaultTheme = theme.defaultTheme;
+    if (!defaultTheme) {
+      throw new Error("Vuetify default theme is missing in theme!");
+    }
+    const darkThemeName = ssrClientHintsConfiguration.prefersColorSchemeOptions?.darkThemeName ?? "dark";
+    if (!themes[darkThemeName]) {
+      throw new Error(`Missing theme ${darkThemeName} in the Vuetify themes!`);
+    }
+    const lightThemeName = ssrClientHintsConfiguration.prefersColorSchemeOptions?.lightThemeName ?? "light";
+    if (!themes[lightThemeName]) {
+      throw new Error(`Missing theme ${lightThemeName} in the Vuetify themes!`);
+    }
+    if (darkThemeName === lightThemeName) {
+      throw new Error("Vuetify dark theme and light theme are the same, change darkThemeName or lightThemeName!");
+    }
+    const pcsOptions = ssrClientHintsConfiguration.prefersColorSchemeOptions;
+    const effectiveDefaultTheme = resolveDefaultTheme(defaultTheme, themes, lightThemeName, ctx.logger);
+    clientHints.prefersColorSchemeOptions = {
+      baseUrl,
+      defaultTheme: effectiveDefaultTheme,
+      themeNames: Array.from(Object.keys(themes)),
+      ...resolveColorSchemeCookie(pcsOptions, ctx.logger),
+      darkThemeName,
+      lightThemeName,
+      useBrowserThemeOnly: pcsOptions?.useBrowserThemeOnly ?? false
+    };
+  }
+  return clientHints;
+}
+
+async function load(options, nuxt, ctx, reload = false) {
+  const {
+    configuration,
+    vuetifyConfigurationFilesToWatch
+  } = await mergeVuetifyModules(options, nuxt);
+  if (ctx.componentsPromise === void 0) {
+    const {
+      componentsPromise,
+      labComponentsPromise
+    } = resolveVuetifyComponents(ctx.resolver, ctx.vuetifyBase);
+    ctx.componentsPromise = componentsPromise;
+    ctx.labComponentsPromise = labComponentsPromise;
+  }
+  const { vuetifyOptions = {} } = configuration;
+  const {
+    directives: _directives,
+    labComponents: _labComponents,
+    ...vOptions
+  } = vuetifyOptions;
+  const vuetifyAppOptions = defu(vOptions, {});
+  cleanupBlueprint(vuetifyAppOptions);
+  ctx.dateAdapter = void 0;
+  const dateOptions = vuetifyOptions.date;
+  if (dateOptions) {
+    const adapter = dateOptions.adapter;
+    const date = detectDate(ctx.resolvePaths);
+    if (!adapter && date.length > 1) {
+      throw new Error(multipleDateAdaptersError(date));
+    }
+    if (adapter) {
+      if (adapter === "vuetify" || adapter === "custom") {
+        ctx.dateAdapter = adapter;
+      } else {
+        if (date.includes(adapter)) {
+          ctx.dateAdapter = adapter;
+        } else {
+          ctx.logger.warn(`[vuetify-nuxt-module] Ignoring Vuetify Date configuration, date adapter "@date-io/${adapter}" not installed!`);
+        }
+      }
+    } else if (date.length === 0) {
+      ctx.dateAdapter = "vuetify";
+    } else {
+      ctx.dateAdapter = date[0];
+    }
+  }
+  if (!reload) {
+    const oldIcons = ctx.icons;
+    if (oldIcons && oldIcons.cdn?.length && nuxt.options.app.head.link) {
+      nuxt.options.app.head.link = nuxt.options.app.head.link.filter((link) => !link.key || !oldIcons.cdn.some(([key]) => link.key === key));
+    }
+  }
+  ctx.moduleOptions = configuration.moduleOptions;
+  ctx.vuetifyOptions = configuration.vuetifyOptions;
+  ctx.enableRules = ctx.moduleOptions.enableRules;
+  ctx.rulesConfiguration = ctx.moduleOptions.rulesConfiguration;
+  ctx.vuetifyFilesToWatch = Array.from(vuetifyConfigurationFilesToWatch);
+  ctx.icons = prepareIcons(ctx.unocss, ctx.logger, vuetifyAppOptions, ctx.resolvePaths);
+  ctx.ssrClientHints = prepareSSRClientHints(nuxt.options.app.baseURL ?? "/", ctx);
+  if (ctx.isSSR && !ctx.ssrClientHints.prefersColorScheme && ctx.vuetifyOptions.theme && typeof ctx.vuetifyOptions.theme === "object" && ctx.vuetifyOptions.theme.defaultTheme === "system") {
+    ctx.logger.warn('`theme.defaultTheme: "system"` cannot be resolved during SSR/SSG: the server has no access to the OS color-scheme preference, so the first paint defaults to light and may flash on dark systems. Set explicit dark/light themes and enable `moduleOptions.ssrClientHints.prefersColorScheme` (optionally `prefersColorSchemeOptions.useBrowserThemeOnly`). See the SSR guide.');
+  }
+  if (!reload && ctx.icons.enabled) {
+    if (ctx.icons.local) {
+      for (const css of ctx.icons.local) {
+        nuxt.options.css.push(css);
+      }
+    }
+    if (ctx.icons.cdn?.length) {
+      nuxt.options.app.head.link ??= [];
+      for (const [key, href] of ctx.icons.cdn) {
+        nuxt.options.app.head.link.push({
+          key,
+          rel: "stylesheet",
+          href,
+          type: "text/css",
+          crossorigin: "anonymous"
+        });
+      }
+    }
+  }
+}
+function bindInvalidator(graph) {
+  return () => {
+    for (const id of RESOLVED_VIRTUAL_MODULES) {
+      const mod = graph.getModuleById(id);
+      if (mod) {
+        graph.invalidateModule(mod);
+      }
+    }
+  };
+}
+function registerWatcher(options, nuxt, ctx) {
+  if (!nuxt.options.dev) {
+    return;
+  }
+  if (!ctx.canHmrConfig) {
+    for (const file of ctx.vuetifyFilesToWatch) {
+      nuxt.options.watch.push(file);
+    }
+    return;
+  }
+  let clientServer;
+  let invalidateSsrModules;
+  nuxt.hook("vite:serverCreated", (server, { isClient }) => {
+    if (!isClient) {
+      invalidateSsrModules = bindInvalidator(server.moduleGraph);
+      return;
+    }
+    if (!server.ws) {
+      return;
+    }
+    clientServer = server;
+    const ssrEnv = server.environments?.ssr;
+    if (ssrEnv) {
+      invalidateSsrModules ??= bindInvalidator(ssrEnv.moduleGraph);
+    }
+    server.watcher.add(ctx.vuetifyFilesToWatch);
+  });
+  async function reloadConfig() {
+    await load(options, nuxt, ctx, true);
+    invalidateSsrModules?.();
+    clientServer?.ws.send({ type: "full-reload" });
+  }
+  addVitePlugin({
+    name: "vuetify:configuration:watch",
+    enforce: "pre",
+    async handleHotUpdate({ file }) {
+      if (clientServer && ctx.vuetifyFilesToWatch.includes(file)) {
+        await reloadConfig();
+        return [];
+      }
+    }
+  });
+}
+
+const MIN_NUXT_VERSION_FOR_SSR_CONFIG_HMR = "3.18.0";
+function supportsSsrConfigHmr(nuxtVersion) {
+  const parsed = semver.parse(nuxtVersion) ?? semver.coerce(nuxtVersion);
+  if (!parsed) {
+    return false;
+  }
+  return semver.gte(parsed.version, MIN_NUXT_VERSION_FOR_SSR_CONFIG_HMR);
+}
+
+const CONFIG_KEY = "vuetify";
+const logger = useLogger(`nuxt:${CONFIG_KEY}`);
+const module$1 = defineNuxtModule({
+  meta: {
+    name: "vuetify-nuxt-module",
+    configKey: "vuetify",
+    compatibility: {
+      nuxt: ">=3.15.0"
+    },
+    version
+  },
+  /**
+   * Sets up the Vuetify Nuxt module.
+   *
+   * @param options - The module options.
+   * @param nuxt - The Nuxt instance.
+   */
+  async setup(options, nuxt) {
+    if (isNuxtMajorVersion(2, nuxt)) {
+      logger.error(`Cannot support nuxt version: ${getNuxtVersion(nuxt)}`);
+    }
+    let vuetifyPkgPath = await findPath("vuetify/package.json");
+    if (!vuetifyPkgPath) {
+      const metaResolve = import.meta.resolve;
+      if (metaResolve) {
+        try {
+          vuetifyPkgPath = fileURLToPath(metaResolve("vuetify/package.json"));
+        } catch {
+        }
+      }
+    }
+    if (!vuetifyPkgPath) {
+      throw new Error(
+        '[vuetify-nuxt-module] Could not resolve "vuetify". Please add it as a dependency of your project (e.g. `npm add vuetify`).'
+      );
+    }
+    const vuetifyBase = dirname(vuetifyPkgPath);
+    const currentVersion = JSON.parse(readFileSync(vuetifyPkgPath, "utf8")).version;
+    const vuetifyGte = (version2) => !!currentVersion && semver.gte(currentVersion, version2);
+    const viteVersion = version$1;
+    const ctx = {
+      logger,
+      resolver: createResolver(import.meta.url),
+      moduleOptions: void 0,
+      vuetifyOptions: void 0,
+      vuetifyFilesToWatch: [],
+      canHmrConfig: !nuxt.options.ssr || supportsSsrConfigHmr(getNuxtVersion(nuxt)),
+      isSSR: nuxt.options.ssr,
+      isDev: nuxt.options.dev,
+      isNuxtGenerate: !!nuxt.options.nitro.static,
+      unocss: hasNuxtModule("@unocss/nuxt", nuxt),
+      i18n: hasNuxtModule("@nuxtjs/i18n", nuxt),
+      icons: void 0,
+      ssrClientHints: void 0,
+      componentsPromise: void 0,
+      labComponentsPromise: void 0,
+      vuetifyGte,
+      vuetifyVersion: currentVersion || "0.0.0",
+      vuetifyBase,
+      resolvePaths: [nuxt.options.rootDir, ...nuxt.options.modulesDir],
+      viteVersion
+    };
+    await load(options, nuxt, ctx);
+    await configureNuxt(CONFIG_KEY, nuxt, ctx);
+    registerWatcher(options, nuxt, ctx);
+    configureVite(CONFIG_KEY, nuxt, ctx);
+  }
+});
+
+export { module$1 as default };

@@ -1,0 +1,8 @@
+@forward '../lib/labs/VAvatarGroup/_variables.scss'
+@forward '../lib/labs/VCommandPalette/_variables.scss'
+@forward '../lib/labs/VDateRangePicker/_variables.scss'
+@forward '../lib/labs/VHeatmap/_variables.scss'
+@forward '../lib/labs/VHighlight/_variables.scss'
+@forward '../lib/labs/VMonthPicker/_variables.scss'
+@forward '../lib/labs/VPie/_variables.scss'
+@forward '../lib/labs/VVideo/_variables.scss'

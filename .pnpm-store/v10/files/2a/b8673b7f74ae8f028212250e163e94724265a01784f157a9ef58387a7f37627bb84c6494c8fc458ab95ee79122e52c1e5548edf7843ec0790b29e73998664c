@@ -1,0 +1,11 @@
+export const RELOAD_GUARD_COOKIE = "vuetify-nuxt-client-hints-reloaded";
+export function hasReloadGuardCookie(cookie) {
+  const prefix = `${RELOAD_GUARD_COOKIE}=`;
+  return cookie.split(";").some((c) => c.trim().startsWith(prefix));
+}
+export function buildReloadGuardCookie(path) {
+  return `${RELOAD_GUARD_COOKIE}=1; Path=${path}; SameSite=Lax`;
+}
+export function shouldReloadOnFirstRequest(firstRequest, reloadOnFirstRequest, alreadyReloaded) {
+  return firstRequest && reloadOnFirstRequest && !alreadyReloaded;
+}

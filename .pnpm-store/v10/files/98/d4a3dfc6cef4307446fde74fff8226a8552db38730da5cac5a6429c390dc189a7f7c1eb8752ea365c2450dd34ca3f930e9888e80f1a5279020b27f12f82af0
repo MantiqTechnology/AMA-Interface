@@ -1,0 +1,12 @@
+@layer vuetify-components {
+  .v-highlight__mark {
+    background: var(--v-highlight-background, color-mix(in srgb, currentColor var(--v-highlight-opacity, 8%), transparent));
+    border-radius: var(--v-highlight-border-radius, 2px);
+    color: var(--v-highlight-color, inherit);
+  }
+  @media (forced-colors: active) {
+    .v-highlight__mark {
+      background: buttontext !important;
+    }
+  }
+}

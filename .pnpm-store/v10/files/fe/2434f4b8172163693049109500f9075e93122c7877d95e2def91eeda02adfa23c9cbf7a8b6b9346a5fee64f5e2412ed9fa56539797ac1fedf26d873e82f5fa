@@ -1,0 +1,148 @@
+{
+  "name": "vuetify-nuxt-module",
+  "type": "module",
+  "version": "1.0.0-rc.2",
+  "description": "Zero-Config Nuxt Module for Vuetify",
+  "author": "userquin <userquin@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/vuetifyjs/nuxt-module#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vuetifyjs/nuxt-module.git"
+  },
+  "bugs": "https://github.com/vuetifyjs/nuxt-module/issues",
+  "keywords": [
+    "nuxt",
+    "nuxt 3",
+    "vuetify",
+    "vuetify 3",
+    "nuxt-module"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.mts",
+      "default": "./dist/module.mjs"
+    },
+    "./custom-configuration": {
+      "types": "./custom-configuration.d.ts",
+      "default": "./custom-configuration.mjs"
+    },
+    "./configuration": {
+      "types": "./configuration.d.ts"
+    },
+    "./*": "./*"
+  },
+  "main": "./dist/module.mjs",
+  "typesVersions": {
+    "*": {
+      "*": [
+        "*",
+        "dist/*",
+        "runtime/*",
+        "runtime/*.d.ts",
+        "types.d.mts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "*.cjs",
+    "*.d.ts",
+    "*.mjs"
+  ],
+  "dependencies": {
+    "@nuxt/kit": "^4.4.8",
+    "@vuetify/loader-shared": "^2.1.2",
+    "@vuetify/unplugin-styles": "^1.0.0-beta.11",
+    "defu": "^6.1.7",
+    "local-pkg": "^1.2.1",
+    "pathe": "^2.0.3",
+    "perfect-debounce": "^2.1.0",
+    "semver": "^7.8.4",
+    "ufo": "^1.6.4",
+    "unconfig": "^7.5.0"
+  },
+  "peerDependencies": {
+    "vuetify": "^3.4.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^7.7.3",
+    "@antfu/ni": "^28.3.0",
+    "@date-io/luxon": "^3.2.0",
+    "@fortawesome/fontawesome-svg-core": "^7.2.0",
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/vue-fontawesome": "^3.2.0",
+    "@iconify-json/carbon": "^1.2.23",
+    "@iconify-json/mdi": "^1.2.3",
+    "@mdi/js": "^7.4.47",
+    "@nuxt/devtools": "latest",
+    "@nuxt/module-builder": "^1.0.2",
+    "@nuxt/schema": "^4.4.8",
+    "@nuxt/test-utils": "^4.0.3",
+    "@nuxtjs/i18n": "^10.4.0",
+    "@parcel/watcher": "^2.5.6",
+    "@types/node": "^25.9.3",
+    "@types/semver": "^7.7.1",
+    "@unocss/nuxt": "^66.7.2",
+    "bumpp": "^11.1.0",
+    "eslint": "^10.5.0",
+    "luxon": "^3.7.2",
+    "nuxt": "^4.4.8",
+    "playwright-core": "^1.61.0",
+    "publint": "^0.3.21",
+    "rimraf": "^6.1.3",
+    "sass": "^1.101.0",
+    "typescript": "^5.9.3",
+    "vite": "7.3.5",
+    "vitest": "^4.1.9",
+    "vue-tsc": "^3.3.5",
+    "vuetify": "^4.1.2"
+  },
+  "build": {
+    "externals": [
+      "@vuetify/loader-shared",
+      "@vuetify/unplugin-styles",
+      "node:child_process",
+      "node:fs",
+      "consola",
+      "esbuild",
+      "local-pkg",
+      "pathe",
+      "perfect-debounce",
+      "rollup",
+      "sass",
+      "sass-embedded",
+      "ufo",
+      "unconfig",
+      "vite",
+      "vuetify"
+    ]
+  },
+  "stackblitz": {
+    "installDependencies": false,
+    "startCommand": "node ../../.stackblitz.js && pnpm install && pnpm -C ../../ prepack && pnpm -C ../../ dev:prepare && pnpm -C ../../ dev"
+  },
+  "scripts": {
+    "dev": "pnpm -C ../../apps/playground dev",
+    "dev:multiple-json": "MULTIPLE_LANG_FILES=true pnpm -C ../../apps/playground dev",
+    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare ../../apps/playground",
+    "dev:prepare:multiple-json": "nuxt-module-build build --stub && nuxt-module-build prepare && MULTIPLE_LANG_FILES=true nuxi prepare ../../apps/playground",
+    "dev:build": "pnpm -C ../../apps/playground build",
+    "dev:generate": "pnpm -C ../../apps/playground generate",
+    "dev:build:multiple-json": "MULTIPLE_LANG_FILES=true pnpm -C ../../apps/playground build",
+    "dev:generate:multiple-json": "MULTIPLE_LANG_FILES=true pnpm -C ../../apps/playground generate",
+    "dev:preview": "pnpm -C ../../apps/playground preview",
+    "dev:prepare:date-io": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare ../../apps/date-io-playground",
+    "dev:date-io": "pnpm -C ../../apps/date-io-playground dev",
+    "docs:dev": "pnpm -C ../../docs run dev",
+    "docs:build": "pnpm -C ../../docs run build",
+    "docs:serve": "pnpm -C ../../docs run serve",
+    "lint": "eslint .",
+    "lint:fix": "nr lint --fix",
+    "publint": "publint",
+    "test": "vitest run --exclude 'test/e2e/**'",
+    "test:watch": "vitest watch --exclude 'test/e2e/**'",
+    "test:e2e": "vitest run test/e2e",
+    "release": "bumpp"
+  }
+}
