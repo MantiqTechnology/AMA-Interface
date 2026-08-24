@@ -316,7 +316,22 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: t('nav.corporateAssets'),
+      label: 'Procurement',
+      icon: 'mdi-cart-outline',
+      visible: true,
+      children: [
+        { label: 'Overview', to: '/procurement', icon: 'mdi-view-dashboard-outline', visible: true },
+        { label: 'Suppliers & Vendors', to: '/procurement/suppliers', icon: 'mdi-domain', visible: true },
+        { label: 'Purchase Requisition', to: '/procurement/requisitions', icon: 'mdi-clipboard-text-outline', visible: true },
+        { label: 'Sourcing & Tender', to: '/procurement/sourcing', icon: 'mdi-gavel', visible: true },
+        { label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: 'mdi-file-sign', visible: true },
+        { label: 'Receiving & Returns', to: '/procurement/receiving', icon: 'mdi-truck-check-outline', visible: true },
+        { label: 'Vendor Performance', to: '/procurement/vendor-performance', icon: 'mdi-chart-line', visible: true },
+        { label: 'Approval & Control', to: '/procurement/approval-control', icon: 'mdi-shield-check-outline', visible: true }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'Corporate Asset',
       icon: 'mdi-toolbox-outline',
       visible: true,
       children: [
@@ -366,7 +381,7 @@ const navItems = computed<NavItem[]>(() =>
     },
     {
       label: 'CRM & Marketing',
-      icon: 'mdi-account-heart-outline',
+      icon: 'mdi-shopping-outline',
       visible: crmMarketingVisible.value,
       children: [
         {
@@ -836,34 +851,17 @@ function closeMobileOnNavigate() {
 </script>
 
 <template>
-  <VNavigationDrawer
-    v-model="drawerOpen"
-    border
-    class="bg-surface"
-    color="surface"
-    :permanent="mdAndUp"
-    :rail="mdAndUp && rail"
-    rail-width="72"
-    :temporary="!mdAndUp"
-    width="272"
-  >
+  <VNavigationDrawer v-model="drawerOpen" border class="bg-surface" color="surface" :permanent="mdAndUp"
+    :rail="mdAndUp && rail" rail-width="72" :temporary="!mdAndUp" width="272">
     <div class="flex flex-col">
-      <div
-        :class="
-          rail
-            ? 'flex min-h-23 flex-col items-center justify-center gap-1 px-2'
-            : 'flex min-h-18 items-center gap-3 px-4'
-        "
-      >
-        <NuxtLink
-          :class="
-            rail
-              ? 'grid h-10 w-10 place-items-center text-decoration-none'
-              : 'flex min-w-0 flex-1 items-center gap-3 text-decoration-none'
-          "
-          to="/dashboard"
-          @click="closeMobileOnNavigate"
-        >
+      <div :class="rail
+          ? 'flex min-h-23 flex-col items-center justify-center gap-1 px-2'
+          : 'flex min-h-18 items-center gap-3 px-4'
+        ">
+        <NuxtLink :class="rail
+            ? 'grid h-10 w-10 place-items-center text-decoration-none'
+            : 'flex min-w-0 flex-1 items-center gap-3 text-decoration-none'
+          " to="/dashboard" @click="closeMobileOnNavigate">
           <div class="rounded-lg overflow-hidden">
             <VImg :width="68" cover src="https://amapapua.com/files/ama-pt-logo-shaded4.png" />
           </div>
@@ -893,62 +891,26 @@ function closeMobileOnNavigate() {
           <!-- Item WITH children -->
           <VListGroup v-if="item.children?.length && !(mdAndUp && rail)" :value="groupKey(item)">
             <template #activator="{ props, isOpen }">
-              <VListItem
-                v-bind="props"
-                class="nav-item mb-1"
-                color="primary"
-                :prepend-icon="item.icon"
-                rounded="lg"
-                :title="item.label"
-              >
+              <VListItem v-bind="props" class="nav-item mb-1" color="primary" :prepend-icon="item.icon" rounded="lg"
+                :title="item.label">
                 <template #append>
-                  <VIcon
-                    class="transition-transform"
-                    :class="{ 'rotate-180': isOpen }"
-                    icon="mdi-chevron-down"
-                    size="18"
-                  />
+                  <VIcon class="transition-transform" :class="{ 'rotate-180': isOpen }" icon="mdi-chevron-down"
+                    size="18" />
                 </template>
               </VListItem>
             </template>
 
-            <VListItem
-              v-for="child in item.children"
-              :key="child.to"
-              :active="isActiveChild(child.to)"
-              class="nav-item nav-child mb-1"
-              color="primary"
-              :prepend-icon="child.icon"
-              rounded="lg"
-              :title="child.label"
-              :to="child.to"
-              @click="closeMobileOnNavigate"
-            />
+            <VListItem v-for="child in item.children" :key="child.to" :active="isActiveChild(child.to)"
+              class="nav-item nav-child mb-1" color="primary" :prepend-icon="child.icon" rounded="lg"
+              :title="child.label" :to="child.to" @click="closeMobileOnNavigate" />
           </VListGroup>
 
           <!-- Item WITHOUT children (or collapsed rail: fall back to first child link) -->
-          <VListItem
-            v-else-if="item.to"
-            :active="isActiveTop(item.to)"
-            class="nav-item mb-1"
-            color="primary"
-            :prepend-icon="item.icon"
-            rounded="lg"
-            :title="item.label"
-            :to="item.to"
-            @click="closeMobileOnNavigate"
-          />
-          <VListItem
-            v-else-if="item.children?.length"
-            :active="isActiveGroup(item)"
-            class="nav-item mb-1"
-            color="primary"
-            :prepend-icon="item.icon"
-            rounded="lg"
-            :title="item.label"
-            :to="firstChildPath(item)"
-            @click="closeMobileOnNavigate"
-          />
+          <VListItem v-else-if="item.to" :active="isActiveTop(item.to)" class="nav-item mb-1" color="primary"
+            :prepend-icon="item.icon" rounded="lg" :title="item.label" :to="item.to" @click="closeMobileOnNavigate" />
+          <VListItem v-else-if="item.children?.length" :active="isActiveGroup(item)" class="nav-item mb-1"
+            color="primary" :prepend-icon="item.icon" rounded="lg" :title="item.label" :to="firstChildPath(item)"
+            @click="closeMobileOnNavigate" />
         </template>
       </VList>
 
