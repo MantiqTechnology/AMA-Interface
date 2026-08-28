@@ -11,7 +11,13 @@ export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'document.upload');
   const { id } = parseParams(event, idParamSchema);
   const document = await getDocument(id);
-  requireDocumentOwnerAccess(event, document.ownerType, document.ownerId);
+  requireDocumentOwnerAccess(
+    event,
+    document.ownerType,
+    document.ownerId,
+    document.visibility,
+    document.documentType
+  );
   const body = await parseBody(event, updateDocumentBodySchema);
   const updated = await updateDocument(id, body);
   invalidateFlightDocumentReadiness(document.ownerType, document.ownerId, getDemoActorId(event));

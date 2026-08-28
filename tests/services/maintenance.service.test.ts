@@ -494,6 +494,89 @@ function releaseRequestHash(workPackageId: string, input: ReturnType<typeof rele
 }
 
 describe('MaintenanceService MRO foundation', () => {
+  it('derives MRO command-center priority queues and readiness metrics from live maintenance data', async () => {
+    const env = await createSeededTestServices();
+    const aogPackage = env.services.maintenance.createWorkPackage(
+      {
+        aircraftId: 'ac-pk-ama',
+        title: 'AOG command center priority package',
+        priority: 'AOG',
+        executionMode: 'INTERNAL',
+        planningNote: 'AOG package created by command-center test.'
+      },
+      maintenance
+    );
+    const blockedPackage = env.services.maintenance.createWorkPackage(
+      {
+        aircraftId: 'ac-pk-amf',
+        title: 'Blocked command center priority package',
+        priority: 'HIGH',
+        executionMode: 'INTERNAL',
+        planningNote: 'Package intentionally has no mandatory job card for release readiness.'
+      },
+      maintenance
+    );
+    const dashboard = env.services.maintenance.commandCenter();
+
+    expect(dashboard.topPriorityItem).toMatchObject({
+      id: aogPackage.id,
+      bucket: 'AOG',
+      priority: 'AOG'
+    });
+    expect(dashboard.priorityWorkPackages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: aogPackage.id,
+          bucket: 'AOG',
+          blockerCategories: expect.arrayContaining(['WORK'])
+        }),
+        expect.objectContaining({
+          id: blockedPackage.id,
+          bucket: 'RELEASE_BLOCKER'
+        })
+      ])
+    );
+    expect(dashboard.releaseReadinessMix).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'READY_TO_RELEASE',
+          count: dashboard.summary.readyForRelease
+        }),
+        expect.objectContaining({
+          key: 'WAITING_MATERIAL',
+          count: expect.any(Number)
+        })
+      ])
+    );
+    expect(dashboard.releaseReadinessMix.reduce((sum, item) => sum + item.count, 0)).toBe(
+      dashboard.summary.activeWorkPackages
+    );
+    const dueTotal = dashboard.dueControl.length;
+    const dueOverdue = dashboard.dueControl.filter((item) => item.status === 'OVERDUE').length;
+    expect(dashboard.onTimePerformancePct).toBe(
+      dueTotal ? Number((((dueTotal - dueOverdue) / dueTotal) * 100).toFixed(1)) : 100
+    );
+    expect(
+      dashboard.dueInspectionTasks.every(
+        (item) =>
+          item.dueAt !== null || ['Flight hours', 'Flight cycles'].includes(item.dueBasisLabel)
+      )
+    ).toBe(true);
+    expect(
+      dashboard.dueInspectionTasks
+        .map((item) => item.dueAt)
+        .filter((value): value is string => Boolean(value))
+    ).toEqual(
+      [
+        ...dashboard.dueInspectionTasks
+          .map((item) => item.dueAt)
+          .filter((value): value is string => Boolean(value))
+      ].sort()
+    );
+
+    env.sqlite.close();
+  });
+
   it('requires matching PT AMA authorization in addition to a valid mechanic licence', async () => {
     const cases = [
       {

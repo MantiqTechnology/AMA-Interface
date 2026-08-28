@@ -15,10 +15,27 @@ export function useStationVerification(
   const evidenceTaskVersion = ref(0);
   const evidenceFile = ref<File | File[] | null>(null);
   const evidenceNotes = ref('');
+  const evidenceCategory = ref<'OPERATIONAL' | 'EXTERNAL_REPORT'>('OPERATIONAL');
+  const evidenceSourceParty = ref<'PT_AMA_STATION' | 'AVSEC' | 'AUTHORITY' | 'OTHER'>(
+    'PT_AMA_STATION'
+  );
+  const evidenceSourcePartyName = ref('');
+  const evidenceReceivedAt = ref('');
   const rejectionDialog = ref(false);
   const rejectionTaskId = ref('');
   const rejectionTaskVersion = ref(0);
   const rejectionReason = ref('');
+
+  watch(evidenceCategory, (category) => {
+    if (category === 'EXTERNAL_REPORT' && evidenceSourceParty.value === 'PT_AMA_STATION') {
+      evidenceSourceParty.value = 'AVSEC';
+    }
+    if (category === 'OPERATIONAL') {
+      evidenceSourceParty.value = 'PT_AMA_STATION';
+      evidenceSourcePartyName.value = '';
+      evidenceReceivedAt.value = '';
+    }
+  });
 
   function stationTaskBlocker(task: StationTaskRow): string | null {
     if (task.requiresEvidence && task.evidenceCount === 0) {
@@ -101,7 +118,18 @@ export function useStationVerification(
     evidenceTaskVersion.value = task.version;
     evidenceFile.value = null;
     evidenceNotes.value = '';
+    evidenceCategory.value = 'OPERATIONAL';
+    evidenceSourceParty.value = 'PT_AMA_STATION';
+    evidenceSourcePartyName.value = '';
+    evidenceReceivedAt.value = '';
     evidenceDialog.value = true;
+  }
+
+  function normalizedEvidenceReceivedAt(): string | undefined {
+    const value = evidenceReceivedAt.value.trim();
+    if (!value) return undefined;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
   }
 
   async function addTaskEvidence(): Promise<void> {
@@ -123,7 +151,14 @@ export function useStationVerification(
           expectedVersion: evidenceTaskVersion.value,
           uploadId: upload.id,
           fileName: upload.originalName,
-          documentType: 'STATION_OPERATION_EVIDENCE',
+          documentType:
+            evidenceCategory.value === 'EXTERNAL_REPORT'
+              ? 'STATION_EXTERNAL_REPORT'
+              : 'STATION_OPERATION_EVIDENCE',
+          evidenceCategory: evidenceCategory.value,
+          sourceParty: evidenceSourceParty.value,
+          sourcePartyName: evidenceSourcePartyName.value.trim() || undefined,
+          receivedAt: normalizedEvidenceReceivedAt(),
           notes: evidenceNotes.value || undefined
         }
       });
@@ -177,6 +212,10 @@ export function useStationVerification(
     evidenceDialog,
     evidenceFile,
     evidenceNotes,
+    evidenceCategory,
+    evidenceSourceParty,
+    evidenceSourcePartyName,
+    evidenceReceivedAt,
     rejectionDialog,
     rejectionReason,
     stationTaskBlocker,

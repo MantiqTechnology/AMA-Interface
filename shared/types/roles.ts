@@ -197,7 +197,9 @@ const maintenanceQualityPermissions = [
 export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
   'Demo Admin': ['*'],
   Director: [
+    'capability.preview.read',
     'platform.dashboard.view',
+    'station.network_dashboard.view',
     'flight_request.read',
     'flight_request.approve',
     'flight.read',
@@ -237,6 +239,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight.closure.execute'
   ],
   OCC: [
+    'capability.preview.read',
     'platform.dashboard.view',
     'flight_request.read',
     'flight_request.create',
@@ -282,6 +285,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'aircraft.lifecycle.manage'
   ],
   'OCC Checker': [
+    'capability.preview.read',
     'platform.dashboard.view',
     'flight.read',
     'flight.readiness.evaluate',
@@ -294,6 +298,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'readiness.view'
   ],
   'Station Admin': [
+    'capability.preview.read',
     'platform.dashboard.view',
     'flight.read',
     'flight.readiness.evaluate',
@@ -340,6 +345,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight.checkin.close'
   ],
   'Station Admin Origin': [
+    'capability.preview.read',
     'platform.dashboard.view',
     'flight.read',
     'flight.readiness.evaluate',
@@ -383,6 +389,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'flight.checkin.close'
   ],
   'Finance Reviewer': [
+    'capability.preview.read',
     'platform.dashboard.view',
     'flight.read',
     'finance.invoice.read',
@@ -410,12 +417,14 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     ...commercialContractPermissions
   ],
   'Maintenance Manager': [
+    'capability.preview.read',
     'maintenance.demo.internal_aog.read',
     'maintenance.demo.internal_aog.reset',
     'platform.dashboard.view',
     'flight.read',
     'maintenance.handoff.update',
     'document.read',
+    'document.upload',
     'document.verify',
     'inventory.read',
     'inventory.procurement.request',
@@ -435,10 +444,12 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     ...maintenanceQualityPermissions
   ],
   'Maintenance Technician': [
+    'capability.preview.read',
     'maintenance.demo.internal_aog.read',
     'maintenance.package.read',
     'platform.dashboard.view',
     'flight.read',
+    'document.upload',
     'document.read',
     'inventory.read',
     'inventory.tool.checkout',
@@ -449,6 +460,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     ...maintenanceExecutionPermissions
   ],
   'Certifying Staff': [
+    'capability.preview.read',
     'maintenance.demo.internal_aog.read',
     'maintenance.package.read',
     'platform.dashboard.view',
@@ -466,6 +478,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'asset.read'
   ],
   'Inventory Controller': [
+    'capability.preview.read',
     'maintenance.demo.internal_aog.read',
     'platform.dashboard.view',
     'inventory.read',

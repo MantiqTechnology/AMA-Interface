@@ -32,6 +32,7 @@ import type {
 import { useResourceV21 } from '../../../../composables/useResourceV21';
 import { demoRoleActorIds } from '#shared/types/roles';
 import type { InventoryPartDto, InventoryWarehouseDto } from '#shared/features/inventory';
+import type { LocalUploadDto } from '#shared/contracts/uploads';
 
 const authorizationWording = 'Lisensi dan wewenang PT AMA terverifikasi.';
 
@@ -122,6 +123,8 @@ const releaseIdempotencyKey = ref('');
 const auditPackDialog = ref(false);
 const auditPack = ref<MaintenanceAuditPackDto | null>(null);
 const technicalRecord = ref<MaintenanceTechnicalRecordPackageDto | null>(null);
+const technicalRecordTab = ref('summary');
+const releaseGateDrawer = ref(false);
 const inspectionDialog = ref(false);
 const inspectionCard = ref<MaintenanceJobCardDto | null>(null);
 const inspectionResult = ref<'PASSED' | 'FAILED'>('PASSED');
@@ -155,15 +158,49 @@ const jobCardForm = reactive({
 });
 const nonRoutineDialog = ref(false);
 const nonRoutineSourceCard = ref<MaintenanceJobCardDto | null>(null);
+type NonRoutineSeverityUi = 'UNASSESSED' | 'LOW' | 'NORMAL' | 'HIGH' | 'AOG';
 const nonRoutineForm = reactive({
   title: '',
   description: '',
-  severity: 'NORMAL' as 'LOW' | 'NORMAL' | 'HIGH' | 'AOG',
+  severity: 'UNASSESSED' as NonRoutineSeverityUi,
   location: '',
   ataChapter: '',
+  detectedDuring: 'ACTIVE_WORK' as
+    | 'ACTIVE_WORK'
+    | 'INSPECTION'
+    | 'REMOVAL'
+    | 'INSTALLATION'
+    | 'FUNCTIONAL_TEST'
+    | 'OPERATIONAL_CHECK',
+  operationalImpact: 'UNASSESSED' as
+    | 'UNASSESSED'
+    | 'NO_RELEASE_IMPACT'
+    | 'MAINTENANCE_ONLY'
+    | 'OPERATIONAL_LIMITATION'
+    | 'MEL_CDL_CANDIDATE'
+    | 'GROUNDING_AOG',
+  findingClassification: 'UNASSESSED' as
+    | 'UNASSESSED'
+    | 'SAFETY_CRITICAL'
+    | 'GROUNDING'
+    | 'MEL_CDL_CANDIDATE'
+    | 'OPERATIONAL_LIMITATION'
+    | 'MAINTENANCE_ONLY'
+    | 'COSMETIC',
+  melCdlAssessment: 'UNASSESSED' as
+    'UNASSESSED' | 'CANDIDATE' | 'NOT_APPLICABLE' | 'APPROVED_FOR_DEFER',
+  immediateAction: '',
+  aircraftMovementProhibited: false,
+  notifyMaintenanceControl: false,
+  requiresInspectorReview: true,
   immediateSafetyConcern: false,
   evidenceReferences: ''
 });
+const nonRoutineEvidenceFiles = ref<File[]>([]);
+const nonRoutineUploadedEvidence = ref<LocalUploadDto[]>([]);
+const nonRoutineUploadingEvidence = ref(false);
+const nonRoutineDraftSavedAt = ref('');
+const online = ref(true);
 const nonRoutineAssessmentForms = reactive<
   Record<
     string,
@@ -210,6 +247,44 @@ const releaseForm = reactive({
 const releaseStatusItems = [
   { title: 'Serviceable', value: 'SERVICEABLE' },
   { title: 'Serviceable dengan pembatasan', value: 'SERVICEABLE_WITH_RESTRICTIONS' }
+];
+const nonRoutineSeverityItems = [
+  { title: 'Belum dinilai', value: 'UNASSESSED' },
+  { title: 'Low', value: 'LOW' },
+  { title: 'Normal', value: 'NORMAL' },
+  { title: 'High', value: 'HIGH' },
+  { title: 'AOG', value: 'AOG' }
+];
+const detectedDuringItems = [
+  { title: 'Pekerjaan aktif / inspection', value: 'ACTIVE_WORK' },
+  { title: 'Inspection', value: 'INSPECTION' },
+  { title: 'Removal', value: 'REMOVAL' },
+  { title: 'Installation', value: 'INSTALLATION' },
+  { title: 'Functional test', value: 'FUNCTIONAL_TEST' },
+  { title: 'Operational check', value: 'OPERATIONAL_CHECK' }
+];
+const operationalImpactItems = [
+  { title: 'Belum dinilai', value: 'UNASSESSED' },
+  { title: 'Tidak berdampak release', value: 'NO_RELEASE_IMPACT' },
+  { title: 'Maintenance only', value: 'MAINTENANCE_ONLY' },
+  { title: 'Operational limitation', value: 'OPERATIONAL_LIMITATION' },
+  { title: 'MEL/CDL candidate', value: 'MEL_CDL_CANDIDATE' },
+  { title: 'Grounding / AOG', value: 'GROUNDING_AOG' }
+];
+const findingClassificationItems = [
+  { title: 'Belum dinilai', value: 'UNASSESSED' },
+  { title: 'Safety critical', value: 'SAFETY_CRITICAL' },
+  { title: 'Grounding', value: 'GROUNDING' },
+  { title: 'MEL/CDL candidate', value: 'MEL_CDL_CANDIDATE' },
+  { title: 'Operational limitation', value: 'OPERATIONAL_LIMITATION' },
+  { title: 'Maintenance only', value: 'MAINTENANCE_ONLY' },
+  { title: 'Cosmetic', value: 'COSMETIC' }
+];
+const melCdlAssessmentItems = [
+  { title: 'Belum dinilai', value: 'UNASSESSED' },
+  { title: 'Candidate', value: 'CANDIDATE' },
+  { title: 'Not applicable', value: 'NOT_APPLICABLE' },
+  { title: 'Approved for defer', value: 'APPROVED_FOR_DEFER' }
 ];
 const slotDialog = ref(false);
 const slotMode = ref<'BOOK' | 'RESCHEDULE'>('BOOK');
@@ -324,10 +399,14 @@ const canAssessNonRoutine = computed(() => can('maintenance.defect.assess').allo
 const canRequestRelease = computed(() => can('maintenance.release.request').allowed);
 const canIssueRelease = computed(() => can('maintenance.release.issue').allowed);
 const canExportAuditPack = computed(() => can('maintenance.audit_pack.export').allowed);
+const canIssueFromTechnicalRecord = computed(
+  () => canIssueRelease.value && Boolean(technicalRecord.value?.decisionSummary.canIssueRelease)
+);
 const canRequestMaterial = computed(() => can('maintenance.material.request').allowed);
 const canReserveMaterial = computed(() => can('inventory.material.reserve').allowed);
 const canIssueMaterial = computed(() => can('inventory.material.issue').allowed);
 const canInstallMaterial = computed(() => can('maintenance.material.install').allowed);
+const canUploadDocument = computed(() => can('document.upload').allowed);
 const immutablePackage = computed(() =>
   ['RELEASED', 'CANCELLED'].includes(workPackage.value?.status ?? '')
 );
@@ -353,6 +432,63 @@ const packageOwner = computed(() => {
   }
   return 'Maintenance Control';
 });
+const nonRoutineDraftKey = computed(() => {
+  if (!workPackage.value?.id || !nonRoutineSourceCard.value?.id) return '';
+  return `ama:mro:non-routine-draft:${workPackage.value.id}:${nonRoutineSourceCard.value.id}`;
+});
+const nonRoutineContext = computed(() => {
+  const item = workPackage.value;
+  const aircraft = selectorData.value?.aircraft.find(
+    (candidate) => candidate.id === item?.aircraftId
+  );
+  return {
+    aircraft: item?.aircraftRegistrationNumber ?? '-',
+    aircraftType: [item?.aircraftType, item?.aircraftModel].filter(Boolean).join(' ') || '-',
+    station: currentSlot.value?.stationCode ?? aircraft?.currentStationCode ?? '-',
+    bay: currentSlot.value?.bayCode ?? '-',
+    workPackage: item?.packageNumber ?? '-',
+    jobCard: nonRoutineSourceCard.value?.cardNumber ?? '-',
+    technicalState: ui.label(item?.aircraftTechnicalState),
+    technicalEligibility: ui.label(item?.aircraftTechnicalEligibility)
+  };
+});
+const nonRoutineCritical = computed(
+  () =>
+    nonRoutineForm.immediateSafetyConcern ||
+    nonRoutineForm.severity === 'AOG' ||
+    nonRoutineForm.operationalImpact === 'GROUNDING_AOG' ||
+    ['SAFETY_CRITICAL', 'GROUNDING'].includes(nonRoutineForm.findingClassification)
+);
+const nonRoutineReleaseImpact = computed(() => {
+  if (nonRoutineCritical.value) return 'Release blocked';
+  if (nonRoutineForm.operationalImpact === 'NO_RELEASE_IMPACT') return 'No release impact';
+  if (nonRoutineForm.findingClassification === 'COSMETIC') return 'No release impact';
+  return 'Assessment required';
+});
+const nonRoutineRequiredFields = computed(() => {
+  const missing: string[] = [];
+  if (nonRoutineForm.title.trim().length < 5) missing.push('Judul');
+  if (nonRoutineForm.description.trim().length < 10) missing.push('Deskripsi');
+  if (!nonRoutineForm.location.trim()) missing.push('Lokasi / Sistem');
+  if (!nonRoutineForm.ataChapter.trim()) missing.push('ATA');
+  if (nonRoutineForm.severity === 'UNASSESSED') missing.push('Prioritas');
+  if (nonRoutineForm.operationalImpact === 'UNASSESSED') missing.push('Dampak operasional');
+  if (nonRoutineForm.findingClassification === 'UNASSESSED') missing.push('Klasifikasi');
+  if (nonRoutineCritical.value && nonRoutineForm.immediateAction.trim().length < 10) {
+    missing.push('Tindakan segera');
+  }
+  return missing;
+});
+const canSubmitNonRoutine = computed(
+  () =>
+    !nonRoutineRequiredFields.value.length &&
+    !nonRoutineUploadingEvidence.value &&
+    actionLoading.value !== 'create-nr'
+);
+const nonRoutineEvidenceReferences = computed(() => [
+  ...evidenceList(nonRoutineForm.evidenceReferences),
+  ...nonRoutineUploadedEvidence.value.map((upload) => upload.id)
+]);
 const sourceContextLabel = computed(
   () =>
     workPackage.value?.sourceFlight?.flightNumber ??
@@ -540,6 +676,33 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => nonRoutineForm.immediateSafetyConcern,
+  (value) => {
+    if (value) applyCriticalNonRoutineDefaults();
+  }
+);
+
+watch(
+  () => ({ ...nonRoutineForm }),
+  () => saveNonRoutineDraft(),
+  { deep: true }
+);
+
+onMounted(() => {
+  if (!import.meta.client) return;
+  online.value = window.navigator.onLine;
+  const updateOnline = () => {
+    online.value = window.navigator.onLine;
+  };
+  window.addEventListener('online', updateOnline);
+  window.addEventListener('offline', updateOnline);
+  onUnmounted(() => {
+    window.removeEventListener('online', updateOnline);
+    window.removeEventListener('offline', updateOnline);
+  });
+});
+
 function newIdempotencyKey() {
   if (import.meta.client && window.crypto?.randomUUID) return window.crypto.randomUUID();
   return `mro-release-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -560,6 +723,117 @@ function evidenceList(value: string) {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function resetNonRoutineForm() {
+  Object.assign(nonRoutineForm, {
+    title: '',
+    description: '',
+    severity: 'UNASSESSED',
+    location: '',
+    ataChapter: '',
+    detectedDuring: 'ACTIVE_WORK',
+    operationalImpact: 'UNASSESSED',
+    findingClassification: 'UNASSESSED',
+    melCdlAssessment: 'UNASSESSED',
+    immediateAction: '',
+    aircraftMovementProhibited: false,
+    notifyMaintenanceControl: false,
+    requiresInspectorReview: true,
+    immediateSafetyConcern: false,
+    evidenceReferences: ''
+  });
+  nonRoutineEvidenceFiles.value = [];
+  nonRoutineUploadedEvidence.value = [];
+  nonRoutineDraftSavedAt.value = '';
+}
+
+function applyCriticalNonRoutineDefaults() {
+  nonRoutineForm.severity = 'AOG';
+  nonRoutineForm.operationalImpact = 'GROUNDING_AOG';
+  nonRoutineForm.findingClassification = 'SAFETY_CRITICAL';
+  nonRoutineForm.melCdlAssessment = 'CANDIDATE';
+  nonRoutineForm.aircraftMovementProhibited = true;
+  nonRoutineForm.notifyMaintenanceControl = true;
+  nonRoutineForm.requiresInspectorReview = true;
+}
+
+function nonRoutineSeverityForPayload(): 'LOW' | 'NORMAL' | 'HIGH' | 'AOG' {
+  if (nonRoutineForm.severity !== 'UNASSESSED') return nonRoutineForm.severity;
+  if (nonRoutineCritical.value) return 'AOG';
+  if (nonRoutineForm.findingClassification === 'COSMETIC') return 'LOW';
+  return 'NORMAL';
+}
+
+function restoreNonRoutineDraft() {
+  if (!import.meta.client || !nonRoutineDraftKey.value) return;
+  const raw = window.localStorage.getItem(nonRoutineDraftKey.value);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw) as Partial<typeof nonRoutineForm> & { savedAt?: string };
+    Object.assign(nonRoutineForm, {
+      ...parsed,
+      immediateSafetyConcern: Boolean(parsed.immediateSafetyConcern),
+      aircraftMovementProhibited: Boolean(parsed.aircraftMovementProhibited),
+      notifyMaintenanceControl: Boolean(parsed.notifyMaintenanceControl),
+      requiresInspectorReview: parsed.requiresInspectorReview !== false
+    });
+    nonRoutineDraftSavedAt.value = parsed.savedAt ?? '';
+  } catch {
+    window.localStorage.removeItem(nonRoutineDraftKey.value);
+  }
+}
+
+function saveNonRoutineDraft() {
+  if (!import.meta.client || !nonRoutineDialog.value || !nonRoutineDraftKey.value) return;
+  const savedAt = new Date().toISOString();
+  window.localStorage.setItem(
+    nonRoutineDraftKey.value,
+    JSON.stringify({
+      ...nonRoutineForm,
+      savedAt
+    })
+  );
+  nonRoutineDraftSavedAt.value = savedAt;
+}
+
+function clearNonRoutineDraft() {
+  if (!import.meta.client || !nonRoutineDraftKey.value) return;
+  window.localStorage.removeItem(nonRoutineDraftKey.value);
+  nonRoutineDraftSavedAt.value = '';
+}
+
+function nonRoutineDraftSavedLabel() {
+  if (!nonRoutineDraftSavedAt.value) return 'Draft belum tersimpan';
+  return `Draft tersimpan ${format.dateTime(nonRoutineDraftSavedAt.value)}`;
+}
+
+async function uploadNonRoutineEvidence() {
+  if (!nonRoutineEvidenceFiles.value.length) return true;
+  if (!canUploadDocument.value) return false;
+  nonRoutineUploadingEvidence.value = true;
+  try {
+    const uploads: LocalUploadDto[] = [];
+    for (const file of nonRoutineEvidenceFiles.value) {
+      const form = new FormData();
+      form.append('file', file);
+      uploads.push(
+        await fetchApi<LocalUploadDto>('/api/uploads', {
+          method: 'POST',
+          body: form
+        })
+      );
+    }
+    nonRoutineUploadedEvidence.value = [...nonRoutineUploadedEvidence.value, ...uploads];
+    nonRoutineEvidenceFiles.value = [];
+    saveNonRoutineDraft();
+    return true;
+  } catch (errorValue) {
+    actionError.value = ui.presentError(errorValue);
+    return false;
+  } finally {
+    nonRoutineUploadingEvidence.value = false;
+  }
 }
 
 function signoff(card: MaintenanceJobCardDto, type: 'MECHANIC' | 'INDEPENDENT_INSPECTION') {
@@ -649,6 +923,120 @@ function releaseSignerName(release: NonNullable<MaintenanceWorkPackageDto['relea
   return typeof name === 'string' ? name : 'Certifying staff';
 }
 
+function openWorkPackageFromRecord() {
+  releaseGateDrawer.value = false;
+  auditPackDialog.value = false;
+}
+
+function openReleaseFromTechnicalRecord() {
+  if (!canIssueFromTechnicalRecord.value) return;
+  releaseGateDrawer.value = false;
+  auditPackDialog.value = false;
+  openReleaseDialog();
+}
+
+function explicitRecordValue(
+  value: string | number | null | undefined,
+  fallback = 'Data tidak tersedia'
+) {
+  if (value === null || value === undefined || value === '') return fallback;
+  return String(value);
+}
+
+function errorMessage(errorValue: unknown, fallback: string) {
+  if (typeof errorValue !== 'object' || errorValue === null) return fallback;
+  const data = 'data' in errorValue ? errorValue.data : null;
+  if (typeof data === 'object' && data !== null && 'message' in data) {
+    const message = data.message;
+    if (typeof message === 'string') return message;
+  }
+  if ('message' in errorValue && typeof errorValue.message === 'string') {
+    return errorValue.message;
+  }
+  return fallback;
+}
+
+function recordSourceValue(key: string) {
+  const value = technicalRecord.value?.evidence.source[key];
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  return null;
+}
+
+function recordDueRequirementLabel() {
+  const code = recordSourceValue('sourceDueRequirementCode');
+  const title = recordSourceValue('sourceDueRequirementTitle');
+  return code ? `${code} / ${title ?? 'Data tidak tersedia'}` : 'Tidak berlaku';
+}
+
+function recordDecisionColor(
+  status: MaintenanceTechnicalRecordPackageDto['decisionSummary']['status']
+) {
+  if (status === 'RELEASED' || status === 'READY_FOR_REVIEW') return 'success';
+  if (status === 'BLOCKED') return 'error';
+  return 'warning';
+}
+
+function recordGateColor(
+  status: MaintenanceTechnicalRecordPackageDto['releaseGates'][number]['status']
+) {
+  if (status === 'COMPLETE') return 'success';
+  if (status === 'BLOCKED' || status === 'MISSING') return 'error';
+  if (status === 'WARNING' || status === 'UNAVAILABLE') return 'warning';
+  return 'secondary';
+}
+
+function recordGateIcon(
+  status: MaintenanceTechnicalRecordPackageDto['releaseGates'][number]['status']
+) {
+  if (status === 'COMPLETE') return 'mdi-check-circle';
+  if (status === 'BLOCKED' || status === 'MISSING') return 'mdi-alert-circle';
+  if (status === 'WARNING' || status === 'UNAVAILABLE') return 'mdi-alert';
+  return 'mdi-minus-circle-outline';
+}
+
+function recordCompletenessIcon(key: string) {
+  const icons: Record<string, string> = {
+    mandatoryJobCards: 'mdi-clipboard-alert-outline',
+    openFindings: 'mdi-alert-outline',
+    independentInspection: 'mdi-shield-check-outline',
+    traceability: 'mdi-cube-scan',
+    facilitySlot: 'mdi-office-building-marker-outline'
+  };
+  return icons[key] ?? 'mdi-clipboard-check-outline';
+}
+
+function recordReleaseDisabledReason() {
+  if (!canIssueRelease.value) {
+    return ui.permissionHint(false, 'maintenance.release.issue', session.role.value);
+  }
+  return (
+    technicalRecord.value?.decisionSummary.disabledReason ??
+    'Tersedia setelah seluruh blocker kritis selesai.'
+  );
+}
+
+function jobCardInspectionRecordLabel(card: MaintenanceJobCardDto) {
+  if (!card.requiresIndependentInspection) return 'Tidak wajib';
+  const inspection = signoff(card, 'INDEPENDENT_INSPECTION');
+  return inspection ? formatDateTime(inspection.signedAt) : 'Belum inspeksi';
+}
+
+function recordHashLabel() {
+  return (
+    auditPack.value?.manifestHash ??
+    technicalRecord.value?.documentIntegrity.shortHash ??
+    'Belum diverifikasi'
+  );
+}
+
+function recordFullHashLabel() {
+  return (
+    auditPack.value?.manifestHash ??
+    technicalRecord.value?.documentIntegrity.manifestHash ??
+    'Belum diverifikasi'
+  );
+}
+
 function auditEntityLabel(record: { entityType: string; afterVersion: number | null }) {
   const version =
     record.afterVersion === null ? 'Versi tidak berubah' : `Versi ${record.afterVersion}`;
@@ -694,36 +1082,46 @@ function correctiveCard(finding: MaintenanceNonRoutineFindingDto) {
 
 function openNonRoutineDialog(card: MaintenanceJobCardDto) {
   nonRoutineSourceCard.value = card;
-  nonRoutineForm.title = '';
-  nonRoutineForm.description = '';
-  nonRoutineForm.severity = 'NORMAL';
-  nonRoutineForm.location = '';
-  nonRoutineForm.ataChapter = '';
-  nonRoutineForm.immediateSafetyConcern = false;
+  resetNonRoutineForm();
   nonRoutineForm.evidenceReferences = `${card.cardNumber}-NR-EVIDENCE`;
   nonRoutineDialog.value = true;
+  restoreNonRoutineDraft();
 }
 
 async function submitNonRoutineFinding() {
-  if (!workPackage.value || !nonRoutineSourceCard.value) return;
+  if (!workPackage.value || !nonRoutineSourceCard.value || !canSubmitNonRoutine.value) return;
   const sourceCard = nonRoutineSourceCard.value;
   await runAction('create-nr', async () => {
+    if (nonRoutineEvidenceFiles.value.length) {
+      const uploaded = await uploadNonRoutineEvidence();
+      if (!uploaded) return;
+    }
     await fetchApi(`/api/maintenance/work-packages/${workPackage.value!.id}/non-routine-findings`, {
       method: 'POST',
       body: {
         sourceJobCardId: sourceCard.id,
         title: nonRoutineForm.title,
         description: nonRoutineForm.description,
-        severity: nonRoutineForm.severity,
+        severity: nonRoutineSeverityForPayload(),
         location: nonRoutineForm.location || null,
         ataChapter: nonRoutineForm.ataChapter || null,
+        detectedDuring: nonRoutineForm.detectedDuring,
+        operationalImpact: nonRoutineForm.operationalImpact,
+        findingClassification: nonRoutineForm.findingClassification,
+        melCdlAssessment: nonRoutineForm.melCdlAssessment,
+        immediateAction: nonRoutineForm.immediateAction || null,
+        aircraftMovementProhibited: nonRoutineForm.aircraftMovementProhibited,
+        notifyMaintenanceControl: nonRoutineForm.notifyMaintenanceControl,
+        requiresInspectorReview: nonRoutineForm.requiresInspectorReview,
         immediateSafetyConcern: nonRoutineForm.immediateSafetyConcern,
-        evidenceReferences: evidenceList(nonRoutineForm.evidenceReferences),
+        evidenceReferences: nonRoutineEvidenceReferences.value,
         idempotencyKey: newIdempotencyKey()
       }
     });
+    clearNonRoutineDraft();
     nonRoutineDialog.value = false;
-    actionSuccess.value = 'Temuan non-routine tercatat dan menunggu assessment maintenance.';
+    actionSuccess.value =
+      'Temuan non-routine tercatat. Release readiness akan terblokir sampai assessment dan closure selesai.';
   });
 }
 
@@ -1135,12 +1533,18 @@ async function openAuditPack() {
     ]);
     auditPack.value = audit;
     technicalRecord.value = record;
+    technicalRecordTab.value = 'summary';
+    releaseGateDrawer.value = false;
     auditPackDialog.value = true;
   });
 }
 
 function printAuditPack() {
   if (import.meta.client) window.print();
+}
+
+function exportAuditPackDemoCopy() {
+  printAuditPack();
 }
 
 // ========== Demo-v2.1 Resource Management ==========
@@ -1260,8 +1664,8 @@ async function loadResourceData() {
     personnelAssignments.value = assignments;
     amoOrganization.value = amo;
     mroEligibility.value = eligibility;
-  } catch (err: any) {
-    resourceError.value = err?.data?.message || err?.message || 'Failed to load resource data';
+  } catch (err: unknown) {
+    resourceError.value = errorMessage(err, 'Failed to load resource data');
   } finally {
     resourceLoading.value = false;
   }
@@ -1272,7 +1676,7 @@ async function checkAtp(materialReq: MaintenanceMaterialRequirementDto) {
   try {
     const atp = await resource.fetchAtp(materialReq.partId, materialReq.requestedStationId);
     atpResults.value[materialReq.id] = atp;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to fetch ATP:', err);
   }
 }
@@ -1298,8 +1702,8 @@ async function runResourceMutation(action: () => Promise<void>) {
   try {
     await action();
     await internalAog?.refresh();
-  } catch (err: any) {
-    resourceError.value = err?.data?.message || err?.message || 'Gagal menjalankan aksi resource.';
+  } catch (err: unknown) {
+    resourceError.value = errorMessage(err, 'Gagal menjalankan aksi resource.');
   } finally {
     resourceLoading.value = false;
   }
@@ -1471,7 +1875,7 @@ async function declareResourceType(
       reason
     });
     await loadResourceData();
-  } catch (err: any) {
+  } catch (err: unknown) {
     throw err;
   }
 }
@@ -3053,29 +3457,134 @@ watch(
             </VCard>
           </VDialog>
 
-          <VDialog v-model="nonRoutineDialog" max-width="760" persistent scrollable>
-            <VCard>
-              <VCardTitle class="d-flex align-start ga-3">
+          <VDialog v-model="nonRoutineDialog" max-width="980" persistent scrollable>
+            <VCard
+              class="non-routine-dialog"
+              :class="{ 'non-routine-dialog--critical': nonRoutineCritical }"
+            >
+              <VCardTitle class="non-routine-header">
                 <div>
-                  <h2 class="text-h6 mb-0">Catat Temuan Non-Routine</h2>
+                  <div class="d-flex flex-wrap align-center ga-2">
+                    <h2 class="text-h6 mb-0">Catat Temuan Non-Routine</h2>
+                    <VChip
+                      :color="nonRoutineCritical ? 'error' : 'warning'"
+                      size="small"
+                      variant="tonal"
+                    >
+                      {{ nonRoutineReleaseImpact }}
+                    </VChip>
+                  </div>
                   <div class="text-body-2 text-medium-emphasis">
-                    Source: {{ nonRoutineSourceCard?.cardNumber ?? '-' }}
+                    Temuan ini dapat memengaruhi kesiapan rilis teknis pesawat.
                   </div>
                 </div>
                 <VSpacer />
+                <div class="non-routine-sync">
+                  <VChip
+                    :color="online ? 'success' : 'warning'"
+                    size="small"
+                    variant="tonal"
+                    :prepend-icon="online ? 'mdi-cloud-check-outline' : 'mdi-cloud-off-outline'"
+                  >
+                    {{ online ? 'Online' : 'Offline' }}
+                  </VChip>
+                  <span>{{ nonRoutineDraftSavedLabel() }}</span>
+                </div>
                 <VBtn
+                  aria-label="Tutup modal temuan non-routine"
                   icon="mdi-close"
                   variant="text"
                   :disabled="actionLoading === 'create-nr'"
                   @click="nonRoutineDialog = false"
                 />
               </VCardTitle>
-              <VCardText>
+              <VDivider />
+              <VCardText class="non-routine-body">
+                <section class="non-routine-context" aria-label="Konteks temuan">
+                  <div>
+                    <span>Registrasi</span>
+                    <strong>{{ nonRoutineContext.aircraft }}</strong>
+                  </div>
+                  <div>
+                    <span>Pesawat</span>
+                    <strong>{{ nonRoutineContext.aircraftType }}</strong>
+                  </div>
+                  <div>
+                    <span>Stasiun</span>
+                    <strong>{{ nonRoutineContext.station }}</strong>
+                  </div>
+                  <div>
+                    <span>Bay</span>
+                    <strong>{{ nonRoutineContext.bay }}</strong>
+                  </div>
+                  <div>
+                    <span>Work Package</span>
+                    <strong>{{ nonRoutineContext.workPackage }}</strong>
+                  </div>
+                  <div>
+                    <span>Job Card Aktif</span>
+                    <strong>{{ nonRoutineContext.jobCard }}</strong>
+                  </div>
+                  <VChip
+                    :color="
+                      workPackage.aircraftTechnicalEligibility === 'BLOCKED' ? 'error' : 'warning'
+                    "
+                    variant="outlined"
+                  >
+                    {{ nonRoutineContext.technicalState }}
+                  </VChip>
+                </section>
+
+                <VAlert
+                  :type="nonRoutineCritical ? 'error' : 'warning'"
+                  variant="tonal"
+                  class="mb-4"
+                >
+                  <strong>
+                    {{
+                      nonRoutineCritical
+                        ? 'Concern keselamatan aktif - release terblokir sementara'
+                        : 'Belum dinilai - dampak operasional belum ditentukan'
+                    }}
+                  </strong>
+                  <div class="mt-1">
+                    {{
+                      nonRoutineCritical
+                        ? 'Pesawat tidak boleh dipindahkan sampai Maintenance Control menyelesaikan assessment.'
+                        : 'Lengkapi dampak dan klasifikasi sebelum menyimpan temuan.'
+                    }}
+                  </div>
+                </VAlert>
+
+                <div class="non-routine-section-title">1. Detail Temuan</div>
                 <VRow>
-                  <VCol cols="12">
+                  <VCol cols="12" md="7">
                     <VTextField
                       v-model="nonRoutineForm.title"
                       label="Judul temuan"
+                      name="non-routine-title"
+                      placeholder="Contoh: Main wheel tire - sidewall crack - LH"
+                      :error="
+                        nonRoutineForm.title.trim().length > 0 &&
+                          nonRoutineForm.title.trim().length < 5
+                      "
+                      :error-messages="
+                        nonRoutineForm.title.trim().length > 0 &&
+                          nonRoutineForm.title.trim().length < 5
+                          ? 'Minimal 5 karakter.'
+                          : ''
+                      "
+                      variant="outlined"
+                    />
+                  </VCol>
+                  <VCol cols="12" md="5">
+                    <VSelect
+                      v-model="nonRoutineForm.detectedDuring"
+                      label="Ditemukan saat"
+                      name="non-routine-detected-during"
+                      :items="detectedDuringItems"
+                      item-title="title"
+                      item-value="value"
                       variant="outlined"
                     />
                   </VCol>
@@ -3083,7 +3592,56 @@ watch(
                     <VTextarea
                       v-model="nonRoutineForm.description"
                       label="Deskripsi temuan"
+                      name="non-routine-description"
+                      placeholder="Jelaskan apa yang ditemukan, lokasi, kondisi aktual, kondisi yang diharapkan, dan tindakan awal."
                       rows="4"
+                      auto-grow
+                      :error="
+                        nonRoutineForm.description.trim().length > 0 &&
+                          nonRoutineForm.description.trim().length < 10
+                      "
+                      :error-messages="
+                        nonRoutineForm.description.trim().length > 0 &&
+                          nonRoutineForm.description.trim().length < 10
+                          ? 'Minimal 10 karakter.'
+                          : ''
+                      "
+                      variant="outlined"
+                    />
+                  </VCol>
+                </VRow>
+
+                <div class="non-routine-section-title">2. Klasifikasi & Dampak</div>
+                <VRow>
+                  <VCol cols="12">
+                    <VSwitch
+                      v-model="nonRoutineForm.immediateSafetyConcern"
+                      label="Ada dampak keselamatan langsung"
+                      color="error"
+                      hide-details
+                    />
+                  </VCol>
+                  <VCol cols="12" md="4">
+                    <VSelect
+                      v-model="nonRoutineForm.operationalImpact"
+                      label="Dampak operasional"
+                      name="non-routine-operational-impact"
+                      :items="operationalImpactItems"
+                      item-title="title"
+                      item-value="value"
+                      :error="nonRoutineForm.operationalImpact === 'UNASSESSED'"
+                      variant="outlined"
+                    />
+                  </VCol>
+                  <VCol cols="12" md="4">
+                    <VSelect
+                      v-model="nonRoutineForm.findingClassification"
+                      label="Klasifikasi temuan"
+                      name="non-routine-classification"
+                      :items="findingClassificationItems"
+                      item-title="title"
+                      item-value="value"
+                      :error="nonRoutineForm.findingClassification === 'UNASSESSED'"
                       variant="outlined"
                     />
                   </VCol>
@@ -3091,41 +3649,174 @@ watch(
                     <VSelect
                       v-model="nonRoutineForm.severity"
                       label="Prioritas"
-                      :items="['LOW', 'NORMAL', 'HIGH', 'AOG']"
+                      name="non-routine-priority"
+                      :items="nonRoutineSeverityItems"
+                      item-title="title"
+                      item-value="value"
+                      :error="nonRoutineForm.severity === 'UNASSESSED'"
                       variant="outlined"
                     />
                   </VCol>
-                  <VCol cols="12" md="4">
+                  <VCol cols="12" md="7">
                     <VTextField
                       v-model="nonRoutineForm.location"
-                      label="Lokasi/System"
+                      label="Lokasi / Sistem"
+                      name="non-routine-location"
+                      placeholder="Contoh: Landing Gear / Main Wheel LH"
+                      :error="!nonRoutineForm.location.trim()"
                       variant="outlined"
                     />
                   </VCol>
-                  <VCol cols="12" md="4">
+                  <VCol cols="12" md="2">
                     <VTextField
                       v-model="nonRoutineForm.ataChapter"
                       label="ATA"
+                      name="non-routine-ata"
+                      placeholder="32-41"
+                      :error="!nonRoutineForm.ataChapter.trim()"
                       variant="outlined"
                     />
                   </VCol>
+                  <VCol cols="12" md="3">
+                    <VSelect
+                      v-model="nonRoutineForm.melCdlAssessment"
+                      label="MEL/CDL assessment"
+                      name="non-routine-mel-cdl"
+                      :items="melCdlAssessmentItems"
+                      item-title="title"
+                      item-value="value"
+                      variant="outlined"
+                    />
+                  </VCol>
+                  <VCol v-if="nonRoutineCritical" cols="12">
+                    <div class="non-routine-critical-fields">
+                      <VTextarea
+                        v-model="nonRoutineForm.immediateAction"
+                        label="Tindakan segera"
+                        name="non-routine-immediate-action"
+                        rows="2"
+                        auto-grow
+                        :error="nonRoutineForm.immediateAction.trim().length < 10"
+                        :error-messages="
+                          nonRoutineForm.immediateAction.trim().length < 10
+                            ? 'Wajib untuk concern keselamatan langsung.'
+                            : ''
+                        "
+                        variant="outlined"
+                      />
+                      <VCheckbox
+                        v-model="nonRoutineForm.aircraftMovementProhibited"
+                        label="Pergerakan pesawat dilarang"
+                        color="error"
+                        hide-details
+                      />
+                      <VCheckbox
+                        v-model="nonRoutineForm.notifyMaintenanceControl"
+                        label="Notifikasi ke Maintenance Control"
+                        color="error"
+                        hide-details
+                      />
+                      <VCheckbox
+                        v-model="nonRoutineForm.requiresInspectorReview"
+                        label="Butuh inspector review"
+                        color="error"
+                        hide-details
+                      />
+                    </div>
+                  </VCol>
                   <VCol cols="12">
+                    <div class="non-routine-impact-preview">
+                      <div>
+                        <span>Klasifikasi</span>
+                        <strong>{{ ui.label(nonRoutineForm.findingClassification) }}</strong>
+                      </div>
+                      <div>
+                        <span>Prioritas</span>
+                        <strong>{{ ui.label(nonRoutineSeverityForPayload()) }}</strong>
+                      </div>
+                      <div>
+                        <span>Release</span>
+                        <strong>{{ nonRoutineReleaseImpact }}</strong>
+                      </div>
+                      <p>
+                        Temuan akan masuk assessment Maintenance Control dan technical release tetap
+                        terblokir sampai temuan diselesaikan.
+                      </p>
+                    </div>
+                  </VCol>
+                </VRow>
+
+                <div class="non-routine-section-title">3. Bukti & Referensi</div>
+                <VRow>
+                  <VCol cols="12" md="5">
+                    <VTextField
+                      :model-value="nonRoutineContext.jobCard"
+                      label="Sumber Job Card"
+                      readonly
+                      variant="outlined"
+                    />
+                  </VCol>
+                  <VCol cols="12" md="7">
                     <VTextField
                       v-model="nonRoutineForm.evidenceReferences"
-                      label="Evidence reference"
+                      label="Referensi bukti, pisahkan dengan koma"
+                      name="non-routine-evidence-reference"
                       variant="outlined"
                     />
                   </VCol>
                   <VCol cols="12">
-                    <VSwitch
-                      v-model="nonRoutineForm.immediateSafetyConcern"
-                      label="Ada concern keselamatan langsung"
-                      color="warning"
+                    <VFileInput
+                      v-model="nonRoutineEvidenceFiles"
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      chips
+                      counter
+                      multiple
+                      label="Tambah bukti foto atau dokumen"
+                      prepend-icon="mdi-paperclip"
+                      :disabled="!canUploadDocument || nonRoutineUploadingEvidence"
+                      :hint="
+                        canUploadDocument
+                          ? 'JPG, PNG, atau PDF hingga 25 MB per file.'
+                          : 'Role ini belum memiliki izin upload dokumen.'
+                      "
+                      persistent-hint
+                      variant="outlined"
                     />
+                    <div class="d-flex flex-wrap align-center ga-2 mt-2">
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        prepend-icon="mdi-cloud-upload-outline"
+                        :disabled="!nonRoutineEvidenceFiles.length || !canUploadDocument"
+                        :loading="nonRoutineUploadingEvidence"
+                        @click="uploadNonRoutineEvidence"
+                      >
+                        Upload Bukti
+                      </VBtn>
+                      <VChip
+                        v-for="upload in nonRoutineUploadedEvidence"
+                        :key="upload.id"
+                        size="small"
+                        color="success"
+                        variant="tonal"
+                        prepend-icon="mdi-file-check-outline"
+                      >
+                        {{ upload.originalName }}
+                      </VChip>
+                    </div>
                   </VCol>
                 </VRow>
               </VCardText>
-              <VCardActions>
+              <VDivider />
+              <VCardActions class="non-routine-actions">
+                <VAlert
+                  v-if="nonRoutineRequiredFields.length"
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                >
+                  Field wajib belum lengkap: {{ nonRoutineRequiredFields.join(', ') }}.
+                </VAlert>
                 <VSpacer />
                 <VBtn
                   variant="text"
@@ -3135,15 +3826,19 @@ watch(
                   Batal
                 </VBtn>
                 <VBtn
-                  color="primary"
+                  variant="outlined"
+                  :disabled="actionLoading === 'create-nr'"
+                  @click="saveNonRoutineDraft"
+                >
+                  Simpan Draft
+                </VBtn>
+                <VBtn
+                  :color="nonRoutineCritical ? 'error' : 'primary'"
                   :loading="actionLoading === 'create-nr'"
-                  :disabled="
-                    nonRoutineForm.title.trim().length < 5 ||
-                      nonRoutineForm.description.trim().length < 10
-                  "
+                  :disabled="!canSubmitNonRoutine"
                   @click="submitNonRoutineFinding"
                 >
-                  Simpan Temuan
+                  {{ nonRoutineCritical ? 'Simpan & Eskalasi Temuan' : 'Simpan Temuan' }}
                 </VBtn>
               </VCardActions>
             </VCard>
@@ -3600,229 +4295,763 @@ watch(
             </VCard>
           </VDialog>
 
-          <VDialog v-model="auditPackDialog" max-width="1060" scrollable>
-            <VCard>
-              <VCardTitle class="d-flex align-start ga-3">
+          <VDialog
+            v-model="auditPackDialog"
+            max-width="1320"
+            scrollable
+            aria-label="Rekam Teknis Work Package"
+          >
+            <VCard class="technical-record-card">
+              <VCardTitle class="technical-record-header">
                 <div>
-                  <h2 class="text-h6 mb-0">Rekam Teknis Work Package</h2>
-                  <div class="text-body-2 text-medium-emphasis">
-                    Evidence package backend untuk release readiness dan histori technical release.
-                  </div>
+                  <h2>Rekam Teknis Work Package</h2>
+                  <p>Ringkasan bukti pekerjaan untuk evaluasi kesiapan rilis teknis.</p>
                 </div>
-                <VSpacer />
-                <VBtn icon="mdi-close" variant="text" @click="auditPackDialog = false" />
+                <div class="technical-record-header__actions">
+                  <VBtn
+                    prepend-icon="mdi-printer"
+                    variant="outlined"
+                    text="Print Demo Copy"
+                    @click="printAuditPack"
+                  />
+                  <VBtn
+                    prepend-icon="mdi-file-export-outline"
+                    variant="outlined"
+                    text="Export Demo Copy"
+                    @click="exportAuditPackDemoCopy"
+                  />
+                  <VBtn
+                    icon="mdi-close"
+                    variant="text"
+                    size="large"
+                    aria-label="Tutup rekam teknis"
+                    @click="auditPackDialog = false"
+                  />
+                </div>
               </VCardTitle>
               <VDivider />
-              <VCardText>
-                <VAlert type="warning" variant="tonal" class="mb-4">
-                  {{ auditPack?.disclaimer }}
+              <VCardText v-if="technicalRecord" class="technical-record-shell">
+                <div class="technical-record-watermark">DEMO - NOT FOR OPERATIONAL USE</div>
+                <section
+                  class="technical-record-banner"
+                  :class="`technical-record-banner--${technicalRecord.decisionSummary.status.toLowerCase()}`"
+                >
+                  <div class="technical-record-banner__icon">
+                    <VIcon
+                      :icon="
+                        technicalRecord.decisionSummary.status === 'RELEASED'
+                          ? 'mdi-lock-check-outline'
+                          : technicalRecord.decisionSummary.status === 'READY_FOR_REVIEW'
+                            ? 'mdi-shield-check-outline'
+                            : 'mdi-lock-alert-outline'
+                      "
+                      size="42"
+                    />
+                  </div>
+                  <div>
+                    <h3>{{ technicalRecord.decisionSummary.title }}</h3>
+                    <p>{{ technicalRecord.decisionSummary.subtitle }}</p>
+                  </div>
+                  <VBtn
+                    class="technical-record-banner__cta"
+                    color="error"
+                    variant="tonal"
+                    append-icon="mdi-chevron-right"
+                    @click="releaseGateDrawer = true"
+                  >
+                    {{ technicalRecord.decisionSummary.criticalBlockerCount }} blocker kritis
+                  </VBtn>
+                </section>
+
+                <VAlert color="warning" variant="tonal" density="compact" class="mb-3">
+                  <strong>DEMO.</strong>
+                  {{ auditPack?.disclaimer ?? technicalRecord.disclaimer }}
                 </VAlert>
-                <div class="audit-pack">
-                  <header class="audit-pack__header">
-                    <div>
-                      <div class="text-caption">PT AMA Demo Environment</div>
-                      <h3>{{ workPackage.packageNumber }}</h3>
-                      <div>
-                        {{ workPackage.aircraftRegistrationNumber }} / {{ workPackage.title }}
-                      </div>
-                    </div>
-                    <div>
-                      <div class="text-caption">Page ID / Manifest Hash</div>
-                      <strong>{{ auditPack?.manifestHash }}</strong>
-                    </div>
-                  </header>
-                  <section class="audit-pack__section">
-                    <h4>Aircraft</h4>
-                    <VTable density="compact">
-                      <tbody>
-                        <tr>
-                          <td>Registration</td>
-                          <td>{{ workPackage.aircraftRegistrationNumber }}</td>
-                        </tr>
-                        <tr>
-                          <td>Model</td>
-                          <td>{{ workPackage.aircraftModel ?? '-' }}</td>
-                        </tr>
-                        <tr>
-                          <td>Serviceability</td>
-                          <td>{{ ui.label(workPackage.aircraftTechnicalState) }}</td>
-                        </tr>
-                      </tbody>
-                    </VTable>
-                  </section>
-                  <section class="audit-pack__section">
-                    <h4>Source & Planning Context</h4>
-                    <VTable density="compact">
-                      <tbody>
-                        <tr>
-                          <td>Source Defect</td>
-                          <td>{{ technicalRecord?.evidence.source.primaryDefectNumber ?? '-' }}</td>
-                        </tr>
-                        <tr>
-                          <td>Due Requirement</td>
-                          <td>
-                            {{
-                              technicalRecord?.evidence.source.sourceDueRequirementCode
-                                ? `${technicalRecord.evidence.source.sourceDueRequirementCode} - ${technicalRecord.evidence.source.sourceDueRequirementTitle ?? ''}`
-                                : '-'
-                            }}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>Facility Slot</td>
-                          <td>
-                            <template v-if="technicalRecord?.evidence.facilityContext">
-                              {{ technicalRecord.evidence.facilityContext.facilityName }} /
-                              {{ technicalRecord.evidence.facilityContext.bayCode }}
-                              ({{ ui.label(technicalRecord.evidence.facilityContext.status) }})
-                            </template>
-                            <template v-else>-</template>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </VTable>
-                  </section>
-                  <section class="audit-pack__section">
-                    <h4>Job Cards dan Inspection</h4>
-                    <VTable density="compact">
-                      <thead>
-                        <tr>
-                          <th>Kartu</th>
-                          <th>Data</th>
-                          <th>Mechanic</th>
-                          <th>Inspection</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr v-for="card in workPackage.jobCards" :key="card.id">
-                          <td>
-                            <strong>{{ card.cardNumber }}</strong>
-                            <div class="text-caption">{{ card.title }}</div>
-                          </td>
-                          <td>
-                            {{ card.maintenanceDataRef }} / {{ card.maintenanceDataRevision }}
-                          </td>
-                          <td>
-                            {{
-                              signoff(card, 'MECHANIC')
-                                ? format.dateTime(signoff(card, 'MECHANIC')?.signedAt)
-                                : '-'
-                            }}
-                          </td>
-                          <td>
-                            {{ card.inspectionAttempts.length }} attempt /
-                            {{ ui.label(signoff(card, 'INDEPENDENT_INSPECTION')?.decision) }}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </VTable>
-                  </section>
-                  <section class="audit-pack__section">
-                    <h4>Materials, Personnel, Tools</h4>
-                    <VRow>
-                      <VCol cols="12" md="4">
-                        <VList density="compact" lines="two">
-                          <VListSubheader>Material Traceability</VListSubheader>
-                          <VListItem
-                            v-for="item in technicalRecord?.evidence.materialTraceability ?? []"
-                            :key="String(item.id)"
-                            :title="String(item.part_number ?? item.installation_number ?? '-')"
-                            :subtitle="`Serial ${String(item.serial_number ?? '-')} / Installed ${formatDateTime(String(item.installed_at ?? ''))}`"
-                          />
-                          <VListItem
-                            v-if="!technicalRecord?.evidence.materialTraceability.length"
-                            title="Tidak ada installation record"
-                          />
-                        </VList>
-                      </VCol>
-                      <VCol cols="12" md="4">
-                        <VList density="compact" lines="two">
-                          <VListSubheader>Personnel Evidence</VListSubheader>
-                          <VListItem
-                            v-for="item in technicalRecord?.evidence.personnelEvidence ?? []"
-                            :key="String(item.id)"
-                            :title="String(item.personnel_name ?? item.personnel_id ?? '-')"
-                            :subtitle="`${String(item.role_type ?? '-')} / ${String(item.status ?? '-')}`"
-                          />
-                          <VListItem
-                            v-if="!technicalRecord?.evidence.personnelEvidence.length"
-                            title="Tidak ada assignment personnel"
-                          />
-                        </VList>
-                      </VCol>
-                      <VCol cols="12" md="4">
-                        <VList density="compact" lines="two">
-                          <VListSubheader>Tool Evidence</VListSubheader>
-                          <VListItem
-                            v-for="item in technicalRecord?.evidence.toolEvidence ?? []"
-                            :key="String(item.id)"
-                            :title="String(item.tool_code ?? item.tool_id ?? '-')"
-                            :subtitle="`${String(item.allocation_status ?? '-')} / Returned ${formatDateTime(String(item.returned_at ?? ''))}`"
-                          />
-                          <VListItem
-                            v-if="!technicalRecord?.evidence.toolEvidence.length"
-                            title="Tidak ada tool allocation"
-                          />
-                        </VList>
-                      </VCol>
-                    </VRow>
-                  </section>
-                  <section class="audit-pack__section">
-                    <h4>Release Eligibility</h4>
-                    <VAlert
-                      :type="technicalRecord?.releaseEligibility.eligible ? 'success' : 'error'"
-                      variant="tonal"
-                    >
+
+                <section class="technical-record-context">
+                  <div class="technical-record-context__icon">
+                    <VIcon icon="mdi-airplane" size="34" />
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Registration</span>
+                    <strong>{{ workPackage.aircraftRegistrationNumber }}</strong>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Model</span>
+                    <strong>{{ explicitRecordValue(workPackage.aircraftModel) }}</strong>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Work Package ID</span>
+                    <strong>{{ workPackage.packageNumber }}</strong>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Source Defect</span>
+                    <strong>
                       {{
-                        technicalRecord?.releaseEligibility.eligible
-                          ? 'Eligibility backend lulus saat preview terakhir.'
-                          : 'Eligibility backend masih memiliki blocker.'
+                        explicitRecordValue(
+                          recordSourceValue('primaryDefectNumber'),
+                          'Tidak berlaku'
+                        )
                       }}
-                    </VAlert>
-                    <ul class="mt-3">
-                      <li
-                        v-for="blocker in technicalRecord?.releaseEligibility.blockers ?? []"
-                        :key="`${blocker.code}-${blocker.sourceId}`"
-                      >
-                        {{ blocker.title }} - {{ blocker.code }}
-                      </li>
-                    </ul>
-                    <VAlert
-                      v-if="technicalRecord?.releaseSnapshot"
-                      type="success"
+                    </strong>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Serviceability</span>
+                    <VChip
+                      :color="recordDecisionColor(technicalRecord.decisionSummary.status)"
+                      size="small"
                       variant="tonal"
-                      class="mt-3"
                     >
-                      Snapshot immutable tersimpan pada
-                      {{ formatDateTime(technicalRecord.releaseSnapshot.createdAt) }}
-                      untuk release {{ technicalRecord.releaseSnapshot.releaseId ?? '-' }}.
-                    </VAlert>
-                  </section>
-                  <section class="audit-pack__section">
-                    <h4>Audit Timeline</h4>
-                    <ol>
-                      <li v-for="record in workPackage.auditRecords ?? []" :key="record.id">
-                        {{ format.dateTime(record.occurredAt) }} - {{ record.actorRole }} -
-                        {{ ui.label(record.action) }}
-                      </li>
-                    </ol>
-                  </section>
-                  <section class="audit-pack__section">
-                    <h4>Manifest JSON</h4>
-                    <pre>{{ JSON.stringify(auditPack?.manifest, null, 2) }}</pre>
-                  </section>
-                </div>
+                      {{ technicalRecord.decisionSummary.serviceabilityLabel }}
+                    </VChip>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Station</span>
+                    <strong>
+                      {{
+                        technicalRecord.evidence.facilityContext?.facilityName ?? 'Belum ditautkan'
+                      }}
+                    </strong>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Bay</span>
+                    <strong>
+                      {{ technicalRecord.evidence.facilityContext?.bayCode ?? 'Belum ditautkan' }}
+                    </strong>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Generated At</span>
+                    <strong>{{ formatDateTime(technicalRecord.generatedAt) }}</strong>
+                  </div>
+                  <div class="technical-record-kv">
+                    <span>Snapshot Status</span>
+                    <VChip color="success" size="small" variant="tonal">
+                      {{ technicalRecord.documentIntegrity.snapshotLabel }}
+                    </VChip>
+                  </div>
+                </section>
+
+                <section class="technical-record-cards">
+                  <VCard
+                    v-for="card in technicalRecord.completenessCards"
+                    :key="card.key"
+                    border
+                    class="technical-record-metric"
+                    :class="`technical-record-metric--${recordGateColor(card.status)}`"
+                  >
+                    <VCardText>
+                      <VIcon :icon="recordCompletenessIcon(card.key)" size="28" />
+                      <div>
+                        <span>{{ card.label }}</span>
+                        <strong>{{ card.value }}</strong>
+                        <VChip :color="recordGateColor(card.status)" size="x-small" variant="tonal">
+                          {{ card.helper }}
+                        </VChip>
+                      </div>
+                    </VCardText>
+                  </VCard>
+                </section>
+
+                <VTabs v-model="technicalRecordTab" class="technical-record-tabs">
+                  <VTab value="summary">Ringkasan</VTab>
+                  <VTab value="jobCards">Job Cards</VTab>
+                  <VTab value="material">Material</VTab>
+                  <VTab value="personnel">Personel</VTab>
+                  <VTab value="tools">Tools</VTab>
+                  <VTab value="integrity">Integritas</VTab>
+                </VTabs>
+                <VDivider />
+
+                <VWindow v-model="technicalRecordTab" class="mt-3">
+                  <VWindowItem value="summary">
+                    <div class="technical-record-summary-grid">
+                      <VCard border class="technical-record-panel">
+                        <VCardTitle>Aircraft & Planning Context</VCardTitle>
+                        <VCardText>
+                          <div class="technical-record-info-grid">
+                            <div>
+                              <span>Registration</span>
+                              <strong>{{ workPackage.aircraftRegistrationNumber }}</strong>
+                            </div>
+                            <div>
+                              <span>Model</span>
+                              <strong>{{ explicitRecordValue(workPackage.aircraftModel) }}</strong>
+                            </div>
+                            <div>
+                              <span>Serviceability</span>
+                              <VChip
+                                :color="recordDecisionColor(technicalRecord.decisionSummary.status)"
+                                size="small"
+                                variant="tonal"
+                              >
+                                {{ technicalRecord.decisionSummary.serviceabilityLabel }}
+                              </VChip>
+                            </div>
+                            <div>
+                              <span>Source Defect</span>
+                              <strong>
+                                {{
+                                  explicitRecordValue(
+                                    recordSourceValue('primaryDefectNumber'),
+                                    'Tidak berlaku'
+                                  )
+                                }}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Due Requirement</span>
+                              <strong>{{ recordDueRequirementLabel() }}</strong>
+                            </div>
+                            <div>
+                              <span>Facility Slot</span>
+                              <strong>
+                                {{
+                                  technicalRecord.evidence.facilityContext
+                                    ? `${technicalRecord.evidence.facilityContext.facilityName} / ${technicalRecord.evidence.facilityContext.bayCode}`
+                                    : 'Belum ditautkan'
+                                }}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Planning Reference</span>
+                              <strong>{{ explicitRecordValue(workPackage.planningNote) }}</strong>
+                            </div>
+                            <div>
+                              <span>Work Scope</span>
+                              <strong>{{ workPackage.title }}</strong>
+                            </div>
+                          </div>
+                        </VCardText>
+                      </VCard>
+
+                      <VCard border class="technical-record-panel">
+                        <VCardTitle>
+                          Gate Kesiapan Rilis
+                          <VBtn
+                            size="small"
+                            variant="text"
+                            append-icon="mdi-arrow-right"
+                            @click="releaseGateDrawer = true"
+                          >
+                            Lihat detail
+                          </VBtn>
+                        </VCardTitle>
+                        <VCardText>
+                          <div
+                            v-for="gate in technicalRecord.releaseGates"
+                            :key="gate.key"
+                            class="technical-record-gate-row"
+                          >
+                            <VIcon
+                              :color="recordGateColor(gate.status)"
+                              :icon="recordGateIcon(gate.status)"
+                              size="18"
+                            />
+                            <span>{{ gate.label }}</span>
+                            <VChip
+                              :color="recordGateColor(gate.status)"
+                              size="x-small"
+                              variant="tonal"
+                            >
+                              {{ gate.badge }}
+                            </VChip>
+                            <VIcon icon="mdi-chevron-right" size="18" />
+                          </div>
+                          <VAlert
+                            v-if="technicalRecord.nextRequiredActions.length"
+                            color="error"
+                            variant="tonal"
+                            density="compact"
+                            class="mt-3"
+                          >
+                            {{ technicalRecord.nextRequiredActions[0] }}
+                          </VAlert>
+                        </VCardText>
+                      </VCard>
+
+                      <VCard border class="technical-record-panel">
+                        <VCardTitle>Job Cards & Inspection</VCardTitle>
+                        <VCardText>
+                          <VTable
+                            v-if="workPackage.jobCards.length"
+                            density="compact"
+                            class="technical-record-table"
+                          >
+                            <thead>
+                              <tr>
+                                <th>Job Card / Task</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Sign-off</th>
+                                <th>Ind. Insp.</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="card in workPackage.jobCards.slice(0, 3)" :key="card.id">
+                                <td>
+                                  <strong>{{ card.cardNumber }}</strong>
+                                  <div>{{ card.title }}</div>
+                                </td>
+                                <td>{{ card.mandatoryFlag ? 'Mandatory' : 'Optional' }}</td>
+                                <td>
+                                  <VChip
+                                    :color="ui.jobCardStatusColor(card.status)"
+                                    size="x-small"
+                                    variant="tonal"
+                                  >
+                                    {{ ui.label(card.status) }}
+                                  </VChip>
+                                </td>
+                                <td>
+                                  {{
+                                    signoff(card, 'MECHANIC')
+                                      ? 'AMT Sign-off selesai'
+                                      : 'AMT Sign-off belum'
+                                  }}
+                                </td>
+                                <td>
+                                  {{
+                                    card.requiresIndependentInspection
+                                      ? signoff(card, 'INDEPENDENT_INSPECTION')
+                                        ? 'Selesai'
+                                        : 'Belum'
+                                      : 'Tidak wajib'
+                                  }}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </VTable>
+                          <VEmptyState
+                            v-else
+                            icon="mdi-clipboard-alert-outline"
+                            title="Mandatory job card belum dibuat"
+                            text="Tambahkan job card wajib dengan approved maintenance data."
+                          />
+                        </VCardText>
+                      </VCard>
+
+                      <VCard border class="technical-record-panel">
+                        <VCardTitle>Integritas Dokumen</VCardTitle>
+                        <VCardText>
+                          <div class="technical-record-integrity">
+                            <div>
+                              <span>Manifest Hash (SHA-256)</span>
+                              <strong>{{ recordHashLabel() }}</strong>
+                            </div>
+                            <VChip color="success" variant="tonal" prepend-icon="mdi-check-circle">
+                              {{ technicalRecord.documentIntegrity.label }}
+                            </VChip>
+                          </div>
+                          <div class="technical-record-info-grid mt-4">
+                            <div>
+                              <span>Generated At</span>
+                              <strong>{{ formatDateTime(technicalRecord.generatedAt) }}</strong>
+                            </div>
+                            <div>
+                              <span>Snapshot</span>
+                              <strong>{{ technicalRecord.documentIntegrity.snapshotLabel }}</strong>
+                            </div>
+                            <div>
+                              <span>Verifikasi</span>
+                              <strong>
+                                {{
+                                  technicalRecord.documentIntegrity.verifiedAt
+                                    ? formatDateTime(technicalRecord.documentIntegrity.verifiedAt)
+                                    : 'Belum ada snapshot immutable'
+                                }}
+                              </strong>
+                            </div>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </div>
+                  </VWindowItem>
+
+                  <VWindowItem value="jobCards">
+                    <VCard border class="technical-record-panel">
+                      <VCardTitle>Job Cards ({{ workPackage.jobCards.length }})</VCardTitle>
+                      <VCardText>
+                        <VTable
+                          v-if="workPackage.jobCards.length"
+                          density="compact"
+                          class="technical-record-table"
+                        >
+                          <thead>
+                            <tr>
+                              <th>Kartu</th>
+                              <th>Data Perawatan</th>
+                              <th>Mechanic</th>
+                              <th>Inspection</th>
+                              <th>Rework</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="card in workPackage.jobCards" :key="card.id">
+                              <td>
+                                <strong>{{ card.cardNumber }}</strong>
+                                <div>{{ card.title }}</div>
+                              </td>
+                              <td>
+                                {{ card.maintenanceDataRef }} / {{ card.maintenanceDataRevision }}
+                              </td>
+                              <td>
+                                {{
+                                  signoff(card, 'MECHANIC')
+                                    ? formatDateTime(signoff(card, 'MECHANIC')?.signedAt)
+                                    : 'Belum sign-off'
+                                }}
+                              </td>
+                              <td>
+                                {{ jobCardInspectionRecordLabel(card) }}
+                              </td>
+                              <td>
+                                {{
+                                  card.reworkActions.length
+                                    ? `${card.reworkActions.length} item`
+                                    : 'Tidak ada'
+                                }}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </VTable>
+                        <VEmptyState
+                          v-else
+                          icon="mdi-clipboard-alert-outline"
+                          title="No job card linked"
+                          text="Mandatory job card required sebelum rekam teknis lengkap."
+                        />
+                      </VCardText>
+                    </VCard>
+                  </VWindowItem>
+
+                  <VWindowItem value="material">
+                    <VCard border class="technical-record-panel">
+                      <VCardTitle>
+                        Material Traceability ({{
+                          technicalRecord.evidence.materialTraceability.length
+                        }})
+                      </VCardTitle>
+                      <VCardText>
+                        <VList
+                          v-if="technicalRecord.evidence.materialTraceability.length"
+                          density="compact"
+                          lines="two"
+                        >
+                          <VListItem
+                            v-for="item in technicalRecord.evidence.materialTraceability"
+                            :key="String(item.id)"
+                            prepend-icon="mdi-cube-scan"
+                            :title="
+                              String(
+                                item.part_number ??
+                                  item.installation_number ??
+                                  'Data tidak tersedia'
+                              )
+                            "
+                            :subtitle="`Serial ${String(item.serial_number ?? 'Tidak berlaku')} / Installed ${formatDateTime(String(item.installed_at ?? ''))}`"
+                          />
+                        </VList>
+                        <VEmptyState
+                          v-else
+                          icon="mdi-cube-off-outline"
+                          title="Material traceability belum tersedia"
+                          text="Tidak ada installation record pada rekam teknis ini."
+                        />
+                      </VCardText>
+                    </VCard>
+                  </VWindowItem>
+
+                  <VWindowItem value="personnel">
+                    <VCard border class="technical-record-panel">
+                      <VCardTitle>
+                        Personnel Evidence ({{ technicalRecord.evidence.personnelEvidence.length }})
+                      </VCardTitle>
+                      <VCardText>
+                        <VList
+                          v-if="technicalRecord.evidence.personnelEvidence.length"
+                          density="compact"
+                          lines="two"
+                        >
+                          <VListItem
+                            v-for="item in technicalRecord.evidence.personnelEvidence"
+                            :key="String(item.id)"
+                            prepend-icon="mdi-account-hard-hat-outline"
+                            :title="
+                              String(
+                                item.personnel_name ?? item.personnel_id ?? 'Data tidak tersedia'
+                              )
+                            "
+                            :subtitle="`${String(item.role_type ?? 'Role tidak tersedia')} / ${String(item.status ?? 'Status tidak tersedia')}`"
+                          />
+                        </VList>
+                        <VEmptyState
+                          v-else
+                          icon="mdi-account-alert-outline"
+                          title="Personnel evidence belum tersedia"
+                          text="Belum ada assignment personel yang dapat diverifikasi."
+                        />
+                      </VCardText>
+                    </VCard>
+                  </VWindowItem>
+
+                  <VWindowItem value="tools">
+                    <VCard border class="technical-record-panel">
+                      <VCardTitle>
+                        Tool Evidence ({{ technicalRecord.evidence.toolEvidence.length }})
+                      </VCardTitle>
+                      <VCardText>
+                        <VList
+                          v-if="technicalRecord.evidence.toolEvidence.length"
+                          density="compact"
+                          lines="two"
+                        >
+                          <VListItem
+                            v-for="item in technicalRecord.evidence.toolEvidence"
+                            :key="String(item.id)"
+                            prepend-icon="mdi-tools"
+                            :title="String(item.tool_code ?? item.tool_id ?? 'Data tidak tersedia')"
+                            :subtitle="`${String(item.allocation_status ?? 'Status tidak tersedia')} / Calibration ${String(item.calibration_status ?? 'Tidak tersedia')}`"
+                          />
+                        </VList>
+                        <VEmptyState
+                          v-else
+                          icon="mdi-toolbox-outline"
+                          title="Tool evidence belum tersedia"
+                          text="Tidak ada allocation atau calibration evidence pada record ini."
+                        />
+                      </VCardText>
+                    </VCard>
+                  </VWindowItem>
+
+                  <VWindowItem value="integrity">
+                    <VCard border class="technical-record-panel">
+                      <VCardTitle>Document Integrity</VCardTitle>
+                      <VCardText>
+                        <div class="technical-record-integrity technical-record-integrity--full">
+                          <div>
+                            <span>Manifest Hash (SHA-256)</span>
+                            <strong>{{ recordFullHashLabel() }}</strong>
+                          </div>
+                          <VBtn
+                            icon="mdi-content-copy"
+                            variant="tonal"
+                            :disabled="
+                              !(
+                                auditPack?.manifestHash ??
+                                technicalRecord.documentIntegrity.manifestHash
+                              )
+                            "
+                          />
+                        </div>
+                        <VAlert color="info" variant="tonal" class="mt-4">
+                          {{ technicalRecord.freshness.label }}. Source updated at
+                          {{ formatDateTime(technicalRecord.freshness.sourceUpdatedAt) }}.
+                        </VAlert>
+                        <VExpansionPanels class="mt-4" variant="accordion">
+                          <VExpansionPanel title="Manifest JSON">
+                            <VExpansionPanelText>
+                              <pre>{{ JSON.stringify(auditPack?.manifest, null, 2) }}</pre>
+                            </VExpansionPanelText>
+                          </VExpansionPanel>
+                          <VExpansionPanel title="Audit Timeline">
+                            <VExpansionPanelText>
+                              <ol class="technical-record-timeline">
+                                <li
+                                  v-for="record in technicalRecord.evidence.auditTimeline"
+                                  :key="record.id"
+                                >
+                                  {{ formatDateTime(record.occurredAt) }} / {{ record.actorRole }} /
+                                  {{ ui.label(record.action) }}
+                                </li>
+                              </ol>
+                              <VEmptyState
+                                v-if="!technicalRecord.evidence.auditTimeline.length"
+                                title="Belum ada audit timeline"
+                                text="Aktivitas akan muncul setelah ada tindakan pada work package."
+                              />
+                            </VExpansionPanelText>
+                          </VExpansionPanel>
+                        </VExpansionPanels>
+                      </VCardText>
+                    </VCard>
+                  </VWindowItem>
+                </VWindow>
+              </VCardText>
+              <VCardText v-else>
+                <VSkeletonLoader type="article, table" />
               </VCardText>
               <VDivider />
-              <VCardActions>
-                <VBtn variant="text" @click="auditPackDialog = false">Tutup</VBtn>
-                <VSpacer />
-                <VBtn prepend-icon="mdi-printer" color="primary" @click="printAuditPack">
-                  Print / Export
+              <VCardActions class="technical-record-actions">
+                <VBtn
+                  variant="outlined"
+                  prepend-icon="mdi-open-in-new"
+                  @click="openWorkPackageFromRecord"
+                >
+                  Buka Work Package
                 </VBtn>
+                <VBtn
+                  variant="outlined"
+                  prepend-icon="mdi-flag-outline"
+                  @click="releaseGateDrawer = true"
+                >
+                  Lihat Gates Rilis
+                </VBtn>
+                <VBtn variant="outlined" prepend-icon="mdi-printer" @click="printAuditPack">
+                  Print Demo Copy
+                </VBtn>
+                <VBtn
+                  variant="outlined"
+                  prepend-icon="mdi-file-export-outline"
+                  @click="exportAuditPackDemoCopy"
+                >
+                  Export Demo Copy
+                </VBtn>
+                <VSpacer />
+                <VTooltip :text="recordReleaseDisabledReason()" location="top">
+                  <template #activator="{ props }">
+                    <span v-bind="props">
+                      <VBtn
+                        color="success"
+                        prepend-icon="mdi-lock-check-outline"
+                        :disabled="!canIssueFromTechnicalRecord"
+                        @click="openReleaseFromTechnicalRecord"
+                      >
+                        Terbitkan Rilis Teknis
+                      </VBtn>
+                    </span>
+                  </template>
+                </VTooltip>
               </VCardActions>
             </VCard>
           </VDialog>
+
+          <VNavigationDrawer
+            v-model="releaseGateDrawer"
+            location="right"
+            temporary
+            width="440"
+            class="technical-record-drawer"
+          >
+            <template v-if="technicalRecord">
+              <div class="technical-record-drawer__header">
+                <div>
+                  <h2>Gates Rilis Teknis</h2>
+                  <p>{{ technicalRecord.decisionSummary.title }}</p>
+                </div>
+                <VBtn
+                  icon="mdi-close"
+                  variant="text"
+                  aria-label="Tutup gates rilis"
+                  @click="releaseGateDrawer = false"
+                />
+              </div>
+              <div class="technical-record-drawer__body">
+                <VAlert
+                  :color="recordDecisionColor(technicalRecord.decisionSummary.status)"
+                  variant="tonal"
+                  class="mb-4"
+                >
+                  <div class="text-h6">{{ technicalRecord.decisionSummary.status }}</div>
+                  <div>{{ technicalRecord.decisionSummary.subtitle }}</div>
+                </VAlert>
+
+                <div class="technical-record-drawer__context">
+                  <div>
+                    <span>Aircraft</span>
+                    <strong>{{ workPackage.aircraftRegistrationNumber }}</strong>
+                  </div>
+                  <div>
+                    <span>Model</span>
+                    <strong>{{ explicitRecordValue(workPackage.aircraftModel) }}</strong>
+                  </div>
+                  <div>
+                    <span>Work Package ID</span>
+                    <strong>{{ workPackage.packageNumber }}</strong>
+                  </div>
+                  <div>
+                    <span>Bay</span>
+                    <strong>
+                      {{ technicalRecord.evidence.facilityContext?.bayCode ?? 'Belum ditautkan' }}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Last validated</span>
+                    <strong>{{
+                      formatDateTime(technicalRecord.decisionSummary.lastValidatedAt)
+                    }}</strong>
+                  </div>
+                </div>
+
+                <div class="technical-record-drawer__gates">
+                  <button
+                    v-for="(gate, index) in technicalRecord.releaseGates"
+                    :key="gate.key"
+                    class="technical-record-drawer-gate"
+                    type="button"
+                  >
+                    <span class="technical-record-drawer-gate__index">{{ index + 1 }}</span>
+                    <VIcon
+                      :color="recordGateColor(gate.status)"
+                      :icon="recordGateIcon(gate.status)"
+                      size="20"
+                    />
+                    <span>
+                      <strong>{{ gate.label }}</strong>
+                      <small>{{ gate.summary }}</small>
+                    </span>
+                    <VChip :color="recordGateColor(gate.status)" size="x-small" variant="tonal">
+                      {{ gate.badge }}
+                    </VChip>
+                    <VIcon icon="mdi-chevron-right" size="18" />
+                  </button>
+                </div>
+
+                <VCard
+                  v-if="technicalRecord.nextRequiredActions.length"
+                  border
+                  color="warning"
+                  variant="tonal"
+                  class="mt-4"
+                >
+                  <VCardTitle>Next required actions</VCardTitle>
+                  <VCardText>
+                    <ul class="mb-0">
+                      <li v-for="action in technicalRecord.nextRequiredActions" :key="action">
+                        {{ action }}
+                      </li>
+                    </ul>
+                  </VCardText>
+                </VCard>
+              </div>
+              <div class="technical-record-drawer__actions">
+                <VTooltip :text="recordReleaseDisabledReason()" location="top">
+                  <template #activator="{ props }">
+                    <span v-bind="props">
+                      <VBtn
+                        block
+                        color="success"
+                        prepend-icon="mdi-lock-check-outline"
+                        :disabled="!canIssueFromTechnicalRecord"
+                        @click="openReleaseFromTechnicalRecord"
+                      >
+                        Terbitkan Rilis Teknis
+                      </VBtn>
+                    </span>
+                  </template>
+                </VTooltip>
+                <div class="technical-record-drawer__secondary">
+                  <VBtn
+                    variant="outlined"
+                    prepend-icon="mdi-open-in-new"
+                    @click="openWorkPackageFromRecord"
+                  >
+                    Buka Work Package
+                  </VBtn>
+                  <VBtn variant="outlined" @click="releaseGateDrawer = false">Tutup</VBtn>
+                </div>
+              </div>
+            </template>
+          </VNavigationDrawer>
         </VWindowItem>
 
         <!-- Material Tab -->
@@ -4107,7 +5336,7 @@ watch(
                     <tbody>
                       <tr v-for="res in materialReservations" :key="res.id">
                         <td>{{ res.reservationNumber }}</td>
-                        <td>{{ res.partNumber || res.partId }}</td>
+                        <td>{{ res.partId }}</td>
                         <td>{{ res.lotNumber || res.serialNumber || '-' }}</td>
                         <td>{{ res.quantity }} {{ res.unit }}</td>
                         <td>
@@ -4174,7 +5403,7 @@ watch(
 
               <!-- Blockers -->
               <VAlert
-                v-for="blocker in mroEligibility?.sections?.tool?.blockers || []"
+                v-for="blocker in mroEligibility?.sections?.tools?.blockers || []"
                 :key="blocker.code"
                 type="error"
                 variant="tonal"
@@ -4188,7 +5417,7 @@ watch(
               </VAlert>
 
               <VAlert
-                v-for="warning in mroEligibility?.sections?.tool?.warnings || []"
+                v-for="warning in mroEligibility?.sections?.tools?.warnings || []"
                 :key="warning.code"
                 type="warning"
                 variant="tonal"
@@ -4604,7 +5833,7 @@ watch(
                       <tr v-for="assign in personnelAssignments" :key="assign.id">
                         <td>{{ assign.personnelName || assign.personnelId }}</td>
                         <td>{{ assign.roleType }}</td>
-                        <td>{{ assign.licenseNumber || '-' }}</td>
+                        <td>{{ assign.licenceNumber || '-' }}</td>
                         <td>
                           <VChip
                             :color="assign.eligibilityStatus === 'ELIGIBLE' ? 'success' : 'error'"
@@ -4866,9 +6095,6 @@ watch(
                       <div v-if="blocker.suggestedAction" class="text-caption mt-1">
                         Suggested: {{ blocker.suggestedAction }}
                       </div>
-                      <div v-if="blocker.section" class="text-caption mt-1">
-                        Section: {{ blocker.section }}
-                      </div>
                     </VAlert>
                   </VCardText>
                 </VCard>
@@ -5042,35 +6268,407 @@ watch(
   padding: 14px;
 }
 
-.audit-pack {
-  margin: 0 auto;
-  max-width: 820px;
-  color: #111;
-  background: #fff;
+.technical-record-card {
+  border-radius: 8px;
 }
 
-.audit-pack__header,
-.audit-pack__section {
-  border: 1px solid #999;
-  padding: 14px;
-}
-
-.audit-pack__header {
+.technical-record-header,
+.technical-record-header__actions,
+.technical-record-actions,
+.technical-record-integrity {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.technical-record-header {
   justify-content: space-between;
-  gap: 16px;
+  padding: 14px 20px;
 }
 
-.audit-pack__section {
-  border-top: 0;
-  page-break-inside: avoid;
+.technical-record-header h2,
+.technical-record-banner h3,
+.technical-record-drawer__header h2 {
+  color: #082653;
+  font-weight: 800;
+  line-height: 1.15;
 }
 
-.audit-pack pre {
+.technical-record-header h2 {
+  font-size: 1.05rem;
+}
+
+.technical-record-header p,
+.technical-record-drawer__header p,
+.technical-record-kv span,
+.technical-record-info-grid span,
+.technical-record-integrity span {
+  color: rgba(var(--v-theme-on-surface), 0.64);
+  font-size: 0.8rem;
+}
+
+.technical-record-shell {
+  position: relative;
+  overflow: hidden;
+  padding: 14px 18px 18px;
+}
+
+.technical-record-watermark {
+  position: absolute;
+  inset: auto 24px 24px auto;
+  color: rgba(220, 38, 38, 0.08);
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  transform: rotate(-9deg);
+  white-space: nowrap;
+}
+
+.technical-record-banner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(220px, 300px);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 18px;
+  border: 1px solid rgba(220, 38, 38, 0.42);
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(254, 226, 226, 0.82), rgba(255, 255, 255, 0.92));
+}
+
+.technical-record-banner--released,
+.technical-record-banner--ready_for_review {
+  border-color: rgba(22, 163, 74, 0.38);
+  background: linear-gradient(90deg, rgba(220, 252, 231, 0.82), rgba(255, 255, 255, 0.92));
+}
+
+.technical-record-banner--incomplete {
+  border-color: rgba(245, 158, 11, 0.44);
+  background: linear-gradient(90deg, rgba(254, 243, 199, 0.82), rgba(255, 255, 255, 0.92));
+}
+
+.technical-record-banner__icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: 999px;
+  color: white;
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+}
+
+.technical-record-banner--released .technical-record-banner__icon,
+.technical-record-banner--ready_for_review .technical-record-banner__icon {
+  background: linear-gradient(135deg, #22c55e, #15803d);
+}
+
+.technical-record-banner--incomplete .technical-record-banner__icon {
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+}
+
+.technical-record-banner h3 {
+  margin: 0;
+  color: #b91c1c;
+  font-size: clamp(1.25rem, 2vw, 1.7rem);
+}
+
+.technical-record-banner--released h3,
+.technical-record-banner--ready_for_review h3 {
+  color: #15803d;
+}
+
+.technical-record-banner--incomplete h3 {
+  color: #b45309;
+}
+
+.technical-record-banner p {
+  margin: 6px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+}
+
+.technical-record-banner__cta {
+  justify-self: end;
+}
+
+.technical-record-context,
+.technical-record-cards,
+.technical-record-summary-grid,
+.technical-record-info-grid,
+.technical-record-drawer__context {
+  display: grid;
+  gap: 12px;
+}
+
+.technical-record-context {
+  position: relative;
+  z-index: 1;
+  grid-template-columns: 72px repeat(4, minmax(130px, 1fr));
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+}
+
+.technical-record-context__icon {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #0b3a78;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.technical-record-kv,
+.technical-record-info-grid div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.technical-record-kv strong,
+.technical-record-info-grid strong,
+.technical-record-integrity strong {
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.technical-record-cards {
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  margin-bottom: 10px;
+}
+
+.technical-record-metric {
+  border-radius: 8px;
+}
+
+.technical-record-metric :deep(.v-card-text) {
+  display: flex;
+  gap: 12px;
+  min-height: 92px;
+  padding: 12px;
+}
+
+.technical-record-metric :deep(.v-icon) {
+  color: #0b3a78;
+}
+
+.technical-record-metric--error :deep(.v-icon) {
+  color: #dc2626;
+}
+
+.technical-record-metric--warning :deep(.v-icon) {
+  color: #d97706;
+}
+
+.technical-record-metric--success :deep(.v-icon) {
+  color: #059669;
+}
+
+.technical-record-metric span {
+  display: block;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.technical-record-metric strong {
+  display: block;
+  margin: 2px 0 6px;
+  color: #082653;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.technical-record-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgb(var(--v-theme-surface));
+}
+
+.technical-record-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.technical-record-panel {
+  border-radius: 8px;
+}
+
+.technical-record-panel :deep(.v-card-title) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #082653;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.technical-record-info-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.technical-record-gate-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto 20px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  font-size: 0.86rem;
+}
+
+.technical-record-gate-row:last-child {
+  border-bottom: 0;
+}
+
+.technical-record-table {
+  overflow-x: auto;
+}
+
+.technical-record-table :deep(table) {
+  min-width: 720px;
+}
+
+.technical-record-table :deep(th) {
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.technical-record-integrity {
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+}
+
+.technical-record-integrity--full {
+  align-items: flex-start;
+}
+
+.technical-record-timeline {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.technical-record-card pre {
   max-height: 360px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.technical-record-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  gap: 10px;
+  padding: 12px 18px;
+  background: rgb(var(--v-theme-surface));
+}
+
+.technical-record-drawer {
+  border-radius: 8px 0 0 8px;
+}
+
+.technical-record-drawer__header,
+.technical-record-drawer__body,
+.technical-record-drawer__actions {
+  padding: 16px;
+}
+
+.technical-record-drawer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.technical-record-drawer__context {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+}
+
+.technical-record-drawer__context span {
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.75rem;
+}
+
+.technical-record-drawer__context strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.technical-record-drawer__gates {
+  display: grid;
+  gap: 8px;
+}
+
+.technical-record-drawer-gate {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 24px 24px minmax(0, 1fr) auto 20px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+  color: inherit;
+  text-align: left;
+}
+
+.technical-record-drawer-gate:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+}
+
+.technical-record-drawer-gate__index {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  color: white;
+  background: #0b3a78;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.technical-record-drawer-gate strong,
+.technical-record-drawer-gate small {
+  display: block;
+}
+
+.technical-record-drawer-gate small {
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+.technical-record-drawer__actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: rgb(var(--v-theme-surface));
+}
+
+.technical-record-drawer__secondary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .release-result {
@@ -5080,9 +6678,165 @@ watch(
   padding: 14px;
 }
 
+.non-routine-dialog {
+  border-top: 4px solid rgb(var(--v-theme-warning));
+}
+
+.non-routine-dialog--critical {
+  border-top-color: rgb(var(--v-theme-error));
+}
+
+.non-routine-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.non-routine-sync {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.non-routine-body {
+  display: grid;
+  gap: 18px;
+}
+
+.non-routine-context {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+}
+
+.non-routine-context > div,
+.non-routine-context > .v-chip {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.non-routine-context span {
+  display: block;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.72rem;
+}
+
+.non-routine-context strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.non-routine-section-title {
+  color: #0b3a78;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.non-routine-critical-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-theme-error), 0.35);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-error), 0.04);
+}
+
+.non-routine-impact-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 150px)) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+}
+
+.non-routine-impact-preview span {
+  display: block;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.72rem;
+}
+
+.non-routine-impact-preview strong {
+  display: block;
+}
+
+.non-routine-impact-preview p {
+  margin: 0;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.non-routine-actions {
+  gap: 12px;
+  align-items: center;
+}
+
 @media (max-width: 960px) {
   .release-path,
-  .release-result {
+  .release-result,
+  .technical-record-banner,
+  .technical-record-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .technical-record-context,
+  .technical-record-cards,
+  .technical-record-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .technical-record-banner__cta {
+    justify-self: stretch;
+  }
+
+  .non-routine-context,
+  .non-routine-critical-fields,
+  .non-routine-impact-preview {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .technical-record-header,
+  .technical-record-header__actions,
+  .technical-record-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .technical-record-context,
+  .technical-record-cards,
+  .technical-record-info-grid,
+  .technical-record-drawer__context,
+  .technical-record-drawer__secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .technical-record-context__icon {
+    min-height: 64px;
+  }
+
+  .non-routine-header,
+  .non-routine-actions,
+  .non-routine-sync {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .non-routine-context,
+  .non-routine-critical-fields,
+  .non-routine-impact-preview {
     grid-template-columns: 1fr;
   }
 }
@@ -5092,16 +6846,22 @@ watch(
     visibility: hidden;
   }
 
-  .audit-pack,
-  .audit-pack * {
+  .technical-record-card,
+  .technical-record-card * {
     visibility: visible;
   }
 
-  .audit-pack {
+  .technical-record-card {
     position: absolute;
     inset: 0;
     max-width: none;
     padding: 0;
+  }
+
+  .technical-record-actions,
+  .technical-record-header__actions,
+  .technical-record-drawer {
+    display: none !important;
   }
 }
 </style>

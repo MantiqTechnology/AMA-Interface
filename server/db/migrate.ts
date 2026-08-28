@@ -1406,6 +1406,11 @@ const createStatements = [
     readiness_check_code TEXT,
     upload_id TEXT,
     document_type TEXT,
+    evidence_category TEXT NOT NULL DEFAULT 'OPERATIONAL',
+    source_party TEXT,
+    source_party_name TEXT,
+    received_at TEXT,
+    received_by_station_id TEXT REFERENCES stations(id),
     file_name TEXT NOT NULL,
     notes TEXT,
     uploaded_by_user_id TEXT NOT NULL,
@@ -1972,6 +1977,21 @@ export function runMigrations(sqlite: Database.Database) {
     ensureColumn(sqlite, 'flight_readiness_checks', 'invalidation_reason', 'TEXT');
     ensureColumn(sqlite, 'flight_readiness_checks', 'source_record_ids', 'TEXT');
     ensureColumn(sqlite, 'flight_readiness_checks', 'assurance_phase', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'flight_verification_evidence',
+      'evidence_category',
+      "TEXT NOT NULL DEFAULT 'OPERATIONAL'"
+    );
+    ensureColumn(sqlite, 'flight_verification_evidence', 'source_party', 'TEXT');
+    ensureColumn(sqlite, 'flight_verification_evidence', 'source_party_name', 'TEXT');
+    ensureColumn(sqlite, 'flight_verification_evidence', 'received_at', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'flight_verification_evidence',
+      'received_by_station_id',
+      'TEXT REFERENCES stations(id)'
+    );
     ensureColumn(sqlite, 'flight_operational_audit', 'before_version', 'INTEGER');
     ensureColumn(sqlite, 'flight_operational_audit', 'after_version', 'INTEGER');
     ensureColumn(sqlite, 'flight_manifests', 'version', 'INTEGER NOT NULL DEFAULT 1');
@@ -2538,6 +2558,49 @@ export function runMigrations(sqlite: Database.Database) {
     );
     ensureColumn(sqlite, 'maintenance_non_routine_findings', 'location', 'TEXT');
     ensureColumn(sqlite, 'maintenance_non_routine_findings', 'ata_chapter', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'detected_during',
+      "TEXT NOT NULL DEFAULT 'ACTIVE_WORK'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'operational_impact',
+      "TEXT NOT NULL DEFAULT 'UNASSESSED'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'finding_classification',
+      "TEXT NOT NULL DEFAULT 'UNASSESSED'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'mel_cdl_assessment',
+      "TEXT NOT NULL DEFAULT 'UNASSESSED'"
+    );
+    ensureColumn(sqlite, 'maintenance_non_routine_findings', 'immediate_action', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'aircraft_movement_prohibited',
+      'INTEGER NOT NULL DEFAULT 0'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'notify_maintenance_control',
+      'INTEGER NOT NULL DEFAULT 0'
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_non_routine_findings',
+      'requires_inspector_review',
+      'INTEGER NOT NULL DEFAULT 1'
+    );
     ensureColumn(
       sqlite,
       'maintenance_non_routine_findings',

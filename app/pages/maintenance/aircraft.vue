@@ -137,7 +137,6 @@ const filteredFleet = computed(() => {
             hide-details
             style="max-width: 320px"
           />
-
           <div style="width: 220px">
             <StationSelect
               v-model="filters.stationId"
@@ -146,7 +145,6 @@ const filteredFleet = computed(() => {
               hide-details
             />
           </div>
-
           <VSelect
             v-model="filters.serviceability"
             label="Serviceability"

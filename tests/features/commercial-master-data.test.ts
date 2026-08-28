@@ -465,4 +465,53 @@ describe('commercial master data services', () => {
       ])
     );
   });
+
+  it('evaluates the portfolio at a snapshot and returns real contract-source and renewal data', () => {
+    const historical = contractsSubsidies.overview({
+      search: '',
+      from: '2026-03-01',
+      to: '2026-04-01'
+    });
+    const overview = contractsSubsidies.overview();
+
+    expect(historical.consumedBudgetMinor).toBe('4200000000');
+    expect(overview.contractSourceMix.reduce((sum, item) => sum + item.percentage, 0)).toBeCloseTo(
+      100,
+      5
+    );
+    expect(overview.contractSourceMix.every((item) => item.count > 0)).toBe(true);
+    expect(overview.upcomingRenewals).toEqual(
+      [...overview.upcomingRenewals].sort(
+        (left, right) => left.daysLeft - right.daysLeft || left.code.localeCompare(right.code)
+      )
+    );
+    expect(overview.upcomingRenewals.every((item) => item.daysLeft >= 0)).toBe(true);
+  });
+
+  it('applies inclusive date boundaries to absorption, activity, and history feeds', () => {
+    const range = { search: '', from: '2026-06-30', to: '2026-06-30' };
+
+    expect(contractsSubsidies.absorption(range)).toHaveLength(2);
+    expect(contractsSubsidies.activity(range)).toHaveLength(2);
+    expect(contractsSubsidies.activity({ ...range, limit: 1 })).toHaveLength(1);
+    expect(contractsSubsidies.history(range)).toEqual([]);
+  });
+
+  it('filters snapshot lists by status and business type', () => {
+    const contracts = contractsSubsidies.contracts({
+      search: '',
+      status: 'ACTIVE',
+      type: 'CUSTOMER_CONTRACT'
+    });
+    const subsidies = contractsSubsidies.subsidies({
+      search: '',
+      status: 'ACTIVE',
+      type: 'PASSENGER'
+    });
+
+    expect(contracts).not.toHaveLength(0);
+    expect(contracts.every((item) => item.sourceType === 'CUSTOMER_CONTRACT')).toBe(true);
+    expect(subsidies).not.toHaveLength(0);
+    expect(subsidies.every((item) => item.serviceScope === 'PASSENGER')).toBe(true);
+  });
 });

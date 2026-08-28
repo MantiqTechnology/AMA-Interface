@@ -189,6 +189,74 @@ describe('OperationsMonitoringService', () => {
     sqlite.close();
   });
 
+  it('builds a network station dashboard with posted financials and pending cost exposure', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    services.accounting.postDemoEvents({ source: 'all' }, 'USR-FINANCE-REVIEWER');
+
+    const dashboard = services.operationalDashboards.stationNetworkDashboard({
+      period: 'THIS_MONTH',
+      anchorDate: '2026-07-15'
+    });
+    const posted = sqlite
+      .prepare(
+        `SELECT
+           COALESCE(SUM(CASE WHEN account.account_type = 'REVENUE'
+             THEN line.base_credit_idr - line.base_debit_idr ELSE 0 END), 0) AS revenue,
+           COALESCE(SUM(CASE WHEN account.account_type = 'EXPENSE'
+             THEN line.base_debit_idr - line.base_credit_idr ELSE 0 END), 0) AS cost
+         FROM journal_lines line
+         JOIN journal_entries journal ON journal.id = line.journal_entry_id
+         JOIN chart_of_accounts account ON account.id = line.account_id
+         WHERE journal.status = 'POSTED'
+           AND line.flight_id IS NOT NULL
+           AND journal.posting_date BETWEEN '2026-07-01' AND '2026-07-31T23:59:59.999Z'`
+      )
+      .get() as { revenue: number; cost: number };
+    const pendingExposure = sqlite
+      .prepare(
+        `SELECT COALESCE(SUM(cost.amount), 0) AS amount
+         FROM flight_station_costs cost
+         JOIN station_cost_statuses status ON status.id = cost.status_id
+         JOIN currencies currency ON currency.id = cost.currency_id
+         JOIN flight_operations flight ON flight.id = cost.flight_id
+         WHERE status.code IN ('DRAFT', 'SUBMITTED')
+           AND currency.currency_code = 'IDR'
+           AND flight.flight_date BETWEEN '2026-07-01' AND '2026-07-31'`
+      )
+      .get() as { amount: number };
+
+    expect(dashboard.meta).toMatchObject({
+      period: 'THIS_MONTH',
+      anchorDate: '2026-07-15',
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-31'
+    });
+    expect(dashboard.metrics.map((metric) => metric.key)).toEqual([
+      'TOTAL_FLIGHTS',
+      'ON_TIME_PERFORMANCE',
+      'FLIGHTS_AT_RISK',
+      'PENDING_VERIFICATION',
+      'PENDING_SERVICES',
+      'POSTED_MARGIN'
+    ]);
+    expect(dashboard.financial.actual).toMatchObject({
+      revenueMinor: posted.revenue,
+      costMinor: posted.cost,
+      marginMinor: posted.revenue - posted.cost,
+      currencyCode: 'IDR',
+      attributionMethod: 'POSTED_GL_DIMENSIONS'
+    });
+    expect(dashboard.financial.pendingCostExposureMinor).toBe(pendingExposure.amount);
+    expect(dashboard.financial.pendingCostExposureByCurrency).toContainEqual(
+      expect.objectContaining({ currencyCode: 'IDR', includedInIdrTotal: true })
+    );
+    expect(
+      dashboard.performance.stations.every((station) => station.href.includes('stationCode='))
+    ).toBe(true);
+
+    sqlite.close();
+  });
+
   it('preserves station and cohort filters in activity drill-downs and enforces list scope', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const selected = sqlite

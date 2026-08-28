@@ -188,3 +188,16 @@ test('station scope is enforced by the server', async ({ page }) => {
   const body = await denied.json();
   expect(body.error.code).toBe('FLIGHT_STATION_FORBIDDEN');
 });
+
+test('Director can view the station network dashboard', async ({ context, page }) => {
+  await context.addCookies([
+    { name: 'ama_demo_role', value: 'Director', url: 'http://localhost:3100' }
+  ]);
+  await page.goto('/flights/station-operations/network?period=THIS_MONTH&anchorDate=2026-07-17', {
+    waitUntil: 'networkidle'
+  });
+
+  await expect(page.getByRole('heading', { name: 'Network Dashboard' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible();
+  await expect(page.getByText('Flight berisiko', { exact: true })).toBeVisible();
+});

@@ -164,6 +164,14 @@ describe('Maintenance Demo-v2 controls', () => {
       workPackageId: 'mwp-mrov1-release-ready',
       currentWorkPackage: expect.objectContaining({ packageNumber: 'MWP-MROV1-RTS' }),
       releaseEligibility: expect.objectContaining({ eligible: true }),
+      decisionSummary: expect.objectContaining({
+        status: 'READY_FOR_REVIEW',
+        canIssueRelease: true
+      }),
+      documentIntegrity: expect.objectContaining({
+        status: expect.stringMatching(/VERIFIED|PENDING_SNAPSHOT/),
+        shortHash: expect.any(String)
+      }),
       evidence: expect.objectContaining({
         jobCards: expect.any(Array),
         materialTraceability: expect.any(Array),
@@ -174,6 +182,27 @@ describe('Maintenance Demo-v2 controls', () => {
     });
     expect(record.evidence.jobCards.length).toBeGreaterThan(0);
     expect(record.evidence.approvedDataReferences.length).toBeGreaterThan(0);
+    expect(record.releaseGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'MANDATORY_JOB_CARD', status: 'COMPLETE' }),
+        expect.objectContaining({ key: 'APPROVED_MAINTENANCE_DATA', status: 'COMPLETE' })
+      ])
+    );
+    expect(record.completenessCards.length).toBe(5);
+
+    const blocked = services.maintenance.getTechnicalRecordPackage('mwp-mrov21-conflict');
+    expect(blocked.decisionSummary).toMatchObject({
+      status: 'BLOCKED',
+      canIssueRelease: false
+    });
+    expect(blocked.releaseGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'MANDATORY_JOB_CARD', status: 'BLOCKED' }),
+        expect.objectContaining({ key: 'SOURCE_DEFECT_REVIEW', status: 'WARNING' }),
+        expect.objectContaining({ key: 'FACILITY_SLOT', status: 'WARNING' })
+      ])
+    );
+    expect(blocked.nextRequiredActions.length).toBeGreaterThan(0);
 
     sqlite.close();
   });

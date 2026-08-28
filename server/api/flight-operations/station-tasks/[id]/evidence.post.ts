@@ -3,6 +3,8 @@ import { getDemoActorContext, requireDemoPermission } from '#server/utils/auth';
 import { getServices } from '#server/utils/services';
 import { parseBody, parseParams } from '#server/utils/validation';
 import { getUpload } from '#server/utils/upload-storage';
+import { requireUploadAccess } from '#server/utils/upload-access';
+import { DomainError } from '#server/utils/errors';
 import {
   addStationTaskEvidenceBodySchema,
   stationTaskIdParamsSchema
@@ -13,7 +15,11 @@ export default defineApiEventHandler(async (event) => {
   const body = await parseBody(event, addStationTaskEvidenceBodySchema);
   await requireDemoPermission(event, 'station.evidence.add');
   if (body.uploadId) {
-    await getUpload(body.uploadId);
+    const upload = await getUpload(body.uploadId);
+    await requireUploadAccess(event, upload);
+    if (upload.status !== 'DRAFT') {
+      throw new DomainError('UPLOAD_ALREADY_ATTACHED', 'Select a new upload draft.', 409);
+    }
   }
 
   const services = getServices();

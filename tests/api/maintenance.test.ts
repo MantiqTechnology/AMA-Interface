@@ -161,6 +161,24 @@ describe('maintenance command-center APIs', () => {
         })
       ])
     );
+    expect(response.data.priorityWorkPackages.length).toBeGreaterThan(0);
+    expect(response.data.topPriorityItem).toEqual(
+      expect.objectContaining({
+        id: response.data.priorityWorkPackages[0]!.id,
+        bucket: expect.any(String)
+      })
+    );
+    expect(response.data.releaseReadinessMix).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'WAITING_MATERIAL', count: expect.any(Number) }),
+        expect.objectContaining({ key: 'READY_TO_RELEASE', count: expect.any(Number) })
+      ])
+    );
+    expect(response.data.releaseReadinessMix.reduce((sum, item) => sum + item.count, 0)).toBe(
+      response.data.summary.activeWorkPackages
+    );
+    expect(response.data.onTimePerformancePct).toEqual(expect.any(Number));
+    expect(response.data.dueInspectionTasks).toEqual(expect.any(Array));
     expect(response.data.authorizationNotice).toContain('PT AMA authorization verified');
   });
 
@@ -176,6 +194,14 @@ describe('maintenance command-center APIs', () => {
         expect.objectContaining({
           registrationNumber: 'PK-MRB',
           serviceabilityStatus: 'UNSERVICEABLE'
+        })
+      ])
+    );
+    expect(manager.data.stations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stationCode: 'DJJ',
+          stationName: expect.any(String)
         })
       ])
     );
@@ -505,9 +531,16 @@ describe('maintenance command-center APIs', () => {
     if (!technicalRecord.ok) throw new Error(JSON.stringify(technicalRecord.error));
     expect(technicalRecord.data).toMatchObject({
       releaseId: released.data.releaseId,
+      decisionSummary: expect.objectContaining({
+        status: 'RELEASED',
+        canIssueRelease: false
+      }),
       releaseSnapshot: expect.objectContaining({
         releaseId: released.data.releaseId,
         eligible: true
+      }),
+      documentIntegrity: expect.objectContaining({
+        shortHash: expect.any(String)
       }),
       evidence: expect.objectContaining({
         jobCards: expect.any(Array),
@@ -535,11 +568,18 @@ describe('maintenance command-center APIs', () => {
     expect(authorized.data.releaseEligibility).toMatchObject({
       workPackageId: 'mwp-mrov1-release-ready'
     });
+    expect(authorized.data.releaseGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'MANDATORY_JOB_CARD' }),
+        expect.objectContaining({ key: 'TRACEABILITY' })
+      ])
+    );
+    expect(authorized.data.completenessCards.length).toBe(5);
 
     const denied = await $fetch<ApiResponse<unknown>>(
       '/api/maintenance/work-packages/mwp-mrov1-release-ready/technical-record',
       {
-        headers: { cookie: 'ama_demo_role=Employee' },
+        headers: { cookie: 'ama_demo_role=Inventory%20Controller' },
         ignoreResponseError: true
       }
     );

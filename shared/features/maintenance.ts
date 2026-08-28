@@ -358,6 +358,41 @@ export const maintenanceDeferredCloseSchema = z.object({
 
 export const maintenanceNonRoutineSeveritySchema = z.enum(['LOW', 'NORMAL', 'HIGH', 'AOG']);
 
+export const maintenanceNonRoutineDetectedDuringSchema = z.enum([
+  'ACTIVE_WORK',
+  'INSPECTION',
+  'REMOVAL',
+  'INSTALLATION',
+  'FUNCTIONAL_TEST',
+  'OPERATIONAL_CHECK'
+]);
+
+export const maintenanceNonRoutineOperationalImpactSchema = z.enum([
+  'UNASSESSED',
+  'NO_RELEASE_IMPACT',
+  'MAINTENANCE_ONLY',
+  'OPERATIONAL_LIMITATION',
+  'MEL_CDL_CANDIDATE',
+  'GROUNDING_AOG'
+]);
+
+export const maintenanceNonRoutineClassificationSchema = z.enum([
+  'UNASSESSED',
+  'SAFETY_CRITICAL',
+  'GROUNDING',
+  'MEL_CDL_CANDIDATE',
+  'OPERATIONAL_LIMITATION',
+  'MAINTENANCE_ONLY',
+  'COSMETIC'
+]);
+
+export const maintenanceNonRoutineMelCdlAssessmentSchema = z.enum([
+  'UNASSESSED',
+  'CANDIDATE',
+  'NOT_APPLICABLE',
+  'APPROVED_FOR_DEFER'
+]);
+
 export const maintenanceNonRoutineDispositionSchema = z.enum([
   'CORRECTIVE_WORK_REQUIRED',
   'NO_ACTION'
@@ -370,6 +405,14 @@ export const createNonRoutineFindingSchema = z.object({
   severity: maintenanceNonRoutineSeveritySchema.optional().default('NORMAL'),
   location: z.preprocess(emptyToNull, z.string().trim().max(160).nullable()).optional(),
   ataChapter: z.preprocess(emptyToNull, z.string().trim().max(20).nullable()).optional(),
+  detectedDuring: maintenanceNonRoutineDetectedDuringSchema.optional().default('ACTIVE_WORK'),
+  operationalImpact: maintenanceNonRoutineOperationalImpactSchema.optional().default('UNASSESSED'),
+  findingClassification: maintenanceNonRoutineClassificationSchema.optional().default('UNASSESSED'),
+  melCdlAssessment: maintenanceNonRoutineMelCdlAssessmentSchema.optional().default('UNASSESSED'),
+  immediateAction: z.preprocess(emptyToNull, z.string().trim().max(2000).nullable()).optional(),
+  aircraftMovementProhibited: z.boolean().optional().default(false),
+  notifyMaintenanceControl: z.boolean().optional().default(false),
+  requiresInspectorReview: z.boolean().optional().default(true),
   immediateSafetyConcern: z.boolean().optional().default(false),
   evidenceReferences: evidenceReferencesSchema,
   idempotencyKey: z.string().trim().min(8).max(200).optional()
@@ -473,7 +516,7 @@ export type MaintenanceReworkSignoffInput = z.infer<typeof maintenanceReworkSign
 export type MaintenanceReleaseInput = z.infer<typeof maintenanceReleaseSchema>;
 export type MaintenanceDefectAssessmentInput = z.input<typeof maintenanceDefectAssessmentSchema>;
 export type MaintenanceDeferredCloseInput = z.infer<typeof maintenanceDeferredCloseSchema>;
-export type CreateNonRoutineFindingInput = z.infer<typeof createNonRoutineFindingSchema>;
+export type CreateNonRoutineFindingInput = z.input<typeof createNonRoutineFindingSchema>;
 export type AssessNonRoutineFindingInput = z.infer<typeof assessNonRoutineFindingSchema>;
 export type CreateCorrectiveJobCardFromFindingInput = z.infer<
   typeof createCorrectiveJobCardFromFindingSchema
@@ -591,6 +634,33 @@ export type MaintenanceNonRoutineFindingDto = {
   severity: 'LOW' | 'NORMAL' | 'HIGH' | 'AOG';
   location: string | null;
   ataChapter: string | null;
+  detectedDuring:
+    | 'ACTIVE_WORK'
+    | 'INSPECTION'
+    | 'REMOVAL'
+    | 'INSTALLATION'
+    | 'FUNCTIONAL_TEST'
+    | 'OPERATIONAL_CHECK';
+  operationalImpact:
+    | 'UNASSESSED'
+    | 'NO_RELEASE_IMPACT'
+    | 'MAINTENANCE_ONLY'
+    | 'OPERATIONAL_LIMITATION'
+    | 'MEL_CDL_CANDIDATE'
+    | 'GROUNDING_AOG';
+  findingClassification:
+    | 'UNASSESSED'
+    | 'SAFETY_CRITICAL'
+    | 'GROUNDING'
+    | 'MEL_CDL_CANDIDATE'
+    | 'OPERATIONAL_LIMITATION'
+    | 'MAINTENANCE_ONLY'
+    | 'COSMETIC';
+  melCdlAssessment: 'UNASSESSED' | 'CANDIDATE' | 'NOT_APPLICABLE' | 'APPROVED_FOR_DEFER';
+  immediateAction: string | null;
+  aircraftMovementProhibited: boolean;
+  notifyMaintenanceControl: boolean;
+  requiresInspectorReview: boolean;
   immediateSafetyConcern: boolean;
   evidenceReferences: string[];
   status: 'OPEN' | 'ADDED_TO_SCOPE' | 'DEFERRED' | 'CLOSED';
@@ -671,6 +741,69 @@ export type MaintenanceReleaseEligibilityDto = {
   eligible: boolean;
   blockers: MaintenanceEligibilityBlockerDto[];
   warnings: MaintenanceEligibilityBlockerDto[];
+};
+
+export type MaintenanceTechnicalRecordDecisionStatus =
+  'BLOCKED' | 'READY_FOR_REVIEW' | 'RELEASED' | 'INCOMPLETE';
+
+export type MaintenanceTechnicalRecordGateStatus =
+  'COMPLETE' | 'BLOCKED' | 'WARNING' | 'MISSING' | 'NOT_APPLICABLE' | 'UNAVAILABLE';
+
+export type MaintenanceTechnicalRecordGateDto = {
+  key:
+    | 'MANDATORY_JOB_CARD'
+    | 'AMT_SIGNOFF'
+    | 'INDEPENDENT_INSPECTION'
+    | 'APPROVED_MAINTENANCE_DATA'
+    | 'SOURCE_DEFECT_REVIEW'
+    | 'TRACEABILITY'
+    | 'FACILITY_SLOT';
+  label: string;
+  status: MaintenanceTechnicalRecordGateStatus;
+  badge: string;
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  count: number;
+  summary: string;
+  nextAction: string | null;
+  blockers: MaintenanceEligibilityBlockerDto[];
+};
+
+export type MaintenanceTechnicalRecordCompletenessCardDto = {
+  key: string;
+  label: string;
+  value: string;
+  helper: string;
+  status: MaintenanceTechnicalRecordGateStatus;
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+};
+
+export type MaintenanceTechnicalRecordDecisionSummaryDto = {
+  status: MaintenanceTechnicalRecordDecisionStatus;
+  title: string;
+  subtitle: string;
+  serviceability: string;
+  serviceabilityLabel: string;
+  criticalBlockerCount: number;
+  canIssueRelease: boolean;
+  disabledReason: string | null;
+  lastValidatedAt: string;
+};
+
+export type MaintenanceTechnicalRecordIntegrityDto = {
+  status: 'VERIFIED' | 'PENDING_SNAPSHOT' | 'UNAVAILABLE';
+  label: string;
+  manifestHash: string | null;
+  shortHash: string | null;
+  generatedAt: string;
+  snapshotLabel: string;
+  verifiedAt: string | null;
+};
+
+export type MaintenanceTechnicalRecordFreshnessDto = {
+  generatedAt: string;
+  sourceUpdatedAt: string;
+  mode: 'ONLINE_LATEST_SNAPSHOT' | 'LIVE_PREVIEW';
+  label: string;
 };
 
 export type MaintenanceApprovedDataDocumentDto = {
@@ -1055,6 +1188,88 @@ export type MaintenanceShiftHandoverDto = {
   acknowledgedAt: string | null;
 };
 
+export type MaintenanceFacilityReadinessGateDto = {
+  key: 'MEL' | 'JOB_CARDS' | 'GSE' | 'MANPOWER' | 'SHIFT_HANDOVER';
+  label: string;
+  status: 'COMPLETE' | 'PENDING' | 'BLOCKED' | 'NOT_REQUIRED';
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  count: number;
+  summary: string;
+  nextAction: string | null;
+  blockers: MaintenanceEligibilityBlockerDto[];
+};
+
+export type MaintenanceFacilityWorkflowStepDto = {
+  key:
+    | 'MOVE_IN_REQUESTED'
+    | 'IN_BAY_CONFIRMED'
+    | 'MAINTENANCE_IN_PROGRESS'
+    | 'READY_MOVE_OUT'
+    | 'MOVE_OUT'
+    | 'HAND_BACK';
+  step: number;
+  label: string;
+  status: 'COMPLETE' | 'CURRENT' | 'PENDING' | 'DISABLED';
+  timestamp: string | null;
+  helper: string | null;
+  disabledReason: string | null;
+};
+
+export type MaintenanceFacilityRecentActivityDto = {
+  id: string;
+  occurredAt: string;
+  title: string;
+  detail: string;
+  actorRole: string;
+};
+
+export type MaintenanceHandbackReadinessDto = {
+  slotId: string;
+  workPackageId: string;
+  status: 'READY' | 'BLOCKED';
+  canRequestHandback: boolean;
+  disabledReason: string | null;
+  blockerCount: number;
+  nextActions: string[];
+  gates: MaintenanceFacilityReadinessGateDto[];
+};
+
+export type MaintenanceFacilityOperationDto = {
+  slotId: string;
+  workPackageId: string;
+  packageNumber: string;
+  workPackageTitle: string;
+  workPackageStatus: MaintenanceWorkPackageStatus;
+  aircraftId: string;
+  aircraftRegistrationNumber: string;
+  aircraftImageUrl: string | null;
+  aircraftType: string | null;
+  aircraftModel: string | null;
+  priority: MaintenanceWorkPackageDto['priority'];
+  riskLabel: string | null;
+  stationCode: string;
+  stationName: string;
+  stationTimezone: string;
+  facilityName: string;
+  bayCode: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  lastSyncedAt: string;
+  custodyStatus: MaintenanceAircraftCustodyStatus | MaintenanceSlotStatus;
+  readinessStatus: MaintenanceReadinessDimensionStatus;
+  counts: {
+    releaseBlockers: number;
+    melOpen: number;
+    incompleteJobCards: number;
+    gsePending: number;
+    manpowerRequired: number;
+    manpowerAssigned: number;
+  };
+  handbackReadiness: MaintenanceHandbackReadinessDto;
+  workflowSteps: MaintenanceFacilityWorkflowStepDto[];
+  recentActivity: MaintenanceFacilityRecentActivityDto[];
+};
+
 export type MaintenanceFacilityOperationsDto = {
   generatedAt: string;
   facilities: MaintenanceFacilityDto[];
@@ -1066,6 +1281,7 @@ export type MaintenanceFacilityOperationsDto = {
   staging: MaintenanceFacilityResourceStagingDto[];
   shifts: MaintenanceFacilityShiftDto[];
   handovers: MaintenanceShiftHandoverDto[];
+  operations: MaintenanceFacilityOperationDto[];
 };
 
 export type MaintenanceReadinessPanelDto = {
@@ -1138,6 +1354,12 @@ export type MaintenanceTechnicalRecordPackageDto = {
   releaseId: string | null;
   generatedAt: string;
   disclaimer: string;
+  decisionSummary: MaintenanceTechnicalRecordDecisionSummaryDto;
+  completenessCards: MaintenanceTechnicalRecordCompletenessCardDto[];
+  releaseGates: MaintenanceTechnicalRecordGateDto[];
+  nextRequiredActions: string[];
+  documentIntegrity: MaintenanceTechnicalRecordIntegrityDto;
+  freshness: MaintenanceTechnicalRecordFreshnessDto;
   currentWorkPackage: MaintenanceWorkPackageDto;
   releaseEligibility: MaintenanceReleaseEligibilityDto;
   releaseSnapshot: {
@@ -1316,6 +1538,57 @@ export type MaintenanceOperationalAttentionDto = {
   updatedAt: string;
 };
 
+export type MaintenancePriorityBucket =
+  'AOG' | 'RELEASE_BLOCKER' | 'OVERDUE' | 'DUE_TODAY' | 'UPCOMING' | 'NORMAL';
+
+export type MaintenancePriorityWorkPackageDto = {
+  id: string;
+  packageNumber: string;
+  title: string;
+  aircraftId: string;
+  aircraftRegistrationNumber: string;
+  aircraftImageUrl: string | null;
+  aircraftType: string | null;
+  aircraftModel: string | null;
+  stationCode: string | null;
+  issue: string;
+  owner: string;
+  nextAction: string;
+  priority: MaintenanceWorkPackageDto['priority'];
+  bucket: MaintenancePriorityBucket;
+  blockerCount: number;
+  blockerCategories: string[];
+  status: MaintenanceWorkPackageStatus;
+  dueAt: string | null;
+  slaLabel: string;
+  updatedAt: string;
+};
+
+export type MaintenanceReleaseReadinessMixDto = {
+  key: 'WAITING_TECHNICAL' | 'WAITING_MATERIAL' | 'WAITING_DOCUMENT' | 'READY_TO_RELEASE';
+  label: string;
+  count: number;
+};
+
+export type MaintenanceDueInspectionTaskDto = {
+  id: string;
+  requirementId: string;
+  aircraftId: string;
+  aircraftRegistrationNumber: string;
+  aircraftImageUrl: string | null;
+  stationCode: string | null;
+  taskCode: string;
+  taskTitle: string;
+  taskType: string;
+  description: string;
+  dueAt: string | null;
+  dueBasisLabel: string;
+  usageLabel: string;
+  remainingLabel: string;
+  status: DueControlStatus;
+  planningStatus: MaintenanceDueStatusDto['planningStatus'];
+};
+
 export type MaintenanceCommandCenterDto = {
   generatedAt: string;
   authorizationNotice: string;
@@ -1339,6 +1612,11 @@ export type MaintenanceCommandCenterDto = {
     approvedDataBlockers: number;
     reworkRequired: number;
   };
+  topPriorityItem: MaintenancePriorityWorkPackageDto | null;
+  priorityWorkPackages: MaintenancePriorityWorkPackageDto[];
+  releaseReadinessMix: MaintenanceReleaseReadinessMixDto[];
+  onTimePerformancePct: number;
+  dueInspectionTasks: MaintenanceDueInspectionTaskDto[];
   fleet: MaintenanceAircraftStatusSummaryDto[];
   defects: MaintenanceDefectSummaryDto[];
   workPackages: MaintenanceWorkPackageDto[];
@@ -1385,6 +1663,13 @@ export type MaintenanceSelectorDataDto = {
     technicalEligibility: 'ELIGIBLE' | 'RESTRICTED' | 'BLOCKED';
     currentStationCode: string | null;
     updatedAt: string;
+  }>;
+  stations: Array<{
+    id: string;
+    stationCode: string;
+    stationName: string;
+    city: string | null;
+    timezone: string | null;
   }>;
   eligibleDefects: MaintenanceDefectSummaryDto[];
   vendors: Array<{

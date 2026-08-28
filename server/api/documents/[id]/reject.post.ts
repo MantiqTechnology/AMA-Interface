@@ -11,9 +11,15 @@ export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'document.verify');
   const { id } = parseParams(event, idParamSchema);
   const document = await getDocument(id);
-  requireDocumentOwnerAccess(event, document.ownerType, document.ownerId);
+  requireDocumentOwnerAccess(
+    event,
+    document.ownerType,
+    document.ownerId,
+    document.visibility,
+    document.documentType
+  );
   const body = await parseBody(event, rejectDocumentBodySchema);
-  const rejected = await rejectDocument(id, body.rejectionReason);
+  const rejected = await rejectDocument(id, body.rejectionReason, getDemoActorId(event));
   invalidateFlightDocumentReadiness(document.ownerType, document.ownerId, getDemoActorId(event));
   return rejected;
 });

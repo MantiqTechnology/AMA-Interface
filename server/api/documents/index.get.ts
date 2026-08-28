@@ -10,6 +10,12 @@ export default defineApiEventHandler(async (event) => {
   const query = parseQuery(event, documentListQuerySchema);
   const documents = await listDocuments(query);
   return documents.filter((document) =>
-    canAccessDocumentOwner(event, document.ownerType, document.ownerId)
+    canAccessDocumentOwner(
+      event,
+      document.ownerType,
+      document.ownerId,
+      document.visibility,
+      document.documentType
+    )
   );
 });

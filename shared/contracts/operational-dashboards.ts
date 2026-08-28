@@ -140,3 +140,67 @@ export type FlightControlDashboardDto = {
   }>;
   actions: DashboardChart<FlightControlAction[]>;
 };
+
+export type StationNetworkAttention = {
+  id: string;
+  stationCode: string;
+  stationName: string;
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  detail: string;
+  href: string;
+};
+
+export type StationNetworkPerformance = {
+  stationId: string;
+  stationCode: string;
+  stationName: string;
+  flights: number;
+  onTimePercent: number | null;
+  eligibleDepartures: number;
+  flightsAtRisk: number;
+  pendingVerification: number;
+  pendingServices: number;
+  href: string;
+};
+
+export type StationNetworkFinancialPerformance = {
+  stationId: string;
+  stationCode: string;
+  stationName: string;
+  revenueMinor: number;
+  costMinor: number;
+  marginMinor: number;
+  marginPercent: number | null;
+  href: string;
+};
+
+export type StationNetworkDashboardDto = {
+  meta: DashboardMeta;
+  metrics: DashboardMetric[];
+  overview: {
+    attention: StationNetworkAttention[];
+  };
+  performance: {
+    activity: DashboardSeries[];
+    stations: StationNetworkPerformance[];
+  };
+  financial: {
+    actual: {
+      revenueMinor: number;
+      costMinor: number;
+      marginMinor: number;
+      marginPercent: number | null;
+      currencyCode: 'IDR';
+      attributionMethod: 'POSTED_GL_DIMENSIONS';
+      asOf: string;
+    };
+    pendingCostExposureMinor: number;
+    pendingCostExposureByCurrency: Array<{
+      currencyCode: string;
+      amountMinor: number;
+      includedInIdrTotal: boolean;
+    }>;
+    stations: StationNetworkFinancialPerformance[];
+  };
+};

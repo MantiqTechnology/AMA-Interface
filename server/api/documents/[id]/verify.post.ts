@@ -10,8 +10,14 @@ export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'document.verify');
   const { id } = parseParams(event, idParamSchema);
   const document = await getDocument(id);
-  requireDocumentOwnerAccess(event, document.ownerType, document.ownerId);
-  const verified = await verifyDocument(id);
+  requireDocumentOwnerAccess(
+    event,
+    document.ownerType,
+    document.ownerId,
+    document.visibility,
+    document.documentType
+  );
+  const verified = await verifyDocument(id, getDemoActorId(event));
   invalidateFlightDocumentReadiness(document.ownerType, document.ownerId, getDemoActorId(event));
   return verified;
 });

@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3';
-import type { DocumentOwnerType } from '../../shared/contracts/documents';
+import type { DocumentOwnerType, DocumentVisibility } from '../../shared/contracts/documents';
 import { getDbClient } from '../db/client';
 import { getDemoStationScope, hasDemoPermission } from './auth';
 import { DomainError, notFound } from './errors';
@@ -13,12 +13,13 @@ const inventoryOwnerTypes = new Set<DocumentOwnerType>([
 ]);
 
 type OwnerAccess = {
-  inventoryOwner: boolean;
   exists: boolean;
   stationCodes: string[];
+  globalOnly: boolean;
+  permissions: string[];
 };
 
-function stationCodes(sql: string, ownerId: string) {
+function queryStationCodes(sql: string, ownerId: string) {
   const bindings = Array.from({ length: (sql.match(/\?/g) ?? []).length }, () => ownerId);
   return (
     getDbClient()
@@ -29,111 +30,89 @@ function stationCodes(sql: string, ownerId: string) {
     .filter((code): code is string => Boolean(code));
 }
 
-export function resolveDocumentOwnerAccess(
-  ownerType: DocumentOwnerType,
-  ownerId: string
-): OwnerAccess {
-  if (ownerType === 'corporate_asset') {
-    const sqlite = getDbClient().sqlite;
-    const row = sqlite
-      .prepare(
-        `SELECT station.station_code FROM managed_assets asset
-      LEFT JOIN stations station ON station.id = asset.station_id WHERE asset.id = ?`
-      )
-      .get(ownerId) as { station_code: string | null } | undefined;
-    return {
-      inventoryOwner: true,
-      exists: Boolean(row),
-      stationCodes: row?.station_code ? [row.station_code] : []
-    };
-  }
-  if (!inventoryOwnerTypes.has(ownerType)) {
-    return { inventoryOwner: false, exists: true, stationCodes: [] };
-  }
-  const sqlite = getDbClient().sqlite;
+function exists(table: string, ownerId: string) {
+  const allowedTables = new Set([
+    'aircraft',
+    'crews',
+    'stations',
+    'vendors',
+    'customers',
+    'agents',
+    'rate_cards',
+    'contract_subsidy_programs',
+    'routes',
+    'flight_operations',
+    'inventory_parts',
+    'inventory_lots',
+    'inventory_serialized_parts',
+    'inventory_purchase_orders',
+    'inventory_goods_receipts'
+  ]);
+  if (!allowedTables.has(table)) return false;
+  return Boolean(getDbClient().sqlite.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(ownerId));
+}
+
+function inventoryAccess(ownerType: DocumentOwnerType, ownerId: string): OwnerAccess {
   if (ownerType === 'inventory_part') {
-    const exists = Boolean(
-      sqlite.prepare(`SELECT 1 FROM inventory_parts WHERE id = ?`).get(ownerId)
-    );
     return {
-      inventoryOwner: true,
-      exists,
-      stationCodes: stationCodes(
+      exists: exists('inventory_parts', ownerId),
+      globalOnly: false,
+      permissions: ['inventory.read'],
+      stationCodes: queryStationCodes(
         `SELECT DISTINCT station_code FROM (
-           SELECT station.station_code FROM inventory_reorder_rules rule
-           JOIN inventory_warehouses warehouse ON warehouse.id = rule.warehouse_id
-           JOIN stations station ON station.id = warehouse.station_id WHERE rule.part_id = ?
-           UNION
-           SELECT station.station_code FROM inventory_stock_balances balance
-           JOIN inventory_bins bin ON bin.id = balance.bin_id
-           JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
-           JOIN stations station ON station.id = warehouse.station_id WHERE balance.part_id = ?
-           UNION
-           SELECT station.station_code FROM inventory_purchase_request_lines line
-           JOIN inventory_purchase_requests request ON request.id = line.purchase_request_id
-           JOIN stations station ON station.id = request.station_id WHERE line.part_id = ?
-         )`,
+          SELECT station.station_code FROM inventory_reorder_rules rule
+          JOIN inventory_warehouses warehouse ON warehouse.id = rule.warehouse_id
+          JOIN stations station ON station.id = warehouse.station_id WHERE rule.part_id = ?
+          UNION
+          SELECT station.station_code FROM inventory_stock_balances balance
+          JOIN inventory_bins bin ON bin.id = balance.bin_id
+          JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
+          JOIN stations station ON station.id = warehouse.station_id WHERE balance.part_id = ?
+        )`,
         ownerId
       )
     };
   }
   if (ownerType === 'inventory_lot') {
-    const exists = Boolean(
-      sqlite.prepare(`SELECT 1 FROM inventory_lots WHERE id = ?`).get(ownerId)
-    );
     return {
-      inventoryOwner: true,
-      exists,
-      stationCodes: stationCodes(
-        `SELECT DISTINCT station_code FROM (
-           SELECT station.station_code FROM inventory_stock_balances balance
-           JOIN inventory_bins bin ON bin.id = balance.bin_id
-           JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
-           JOIN stations station ON station.id = warehouse.station_id WHERE balance.lot_id = ?
-           UNION
-           SELECT station.station_code FROM inventory_goods_receipt_lines line
-           JOIN inventory_goods_receipts receipt ON receipt.id = line.goods_receipt_id
-           JOIN inventory_warehouses warehouse ON warehouse.id = receipt.warehouse_id
-           JOIN stations station ON station.id = warehouse.station_id WHERE line.lot_id = ?
-         )`,
+      exists: exists('inventory_lots', ownerId),
+      globalOnly: false,
+      permissions: ['inventory.read'],
+      stationCodes: queryStationCodes(
+        `SELECT DISTINCT station.station_code FROM inventory_stock_balances balance
+         JOIN inventory_bins bin ON bin.id = balance.bin_id
+         JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
+         JOIN stations station ON station.id = warehouse.station_id WHERE balance.lot_id = ?`,
         ownerId
       )
     };
   }
   if (ownerType === 'inventory_serial') {
-    const exists = Boolean(
-      sqlite.prepare(`SELECT 1 FROM inventory_serialized_parts WHERE id = ?`).get(ownerId)
-    );
     return {
-      inventoryOwner: true,
-      exists,
-      stationCodes: stationCodes(
+      exists: exists('inventory_serialized_parts', ownerId),
+      globalOnly: false,
+      permissions: ['inventory.read'],
+      stationCodes: queryStationCodes(
         `SELECT DISTINCT station_code FROM (
-           SELECT station.station_code FROM inventory_serialized_parts serial
-           JOIN inventory_bins bin ON bin.id = serial.bin_id
-           JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
-           JOIN stations station ON station.id = warehouse.station_id WHERE serial.id = ?
-           UNION
-           SELECT station.station_code FROM inventory_serialized_parts serial
-           JOIN aircraft aircraft_record ON aircraft_record.id = serial.aircraft_id
-           JOIN stations station ON station.id = aircraft_record.current_station_id WHERE serial.id = ?
-           UNION
-           SELECT station.station_code FROM inventory_repair_orders repair
-           JOIN stations station ON station.id = repair.station_id
-           WHERE repair.serial_id = ? AND repair.status NOT IN ('CLOSED', 'CANCELLED')
-         )`,
+          SELECT station.station_code FROM inventory_serialized_parts serial
+          JOIN inventory_bins bin ON bin.id = serial.bin_id
+          JOIN inventory_warehouses warehouse ON warehouse.id = bin.warehouse_id
+          JOIN stations station ON station.id = warehouse.station_id WHERE serial.id = ?
+          UNION
+          SELECT station.station_code FROM inventory_serialized_parts serial
+          JOIN aircraft aircraft_record ON aircraft_record.id = serial.aircraft_id
+          JOIN stations station ON station.id = aircraft_record.current_station_id WHERE serial.id = ?
+        )`,
         ownerId
       )
     };
   }
   if (ownerType === 'purchase_order') {
-    const exists = Boolean(
-      sqlite.prepare(`SELECT 1 FROM inventory_purchase_orders WHERE id = ?`).get(ownerId)
-    );
     return {
-      inventoryOwner: true,
-      exists,
-      stationCodes: stationCodes(
+      exists: exists('inventory_purchase_orders', ownerId),
+      globalOnly: false,
+      permissions: ['inventory.read'],
+      stationCodes: queryStationCodes(
         `SELECT station.station_code FROM inventory_purchase_orders orders
          JOIN inventory_purchase_requests request ON request.id = orders.purchase_request_id
          JOIN stations station ON station.id = request.station_id WHERE orders.id = ?`,
@@ -141,13 +120,11 @@ export function resolveDocumentOwnerAccess(
       )
     };
   }
-  const exists = Boolean(
-    sqlite.prepare(`SELECT 1 FROM inventory_goods_receipts WHERE id = ?`).get(ownerId)
-  );
   return {
-    inventoryOwner: true,
-    exists,
-    stationCodes: stationCodes(
+    exists: exists('inventory_goods_receipts', ownerId),
+    globalOnly: false,
+    permissions: ['inventory.read'],
+    stationCodes: queryStationCodes(
       `SELECT station.station_code FROM inventory_goods_receipts receipt
        JOIN inventory_warehouses warehouse ON warehouse.id = receipt.warehouse_id
        JOIN stations station ON station.id = warehouse.station_id WHERE receipt.id = ?`,
@@ -156,40 +133,181 @@ export function resolveDocumentOwnerAccess(
   };
 }
 
+export function resolveDocumentOwnerAccess(
+  ownerType: DocumentOwnerType,
+  ownerId: string
+): OwnerAccess {
+  if (inventoryOwnerTypes.has(ownerType)) return inventoryAccess(ownerType, ownerId);
+  if (ownerType === 'aircraft') {
+    return {
+      exists: exists('aircraft', ownerId),
+      globalOnly: false,
+      permissions: ['aircraft.airworthiness.read', 'maintenance.package.read', 'flight.read'],
+      stationCodes: queryStationCodes(
+        `SELECT station.station_code FROM aircraft record
+         LEFT JOIN stations station ON station.id = record.current_station_id WHERE record.id = ?`,
+        ownerId
+      )
+    };
+  }
+  if (ownerType === 'aircraft_type') {
+    const row = getDbClient()
+      .sqlite.prepare('SELECT 1 FROM aircraft WHERE aircraft_type = ? OR model = ?')
+      .get(ownerId, ownerId);
+    return {
+      exists: Boolean(row),
+      globalOnly: true,
+      permissions: ['aircraft.airworthiness.read', 'maintenance.package.read'],
+      stationCodes: []
+    };
+  }
+  if (ownerType === 'personnel') {
+    return {
+      exists: exists('crews', ownerId),
+      globalOnly: false,
+      permissions: ['personnel.read'],
+      stationCodes: queryStationCodes(
+        `SELECT station.station_code FROM crews person
+         LEFT JOIN stations station ON station.id = COALESCE(person.duty_station_id, person.base_station_id)
+         WHERE person.id = ?`,
+        ownerId
+      )
+    };
+  }
+  if (ownerType === 'station' || ownerType === 'airport') {
+    return {
+      exists: exists('stations', ownerId),
+      globalOnly: false,
+      permissions: ['station.task.view'],
+      stationCodes: queryStationCodes('SELECT station_code FROM stations WHERE id = ?', ownerId)
+    };
+  }
+  if (ownerType === 'route') {
+    return {
+      exists: exists('routes', ownerId),
+      globalOnly: false,
+      permissions: ['flight.read'],
+      stationCodes: queryStationCodes(
+        `SELECT station.station_code FROM routes route
+         JOIN stations station ON station.id IN (route.origin_station_id, route.destination_station_id)
+         WHERE route.id = ?`,
+        ownerId
+      )
+    };
+  }
+  if (ownerType === 'flight') {
+    return {
+      exists: exists('flight_operations', ownerId),
+      globalOnly: false,
+      permissions: ['flight.read'],
+      stationCodes: queryStationCodes(
+        `SELECT station.station_code FROM flight_operations flight
+         JOIN stations station ON station.id IN (flight.origin_station_id, flight.destination_station_id)
+         WHERE flight.id = ?`,
+        ownerId
+      )
+    };
+  }
+  if (ownerType === 'corporate_asset') {
+    const rows = queryStationCodes(
+      `SELECT station.station_code FROM managed_assets asset
+       LEFT JOIN stations station ON station.id = asset.station_id WHERE asset.id = ?`,
+      ownerId
+    );
+    const assetExists = Boolean(
+      getDbClient().sqlite.prepare('SELECT 1 FROM managed_assets WHERE id = ?').get(ownerId)
+    );
+    return {
+      exists: assetExists,
+      stationCodes: rows,
+      globalOnly: false,
+      permissions: ['asset.read']
+    };
+  }
+
+  const globalOwners: Partial<Record<DocumentOwnerType, { table: string; permissions: string[] }>> =
+    {
+      vendor: { table: 'vendors', permissions: ['finance.accounting.read'] },
+      customer: { table: 'customers', permissions: ['customer.read'] },
+      commercial_agent: { table: 'agents', permissions: ['agent.read'] },
+      rate_card: { table: 'rate_cards', permissions: ['rate.read'] },
+      contract_subsidy: {
+        table: 'contract_subsidy_programs',
+        permissions: ['commercial.contract.read']
+      }
+    };
+  const global = globalOwners[ownerType];
+  if (global) {
+    return {
+      exists: exists(global.table, ownerId),
+      stationCodes: [],
+      globalOnly: true,
+      permissions: global.permissions
+    };
+  }
+  if (ownerType === 'company') {
+    return {
+      exists: ownerId === 'pt-ama' || ownerId === 'company-ama',
+      stationCodes: [],
+      globalOnly: true,
+      permissions: ['platform.dashboard.view']
+    };
+  }
+  return { exists: false, stationCodes: [], globalOnly: true, permissions: [] };
+}
+
+function hasAnyPermission(event: H3Event, permissions: string[]) {
+  return permissions.some((permission) => hasDemoPermission(event, permission));
+}
+
+function canReadRestrictedDocument(
+  event: H3Event,
+  ownerType: DocumentOwnerType,
+  documentType: string
+) {
+  if (ownerType === 'personnel') {
+    if (documentType.includes('MEDICAL')) return hasDemoPermission(event, 'personnel.medical.read');
+    if (documentType.includes('LICENSE')) return hasDemoPermission(event, 'personnel.license.read');
+    return hasDemoPermission(event, 'personnel.documents.read');
+  }
+  if (ownerType === 'vendor') return hasDemoPermission(event, 'finance.accounting.read');
+  if (ownerType === 'flight' && documentType.includes('DANGEROUS_GOODS')) {
+    return hasDemoPermission(event, 'flight.manifest.sensitive.read');
+  }
+  return hasDemoPermission(event, 'document.restricted.read');
+}
+
 export function canAccessDocumentOwner(
   event: H3Event,
   ownerType: DocumentOwnerType,
-  ownerId: string
+  ownerId: string,
+  visibility: DocumentVisibility = 'INTERNAL',
+  documentType = ''
 ) {
   const owner = resolveDocumentOwnerAccess(ownerType, ownerId);
-  if (ownerType === 'corporate_asset' && !hasDemoPermission(event, 'asset.read')) return false;
-  if (!owner.inventoryOwner) return true;
-  if (!owner.exists) return false;
+  if (!owner.exists || !hasAnyPermission(event, owner.permissions)) return false;
+  if (visibility === 'RESTRICTED' && !canReadRestrictedDocument(event, ownerType, documentType)) {
+    return false;
+  }
   const scope = getDemoStationScope(event);
-  return (
-    scope.includes('ALL') ||
-    (owner.stationCodes.length > 0 && owner.stationCodes.every((code) => scope.includes(code)))
-  );
+  if (scope.includes('ALL')) return true;
+  if (owner.globalOnly) return false;
+  return owner.stationCodes.some((stationCode) => scope.includes(stationCode));
 }
 
 export function requireDocumentOwnerAccess(
   event: H3Event,
   ownerType: DocumentOwnerType,
-  ownerId: string
+  ownerId: string,
+  visibility: DocumentVisibility = 'INTERNAL',
+  documentType = ''
 ) {
   const owner = resolveDocumentOwnerAccess(ownerType, ownerId);
-  if (!owner.inventoryOwner) return;
-  if (!owner.exists)
-    throw notFound(
-      ownerType === 'corporate_asset' ? 'Corporate asset' : 'Inventory document owner',
-      ownerId
-    );
-  if (!canAccessDocumentOwner(event, ownerType, ownerId)) {
+  if (!owner.exists) throw notFound('Document owner', ownerId);
+  if (!canAccessDocumentOwner(event, ownerType, ownerId, visibility, documentType)) {
     throw new DomainError(
-      ownerType === 'corporate_asset'
-        ? 'ASSET_DOCUMENT_STATION_FORBIDDEN'
-        : 'INVENTORY_DOCUMENT_STATION_FORBIDDEN',
-      'The document owner is outside the active role station scope.',
+      'DOCUMENT_OWNER_FORBIDDEN',
+      'The document owner or visibility is outside the active role authority.',
       403,
       { ownerType, ownerId, stationCodes: owner.stationCodes, scope: getDemoStationScope(event) }
     );

@@ -23,6 +23,7 @@ import type {
 import { demoRolePermissions, type DemoRole } from '#shared/types/roles';
 import { DomainError } from '../utils/errors';
 import { getApplicationNow } from '../utils/time';
+import { attachUpload } from '../utils/upload-storage';
 import { evaluateMaintenanceOperationalAvailability } from './maintenance-facility-operations.service';
 
 type SqlValue = string | number | boolean | null;
@@ -1970,7 +1971,17 @@ export class FlightOperationsVerificationService extends FlightOperationsService
             stationTaskId: item.station_task_id ? String(item.station_task_id) : null,
             uploadId: item.upload_id ? String(item.upload_id) : null,
             taskCode: item.task_code ? String(item.task_code) : null,
+            stationCode: item.station_code ? String(item.station_code) : null,
             documentType: String(item.document_type),
+            evidenceCategory: item.evidence_category
+              ? String(item.evidence_category)
+              : 'OPERATIONAL',
+            sourceParty: item.source_party ? String(item.source_party) : null,
+            sourcePartyName: item.source_party_name ? String(item.source_party_name) : null,
+            receivedAt: item.received_at ? String(item.received_at) : null,
+            receivedByStationId: item.received_by_station_id
+              ? String(item.received_by_station_id)
+              : null,
             fileName: String(item.file_name),
             notes: item.notes ? String(item.notes) : null,
             uploadedByUserId: String(item.uploaded_by_user_id),
@@ -2792,8 +2803,9 @@ export class FlightOperationsVerificationService extends FlightOperationsService
     const insertSql = `
       INSERT INTO flight_verification_evidence (
         id, flight_id, station_task_id, upload_id, document_type,
+        evidence_category, source_party, source_party_name, received_at, received_by_station_id,
         file_name, notes, uploaded_by_user_id, uploaded_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     this.sqlite
@@ -2804,6 +2816,11 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         input.stationTaskId,
         input.uploadId || null,
         input.documentType || null,
+        input.evidenceCategory || 'OPERATIONAL',
+        input.sourceParty || null,
+        input.sourcePartyName || null,
+        input.receivedAt || null,
+        input.evidenceCategory === 'EXTERNAL_REPORT' ? task.station_id : null,
         input.fileName,
         input.notes || null,
         ctx.userId,
@@ -2811,6 +2828,15 @@ export class FlightOperationsVerificationService extends FlightOperationsService
         now,
         now
       );
+
+    if (input.uploadId) {
+      try {
+        await attachUpload(input.uploadId, 'station_task', input.stationTaskId);
+      } catch (error) {
+        this.sqlite.prepare(`DELETE FROM flight_verification_evidence WHERE id = ?`).run(id);
+        throw error;
+      }
+    }
 
     await this.logAudit({
       actorUserId: ctx.userId,

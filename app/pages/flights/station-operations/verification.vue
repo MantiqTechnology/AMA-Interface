@@ -4,6 +4,7 @@ import { useStationVerification } from '../../../features/station-operations/com
 
 const { pending, stationTasks, workbenchFlights, load } = useStationOperationsPageData();
 const verification = useStationVerification(workbenchFlights, load);
+const { t } = useI18n();
 const search = ref('');
 const status = ref('ALL');
 const phase = ref('ALL');
@@ -23,12 +24,21 @@ const phases = computed(() => ['ALL', ...new Set(stationTasks.value.map((task) =
 const phaseItems = computed(() =>
   phases.value.map((value: string) => ({ title: phaseLabel(value), value }))
 );
+
+function localizedTaskTitle(task: { taskCode: string; taskTitle: string }) {
+  const key = `stationOperations.taskTitles.${task.taskCode}`;
+  const label = t(key);
+  return label === key ? task.taskTitle : label;
+}
+
 const filteredTasks = computed(() => {
   const term = search.value.trim().toLowerCase();
   return stationTasks.value.filter(
     (task) =>
       (!term ||
-        `${task.flightNumber} ${task.taskCode} ${task.taskTitle}`.toLowerCase().includes(term)) &&
+        `${task.flightNumber} ${task.taskCode} ${task.taskTitle} ${localizedTaskTitle(task)}`
+          .toLowerCase()
+          .includes(term)) &&
       (status.value === 'ALL' || task.status === status.value) &&
       (phase.value === 'ALL' || task.phase === phase.value)
   );
@@ -111,7 +121,7 @@ const filteredTasks = computed(() => {
               </NuxtLink>
             </td>
             <td>
-              <div class="font-weight-medium">{{ task.taskTitle }}</div>
+              <div class="font-weight-medium">{{ localizedTaskTitle(task) }}</div>
               <div class="text-caption text-text-secondary">{{ task.taskCode }}</div>
             </td>
             <td>{{ phaseLabel(task.phase) }}</td>
@@ -156,8 +166,7 @@ const filteredTasks = computed(() => {
               />
               <DsTooltipIconButton
                 v-if="
-                  ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
-                    verification.can('station.task.reject').allowed
+                  task.status === 'IN_PROGRESS' && verification.can('station.task.reject').allowed
                 "
                 icon="mdi-close-circle-outline"
                 color="error"
@@ -195,7 +204,7 @@ const filteredTasks = computed(() => {
               >
                 {{ task.flightNumber }}
               </NuxtLink>
-              <div>{{ task.taskTitle }}</div>
+              <div>{{ localizedTaskTitle(task) }}</div>
               <div class="text-caption text-medium-emphasis">{{ phaseLabel(task.phase) }}</div>
             </div>
             <DsStatusBadge :value="task.status" />
@@ -241,8 +250,16 @@ const filteredTasks = computed(() => {
     :loading="Boolean(verification.loadingId.value)"
     :file="verification.evidenceFile.value"
     :notes="verification.evidenceNotes.value"
+    :category="verification.evidenceCategory.value"
+    :source-party="verification.evidenceSourceParty.value"
+    :source-party-name="verification.evidenceSourcePartyName.value"
+    :received-at="verification.evidenceReceivedAt.value"
     @update:file="verification.evidenceFile.value = $event"
     @update:notes="verification.evidenceNotes.value = $event"
+    @update:category="verification.evidenceCategory.value = $event"
+    @update:source-party="verification.evidenceSourceParty.value = $event"
+    @update:source-party-name="verification.evidenceSourcePartyName.value = $event"
+    @update:received-at="verification.evidenceReceivedAt.value = $event"
     @submit="verification.addTaskEvidence"
   />
   <VerificationRejectStationTaskDialog

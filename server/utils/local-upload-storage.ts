@@ -10,7 +10,7 @@ const DEFAULT_UPLOAD_DIR = join(process.cwd(), 'data', 'uploads', 'local');
 const DEFAULT_MANIFEST_PATH = join(process.cwd(), 'data', 'local-uploads.json');
 const LOCAL_UPLOAD_BASE_PATH = 'local';
 const API_UPLOAD_BASE_PATH = '/api/uploads';
-const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const uploadManifestSchema = z.object({
   uploads: z.array(localUploadSchema)
@@ -24,6 +24,12 @@ export type SaveLocalUploadInput = {
   contentType?: string;
   id?: string;
   uploadedAt?: string;
+  uploadedBy?: string;
+  status?: LocalUploadDto['status'];
+  stationScopes?: string[];
+  purpose?: string;
+  ownerType?: string;
+  ownerId?: string;
 };
 
 export type LocalUploadFile = {
@@ -33,7 +39,7 @@ export type LocalUploadFile = {
 };
 
 function isEphemeralRuntime() {
-  return Boolean(process.env.VERCEL) || process.env.NODE_ENV === 'production';
+  return Boolean(process.env.VERCEL);
 }
 
 function resolveWritablePath(path: string) {
@@ -148,6 +154,19 @@ export async function listLocalUploads() {
   return [...manifest.uploads].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
 }
 
+export async function updateLocalUploadMetadata(
+  id: string,
+  metadata: Pick<LocalUploadDto, 'status'> & Partial<Pick<LocalUploadDto, 'ownerType' | 'ownerId'>>
+) {
+  const manifest = await readManifest();
+  const index = manifest.uploads.findIndex((item) => item.id === id);
+  if (index === -1) throw notFound('Upload', id);
+  const updated = { ...manifest.uploads[index], ...metadata };
+  manifest.uploads[index] = updated;
+  await writeManifest(manifest);
+  return updated;
+}
+
 export async function getLocalUpload(id: string) {
   const manifest = await readManifest();
   const upload = manifest.uploads.find((item) => item.id === id);
@@ -196,7 +215,13 @@ export async function saveLocalUpload(input: SaveLocalUploadInput) {
     size: buffer.byteLength,
     contentType: input.contentType || 'application/octet-stream',
     isImage: Boolean(input.contentType?.startsWith('image/')),
-    uploadedAt
+    uploadedAt,
+    uploadedBy: input.uploadedBy ?? 'AMA System Administrator',
+    status: input.status ?? 'ATTACHED',
+    stationScopes: input.stationScopes ?? ['ALL'],
+    purpose: input.purpose ?? 'DOCUMENT',
+    ownerType: input.ownerType,
+    ownerId: input.ownerId
   };
 
   const manifest = await readManifest();

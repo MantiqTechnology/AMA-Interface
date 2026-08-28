@@ -4,12 +4,18 @@ type RouteAccessRule = {
   prefix: string;
   all?: string[];
   any?: string[];
+  denied?: boolean;
 };
 
 const routeAccessRules: RouteAccessRule[] = [
+  { prefix: '/asset-management', denied: true },
+  { prefix: '/careers', denied: true },
+  { prefix: '/crm-marketing', denied: true },
+  { prefix: '/hris', denied: true },
+  { prefix: '/ticketing', denied: true },
+  { prefix: '/uploads', denied: true },
+  { prefix: '/capability-preview', all: ['capability.preview.read'] },
   { prefix: '/admin/access-demo', all: ['platform.module.manage'] },
-  { prefix: '/asset-management/finance', all: ['asset.finance.read'] },
-  { prefix: '/asset-management', all: ['asset.read'] },
   { prefix: '/finance', all: ['finance.accounting.read'] },
   { prefix: '/invoices', all: ['finance.invoice.read'] },
   { prefix: '/inventory', all: ['inventory.read'] },
@@ -28,6 +34,7 @@ const routeAccessRules: RouteAccessRule[] = [
   { prefix: '/flights/readiness', all: ['readiness.view'] },
   { prefix: '/flights/manifest', all: ['flight.manifest.view'] },
   { prefix: '/flights/fuel', all: ['flight.read', 'flight.fuel.update'] },
+  { prefix: '/flights/station-operations/network', all: ['station.network_dashboard.view'] },
   { prefix: '/flights/station-operations', all: ['station.task.view'] },
   { prefix: '/flights/actual-closure', all: ['station.task.view'] },
   {
@@ -37,7 +44,7 @@ const routeAccessRules: RouteAccessRule[] = [
   { prefix: '/flights', all: ['flight.read'] }
 ];
 
-const publicRoutePrefixes = ['/', '/dashboard', '/ticketing', '/uploads'];
+const publicRoutePrefixes = ['/', '/login'];
 
 function pathMatchesPrefix(path: string, prefix: string) {
   if (prefix === '/') return path === '/';
@@ -54,6 +61,7 @@ export function canDemoRoleAccessPath(role: DemoRole, path: string) {
 
   const rule = routeAccessRules.find((candidate) => pathMatchesPrefix(path, candidate.prefix));
   if (!rule) return true;
+  if (rule.denied) return false;
 
   const allAllowed = rule.all?.every((permissionId) => demoRoleHasPermission(role, permissionId));
   const anyAllowed = rule.any?.some((permissionId) => demoRoleHasPermission(role, permissionId));

@@ -12,6 +12,8 @@ import {
   type StationWorkspaceTab
 } from '../../../features/station-operations/utils/station-workspace-navigation';
 
+const { t } = useI18n();
+
 type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'VERIFIED' | 'REJECTED' | string;
 type ServiceStatus = 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED' | string;
 type CostStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'VOID' | string;
@@ -75,7 +77,13 @@ type StationEvidence = {
   stationTaskId: string | null;
   uploadId: string | null;
   taskCode: string | null;
+  stationCode: string | null;
   documentType: string;
+  evidenceCategory: 'OPERATIONAL' | 'EXTERNAL_REPORT';
+  sourceParty: 'PT_AMA_STATION' | 'AVSEC' | 'AUTHORITY' | 'OTHER' | null;
+  sourcePartyName: string | null;
+  receivedAt: string | null;
+  receivedByStationId: string | null;
   fileName: string;
   notes: string | null;
   uploadedByUserId: string;
@@ -342,6 +350,7 @@ const stationCosts = computed<StationCost[]>(() =>
 );
 
 const phaseTaskIds = computed<Set<string>>(() => new Set(tasks.value.map((task: Task) => task.id)));
+const evidenceRegisterTab = ref<'OPERATIONAL' | 'EXTERNAL_REPORT'>('OPERATIONAL');
 
 const phaseTaskCodes = computed<Set<string>>(
   () => new Set(tasks.value.map((task: Task) => task.taskCode))
@@ -356,6 +365,20 @@ const phaseEvidence = computed<StationEvidence[]>(() =>
     .sort((left: StationEvidence, right: StationEvidence) =>
       right.uploadedAt.localeCompare(left.uploadedAt)
     )
+);
+
+const operationalEvidence = computed<StationEvidence[]>(() =>
+  phaseEvidence.value.filter((item) => item.evidenceCategory !== 'EXTERNAL_REPORT')
+);
+
+const externalReportEvidence = computed<StationEvidence[]>(() =>
+  phaseEvidence.value.filter((item) => item.evidenceCategory === 'EXTERNAL_REPORT')
+);
+
+const evidenceRegisterItems = computed<StationEvidence[]>(() =>
+  evidenceRegisterTab.value === 'EXTERNAL_REPORT'
+    ? externalReportEvidence.value
+    : operationalEvidence.value
 );
 
 const sortedAudit = computed<AuditEntry[]>(() =>
@@ -497,6 +520,12 @@ function taskBlocker(task: Task): string | null {
   return null;
 }
 
+function localizedTaskTitle(task: Pick<Task, 'taskCode' | 'taskTitle'>): string {
+  const key = `stationOperations.taskTitles.${task.taskCode}`;
+  const label = t(key);
+  return label === key ? task.taskTitle : label;
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) return '-';
   const date = new Date(value);
@@ -519,6 +548,25 @@ function formatDate(value: string | null): string {
     month: 'short',
     year: 'numeric'
   }).format(date);
+}
+
+function evidenceSourceLabel(item: StationEvidence): string {
+  const labels: Record<NonNullable<StationEvidence['sourceParty']>, string> = {
+    PT_AMA_STATION: 'PT AMA Station',
+    AVSEC: 'AVSEC',
+    AUTHORITY: 'Authority',
+    OTHER: 'Other'
+  };
+  const party = item.sourceParty ? labels[item.sourceParty] : 'PT AMA Station';
+  return item.sourcePartyName ? `${party} - ${item.sourcePartyName}` : party;
+}
+
+function evidenceReceivedLabel(item: StationEvidence): string {
+  const station = item.stationCode ?? stationCode.value;
+  const receivedAt = item.receivedAt
+    ? formatDateTime(item.receivedAt)
+    : formatDateTime(item.uploadedAt);
+  return `Received by PT AMA Station ${station} · ${receivedAt}`;
 }
 
 function money(value: number, currency: string): string {
@@ -582,11 +630,32 @@ const evidenceDialog = ref<boolean>(false);
 const evidenceTask = ref<Task | null>(null);
 const evidenceFile = ref<File | File[] | null>(null);
 const evidenceNotes = ref<string>('');
+const evidenceCategory = ref<'OPERATIONAL' | 'EXTERNAL_REPORT'>('OPERATIONAL');
+const evidenceSourceParty = ref<'PT_AMA_STATION' | 'AVSEC' | 'AUTHORITY' | 'OTHER'>(
+  'PT_AMA_STATION'
+);
+const evidenceSourcePartyName = ref<string>('');
+const evidenceReceivedAt = ref<string>('');
+
+watch(evidenceCategory, (category) => {
+  if (category === 'EXTERNAL_REPORT' && evidenceSourceParty.value === 'PT_AMA_STATION') {
+    evidenceSourceParty.value = 'AVSEC';
+  }
+  if (category === 'OPERATIONAL') {
+    evidenceSourceParty.value = 'PT_AMA_STATION';
+    evidenceSourcePartyName.value = '';
+    evidenceReceivedAt.value = '';
+  }
+});
 
 function openEvidence(task: Task): void {
   evidenceTask.value = task;
   evidenceFile.value = null;
   evidenceNotes.value = '';
+  evidenceCategory.value = 'OPERATIONAL';
+  evidenceSourceParty.value = 'PT_AMA_STATION';
+  evidenceSourcePartyName.value = '';
+  evidenceReceivedAt.value = '';
   evidenceDialog.value = true;
 }
 
@@ -594,6 +663,13 @@ function selectedEvidenceFile(): File | null {
   const value = evidenceFile.value;
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function normalizedEvidenceReceivedAt(): string | undefined {
+  const value = evidenceReceivedAt.value.trim();
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
 }
 
 async function saveEvidence(): Promise<void> {
@@ -619,7 +695,14 @@ async function saveEvidence(): Promise<void> {
         expectedVersion: task.version,
         uploadId: upload.id,
         fileName: upload.originalName,
-        documentType: 'STATION_OPERATION_EVIDENCE',
+        documentType:
+          evidenceCategory.value === 'EXTERNAL_REPORT'
+            ? 'STATION_EXTERNAL_REPORT'
+            : 'STATION_OPERATION_EVIDENCE',
+        evidenceCategory: evidenceCategory.value,
+        sourceParty: evidenceSourceParty.value,
+        sourcePartyName: evidenceSourcePartyName.value.trim() || undefined,
+        receivedAt: normalizedEvidenceReceivedAt(),
         notes: evidenceNotes.value.trim() || undefined
       }
     });
@@ -1038,9 +1121,7 @@ function handleSnackbarModelValue(value: boolean): void {
             <VIcon icon="mdi-handshake-outline" start />
             Maintenance
             <VChip class="ml-2" size="x-small" variant="tonal">
-              {{
-                flight.maintenanceRequests.length
-              }}
+              {{ flight.maintenanceRequests.length }}
             </VChip>
           </VTab>
           <VTab value="services">
@@ -1107,7 +1188,9 @@ function handleSnackbarModelValue(value: boolean): void {
 
                       <div class="flex-grow-1 min-w-0">
                         <div class="d-flex flex-wrap align-center ga-2">
-                          <div class="text-subtitle-1 font-weight-bold">{{ task.taskTitle }}</div>
+                          <div class="text-subtitle-1 font-weight-bold">
+                            {{ localizedTaskTitle(task) }}
+                          </div>
                           <DsStatusBadge :value="task.status" />
                         </div>
                         <div class="text-caption text-medium-emphasis">
@@ -1167,7 +1250,9 @@ function handleSnackbarModelValue(value: boolean): void {
                           Start
                         </VBtn>
                         <VBtn
-                          v-if="can('station.evidence.add').allowed"
+                          v-if="
+                            task.status === 'IN_PROGRESS' && can('station.evidence.add').allowed
+                          "
                           prepend-icon="mdi-paperclip"
                           size="small"
                           variant="text"
@@ -1176,10 +1261,7 @@ function handleSnackbarModelValue(value: boolean): void {
                           Evidence
                         </VBtn>
                         <VBtn
-                          v-if="
-                            ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
-                              can('station.task.verify').allowed
-                          "
+                          v-if="task.status === 'IN_PROGRESS' && can('station.task.verify').allowed"
                           color="success"
                           :disabled="Boolean(taskBlocker(task))"
                           :loading="loadingId === `${task.id}-verify`"
@@ -1191,10 +1273,7 @@ function handleSnackbarModelValue(value: boolean): void {
                           Verify
                         </VBtn>
                         <VBtn
-                          v-if="
-                            ['PENDING', 'IN_PROGRESS'].includes(task.status) &&
-                              can('station.task.reject').allowed
-                          "
+                          v-if="task.status === 'IN_PROGRESS' && can('station.task.reject').allowed"
                           color="error"
                           prepend-icon="mdi-close-circle-outline"
                           size="small"
@@ -1248,7 +1327,7 @@ function handleSnackbarModelValue(value: boolean): void {
                     v-for="task in signoffTasks"
                     :key="task.id"
                     :subtitle="`Station: ${task.stationDecision ?? 'PENDING'} · OCC: ${task.occDecision ?? 'PENDING'}`"
-                    :title="task.taskTitle"
+                    :title="localizedTaskTitle(task)"
                   >
                     <template #append>
                       <VBtn
@@ -1467,18 +1546,44 @@ function handleSnackbarModelValue(value: boolean): void {
                   </div>
                 </div>
                 <VDivider />
+                <VTabs v-model="evidenceRegisterTab" density="compact">
+                  <VTab value="OPERATIONAL">Operational</VTab>
+                  <VTab value="EXTERNAL_REPORT">External reports</VTab>
+                </VTabs>
+                <VDivider />
                 <VList lines="three">
                   <VListItem
-                    v-for="item in phaseEvidence"
+                    v-for="item in evidenceRegisterItems"
                     :key="item.id"
                     :subtitle="`${item.taskCode ?? 'Flight'} · ${formatDateTime(item.uploadedAt)}`"
                     :title="item.fileName"
                   >
                     <template #prepend>
-                      <VAvatar color="primary" size="36" variant="tonal">
-                        <VIcon icon="mdi-file-document-outline" />
+                      <VAvatar
+                        :color="item.evidenceCategory === 'EXTERNAL_REPORT' ? 'warning' : 'primary'"
+                        size="36"
+                        variant="tonal"
+                      >
+                        <VIcon
+                          :icon="
+                            item.evidenceCategory === 'EXTERNAL_REPORT'
+                              ? 'mdi-shield-alert-outline'
+                              : 'mdi-file-document-outline'
+                          "
+                        />
                       </VAvatar>
                     </template>
+                    <div
+                      v-if="item.evidenceCategory === 'EXTERNAL_REPORT'"
+                      class="mb-1 d-flex flex-wrap ga-2"
+                    >
+                      <VChip color="warning" size="x-small" variant="tonal">
+                        Source: {{ evidenceSourceLabel(item) }}
+                      </VChip>
+                      <VChip size="x-small" variant="tonal">
+                        {{ evidenceReceivedLabel(item) }}
+                      </VChip>
+                    </div>
                     <div v-if="item.notes" class="text-caption text-medium-emphasis">
                       {{ item.notes }}
                     </div>
@@ -1496,9 +1601,17 @@ function handleSnackbarModelValue(value: boolean): void {
                     </template>
                   </VListItem>
                   <VListItem
-                    v-if="phaseEvidence.length === 0"
-                    subtitle="Upload evidence from the Tasks tab when required."
-                    title="No evidence in this phase"
+                    v-if="evidenceRegisterItems.length === 0"
+                    :subtitle="
+                      evidenceRegisterTab === 'EXTERNAL_REPORT'
+                        ? 'Record AVSEC or authority reports received by PT AMA Station from the Tasks tab.'
+                        : 'Upload evidence from the Tasks tab when required.'
+                    "
+                    :title="
+                      evidenceRegisterTab === 'EXTERNAL_REPORT'
+                        ? 'No external report in this phase'
+                        : 'No operational evidence in this phase'
+                    "
                   />
                 </VList>
               </VCard>
@@ -1514,7 +1627,11 @@ function handleSnackbarModelValue(value: boolean): void {
                 </div>
                 <VDivider />
                 <VList lines="three">
-                  <VListItem v-for="task in signoffTasks" :key="task.id" :title="task.taskTitle">
+                  <VListItem
+                    v-for="task in signoffTasks"
+                    :key="task.id"
+                    :title="localizedTaskTitle(task)"
+                  >
                     <div class="mt-2 d-flex flex-wrap ga-2">
                       <VChip size="small" variant="tonal">
                         Station: {{ task.stationDecision ?? 'PENDING' }}
@@ -2068,21 +2185,60 @@ function handleSnackbarModelValue(value: boolean): void {
         <VCardTitle>Add station evidence</VCardTitle>
         <VCardText>
           <div v-if="evidenceTask" class="mb-4 rounded border pa-3">
-            <div class="font-weight-medium">{{ evidenceTask.taskTitle }}</div>
+            <div class="font-weight-medium">{{ localizedTaskTitle(evidenceTask) }}</div>
             <div class="text-caption text-medium-emphasis">
               {{ evidenceTask.taskCode }} · {{ evidenceTask.stationCode }}
             </div>
           </div>
+          <VSelect
+            v-model="evidenceCategory"
+            :items="[
+              { title: 'Operational evidence', value: 'OPERATIONAL' },
+              { title: 'External report', value: 'EXTERNAL_REPORT' }
+            ]"
+            class="mb-3"
+            label="Evidence type"
+            variant="outlined"
+          />
+          <VSelect
+            v-if="evidenceCategory === 'EXTERNAL_REPORT'"
+            v-model="evidenceSourceParty"
+            :items="[
+              { title: 'PT AMA Station', value: 'PT_AMA_STATION' },
+              { title: 'AVSEC', value: 'AVSEC' },
+              { title: 'Authority', value: 'AUTHORITY' },
+              { title: 'Other', value: 'OTHER' }
+            ]"
+            class="mb-3"
+            label="Report source"
+            variant="outlined"
+          />
+          <VTextField
+            v-if="evidenceCategory === 'EXTERNAL_REPORT'"
+            v-model="evidenceSourcePartyName"
+            class="mb-3"
+            label="Source party name"
+            placeholder="AVSEC post, authority office, or contact name"
+            variant="outlined"
+          />
+          <VTextField
+            v-if="evidenceCategory === 'EXTERNAL_REPORT'"
+            v-model="evidenceReceivedAt"
+            class="mb-3"
+            label="Received at"
+            type="datetime-local"
+            variant="outlined"
+          />
           <VFileInput
             v-model="evidenceFile"
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+            accept="image/*,.pdf"
             label="Choose evidence file"
             prepend-icon="mdi-paperclip"
             show-size
             variant="outlined"
           />
           <div class="mb-3 text-caption text-medium-emphasis">
-            Maximum 25 MB. The file is stored in the application upload folder.
+            PDF, JPEG, and PNG evidence received and uploaded by PT AMA Station.
           </div>
           <VTextarea v-model="evidenceNotes" label="Notes" rows="3" variant="outlined" />
         </VCardText>
@@ -2107,7 +2263,7 @@ function handleSnackbarModelValue(value: boolean): void {
         <VCardTitle>Reject station task</VCardTitle>
         <VCardText>
           <div v-if="rejectionTask" class="mb-4 rounded border pa-3">
-            <div class="font-weight-medium">{{ rejectionTask.taskTitle }}</div>
+            <div class="font-weight-medium">{{ localizedTaskTitle(rejectionTask) }}</div>
             <div class="text-caption text-medium-emphasis">
               {{ rejectionTask.taskCode }} · {{ rejectionTask.stationCode }}
             </div>

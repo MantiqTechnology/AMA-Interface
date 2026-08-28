@@ -43,11 +43,7 @@ const financeVisible = computed(
 const commercialVisible = computed(
   () => masterDataVisible.value || can('commercial.contract.read').allowed
 );
-
-// CRM & Marketing is demo/frontend-only for now, so it is always visible.
-// Swap `true` for a real permission check (e.g. can('crm.read').allowed) once
-// the backend/API for this module is wired up.
-const crmMarketingVisible = computed(() => true);
+const excludedDemoModuleVisible = false;
 
 const navItems = computed<NavItem[]>(() =>
   [
@@ -56,6 +52,12 @@ const navItems = computed<NavItem[]>(() =>
       to: '/dashboard',
       icon: 'mdi-view-dashboard-outline',
       visible: true
+    },
+    {
+      label: 'Capability Preview',
+      to: '/capability-preview',
+      icon: 'mdi-radar',
+      visible: can('capability.preview.read').allowed
     },
     {
       label: t('nav.ops'),
@@ -167,6 +169,12 @@ const navItems = computed<NavItem[]>(() =>
       icon: 'mdi-airport',
       visible: can('station.task.view').allowed,
       children: [
+        {
+          label: 'Network Dashboard',
+          to: '/flights/station-operations/network',
+          icon: 'mdi-chart-box-outline',
+          visible: can('station.network_dashboard.view').allowed
+        },
         {
           label: t('nav.overview'),
           to: '/flights/station-operations',
@@ -318,19 +326,19 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: t('nav.corporateAssets'),
       icon: 'mdi-toolbox-outline',
-      visible: true,
+      visible: excludedDemoModuleVisible,
       children: [
         {
           label: t('nav.overview'),
           to: '/asset-management/overview',
           icon: 'mdi-view-dashboard-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: t('nav.assetRegister'),
           to: '/asset-management/register',
           icon: 'mdi-clipboard-list-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: t('nav.assignments'),
@@ -367,68 +375,68 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'CRM & Marketing',
       icon: 'mdi-account-heart-outline',
-      visible: crmMarketingVisible.value,
+      visible: excludedDemoModuleVisible,
       children: [
         {
           label: 'Overview',
           to: '/crm-marketing/dashboard-crm',
           icon: 'mdi-view-dashboard-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: 'Leads',
           to: '/crm-marketing/leads',
           icon: 'mdi-account-plus-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: 'Customers',
           to: '/crm-marketing/customers',
           icon: 'mdi-domain',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: 'Tender',
           to: '/crm-marketing/tender',
           icon: 'mdi-gavel',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: 'Promotion',
           to: '/crm-marketing/promotion',
           icon: 'mdi-bullhorn-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: 'Opportunities',
           to: '/crm-marketing/opportunities',
           icon: 'mdi-target',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: 'Activities',
           to: '/crm-marketing/activities',
           icon: 'mdi-calendar-check-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         }
       ].filter((child) => child.visible)
     },
     {
       label: t('nav.ticketing'),
       icon: 'mdi-ticket-confirmation-outline',
-      visible: true,
+      visible: excludedDemoModuleVisible,
       children: [
         {
           label: t('nav.passengerSalesCheckIn'),
           to: '/ticketing/passenger',
           icon: 'mdi-account-multiple-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: t('nav.cargoTracking'),
           to: '/ticketing/cargo',
           icon: 'mdi-package-variant',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: t('nav.salesManagement'),
@@ -440,7 +448,7 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.operationalLedger'),
           to: '/ticketing/finance',
           icon: 'mdi-cash-register',
-          visible: true
+          visible: excludedDemoModuleVisible
         }
       ].filter((child) => child.visible)
     },
@@ -600,7 +608,7 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: t('nav.hris'),
       icon: 'mdi-account-tie',
-      visible: can('hris.employee.read').allowed || can('hris.self_service.read').allowed,
+      visible: excludedDemoModuleVisible,
       children: [
         {
           label: t('nav.dashboard'),
@@ -666,7 +674,7 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.careerPortal'),
           to: '/careers',
           icon: 'mdi-briefcase-search-outline',
-          visible: true
+          visible: excludedDemoModuleVisible
         },
         {
           label: t('nav.kpi'),
@@ -767,7 +775,12 @@ const navItems = computed<NavItem[]>(() =>
         }
       ].filter((child) => child.visible)
     },
-    { label: t('nav.uploads'), to: '/uploads', icon: 'mdi-file-upload-outline', visible: true },
+    {
+      label: t('nav.uploads'),
+      to: '/uploads',
+      icon: 'mdi-file-upload-outline',
+      visible: excludedDemoModuleVisible
+    },
     {
       label: t('nav.access'),
       to: '/admin/access-demo',
@@ -953,22 +966,17 @@ function closeMobileOnNavigate() {
       </VList>
 
       <div class="mt-auto border-t border-border-default p-3">
-        <template v-if="!rail">
-          <div class="mb-2 text-xs font-semibold uppercase text-text-secondary">
-            {{ t('topbar.demoPersona') }}
-          </div>
-          <FeatureDemoPersonaSwitcher />
-        </template>
-
         <VBtn
-          v-else
-          :aria-label="t('actions.expandToSwitchDemoPersona')"
+          :aria-label="rail ? 'Switch demo account' : undefined"
           block
           color="primary"
-          icon="mdi-account-switch-outline"
+          :icon="rail ? 'mdi-logout-variant' : undefined"
+          :prepend-icon="rail ? undefined : 'mdi-logout-variant'"
           variant="tonal"
-          @click="rail = false"
-        />
+          @click="useDemoSession().logout()"
+        >
+          <span v-if="!rail">Switch demo account</span>
+        </VBtn>
       </div>
     </div>
   </VNavigationDrawer>

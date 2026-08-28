@@ -132,7 +132,7 @@ export const messages = {
     topbar: {
       notifications: 'Notifications',
       critical: 'critical',
-      noOperationalAlerts: 'No operational alerts.',
+      noOperationalAlerts: 'No active operational alerts.',
       myProfile: 'My Profile',
       stationScope: 'Station Scope',
       demoPersona: 'Demo Persona',
@@ -153,6 +153,20 @@ export const messages = {
         flightControl: 'Flight Control',
         finance: 'Finance',
         invoice: 'Invoice'
+      }
+    },
+    stationOperations: {
+      taskTitles: {
+        ORIGIN_HANDLING: 'Origin handling confirmed',
+        ORIGIN_HANDOVER: 'Passenger and cargo handover ready',
+        ORIGIN_DOCUMENTS: 'Required departure documents available',
+        ORIGIN_CHECKLIST: 'Station departure checklist completed',
+        ORIGIN_STATION_SIGNOFF: 'Origin station sign-off',
+        DESTINATION_HANDLING: 'Arrival handling completed',
+        DESTINATION_HANDOVER: 'Passenger and cargo handover completed',
+        DESTINATION_INCIDENT: 'Station incident recorded or declared clear',
+        DESTINATION_DOCUMENTS: 'Destination documents received',
+        DESTINATION_STATION_SIGNOFF: 'Destination station sign-off'
       }
     },
     maintenance: {
@@ -333,7 +347,7 @@ export const messages = {
     topbar: {
       notifications: 'Notifikasi',
       critical: 'kritis',
-      noOperationalAlerts: 'Tidak ada alert operasional.',
+      noOperationalAlerts: 'Tidak ada alert operasional aktif.',
       myProfile: 'Profil Saya',
       stationScope: 'Cakupan Stasiun',
       demoPersona: 'Persona Demo',
@@ -354,6 +368,20 @@ export const messages = {
         flightControl: 'Flight Control',
         finance: 'Finance',
         invoice: 'Invoice'
+      }
+    },
+    stationOperations: {
+      taskTitles: {
+        ORIGIN_HANDLING: 'Handling asal dikonfirmasi',
+        ORIGIN_HANDOVER: 'Serah terima penumpang dan kargo siap',
+        ORIGIN_DOCUMENTS: 'Dokumen keberangkatan wajib tersedia',
+        ORIGIN_CHECKLIST: 'Checklist keberangkatan station selesai',
+        ORIGIN_STATION_SIGNOFF: 'Sign-off station asal',
+        DESTINATION_HANDLING: 'Handling kedatangan selesai',
+        DESTINATION_HANDOVER: 'Serah terima penumpang dan kargo selesai',
+        DESTINATION_INCIDENT: 'Insiden station dicatat atau dinyatakan aman',
+        DESTINATION_DOCUMENTS: 'Dokumen tujuan diterima',
+        DESTINATION_STATION_SIGNOFF: 'Sign-off station tujuan'
       }
     },
     maintenance: {

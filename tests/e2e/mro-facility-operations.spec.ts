@@ -55,6 +55,7 @@ type FlightDetail = {
 type FacilityOperations = {
   occupancy: { slots: Slot[] };
   custodies: Custody[];
+  operations?: Array<Record<string, unknown>>;
 };
 
 async function setRole(context: BrowserContext, baseURL: string | undefined, role: string) {
@@ -376,4 +377,242 @@ test('M8.5 facility operations browser closure captures readiness, movement, han
     page.getByText('Aircraft is not physically held by Maintenance facility custody.')
   ).toBeVisible();
   await page.screenshot({ path: output('18-flight-after-handback.png'), fullPage: true });
+});
+
+test('facility operations command center renders derived operation and handback drawer', async ({
+  baseURL,
+  context,
+  page
+}) => {
+  mkdirSync(path.join('artifacts', 'mro-demo-v3-m85'), { recursive: true });
+  await setRole(context, baseURL, 'Maintenance Manager');
+  await page.route('**/api/maintenance/facility-operations**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          generatedAt: '2026-08-27T03:42:15.000Z',
+          facilities: [],
+          occupancy: {
+            generatedAt: '2026-08-27T03:42:15.000Z',
+            dateFrom: '2026-08-27T01:00:00.000Z',
+            dateTo: '2026-08-30T01:00:00.000Z',
+            slots: [
+              {
+                id: 'slot-ui-command',
+                workPackageId: 'wp-ui-command',
+                packageNumber: 'WP-2026-0142',
+                aircraftId: 'ac-ui-command',
+                aircraftRegistrationNumber: 'PK-AMA',
+                stationId: 'station-wmx',
+                stationCode: 'WMX',
+                stationName: 'Wamena',
+                stationTimezone: 'Asia/Jayapura',
+                facilityId: 'facility-wmx',
+                facilityCode: 'WMX-HGR',
+                facilityName: 'Wamena Hangar',
+                areaId: 'area-wmx',
+                areaCode: 'HGR',
+                areaName: 'Hangar',
+                areaType: 'HANGAR',
+                bayId: 'bay-02',
+                bayCode: '02',
+                bayName: 'Bay 02',
+                plannedStartAt: '2026-08-27T00:00:00.000Z',
+                plannedEndAt: '2026-08-27T08:00:00.000Z',
+                actualStartAt: null,
+                actualEndAt: null,
+                status: 'IN_PROGRESS',
+                createdByUserId: 'USR',
+                createdAt: '2026-08-27T00:00:00.000Z',
+                updatedByUserId: null,
+                updatedAt: '2026-08-27T03:42:15.000Z',
+                cancelledByUserId: null,
+                cancelledAt: null,
+                cancellationReason: null
+              }
+            ]
+          },
+          readiness: [
+            {
+              slotId: 'slot-ui-command',
+              workPackageId: 'wp-ui-command',
+              aircraftId: 'ac-ui-command',
+              status: 'BLOCKED',
+              evaluatedAt: '2026-08-27T03:42:15.000Z',
+              dimensions: {
+                facility: {
+                  status: 'READY',
+                  summary: 'Facility ready',
+                  blockers: [],
+                  warnings: []
+                },
+                material: {
+                  status: 'READY',
+                  summary: 'Material ready',
+                  blockers: [],
+                  warnings: []
+                },
+                personnel: {
+                  status: 'READY',
+                  summary: 'Personnel ready',
+                  blockers: [],
+                  warnings: []
+                },
+                tools: { status: 'READY', summary: 'Tools ready', blockers: [], warnings: [] },
+                gse: {
+                  status: 'BLOCKED',
+                  summary: 'Mandatory GSE pending',
+                  blockers: [],
+                  warnings: []
+                }
+              },
+              manpowerCapacity: [
+                {
+                  roleType: 'Engineer',
+                  required: 1,
+                  availableEligible: 1,
+                  assigned: 1,
+                  status: 'READY'
+                }
+              ]
+            }
+          ],
+          custodies: [],
+          gseRequirements: [],
+          gseAllocations: [],
+          staging: [],
+          shifts: [],
+          handovers: [],
+          operations: [
+            {
+              slotId: 'slot-ui-command',
+              workPackageId: 'wp-ui-command',
+              packageNumber: 'WP-2026-0142',
+              workPackageTitle: 'Hydraulic leak rectification',
+              workPackageStatus: 'IN_PROGRESS',
+              aircraftId: 'ac-ui-command',
+              aircraftRegistrationNumber: 'PK-AMA',
+              aircraftImageUrl: null,
+              aircraftType: 'DHC-6 Twin Otter',
+              aircraftModel: 'Regional Airline',
+              priority: 'AOG',
+              riskLabel: 'AOG Risk',
+              stationCode: 'WMX',
+              stationName: 'Wamena',
+              stationTimezone: 'Asia/Jayapura',
+              facilityName: 'Wamena Hangar',
+              bayCode: '02',
+              plannedStartAt: '2026-08-27T00:00:00.000Z',
+              plannedEndAt: '2026-08-27T08:00:00.000Z',
+              lastSyncedAt: '2026-08-27T03:42:15.000Z',
+              custodyStatus: 'IN_BAY',
+              readinessStatus: 'BLOCKED',
+              counts: {
+                releaseBlockers: 3,
+                melOpen: 1,
+                incompleteJobCards: 3,
+                gsePending: 1,
+                manpowerRequired: 1,
+                manpowerAssigned: 1
+              },
+              handbackReadiness: {
+                slotId: 'slot-ui-command',
+                workPackageId: 'wp-ui-command',
+                status: 'BLOCKED',
+                canRequestHandback: false,
+                disabledReason: 'Hand Back is disabled until all blockers are cleared.',
+                blockerCount: 3,
+                nextActions: [
+                  'Complete MEL item review and close.',
+                  'Complete 3 incomplete job cards in Work Package WP-2026-0142.'
+                ],
+                gates: [
+                  {
+                    key: 'MEL',
+                    label: 'MEL review completed',
+                    status: 'PENDING',
+                    severity: 'HIGH',
+                    count: 1,
+                    summary: '1 MEL/deferred item requires review',
+                    nextAction: 'Complete MEL item review and close.',
+                    blockers: []
+                  },
+                  {
+                    key: 'JOB_CARDS',
+                    label: 'Job cards completed',
+                    status: 'PENDING',
+                    severity: 'CRITICAL',
+                    count: 3,
+                    summary: '3 job card incomplete',
+                    nextAction: 'Complete 3 incomplete job cards in Work Package WP-2026-0142.',
+                    blockers: []
+                  }
+                ]
+              },
+              workflowSteps: [
+                {
+                  key: 'MOVE_IN_REQUESTED',
+                  step: 1,
+                  label: 'Requested Move In',
+                  status: 'COMPLETE',
+                  timestamp: '2026-08-27T02:12:00.000Z',
+                  helper: null,
+                  disabledReason: null
+                },
+                {
+                  key: 'HAND_BACK',
+                  step: 6,
+                  label: 'Hand Back',
+                  status: 'DISABLED',
+                  timestamp: null,
+                  helper: 'Disabled',
+                  disabledReason: 'Hand Back is disabled until all blockers are cleared.'
+                }
+              ],
+              recentActivity: [
+                {
+                  id: 'audit-ui-command',
+                  occurredAt: '2026-08-27T03:36:00.000Z',
+                  title: 'Engineer completed fuel drain inspection',
+                  detail: 'Maintenance Control',
+                  actorRole: 'Maintenance Control'
+                }
+              ]
+            }
+          ]
+        }
+      })
+    });
+  });
+
+  await page.goto('/maintenance/facility-operations', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('heading', { name: 'Maintenance Operations' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Facility Operations' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'PK-AMA' })).toBeVisible();
+  await expect(page.getByText('NOT READY FOR HAND BACK')).toBeVisible();
+  await expect(page.getByText('Release Blockers')).toBeVisible();
+  await expect(page.getByText('Operational Workflow')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Request Hand Back' }).first()).toBeDisabled();
+  await page.screenshot({ path: output('facility-command-center-desktop.png'), fullPage: true });
+
+  await page.getByRole('button', { name: 'View Blockers' }).click();
+  await expect(page.getByRole('heading', { name: 'Hand Back Readiness Check' })).toBeVisible();
+  await expect(page.getByText('MEL review completed')).toBeVisible();
+  await expect(page.getByText('Job cards completed')).toBeVisible();
+  await expect(
+    page.getByRole('listitem').filter({ hasText: 'Complete 3 incomplete job cards' })
+  ).toBeVisible();
+  await page.screenshot({ path: output('facility-command-center-drawer.png'), fullPage: true });
+
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.setViewportSize({ width: 900, height: 1100 });
+  await page.goto('/maintenance/facility-operations', { waitUntil: 'networkidle' });
+  await page.screenshot({ path: output('facility-command-center-tablet.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto('/maintenance/facility-operations', { waitUntil: 'networkidle' });
+  await page.screenshot({ path: output('facility-command-center-mobile.png'), fullPage: true });
 });

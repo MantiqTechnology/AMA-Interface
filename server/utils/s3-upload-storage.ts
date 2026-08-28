@@ -7,7 +7,7 @@ import { localUploadSchema, type LocalUploadDto } from '../../shared/contracts/u
 import { DomainError, notFound } from './errors';
 
 const DEFAULT_REGION = 'auto';
-const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const S3_UPLOAD_BASE_PATH = 's3';
 const API_UPLOAD_BASE_PATH = '/api/uploads';
 const EMPTY_PAYLOAD_HASH = createHash('sha256').update('').digest('hex');
@@ -24,6 +24,12 @@ export type SaveS3UploadInput = {
   contentType?: string;
   id?: string;
   uploadedAt?: string;
+  uploadedBy?: string;
+  status?: LocalUploadDto['status'];
+  stationScopes?: string[];
+  purpose?: string;
+  ownerType?: string;
+  ownerId?: string;
 };
 
 export type S3UploadFile = {
@@ -362,6 +368,22 @@ export async function getS3Upload(id: string) {
   return upload;
 }
 
+export async function updateS3UploadMetadata(
+  id: string,
+  metadata: Pick<LocalUploadDto, 'status'> & Partial<Pick<LocalUploadDto, 'ownerType' | 'ownerId'>>
+) {
+  const config = getS3UploadConfig();
+  if (!config)
+    throw new DomainError('S3_UPLOAD_NOT_CONFIGURED', 'S3 upload storage is not configured.', 500);
+  const manifest = await readManifest(config);
+  const index = manifest.uploads.findIndex((item) => item.id === id);
+  if (index === -1) throw notFound('Upload', id);
+  const updated = { ...manifest.uploads[index], ...metadata };
+  manifest.uploads[index] = updated;
+  await writeManifest(config, manifest);
+  return updated;
+}
+
 export async function saveS3Upload(input: SaveS3UploadInput) {
   const config = getS3UploadConfig();
   if (!config)
@@ -408,7 +430,13 @@ export async function saveS3Upload(input: SaveS3UploadInput) {
     size: buffer.byteLength,
     contentType,
     isImage: Boolean(input.contentType?.startsWith('image/')),
-    uploadedAt
+    uploadedAt,
+    uploadedBy: input.uploadedBy ?? 'AMA System Administrator',
+    status: input.status ?? 'ATTACHED',
+    stationScopes: input.stationScopes ?? ['ALL'],
+    purpose: input.purpose ?? 'DOCUMENT',
+    ownerType: input.ownerType,
+    ownerId: input.ownerId
   };
 
   const manifest = await readManifest(config);

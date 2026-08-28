@@ -170,14 +170,13 @@ export const uiScreens: UiScreenDefinition[] = [
     ready: { heading: 'Pusat Kendali MRO', level: 1 },
     roles: ['Maintenance Manager'],
     prepare: async (page) => {
-      await page.getByRole('heading', { name: 'Create Work Package' }).waitFor();
-      await page.getByRole('button', { name: 'Next' }).click();
+      await page.getByRole('heading', { name: 'Assign Work Package' }).waitFor();
+      await page.getByRole('tab', { name: 'Material' }).click();
       await page.getByLabel('Approved maintenance data reference').fill('AMM C208B 32-40-00');
+      await page.getByRole('tab', { name: 'Catatan' }).click();
       await page
-        .getByLabel('Planning evidence / reason')
+        .getByLabel('Bukti atau alasan perencanaan')
         .fill('Technical-log assessment and brake inspection planning evidence reviewed.');
-      await page.getByRole('button', { name: 'Next' }).click();
-      await page.getByRole('heading', { name: 'Review' }).waitFor();
     }
   },
   {

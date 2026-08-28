@@ -15,62 +15,9 @@ const { data: dashboardOverview } = await useAsyncData('topbar-dashboard-overvie
   fetchApi<DashboardDto>('/api/dashboard')
 );
 
-const demoNotifications = computed(() => [
-  {
-    id: 'ntf-001',
-    severity: 'critical',
-    title: locale.value === 'id' ? 'GA204 Terlambat 45 Menit' : 'GA204 Delayed 45 Minutes',
-    message:
-      locale.value === 'id'
-        ? 'Keberangkatan tertunda akibat cuaca buruk di CGK. ETD baru 14:35 WIB.'
-        : 'Departure is delayed due to bad weather at CGK. New ETD is 14:35 WIB.',
-    time: locale.value === 'id' ? '2m lalu' : '2m ago'
-  },
-  {
-    id: 'ntf-002',
-    severity: 'warning',
-    title: locale.value === 'id' ? 'Perubahan Gate - QZ512' : 'Gate Change - QZ512',
-    message:
-      locale.value === 'id'
-        ? 'Gate dipindahkan dari B12 ke C04. Ground staff sudah diinformasikan.'
-        : 'Gate moved from B12 to C04. Ground staff have been informed.',
-    time: locale.value === 'id' ? '10m lalu' : '10m ago'
-  },
-  {
-    id: 'ntf-003',
-    severity: 'critical',
-    title: locale.value === 'id' ? 'FOD Terdeteksi di Runway 07' : 'FOD Detected on Runway 07',
-    message:
-      locale.value === 'id'
-        ? 'Inspeksi runway sedang berlangsung, keberangkatan sementara ditahan.'
-        : 'Runway inspection is in progress, departures are temporarily held.',
-    time: locale.value === 'id' ? '18m lalu' : '18m ago'
-  },
-  {
-    id: 'ntf-004',
-    severity: 'warning',
-    title: 'GSE Maintenance Due',
-    message:
-      locale.value === 'id'
-        ? 'Belt Loader BL-01 (SUB - Surabaya) dijadwalkan maintenance dalam 2 hari.'
-        : 'Belt Loader BL-01 (SUB - Surabaya) is due for maintenance in 2 days.',
-    time: locale.value === 'id' ? '32m lalu' : '32m ago'
-  },
-  {
-    id: 'ntf-005',
-    severity: 'info',
-    title: locale.value === 'id' ? 'Flight Closure Selesai' : 'Flight Closure Completed',
-    message:
-      locale.value === 'id'
-        ? 'Flight closure untuk JT-682 telah selesai diproses dan diarsipkan.'
-        : 'Flight closure for JT-682 has been processed and archived.',
-    time: locale.value === 'id' ? '1j lalu' : '1h ago'
-  }
-]);
-
 const notifications = computed(() => {
   const apiAlerts = dashboardOverview.value?.alerts ?? [];
-  return apiAlerts.length ? apiAlerts.slice(0, 5) : demoNotifications.value;
+  return apiAlerts.slice(0, 5);
 });
 
 const criticalCount = computed(
@@ -93,6 +40,7 @@ onMounted(() => session.load());
 
 const pageTitle = computed(() => {
   if (route.path === '/ops') return t('topbar.page.opsOverview');
+  if (route.path === '/capability-preview') return 'Operational Capability Preview';
   if (route.path === '/flights/dashboard') return t('topbar.page.flightControlOverview');
   if (route.path.startsWith('/ops/flight-following')) return t('topbar.page.flightFollowing');
   if (route.path.startsWith('/ops/flights')) return t('topbar.page.flightDetail');
@@ -148,6 +96,10 @@ function openMobileNavigation() {
       <div class="min-w-0 flex-1">
         <div class="truncate text-lg font-semibold text-brand-primary">{{ pageTitle }}</div>
       </div>
+
+      <VChip class="hidden md:inline-flex" color="info" size="small" variant="tonal">
+        Local Demo · Synthetic Data
+      </VChip>
 
       <VBtn
         :aria-label="isDark ? t('actions.switchToLightMode') : t('actions.switchToDarkMode')"
@@ -230,11 +182,6 @@ function openMobileNavigation() {
               <VListItemSubtitle class="text-wrap">
                 {{ notification.message }}
               </VListItemSubtitle>
-              <template #append>
-                <span class="text-caption text-medium-emphasis" style="white-space: nowrap">{{
-                  notification.time
-                }}</span>
-              </template>
             </VListItem>
           </VList>
           <VAlert v-else class="ma-4" color="success" variant="tonal">
@@ -242,7 +189,13 @@ function openMobileNavigation() {
           </VAlert>
           <VDivider />
           <VCardActions class="justify-center py-2">
-            <VBtn variant="text" size="small" color="primary" append-icon="mdi-arrow-right">
+            <VBtn
+              variant="text"
+              size="small"
+              color="primary"
+              append-icon="mdi-arrow-right"
+              to="/dashboard"
+            >
               {{ t('actions.viewAllNotifications') }}
             </VBtn>
           </VCardActions>
@@ -276,6 +229,11 @@ function openMobileNavigation() {
               prepend-icon="mdi-shield-key-outline"
               :subtitle="session.currentPersona.value.stationScope.join(', ')"
               :title="t('topbar.stationScope')"
+            />
+            <VListItem
+              prepend-icon="mdi-logout-variant"
+              title="Switch demo account"
+              @click="session.logout()"
             />
           </VList>
         </VCard>

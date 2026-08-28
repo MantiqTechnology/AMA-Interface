@@ -3,7 +3,7 @@ import type { MaintenanceCommandCenterDto } from '#shared/features/maintenance';
 import type { DataTableHeader } from 'vuetify';
 import ExpandedTable from '../common/table/Expanded.vue';
 
-type Aircraft = MaintenanceCommandCenterDto['fleet'][number];
+type Aircraft = MaintenanceCommandCoenterDto['fleet'][number];
 type Defect = MaintenanceCommandCenterDto['defects'][number];
 type Release = MaintenanceCommandCenterDto['technicalReleases'][number];
 

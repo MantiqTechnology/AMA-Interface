@@ -22,7 +22,7 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: `env -u BASH_ENV PATH=${nodeBinDirectory}:/usr/local/bin:/usr/bin:/bin bash --noprofile --norc -c 'export DEMO_SEED_DATE=2026-07-17 NUXT_BUILD_DIR=.nuxt-playwright AMA_DB_PATH=./data/playwright.sqlite AMA_DOCUMENT_MANIFEST=./data/playwright-documents.json AMA_UPLOAD_MANIFEST=./data/playwright-uploads.json AMA_UPLOAD_DIR=./data/uploads/playwright; corepack pnpm demo:reset && corepack pnpm exec nuxi cleanup && corepack pnpm exec nuxi prepare && corepack pnpm dev --port ${port}'`,
+    command: `env -u BASH_ENV PATH=${nodeBinDirectory}:/usr/local/bin:/usr/bin:/bin bash --noprofile --norc -c 'export DEMO_SEED_DATE=2026-07-17 DEMO_SESSION_SECRET=ama-playwright-session-secret-at-least-32-bytes DEMO_ACCOUNT_HELPER=true AMA_ALLOW_LEGACY_TEST_ROLE_COOKIE=true NUXT_BUILD_DIR=.nuxt-playwright AMA_DB_PATH=./data/playwright.sqlite AMA_DOCUMENT_MANIFEST=./data/playwright-documents.json AMA_UPLOAD_MANIFEST=./data/playwright-uploads.json AMA_UPLOAD_DIR=./data/uploads/playwright; corepack pnpm demo:reset && corepack pnpm exec nuxi cleanup && corepack pnpm exec nuxi prepare && corepack pnpm dev --port ${port}'`,
     url: `http://localhost:${port}`,
     reuseExistingServer: Boolean(process.env.PLAYWRIGHT_REUSE_SERVER),
     timeout: 120_000

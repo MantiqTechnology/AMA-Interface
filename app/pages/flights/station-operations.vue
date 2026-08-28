@@ -2,7 +2,8 @@
 import { provideStationOperationsContext } from '../../features/station-operations/composables/useStationOperationsContext';
 
 const route = useRoute();
-const context = await provideStationOperationsContext();
+const isNetworkDashboard = computed(() => route.path === '/flights/station-operations/network');
+const context = await provideStationOperationsContext({ syncRoute: !isNetworkDashboard.value });
 
 const legacyTabRoutes: Record<string, string> = {
   flights: '/flights/station-operations/flights',
@@ -32,34 +33,37 @@ if (route.path === '/flights/station-operations') {
 
 <template>
   <VContainer class="px-3 py-5 md:px-4" fluid>
-    <ShellStationOperationsHeader
-      :station-code="context.selectedStationCode.value"
-      :operational-date="context.operationalDateModel.value"
-      :station-options="context.stationOptions.value"
-      :selected-station-label="context.selectedStationLabel.value"
-      :can-change-station="context.canChangeStation.value"
-      :can-read-assets="context.canReadAssets.value"
-      :last-updated="context.lastUpdated.value"
-      :refreshing="context.refreshing.value"
-      @update:station-code="context.selectedStationCode.value = $event"
-      @update:operational-date="context.operationalDateModel.value = $event"
-      @refresh="context.refreshCurrentPage"
-    />
+    <NuxtPage v-if="isNetworkDashboard" />
+    <template v-else>
+      <ShellStationOperationsHeader
+        :station-code="context.selectedStationCode.value"
+        :operational-date="context.operationalDateModel.value"
+        :station-options="context.stationOptions.value"
+        :selected-station-label="context.selectedStationLabel.value"
+        :can-change-station="context.canChangeStation.value"
+        :can-read-assets="context.canReadAssets.value"
+        :last-updated="context.lastUpdated.value"
+        :refreshing="context.refreshing.value"
+        @update:station-code="context.selectedStationCode.value = $event"
+        @update:operational-date="context.operationalDateModel.value = $event"
+        @refresh="context.refreshCurrentPage"
+      />
 
-    <ShellStationOperationsTabs
-      :station-code="context.selectedStationCode.value"
-      :operational-date="context.operationalDateIso.value"
-    />
+      <ShellStationOperationsTabs
+        :station-code="context.selectedStationCode.value"
+        :operational-date="context.operationalDateIso.value"
+      />
 
-    <ShellStationOperationsFeedback
-      :error="context.error.value"
-      :action-error="context.actionError.value"
-      :action-success="context.actionSuccess.value"
-      @retry="context.refreshCurrentPage"
-      @clear-action-error="context.actionError.value = ''"
-      @update:action-success="context.actionSuccess.value = $event"
-    />
+      <ShellStationOperationsFeedback
+        :error="context.error.value"
+        :action-error="context.actionError.value"
+        :action-success="context.actionSuccess.value"
+        @retry="context.refreshCurrentPage"
+        @clear-action-error="context.actionError.value = ''"
+        @update:action-success="context.actionSuccess.value = $event"
+      />
 
-    <NuxtPage />
+      <NuxtPage />
+    </template>
   </VContainer>
 </template>

@@ -144,6 +144,13 @@ export const aircraftServiceabilityStatusSchema = z.enum([
 export const financeHandoffStatusSchema = z.enum(['DRAFT', 'READY', 'POSTED', 'VOID']);
 export const assurancePhaseSchema = z.enum(['PLANNING', 'DEPARTURE']);
 export const dgDecisionSchema = z.enum(['ACCEPTED', 'REJECTED']);
+export const stationEvidenceCategorySchema = z.enum(['OPERATIONAL', 'EXTERNAL_REPORT']);
+export const stationEvidenceSourcePartySchema = z.enum([
+  'PT_AMA_STATION',
+  'AVSEC',
+  'AUTHORITY',
+  'OTHER'
+]);
 export const financeHandoffEventTypeSchema = z.enum([
   'FUEL_COST_DRAFT',
   'STATION_COST_DRAFT',
@@ -1246,7 +1253,11 @@ export const addStationTaskEvidenceBodySchema = z.object({
   uploadId: z.string().trim().min(1).optional(),
   documentType: z.string().trim().optional(),
   fileName: z.string().trim().min(1),
-  notes: z.string().trim().max(1000).optional()
+  notes: z.string().trim().max(1000).optional(),
+  evidenceCategory: stationEvidenceCategorySchema.optional().default('OPERATIONAL'),
+  sourceParty: stationEvidenceSourcePartySchema.optional(),
+  sourcePartyName: z.string().trim().max(120).optional(),
+  receivedAt: z.string().trim().max(40).optional()
 });
 
 export const createStationTaskBodySchema = z.object({

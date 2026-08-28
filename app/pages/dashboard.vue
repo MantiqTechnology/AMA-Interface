@@ -741,6 +741,20 @@ function resetSections() {
               </VRow>
             </VCardText>
           </VCard>
+
+          <VAlert
+            class="mt-4"
+            color="info"
+            icon="mdi-radar"
+            title="Operational resilience & compliance preview"
+            variant="tonal"
+          >
+            Explore three clearly labelled, read-only concepts for Offline & Sync, Safety Management
+            System, and Aviation Security.
+            <template #append>
+              <VBtn color="info" to="/capability-preview" variant="flat">Open preview</VBtn>
+            </template>
+          </VAlert>
         </section>
 
         <VTabs v-model="activeTab" class="mb-4" color="primary">

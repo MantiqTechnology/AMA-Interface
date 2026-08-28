@@ -9,7 +9,6 @@ import { documentTypesForOwner, getDocumentTypeConfig } from '#shared/constants/
 import DocumentStatusBadge from './DocumentStatusBadge.vue';
 
 type DocumentFormState = {
-  uploadId: string | null;
   documentType: string;
   title: string;
   documentNumber: string;
@@ -51,7 +50,6 @@ const typeOptions = computed(() =>
 const defaultType = computed(() => typeOptions.value[0]?.value ?? 'GENERAL_DOCUMENT');
 
 const form = reactive<DocumentFormState>({
-  uploadId: null,
   documentType: defaultType.value,
   title: '',
   documentNumber: '',
@@ -76,11 +74,6 @@ const {
   })
 );
 
-const { data: uploads, refresh: refreshUploads } = await useAsyncData(
-  'document-panel-uploads',
-  () => fetchApi<LocalUploadDto[]>('/api/uploads')
-);
-
 const rows = computed(() => documents.value ?? []);
 const validCount = computed(
   () =>
@@ -98,13 +91,6 @@ const pendingCount = computed(
   () => rows.value.filter((item) => item.verificationStatus === 'PENDING_VERIFICATION').length
 );
 
-const uploadOptions = computed(() =>
-  (uploads.value ?? []).map((upload) => ({
-    title: `${upload.originalName} (${formatFileSize(upload.size)})`,
-    value: upload.id
-  }))
-);
-
 watch(
   () => form.documentType,
   (documentType) => {
@@ -117,12 +103,6 @@ watch(
 function firstSelectedFile() {
   if (Array.isArray(selectedFile.value)) return selectedFile.value[0] ?? null;
   return selectedFile.value;
-}
-
-function formatFileSize(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function formatDate(value: string | undefined) {
@@ -147,7 +127,6 @@ function resetForm(document?: MasterDocumentDto) {
   const documentType = document?.documentType ?? defaultType.value;
   const type = getDocumentTypeConfig(documentType);
 
-  form.uploadId = null;
   form.documentType = documentType;
   form.title = document ? `${document.title} revision` : (type?.label ?? '');
   form.documentNumber = document?.documentNumber ?? '';
@@ -183,7 +162,7 @@ function readError(errorValue: unknown) {
 
 async function uploadSelectedFile() {
   const file = firstSelectedFile();
-  if (!file) return form.uploadId;
+  if (!file) return null;
 
   const uploadForm = new FormData();
   uploadForm.append('file', file);
@@ -204,7 +183,7 @@ async function submitDocument() {
     const uploadId = await uploadSelectedFile();
 
     if (!uploadId) {
-      errorMessage.value = 'Select a file or choose an existing upload.';
+      errorMessage.value = 'Select a PDF, JPEG, or PNG file.';
       return;
     }
 
@@ -240,7 +219,7 @@ async function submitDocument() {
     }
 
     dialog.value = false;
-    await Promise.all([refresh(), refreshUploads()]);
+    await refresh();
   } catch (errorValue) {
     errorMessage.value = readError(errorValue);
   } finally {
@@ -491,28 +470,16 @@ async function reject(document: MasterDocumentDto, reason: string) {
             <VCol cols="12" md="6">
               <VTextField v-model="form.title" density="compact" label="Title" variant="outlined" />
             </VCol>
-            <VCol cols="12" md="6">
+            <VCol cols="12">
               <VFileInput
                 v-model="selectedFile"
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
+                accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf"
                 clearable
                 density="compact"
                 label="Upload new file"
                 prepend-icon=""
                 prepend-inner-icon="mdi-paperclip"
                 show-size
-                variant="outlined"
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSelect
-                v-model="form.uploadId"
-                clearable
-                density="compact"
-                item-title="title"
-                item-value="value"
-                :items="uploadOptions"
-                label="Or choose existing upload"
                 variant="outlined"
               />
             </VCol>

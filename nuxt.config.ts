@@ -3,9 +3,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 const defaultDbPath =
   process.env.AMA_DB_PATH ??
-  (process.env.VERCEL || process.env.NODE_ENV === 'production'
-    ? '/tmp/ama-demo.sqlite'
-    : './data/ama-demo.sqlite');
+  (process.env.VERCEL ? '/tmp/ama-demo.sqlite' : './data/ama-demo.sqlite');
 
 function patchVuetifySwitchCss() {
   return {
@@ -41,7 +39,9 @@ function patchVuetifySwitchPostcss() {
 export default defineNuxtConfig({
   buildDir: process.env.NUXT_BUILD_DIR ?? '.nuxt',
   compatibilityDate: '2026-07-04',
-  devtools: { enabled: true },
+  devtools: {
+    enabled: process.env.NODE_ENV === 'development' && process.env.ENABLE_NUXT_DEVTOOLS === 'true'
+  },
   modules: ['vuetify-nuxt-module'],
   srcDir: 'app',
   serverDir: 'server',
@@ -53,6 +53,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     dbPath: defaultDbPath,
     demoMode: process.env.DEMO_MODE ?? 'true',
+    demoSessionSecret: process.env.DEMO_SESSION_SECRET ?? '',
+    demoAccountHelper: process.env.DEMO_ACCOUNT_HELPER ?? 'false',
     s3Upload: {
       bucket: process.env.S3_UPLOAD_BUCKET ?? '',
       endpoint: process.env.S3_UPLOAD_ENDPOINT ?? '',
@@ -67,6 +69,7 @@ export default defineNuxtConfig({
     },
     public: {
       demoMode: process.env.DEMO_MODE ?? 'true',
+      demoAccountHelper: process.env.DEMO_ACCOUNT_HELPER ?? 'false',
       aircraftImageBaseUrl:
         process.env.AIRCRAFT_IMAGE_BASE_URL ?? process.env.S3_UPLOAD_PUBLIC_BASE_URL ?? ''
     }

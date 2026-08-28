@@ -19,6 +19,10 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     pool: 'forks',
     fileParallelism: false,
-    testTimeout: 15000
+    testTimeout: 15000,
+    env: {
+      DEMO_SESSION_SECRET: 'ama-test-session-secret-at-least-32-bytes',
+      AMA_ALLOW_LEGACY_TEST_ROLE_COOKIE: 'true'
+    }
   }
 });

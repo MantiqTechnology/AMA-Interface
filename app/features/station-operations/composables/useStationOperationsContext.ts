@@ -21,7 +21,9 @@ function cleanQuery(query: Record<string, unknown>): Record<string, string | num
   return result;
 }
 
-export function provideStationOperationsContext(): StationOperationsContext {
+export function provideStationOperationsContext(
+  options: { syncRoute?: boolean } = {}
+): StationOperationsContext {
   const route = useRoute();
   const router = useRouter();
   const { currentPersona } = useDemoSession();
@@ -38,6 +40,7 @@ export function provideStationOperationsContext(): StationOperationsContext {
       default: () => [] as MasterStationOption[]
     }
   );
+  const syncRoute = options.syncRoute ?? true;
 
   const stationMaster = computed<StationOption[]>(() =>
     masterStationOptions.value.map((station) => ({
@@ -168,6 +171,7 @@ export function provideStationOperationsContext(): StationOperationsContext {
   watch(
     [selectedStationCode, operationalDateIso],
     async ([stationCode, date]: [string, string]) => {
+      if (!syncRoute) return;
       const currentStation =
         typeof route.query.stationCode === 'string' ? route.query.stationCode : undefined;
       const currentDate = typeof route.query.date === 'string' ? route.query.date : undefined;

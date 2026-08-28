@@ -9,6 +9,12 @@ export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'document.read');
   const { id } = parseParams(event, idParamSchema);
   const document = await getDocument(id);
-  requireDocumentOwnerAccess(event, document.ownerType, document.ownerId);
+  requireDocumentOwnerAccess(
+    event,
+    document.ownerType,
+    document.ownerId,
+    document.visibility,
+    document.documentType
+  );
   return document;
 });

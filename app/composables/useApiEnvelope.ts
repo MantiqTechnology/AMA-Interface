@@ -23,9 +23,11 @@ export async function fetchApi<T>(
   options?: Parameters<typeof $fetch>[1]
 ) {
   const { locale } = useAppLocale();
+  const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined;
   const response = await $fetch.raw<ApiResponse<T>>(request, {
     ...options,
     headers: {
+      ...(requestHeaders ?? {}),
       'Accept-Language': locale.value,
       ...(options?.headers ?? {})
     },

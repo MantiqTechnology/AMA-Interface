@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addStationTaskEvidenceBodySchema,
   createCargoBodySchema,
   createDirectFlightOperationBodySchema,
   createFlightOperationBodySchema,
@@ -105,6 +106,26 @@ describe('flight operation request contracts', () => {
     expect(stationCost.flightId).toBeNull();
     expect(stationCost.vendorId).toBeNull();
     expect(stationCost.amount).toBe(250000);
+  });
+
+  it('accepts PT AMA station evidence received from AVSEC as an external report', () => {
+    const evidence = addStationTaskEvidenceBodySchema.parse({
+      expectedVersion: '2',
+      uploadId: 'upload-1',
+      fileName: 'avsec-report.pdf',
+      documentType: 'STATION_EXTERNAL_REPORT',
+      evidenceCategory: 'EXTERNAL_REPORT',
+      sourceParty: 'AVSEC',
+      sourcePartyName: 'DJJ AVSEC post',
+      receivedAt: '2026-07-23T07:30'
+    });
+
+    expect(evidence).toMatchObject({
+      expectedVersion: 2,
+      evidenceCategory: 'EXTERNAL_REPORT',
+      sourceParty: 'AVSEC',
+      sourcePartyName: 'DJJ AVSEC post'
+    });
   });
 
   it('normalizes the five-step flight request payload', () => {

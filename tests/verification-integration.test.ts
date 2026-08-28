@@ -1,12 +1,41 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { FlightOperationsVerificationService } from '../server/services/flight-operations-verification.service';
+import { getUpload, saveUpload } from '../server/utils/upload-storage';
 
 describe('Operational Verification and Readiness Assurance', () => {
   let sqlite: Database.Database;
   let service: FlightOperationsVerificationService;
+  let tempRoot: string;
+  let originalUploadEnv: Record<string, string | undefined>;
+  const uploadEnvKeys = [
+    'AMA_UPLOAD_DIR',
+    'AMA_UPLOAD_MANIFEST',
+    'S3_UPLOAD_BUCKET',
+    'S3_UPLOAD_ENDPOINT',
+    'S3_UPLOAD_REGION',
+    'S3_UPLOAD_MANIFEST_KEY',
+    'S3_UPLOAD_ACCESS_KEY_ID',
+    'S3_UPLOAD_SECRET_ACCESS_KEY',
+    'S3_UPLOAD_PUBLIC_BASE_URL'
+  ];
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    originalUploadEnv = Object.fromEntries(uploadEnvKeys.map((key) => [key, process.env[key]]));
+    tempRoot = await mkdtemp(join(tmpdir(), 'ama-verification-uploads-'));
+    process.env.AMA_UPLOAD_DIR = join(tempRoot, 'uploads');
+    process.env.AMA_UPLOAD_MANIFEST = join(tempRoot, 'local-uploads.json');
+    delete process.env.S3_UPLOAD_BUCKET;
+    delete process.env.S3_UPLOAD_ENDPOINT;
+    delete process.env.S3_UPLOAD_REGION;
+    delete process.env.S3_UPLOAD_MANIFEST_KEY;
+    delete process.env.S3_UPLOAD_ACCESS_KEY_ID;
+    delete process.env.S3_UPLOAD_SECRET_ACCESS_KEY;
+    delete process.env.S3_UPLOAD_PUBLIC_BASE_URL;
+
     // Create an in-memory SQLite database for testing
     sqlite = new Database(':memory:');
 
@@ -113,6 +142,11 @@ describe('Operational Verification and Readiness Assurance', () => {
         readiness_check_code TEXT,
         upload_id TEXT,
         document_type TEXT,
+        evidence_category TEXT NOT NULL DEFAULT 'OPERATIONAL',
+        source_party TEXT,
+        source_party_name TEXT,
+        received_at TEXT,
+        received_by_station_id TEXT,
         file_name TEXT,
         notes TEXT,
         uploaded_by_user_id TEXT,
@@ -229,6 +263,16 @@ describe('Operational Verification and Readiness Assurance', () => {
     service = new FlightOperationsVerificationService(sqlite);
   });
 
+  afterEach(async () => {
+    sqlite.close();
+    await rm(tempRoot, { recursive: true, force: true });
+    for (const key of uploadEnvKeys) {
+      const value = originalUploadEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
   const stationAdminCtx = { userId: 'station-admin', role: 'Station Admin', stationCodes: ['DJJ'] };
   const occCtx = { userId: 'occ-user', role: 'OCC', stationCodes: ['ALL'] };
   const demoAdminCtx = { userId: 'admin-user', role: 'Demo Admin', stationCodes: ['ALL'] };
@@ -319,6 +363,85 @@ describe('Operational Verification and Readiness Assurance', () => {
       verification_status: 'VERIFIED',
       source_hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       evidence_references: expect.stringContaining('ev-')
+    });
+  });
+
+  it('should attach uploaded files when station evidence is recorded', async () => {
+    const task = await service.createStationTask(
+      {
+        flightId: 'flight-1',
+        stationId: 'station-origin',
+        phase: 'ORIGIN_DEPARTURE',
+        taskCode: 'ORIGIN_UPLOAD_EVIDENCE',
+        taskTitle: 'Origin upload evidence',
+        requiresEvidence: true
+      },
+      stationAdminCtx
+    );
+    const started = await service.startStationTask(task.id, task.version, stationAdminCtx);
+    const upload = await saveUpload({
+      data: Buffer.from('%PDF-1.4\nstation evidence\n'),
+      originalName: 'origin-evidence.pdf',
+      contentType: 'application/pdf',
+      uploadedBy: stationAdminCtx.userId,
+      status: 'DRAFT',
+      stationScopes: stationAdminCtx.stationCodes,
+      purpose: 'DOCUMENT'
+    });
+
+    await service.addStationTaskEvidence(
+      {
+        stationTaskId: task.id,
+        expectedVersion: started.version,
+        uploadId: upload.id,
+        fileName: upload.originalName,
+        documentType: 'STATION_OPERATION_EVIDENCE'
+      },
+      stationAdminCtx
+    );
+
+    const attached = await getUpload(upload.id);
+    expect(attached.status).toBe('ATTACHED');
+    expect(attached.ownerType).toBe('station_task');
+    expect(attached.ownerId).toBe(task.id);
+  });
+
+  it('should record AVSEC reports as PT AMA station external evidence', async () => {
+    const task = await service.createStationTask(
+      {
+        flightId: 'flight-1',
+        stationId: 'station-origin',
+        phase: 'ORIGIN_DEPARTURE',
+        taskCode: 'ORIGIN_AVSEC_REPORT',
+        taskTitle: 'Origin AVSEC report',
+        requiresEvidence: true
+      },
+      stationAdminCtx
+    );
+    const started = await service.startStationTask(task.id, task.version, stationAdminCtx);
+
+    const evidence = await service.addStationTaskEvidence(
+      {
+        stationTaskId: task.id,
+        expectedVersion: started.version,
+        fileName: 'avsec-report.pdf',
+        documentType: 'STATION_EXTERNAL_REPORT',
+        evidenceCategory: 'EXTERNAL_REPORT',
+        sourceParty: 'AVSEC',
+        sourcePartyName: 'DJJ AVSEC post',
+        receivedAt: '2026-07-23T07:30:00.000Z',
+        notes: 'Report received and uploaded by PT AMA Station DJJ.'
+      },
+      stationAdminCtx
+    );
+
+    expect(evidence).toMatchObject({
+      evidence_category: 'EXTERNAL_REPORT',
+      source_party: 'AVSEC',
+      source_party_name: 'DJJ AVSEC post',
+      received_at: '2026-07-23T07:30:00.000Z',
+      received_by_station_id: 'station-origin',
+      uploaded_by_user_id: stationAdminCtx.userId
     });
   });
 

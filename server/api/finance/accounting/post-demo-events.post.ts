@@ -4,7 +4,6 @@ import { defineApiEventHandler } from '../../../utils/api-response';
 import { getDemoActorId, requireDemoPermission } from '../../../utils/auth';
 import { DomainError } from '../../../utils/errors';
 import { parseBody } from '../../../utils/validation';
-import { getCookie } from 'h3';
 
 export default defineApiEventHandler(async (event) => {
   if (String(useRuntimeConfig().demoMode) !== 'true') {
@@ -12,13 +11,6 @@ export default defineApiEventHandler(async (event) => {
       'ACCOUNTING_DEMO_ENDPOINT_DISABLED',
       'Demo accounting posting is only available in demo mode.',
       404
-    );
-  }
-  if (getCookie(event, 'ama_demo_role') === undefined) {
-    throw new DomainError(
-      'FORBIDDEN',
-      'A demo role cookie is required to run demo accounting posting.',
-      403
     );
   }
   requireDemoPermission(event, 'finance.accounting.post');

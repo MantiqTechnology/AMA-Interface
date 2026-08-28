@@ -85,6 +85,14 @@ function createOpenFinding(
       severity: 'HIGH',
       location: 'LH main landing gear',
       ataChapter: '29',
+      detectedDuring: 'INSPECTION',
+      operationalImpact: 'GROUNDING_AOG',
+      findingClassification: 'SAFETY_CRITICAL',
+      melCdlAssessment: 'CANDIDATE',
+      immediateAction: 'Stop aircraft movement and notify Maintenance Control.',
+      aircraftMovementProhibited: true,
+      notifyMaintenanceControl: true,
+      requiresInspectorReview: true,
       immediateSafetyConcern: true,
       evidenceReferences: ['M4-NR-EVIDENCE-001'],
       idempotencyKey: `m4-create-${title}`
@@ -208,6 +216,14 @@ describe('M4 non-routine finding lifecycle', () => {
         severity: 'HIGH',
         location: 'LH main landing gear',
         ataChapter: '29',
+        detectedDuring: 'INSPECTION',
+        operationalImpact: 'GROUNDING_AOG',
+        findingClassification: 'SAFETY_CRITICAL',
+        melCdlAssessment: 'CANDIDATE',
+        immediateAction: 'Stop aircraft movement and notify Maintenance Control.',
+        aircraftMovementProhibited: true,
+        notifyMaintenanceControl: true,
+        requiresInspectorReview: true,
         immediateSafetyConcern: true,
         evidenceReferences: ['M4-HOSE-EVIDENCE'],
         idempotencyKey: 'm4-create-hose'
@@ -234,8 +250,19 @@ describe('M4 non-routine finding lifecycle', () => {
       sourceJobCardId: source.id,
       aircraftId: created.aircraftId,
       workflowState: 'WAITING_ASSESSMENT',
-      foundByUserId: technician.userId
+      foundByUserId: technician.userId,
+      detectedDuring: 'INSPECTION',
+      operationalImpact: 'GROUNDING_AOG',
+      findingClassification: 'SAFETY_CRITICAL',
+      melCdlAssessment: 'CANDIDATE',
+      immediateAction: 'Stop aircraft movement and notify Maintenance Control.',
+      aircraftMovementProhibited: true,
+      notifyMaintenanceControl: true,
+      requiresInspectorReview: true
     });
+    expect(services.maintenance.evaluateReleaseEligibility('mwp-mrov1-active').blockers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'NON_ROUTINE_FINDING_OPEN' })])
+    );
     expect(() =>
       services.maintenance.assessNonRoutineFinding(
         created.nonRoutineFindings![0]!.id,

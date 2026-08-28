@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext } from '@playwright/test';
+import { Buffer } from 'node:buffer';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -35,13 +36,36 @@ test('plays non-routine finding corrective workflow through Work Package UI', as
   await page.screenshot({ path: output('01-job-card-active.png'), fullPage: true });
 
   await page.getByRole('button', { name: 'Catat Temuan' }).click();
+  await expect(page.getByRole('heading', { name: 'Catat Temuan Non-Routine' })).toBeVisible();
+  await expect(page.getByText('Work Package', { exact: true })).toBeVisible();
+  await expect(page.getByText('Field wajib belum lengkap')).toBeVisible();
   await page.getByLabel('Judul temuan').fill(findingTitle);
   await page
     .getByLabel('Deskripsi temuan')
     .fill('Mechanic found unexpected hydraulic hose chafing during planned inspection.');
-  await page.getByLabel('Lokasi/System').fill('LH main landing gear');
+  await page.getByLabel('Ada dampak keselamatan langsung').click();
+  await expect(page.getByText('Concern keselamatan aktif')).toBeVisible();
+  await expect(page.getByLabel('Dampak operasional')).toHaveValue('Grounding / AOG');
+  await expect(page.getByLabel('Klasifikasi temuan')).toHaveValue('Safety critical');
+  await expect(page.getByLabel('Prioritas')).toHaveValue('AOG');
+  await page.getByLabel('Lokasi / Sistem').fill('LH main landing gear');
+  await page.getByRole('textbox', { name: 'ATA', exact: true }).fill('29');
+  await page
+    .getByLabel('Tindakan segera')
+    .fill('Stop aircraft movement and notify Maintenance Control for grounding assessment.');
+  await page.locator('.non-routine-dialog input[type="file"]').setInputFiles({
+    name: 'm4-non-routine-evidence.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l1E9YQAAAABJRU5ErkJggg==',
+      'base64'
+    )
+  });
+  await page.getByRole('button', { name: 'Upload Bukti' }).click();
+  await expect(page.getByText('m4-non-routine-evidence.png')).toBeVisible();
   await page.screenshot({ path: output('02-create-non-routine.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Simpan Temuan' }).click();
+  await page.getByRole('button', { name: 'Simpan & Eskalasi Temuan' }).click();
+  await expect(page.getByText('Release readiness akan terblokir')).toBeVisible();
   await expect(page.getByText('Menunggu Assessment').first()).toBeVisible();
   await page.screenshot({ path: output('03-nr-waiting-assessment.png'), fullPage: true });
 

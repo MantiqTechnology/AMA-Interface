@@ -16,7 +16,18 @@ describe('i18n foundation', () => {
       expect(messages[locale].nav.flightRequests).toBeTruthy();
       expect(messages[locale].topbar.notifications).toBeTruthy();
       expect(messages[locale].actions.openNavigation).toBeTruthy();
+      expect(messages[locale].stationOperations.taskTitles.ORIGIN_HANDOVER).toBeTruthy();
+      expect(messages[locale].stationOperations.taskTitles.DESTINATION_HANDOVER).toBeTruthy();
     }
+  });
+
+  it('localizes station operation task titles by locale', () => {
+    expect(messages.en.stationOperations.taskTitles.DESTINATION_HANDOVER).toBe(
+      'Passenger and cargo handover completed'
+    );
+    expect(messages.id.stationOperations.taskTitles.DESTINATION_HANDOVER).toBe(
+      'Serah terima penumpang dan kargo selesai'
+    );
   });
 
   it('allows API errors to carry translation metadata without breaking message fallback', () => {

@@ -10,7 +10,13 @@ export default defineApiEventHandler(async (event) => {
   requireDemoPermission(event, 'document.upload');
   const { id } = parseParams(event, idParamSchema);
   const document = await getDocument(id);
-  requireDocumentOwnerAccess(event, document.ownerType, document.ownerId);
+  requireDocumentOwnerAccess(
+    event,
+    document.ownerType,
+    document.ownerId,
+    document.visibility,
+    document.documentType
+  );
   const deleted = await deleteDocument(id);
   invalidateFlightDocumentReadiness(document.ownerType, document.ownerId, getDemoActorId(event));
   return deleted;

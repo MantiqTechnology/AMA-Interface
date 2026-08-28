@@ -4,6 +4,7 @@ import {
   getLocalUploadFile,
   listLocalUploads,
   saveLocalUpload,
+  updateLocalUploadMetadata,
   type SaveLocalUploadInput
 } from './local-upload-storage';
 import {
@@ -12,7 +13,8 @@ import {
   getS3UploadFile,
   isS3UploadConfigured,
   listS3Uploads,
-  saveS3Upload
+  saveS3Upload,
+  updateS3UploadMetadata
 } from './s3-upload-storage';
 
 export type SaveUploadInput = SaveLocalUploadInput;
@@ -43,4 +45,11 @@ export async function getUploadFile(id: string) {
 
 export async function deleteUpload(id: string) {
   return getUploadStorageDriver() === 's3' ? await deleteS3Upload(id) : await deleteLocalUpload(id);
+}
+
+export async function attachUpload(id: string, ownerType: string, ownerId: string) {
+  const metadata = { status: 'ATTACHED' as const, ownerType, ownerId };
+  return getUploadStorageDriver() === 's3'
+    ? await updateS3UploadMetadata(id, metadata)
+    : await updateLocalUploadMetadata(id, metadata);
 }

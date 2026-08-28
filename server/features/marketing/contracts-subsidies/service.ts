@@ -4,27 +4,31 @@ import { ContractsSubsidiesRepository } from './repository';
 export class ContractsSubsidiesService {
   constructor(private readonly repository: ContractsSubsidiesRepository) {}
 
-  overview() {
-    return this.repository.overview();
+  overview(query: Partial<ContractsSubsidiesQuery>) {
+    return this.repository.overview(query);
   }
 
-  contracts(query: ContractsSubsidiesQuery) {
+  contracts(query: Partial<ContractsSubsidiesQuery>) {
     return this.repository.contracts(query);
   }
 
-  subsidies(query: ContractsSubsidiesQuery) {
+  subsidies(query: Partial<ContractsSubsidiesQuery>) {
     return this.repository.subsidies(query);
   }
 
-  absorption() {
-    return this.repository.absorption();
+  absorption(query: Partial<ContractsSubsidiesQuery>) {
+    return this.repository.absorption(query);
   }
 
-  activity() {
-    return this.repository.activity();
+  activity(query: Partial<ContractsSubsidiesQuery>) {
+    return this.repository.activity(query);
   }
 
-  history() {
-    return this.repository.history();
+  history(query: Partial<ContractsSubsidiesQuery>) {
+    return this.repository.history(query);
+  }
+
+  renewals(query: Partial<ContractsSubsidiesQuery>) {
+    return this.repository.renewals(query);
   }
 }

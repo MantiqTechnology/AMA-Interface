@@ -9,7 +9,11 @@ import type {
   FlightControlAction,
   FlightControlDashboardDto,
   OperationalDashboardQuery,
-  OpsDashboardDto
+  OpsDashboardDto,
+  StationNetworkAttention,
+  StationNetworkDashboardDto,
+  StationNetworkFinancialPerformance,
+  StationNetworkPerformance
 } from '../../shared/contracts/operational-dashboards';
 import type { OperationalFlightMonitorDto } from '../../shared/contracts/operations-monitoring';
 import { DomainError } from '../utils/errors';
@@ -672,6 +676,211 @@ export class OperationalDashboardsService {
     };
   }
 
+  stationNetworkDashboard(query: OperationalDashboardQuery): StationNetworkDashboardDto {
+    const context = this.context({ ...query, stationId: undefined }, ['ALL']);
+    const { meta, stations, flights, dateFrom, dateTo } = context;
+    const atRiskFlights = flights.filter(
+      (flight) =>
+        flight.currentStatus === 'BLOCKED' ||
+        flight.currentStatus === 'PENDING_CLOSURE' ||
+        (flight.readinessRequiredChecks > 0 && flight.readinessPercent < 100)
+    );
+    const departed = flights.filter(
+      (flight) => flight.scheduledDepartureAt && flight.actualDepartureAt
+    );
+    const onTimeDepartures = departed.filter((flight) => (delayMinutes(flight) ?? 0) <= 15);
+    const onTimePercent = departed.length
+      ? Math.round((onTimeDepartures.length / departed.length) * 100)
+      : null;
+    const activeStationIds = new Set(stations.map((station) => station.id));
+    const stationTaskCounts = this.stationTaskCounts(dateFrom, dateTo, activeStationIds);
+    const stationServiceCounts = this.stationServiceCounts(dateFrom, dateTo, activeStationIds);
+    const stationCostExposure = this.stationCostExposure(dateFrom, dateTo, activeStationIds);
+    const financial = this.stationFinancials(dateFrom, dateTo);
+    const asOf = new Date().toISOString();
+
+    const performance = stations
+      .map<StationNetworkPerformance>((station) => {
+        const stationFlights = flights.filter(
+          (flight) =>
+            flight.originStationId === station.id || flight.destinationStationId === station.id
+        );
+        const stationDepartures = departed.filter(
+          (flight) => flight.originStationId === station.id
+        );
+        const stationOnTime = stationDepartures.filter(
+          (flight) => (delayMinutes(flight) ?? 0) <= 15
+        ).length;
+        const stationAtRisk = atRiskFlights.filter(
+          (flight) =>
+            flight.originStationId === station.id || flight.destinationStationId === station.id
+        ).length;
+        return {
+          stationId: station.id,
+          stationCode: station.code,
+          stationName: station.name,
+          flights: stationFlights.length,
+          onTimePercent: stationDepartures.length
+            ? Math.round((stationOnTime / stationDepartures.length) * 100)
+            : null,
+          eligibleDepartures: stationDepartures.length,
+          flightsAtRisk: stationAtRisk,
+          pendingVerification: stationTaskCounts.get(station.id) ?? 0,
+          pendingServices: stationServiceCounts.get(station.id) ?? 0,
+          href: this.stationWorkspaceHref(station.code, meta.anchorDate)
+        };
+      })
+      .sort(
+        (left, right) =>
+          right.flightsAtRisk - left.flightsAtRisk ||
+          right.pendingVerification - left.pendingVerification ||
+          right.pendingServices - left.pendingServices ||
+          right.flights - left.flights ||
+          left.stationCode.localeCompare(right.stationCode)
+      );
+
+    const attention = performance
+      .filter(
+        (station) =>
+          station.flightsAtRisk > 0 ||
+          station.pendingVerification > 0 ||
+          station.pendingServices > 0
+      )
+      .map<StationNetworkAttention>((station) => {
+        const severity = station.flightsAtRisk > 0 ? 'critical' : 'warning';
+        const details = [
+          station.flightsAtRisk ? `${station.flightsAtRisk} flight berisiko` : null,
+          station.pendingVerification ? `${station.pendingVerification} verifikasi tertunda` : null,
+          station.pendingServices ? `${station.pendingServices} layanan tertunda` : null
+        ].filter((item): item is string => Boolean(item));
+        return {
+          id: station.stationId,
+          stationCode: station.stationCode,
+          stationName: station.stationName,
+          severity,
+          title: `${station.stationCode} memerlukan perhatian`,
+          detail: details.join(' · '),
+          href: station.href
+        };
+      })
+      .slice(0, 6);
+
+    const financialStations = stations
+      .map<StationNetworkFinancialPerformance>((station) => {
+        const value = financial.byStation.get(station.id) ?? { revenueMinor: 0, costMinor: 0 };
+        const marginMinor = value.revenueMinor - value.costMinor;
+        return {
+          stationId: station.id,
+          stationCode: station.code,
+          stationName: station.name,
+          revenueMinor: value.revenueMinor,
+          costMinor: value.costMinor,
+          marginMinor,
+          marginPercent:
+            value.revenueMinor === 0
+              ? null
+              : Math.round((marginMinor / value.revenueMinor) * 1000) / 10,
+          href: this.stationWorkspaceHref(station.code, meta.anchorDate)
+        };
+      })
+      .sort(
+        (left, right) =>
+          right.marginMinor - left.marginMinor || left.stationCode.localeCompare(right.stationCode)
+      );
+
+    const metrics: DashboardMetric[] = [
+      {
+        key: 'TOTAL_FLIGHTS',
+        label: 'Total flight',
+        value: flights.length,
+        detail: 'Cohort flight pada periode aktif.',
+        icon: 'mdi-airplane-marker',
+        tone: 'neutral',
+        href: queryHref('/flights', { dateFrom, dateTo })
+      },
+      {
+        key: 'ON_TIME_PERFORMANCE',
+        label: 'On-time performance',
+        value: onTimePercent === null ? '-' : `${onTimePercent}%`,
+        detail: `${departed.length} keberangkatan aktual; batas on-time 15 menit.`,
+        icon: 'mdi-clock-check-outline',
+        tone: onTimePercent === null || onTimePercent >= 85 ? 'success' : 'warning',
+        href: queryHref('/flights', { dateFrom, dateTo, departed: 'true' })
+      },
+      {
+        key: 'FLIGHTS_AT_RISK',
+        label: 'Flight berisiko',
+        value: atRiskFlights.length,
+        detail: 'Blocked, readiness belum lengkap, atau closure tertunda.',
+        icon: 'mdi-airplane-alert',
+        tone: atRiskFlights.length ? 'danger' : 'success',
+        href: queryHref('/flights', { dateFrom, dateTo, attention: 'true' })
+      },
+      {
+        key: 'PENDING_VERIFICATION',
+        label: 'Verifikasi tertunda',
+        value: [...stationTaskCounts.values()].reduce((total, value) => total + value, 0),
+        detail: 'Task station berstatus pending atau in progress.',
+        icon: 'mdi-clipboard-check-outline',
+        tone: stationTaskCounts.size ? 'warning' : 'success',
+        href: '/flights/station-operations/verification'
+      },
+      {
+        key: 'PENDING_SERVICES',
+        label: 'Layanan tertunda',
+        value: [...stationServiceCounts.values()].reduce((total, value) => total + value, 0),
+        detail: 'Permintaan layanan station yang belum dikonfirmasi.',
+        icon: 'mdi-toolbox-outline',
+        tone: stationServiceCounts.size ? 'warning' : 'success',
+        href: '/flights/station-operations/services'
+      },
+      {
+        key: 'POSTED_MARGIN',
+        label: 'Margin posted',
+        value:
+          financial.revenueMinor === 0
+            ? '-'
+            : `${Math.round(((financial.revenueMinor - financial.costMinor) / financial.revenueMinor) * 1000) / 10}%`,
+        detail: 'Berdasarkan jurnal posted dengan dimensi flight.',
+        icon: 'mdi-chart-line-variant',
+        tone: financial.revenueMinor - financial.costMinor >= 0 ? 'success' : 'danger',
+        href: '/finance/hpp'
+      }
+    ];
+
+    return {
+      meta,
+      metrics,
+      overview: { attention },
+      performance: {
+        activity: this.activitySeries(flights, dateFrom, dateTo, null),
+        stations: performance
+      },
+      financial: {
+        actual: {
+          revenueMinor: financial.revenueMinor,
+          costMinor: financial.costMinor,
+          marginMinor: financial.revenueMinor - financial.costMinor,
+          marginPercent:
+            financial.revenueMinor === 0
+              ? null
+              : Math.round(
+                  ((financial.revenueMinor - financial.costMinor) / financial.revenueMinor) * 1000
+                ) / 10,
+          currencyCode: 'IDR',
+          attributionMethod: 'POSTED_GL_DIMENSIONS',
+          asOf
+        },
+        pendingCostExposureMinor: [...stationCostExposure.values()].reduce(
+          (total, value) => total + value,
+          0
+        ),
+        pendingCostExposureByCurrency: this.pendingCostExposureByCurrency(dateFrom, dateTo),
+        stations: financialStations
+      }
+    };
+  }
+
   private context(query: OperationalDashboardQuery, stationScope: readonly string[]) {
     const period = query.period ?? 'THIS_WEEK';
     const anchorDate = query.anchorDate ?? localToday();
@@ -724,6 +933,145 @@ export class OperationalDashboardsService {
     return stations
       .filter((station) => station.active)
       .map((station) => ({ id: station.id, code: station.code, name: station.name }));
+  }
+
+  private stationWorkspaceHref(stationCode: string, date: string) {
+    return queryHref('/flights/station-operations', { stationCode, date });
+  }
+
+  private stationTaskCounts(
+    dateFrom: string,
+    dateTo: string,
+    activeStationIds: Set<string>
+  ): Map<string, number> {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT task.station_id AS stationId, COUNT(*) AS count
+         FROM flight_station_tasks task
+         JOIN flight_operations flight ON flight.id = task.flight_id
+         WHERE flight.flight_date BETWEEN ? AND ?
+           AND task.status IN ('PENDING', 'IN_PROGRESS')
+         GROUP BY task.station_id`
+      )
+      .all(dateFrom, dateTo) as Array<{ stationId: string; count: number }>;
+    return new Map(
+      rows
+        .filter((row) => activeStationIds.has(row.stationId))
+        .map((row) => [row.stationId, Number(row.count)])
+    );
+  }
+
+  private stationServiceCounts(
+    dateFrom: string,
+    dateTo: string,
+    activeStationIds: Set<string>
+  ): Map<string, number> {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT service.station_id AS stationId, COUNT(*) AS count
+         FROM flight_station_service_requests service
+         JOIN station_service_statuses status ON status.id = service.status_id
+         JOIN flight_operations flight ON flight.id = service.flight_id
+         WHERE flight.flight_date BETWEEN ? AND ? AND status.code = 'REQUESTED'
+         GROUP BY service.station_id`
+      )
+      .all(dateFrom, dateTo) as Array<{ stationId: string; count: number }>;
+    return new Map(
+      rows
+        .filter((row) => activeStationIds.has(row.stationId))
+        .map((row) => [row.stationId, Number(row.count)])
+    );
+  }
+
+  private stationCostExposure(
+    dateFrom: string,
+    dateTo: string,
+    activeStationIds: Set<string>
+  ): Map<string, number> {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT cost.station_id AS stationId, COALESCE(SUM(cost.amount), 0) AS amount
+         FROM flight_station_costs cost
+         JOIN station_cost_statuses status ON status.id = cost.status_id
+         JOIN currencies currency ON currency.id = cost.currency_id
+         JOIN flight_operations flight ON flight.id = cost.flight_id
+         WHERE flight.flight_date BETWEEN ? AND ?
+           AND status.code IN ('DRAFT', 'SUBMITTED')
+           AND currency.currency_code = 'IDR'
+         GROUP BY cost.station_id`
+      )
+      .all(dateFrom, dateTo) as Array<{ stationId: string; amount: number }>;
+    return new Map(
+      rows
+        .filter((row) => activeStationIds.has(row.stationId))
+        .map((row) => [row.stationId, Number(row.amount)])
+    );
+  }
+
+  private pendingCostExposureByCurrency(dateFrom: string, dateTo: string) {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT currency.currency_code AS currencyCode, COALESCE(SUM(cost.amount), 0) AS amount
+         FROM flight_station_costs cost
+         JOIN station_cost_statuses status ON status.id = cost.status_id
+         JOIN currencies currency ON currency.id = cost.currency_id
+         JOIN flight_operations flight ON flight.id = cost.flight_id
+         WHERE flight.flight_date BETWEEN ? AND ?
+           AND status.code IN ('DRAFT', 'SUBMITTED')
+         GROUP BY currency.currency_code
+         ORDER BY currency.currency_code`
+      )
+      .all(dateFrom, dateTo) as Array<{ currencyCode: string; amount: number }>;
+    return rows.map((row) => ({
+      currencyCode: row.currencyCode,
+      amountMinor: Number(row.amount),
+      includedInIdrTotal: row.currencyCode === 'IDR'
+    }));
+  }
+
+  private stationFinancials(dateFrom: string, dateTo: string) {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT
+           line.station_id AS stationId,
+           account.account_type AS accountType,
+           line.base_debit_idr AS debitMinor,
+           line.base_credit_idr AS creditMinor
+         FROM journal_lines line
+         JOIN journal_entries journal ON journal.id = line.journal_entry_id
+         JOIN chart_of_accounts account ON account.id = line.account_id
+         JOIN flight_operations flight ON flight.id = line.flight_id
+         WHERE journal.status = 'POSTED'
+           AND journal.posting_date BETWEEN ? AND ?
+           AND account.account_type IN ('REVENUE', 'EXPENSE')`
+      )
+      .all(dateFrom, `${dateTo}T23:59:59.999Z`) as Array<{
+      stationId: string;
+      accountType: string;
+      debitMinor: number;
+      creditMinor: number;
+    }>;
+    const byStation = new Map<string, { revenueMinor: number; costMinor: number }>();
+    let revenueMinor = 0;
+    let costMinor = 0;
+    for (const row of rows) {
+      const value =
+        row.accountType === 'REVENUE'
+          ? Number(row.creditMinor) - Number(row.debitMinor)
+          : Number(row.debitMinor) - Number(row.creditMinor);
+      const station = row.stationId
+        ? (byStation.get(row.stationId) ?? { revenueMinor: 0, costMinor: 0 })
+        : null;
+      if (row.accountType === 'REVENUE') {
+        revenueMinor += value;
+        if (station) station.revenueMinor += value;
+      } else {
+        costMinor += value;
+        if (station) station.costMinor += value;
+      }
+      if (station) byStation.set(row.stationId, station);
+    }
+    return { revenueMinor, costMinor, byStation };
   }
 
   private activitySeries(

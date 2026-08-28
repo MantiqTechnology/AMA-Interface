@@ -15,6 +15,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "demo:reset": "tsx scripts/reset-demo.ts",
+    "demo:prepare": "pnpm demo:reset && NODE_OPTIONS=--max-old-space-size=6144 pnpm build",
+    "demo:present": "tsx scripts/present-demo.ts",
     "demo:scenarios": "tsx scripts/scenarios.ts",
     "demo:export": "tsx scripts/export-demo.ts",
     "uploads:migrate-local": "tsx scripts/migrate-local-uploads.ts",
@@ -37,7 +39,7 @@
     "jspdf": "^4.2.1",
     "maplibre-gl": "^6.0.0",
     "nanoid": "^5.1.5",
-    "nuxt": "3.21.8",
+    "nuxt": "3.21.10",
     "qrcode": "^1.5.4",
     "vue3-apexcharts": "^1.11.1",
     "zod": "^3.25.76"
@@ -50,6 +52,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.0.10",
     "@types/qrcode": "^1.5.6",
+    "@vue/compiler-sfc": "3.5.39",
     "drizzle-kit": "^0.31.4",
     "eslint": "^9.30.1",
     "eslint-plugin-vue": "^10.9.2",
@@ -61,6 +64,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.62.1",
     "vitest": "^4.1.9",
+    "vue": "3.5.39",
     "vue-tsc": "^3.3.6",
     "vuetify": "4.1.4",
     "vuetify-nuxt-module": "1.0.0-rc.2"
@@ -70,5 +74,30 @@
       "prettier --write",
       "eslint --fix"
     ]
+  },
+  "pnpm": {
+    "overrides": {
+      "vue": "3.5.39",
+      "@nuxt/devtools": "3.4.2",
+      "@nuxt/devtools-kit": "3.4.2",
+      "@nuxt/devtools-wizard": "3.4.2",
+      "brace-expansion@<2.0.0": "1.1.18",
+      "brace-expansion@>=2.0.0 <3.0.0": "2.1.4",
+      "brace-expansion@>=4.0.0 <5.0.0": "5.0.9",
+      "brace-expansion@>=5.0.0 <5.0.9": "5.0.9",
+      "dompurify": "3.4.13",
+      "js-yaml": "4.3.1",
+      "svgo": "4.0.2",
+      "tar": "7.5.21",
+      "@vue/compiler-core": "3.5.39",
+      "@vue/compiler-dom": "3.5.39",
+      "@vue/compiler-sfc": "3.5.39",
+      "@vue/compiler-ssr": "3.5.39",
+      "@vue/reactivity": "3.5.39",
+      "@vue/runtime-core": "3.5.39",
+      "@vue/runtime-dom": "3.5.39",
+      "@vue/server-renderer": "3.5.39",
+      "@vue/shared": "3.5.39"
+    }
   }
 }

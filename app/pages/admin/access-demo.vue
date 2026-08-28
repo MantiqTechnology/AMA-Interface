@@ -13,15 +13,15 @@ onMounted(() => session.load());
         <p class="text-text-secondary">Active role and module access for the demo session.</p>
       </div>
       <VSpacer />
-      <div style="width: min(100%, 360px)">
-        <FeatureDemoPersonaSwitcher />
-      </div>
+      <VBtn color="primary" prepend-icon="mdi-logout-variant" @click="session.logout()">
+        Switch demo account
+      </VBtn>
     </div>
 
     <VRow>
       <VCol cols="12" lg="7">
         <VCard border>
-          <VCardTitle class="text-subtitle-1 font-weight-bold">Demo personas</VCardTitle>
+          <VCardTitle class="text-subtitle-1 font-weight-bold">Authenticated identity</VCardTitle>
           <VDivider />
           <VTable density="comfortable">
             <thead>
@@ -32,21 +32,21 @@ onMounted(() => session.load());
               </tr>
             </thead>
             <tbody>
-              <tr v-for="persona in session.personas" :key="persona.role">
+              <tr>
                 <td>
-                  <VChip
-                    :color="persona.role === session.role.value ? 'primary' : undefined"
-                    size="small"
-                    variant="tonal"
-                  >
-                    {{ persona.role }}
+                  <VChip color="primary" size="small" variant="tonal">
+                    {{
+                      session.role.value
+                    }}
                   </VChip>
                 </td>
                 <td>
-                  <div class="font-weight-medium">{{ persona.name }}</div>
-                  <div class="text-caption text-text-secondary">{{ persona.label }}</div>
+                  <div class="font-weight-medium">{{ session.currentPersona.value.name }}</div>
+                  <div class="text-caption text-text-secondary">
+                    {{ session.currentPersona.value.label }}
+                  </div>
                 </td>
-                <td>{{ persona.stationScope.join(', ') }}</td>
+                <td>{{ session.currentPersona.value.stationScope.join(', ') }}</td>
               </tr>
             </tbody>
           </VTable>

@@ -177,6 +177,142 @@ function markWorkPackageReleasedForCustodyTest(
 }
 
 describe('M8.5 maintenance facility operations', () => {
+  it('derives command-center operation cards, handback gates, workflow, and scoped activity', async () => {
+    const { services } = await createFixture();
+    let workPackage = createWorkPackage(
+      services,
+      'ac-pk-ama',
+      'M8.5 command-center blocked handback package'
+    );
+    workPackage = services.maintenance.addJobCard(
+      workPackage.id,
+      {
+        title: 'Hydraulic leak check',
+        taskType: 'DEFECT_RECTIFICATION',
+        maintenanceDataRef: 'AMM 29-00-00',
+        maintenanceDataRevision: 'REV-A',
+        mandatoryFlag: true,
+        requiresIndependentInspection: false,
+        expectedWorkPackageVersion: workPackage.version
+      },
+      manager
+    );
+    const slot = bookSlot(services, workPackage.id);
+
+    services.maintenance.requestAircraftMoveIn(
+      slot.id,
+      { idempotencyKey: 'm85-command-center-move-in' },
+      manager
+    );
+    services.maintenance.confirmAircraftInBay(slot.id, {}, manager);
+    services.maintenance.createGseRequirement(
+      workPackage.id,
+      {
+        equipmentType: 'Ground Power Unit',
+        quantity: 1,
+        mandatory: true,
+        notes: 'GPU required before facility handback.'
+      },
+      manager
+    );
+
+    const dashboard = services.maintenance.getFacilityOperations(
+      {
+        dateFrom: '2026-08-10T00:00:00+09:00',
+        dateTo: '2026-08-11T00:00:00+09:00'
+      },
+      manager
+    );
+    const operation = dashboard.operations.find((item) => item.slotId === slot.id);
+
+    expect(operation).toMatchObject({
+      slotId: slot.id,
+      workPackageId: workPackage.id,
+      packageNumber: workPackage.packageNumber,
+      aircraftRegistrationNumber: 'PK-AMA',
+      stationCode: 'DJJ',
+      bayCode: slot.bayCode,
+      custodyStatus: 'IN_BAY',
+      readinessStatus: 'BLOCKED'
+    });
+    expect(operation?.counts.gsePending).toBe(1);
+    expect(operation?.handbackReadiness).toMatchObject({
+      status: 'BLOCKED',
+      canRequestHandback: false,
+      blockerCount: expect.any(Number)
+    });
+    expect(operation?.handbackReadiness.gates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'GSE', status: 'PENDING', count: 1 }),
+        expect.objectContaining({ key: 'JOB_CARDS', status: 'PENDING' }),
+        expect.objectContaining({ key: 'MANPOWER', status: expect.any(String) })
+      ])
+    );
+    expect(operation?.handbackReadiness.nextActions.length).toBeGreaterThan(0);
+    expect(operation?.workflowSteps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'MOVE_IN_REQUESTED', status: 'COMPLETE' }),
+        expect.objectContaining({ key: 'IN_BAY_CONFIRMED', status: 'COMPLETE' }),
+        expect.objectContaining({ key: 'MAINTENANCE_IN_PROGRESS', status: 'CURRENT' }),
+        expect.objectContaining({ key: 'HAND_BACK', status: 'DISABLED' })
+      ])
+    );
+    expect(operation?.recentActivity).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: expect.stringMatching(/Aircraft Entered Bay/u) })
+      ])
+    );
+  });
+
+  it('falls back to all active operation slots when the live operation window is empty', async () => {
+    const { services } = await createFixture();
+    const firstWorkPackage = createWorkPackage(
+      services,
+      'ac-pk-ama',
+      'M8.5 command-center fallback package one'
+    );
+    const secondWorkPackage = createWorkPackage(
+      services,
+      'ac-pk-ama',
+      'M8.5 command-center fallback package two'
+    );
+    const firstSlot = bookSlot(services, firstWorkPackage.id);
+    const secondSlot = bookSlot(
+      services,
+      secondWorkPackage.id,
+      facility.bayA,
+      '2026-08-12T08:00:00+09:00',
+      '2026-08-12T16:00:00+09:00'
+    );
+
+    const dashboard = services.maintenance.getFacilityOperations(
+      {
+        aircraftId: 'ac-pk-ama',
+        dateFrom: '2026-08-27T00:00:00+09:00',
+        dateTo: '2026-08-30T00:00:00+09:00'
+      },
+      manager
+    );
+
+    expect(dashboard.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slotId: firstSlot.id,
+          workPackageId: firstWorkPackage.id,
+          aircraftRegistrationNumber: 'PK-AMA'
+        }),
+        expect.objectContaining({
+          slotId: secondSlot.id,
+          workPackageId: secondWorkPackage.id,
+          aircraftRegistrationNumber: 'PK-AMA'
+        })
+      ])
+    );
+    expect(dashboard.operations).toHaveLength(2);
+    expect(dashboard.occupancy.dateFrom).toBe(firstSlot.plannedStartAt);
+    expect(dashboard.occupancy.dateTo).toBe(secondSlot.plannedEndAt);
+  });
+
   it('uses managed_assets as GSE master and requires allocation plus staging for readiness', async () => {
     const { services } = await createFixture();
     const workPackage = createWorkPackage(services);

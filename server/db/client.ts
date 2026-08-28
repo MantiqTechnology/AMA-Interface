@@ -19,7 +19,7 @@ export function getDefaultDbPath() {
     return process.env.AMA_DB_PATH;
   }
 
-  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+  if (process.env.VERCEL) {
     return '/tmp/ama-demo.sqlite';
   }
 

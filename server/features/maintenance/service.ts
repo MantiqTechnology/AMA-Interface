@@ -23,6 +23,7 @@ import type {
   MaintenanceAuditPackDto,
   MaintenanceAuditListQuery,
   MaintenanceAuditRecordDto,
+  MaintenanceBlockerCategory,
   MaintenanceCompanyAuthorizationAction,
   MaintenanceCompanyAuthorizationDto,
   MaintenanceCommandCenterDto,
@@ -30,18 +31,23 @@ import type {
   MaintenanceDomainBlockerDto,
   MaintenanceDefectAssessmentInput,
   MaintenanceDeferredCloseInput,
+  DueControlStatus,
   MaintenanceDueStatusDto,
   MaintenanceFacilityCommandInput,
   MaintenanceEligibilityBlockerDto,
   MaintenanceFacilityDto,
+  MaintenanceFacilityOperationDto,
   MaintenanceFacilityOperationsDto,
   MaintenanceFacilityOccupancyDto,
   MaintenanceFacilityOccupancyQuery,
+  MaintenanceFacilityReadinessGateDto,
   MaintenanceFacilityResourceStagingDto,
   MaintenanceFacilityShiftDto,
+  MaintenanceFacilityWorkflowStepDto,
   MaintenanceGseAllocationDto,
   MaintenanceGseCandidateDto,
   MaintenanceGseRequirementDto,
+  MaintenanceHandbackReadinessDto,
   MaintenanceIndependentInspectionInput,
   MaintenanceInspectionAttemptDto,
   MaintenanceJobCardDto,
@@ -50,6 +56,10 @@ import type {
   MaintenanceListQuery,
   MaintenanceOperationalAttentionDto,
   MaintenanceNonRoutineFindingDto,
+  MaintenancePriorityBucket,
+  MaintenancePriorityWorkPackageDto,
+  MaintenanceReleaseReadinessMixDto,
+  MaintenanceDueInspectionTaskDto,
   MaintenanceQualityFindingDto,
   MaintenanceReadinessPanelDto,
   MaintenanceReleaseInput,
@@ -76,6 +86,7 @@ import type {
   MaintenanceWorkPackageStatus,
   StageMaintenanceResourceInput
 } from '../../../shared/features/maintenance';
+import { createNonRoutineFindingSchema } from '../../../shared/features/maintenance';
 import { demoRolePermissions, type DemoRole } from '../../../shared/types/roles';
 import type { AircraftAirworthinessService } from '../../services/aircraft-airworthiness.service';
 import {
@@ -413,6 +424,15 @@ export class MaintenanceService {
     ).length;
     const dueControl = this.listDueControl();
     const allEligibilityBlockers = eligibilities.flatMap((item) => item.eligibility.blockers);
+    const priorityWorkPackages = this.commandCenterPriorityWorkPackages(
+      workPackages,
+      dueControl,
+      eligibilities,
+      generatedAt
+    );
+    const dueInspectionTasks = this.commandCenterDueInspectionTasks(dueControl, generatedAt);
+    const dueControlTotal = dueControl.length;
+    const dueControlOverdue = dueControl.filter((item) => item.status === 'OVERDUE').length;
     return {
       generatedAt,
       authorizationNotice: companyAuthorizationVerified,
@@ -445,6 +465,17 @@ export class MaintenanceService {
         ).length,
         reworkRequired: allEligibilityBlockers.filter((item) => item.category === 'REWORK').length
       },
+      topPriorityItem: priorityWorkPackages[0] ?? null,
+      priorityWorkPackages,
+      releaseReadinessMix: this.commandCenterReleaseReadinessMix(
+        workPackages,
+        readyForRelease,
+        eligibilities
+      ),
+      onTimePerformancePct: dueControlTotal
+        ? Number((((dueControlTotal - dueControlOverdue) / dueControlTotal) * 100).toFixed(1))
+        : 100,
+      dueInspectionTasks,
       fleet,
       defects,
       workPackages,
@@ -462,6 +493,277 @@ export class MaintenanceService {
       technicalReleases: this.technicalReleaseSummaries(20),
       dueControl
     };
+  }
+
+  private commandCenterPriorityWorkPackages(
+    workPackages: MaintenanceWorkPackageDto[],
+    dueControl: MaintenanceDueStatusDto[],
+    eligibilities: Array<{
+      workPackage: MaintenanceWorkPackageDto;
+      eligibility: MaintenanceReleaseEligibilityDto;
+    }>,
+    generatedAt: string
+  ): MaintenancePriorityWorkPackageDto[] {
+    const blockerByPackage = new Map(
+      eligibilities.map((item) => [item.workPackage.id, item.eligibility.blockers])
+    );
+    const dueByPackage = new Map<string, MaintenanceDueStatusDto[]>();
+    for (const due of dueControl) {
+      for (const packageId of [due.plannedWorkPackageId, due.sourceWorkPackageId].filter(
+        Boolean
+      ) as string[]) {
+        dueByPackage.set(packageId, [...(dueByPackage.get(packageId) ?? []), due]);
+      }
+    }
+    return workPackages
+      .filter((item) => !['RELEASED', 'CANCELLED'].includes(item.status))
+      .map((item) => {
+        const blockers = blockerByPackage.get(item.id) ?? [];
+        const linkedDue = dueByPackage.get(item.id) ?? [];
+        const dueAt =
+          item.currentMaintenanceSlot?.plannedEndAt ??
+          linkedDue
+            .map((due) => due.nextDueAt)
+            .filter((value): value is string => Boolean(value))
+            .sort()[0] ??
+          null;
+        const bucket = this.commandCenterPriorityBucket(
+          item,
+          blockers,
+          linkedDue,
+          dueAt,
+          generatedAt
+        );
+        return {
+          id: item.id,
+          packageNumber: item.packageNumber,
+          title: item.title,
+          aircraftId: item.aircraftId,
+          aircraftRegistrationNumber: item.aircraftRegistrationNumber,
+          aircraftImageUrl: item.aircraftImageUrl,
+          aircraftType: item.aircraftType ?? null,
+          aircraftModel: item.aircraftModel ?? null,
+          stationCode: item.currentMaintenanceSlot?.stationCode ?? null,
+          issue:
+            item.primaryDefect?.title ??
+            item.sourceDueRequirementTitle ??
+            item.jobCards[0]?.title ??
+            item.title,
+          owner: item.status === 'READY_FOR_RELEASE' ? 'Certifying Staff' : 'Maintenance Control',
+          nextAction:
+            blockers[0]?.nextAction ?? blockers[0]?.message ?? this.nextActionForPackage(item),
+          priority: item.priority,
+          bucket,
+          blockerCount: blockers.length,
+          blockerCategories: [...new Set(blockers.map((blocker) => blocker.category))],
+          status: item.status,
+          dueAt,
+          slaLabel: this.commandCenterSlaLabel(bucket, dueAt),
+          updatedAt: item.updatedAt
+        };
+      })
+      .sort((a, b) => {
+        const score = this.commandCenterPriorityScore(a.bucket);
+        const otherScore = this.commandCenterPriorityScore(b.bucket);
+        if (score !== otherScore) return score - otherScore;
+        if (a.dueAt && b.dueAt) return a.dueAt.localeCompare(b.dueAt);
+        if (a.dueAt) return -1;
+        if (b.dueAt) return 1;
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
+  }
+
+  private commandCenterPriorityBucket(
+    workPackage: MaintenanceWorkPackageDto,
+    blockers: MaintenanceEligibilityBlockerDto[],
+    linkedDue: MaintenanceDueStatusDto[],
+    dueAt: string | null,
+    generatedAt: string
+  ): MaintenancePriorityBucket {
+    if (workPackage.priority === 'AOG') return 'AOG';
+    if (blockers.length) return 'RELEASE_BLOCKER';
+    if (linkedDue.some((due) => due.status === 'OVERDUE')) return 'OVERDUE';
+    if (linkedDue.some((due) => due.calendarRemainingDays === 0)) return 'DUE_TODAY';
+    if (
+      linkedDue.some(
+        (due) =>
+          due.calendarRemainingDays !== null &&
+          due.calendarRemainingDays > 0 &&
+          due.calendarRemainingDays <= 7
+      )
+    ) {
+      return 'UPCOMING';
+    }
+    if (dueAt) {
+      const generatedDay = generatedAt.slice(0, 10);
+      const dueDay = dueAt.slice(0, 10);
+      if (dueDay < generatedDay) return 'OVERDUE';
+      if (dueDay === generatedDay) return 'DUE_TODAY';
+    }
+    return 'NORMAL';
+  }
+
+  private commandCenterPriorityScore(bucket: MaintenancePriorityBucket) {
+    const scores: Record<MaintenancePriorityBucket, number> = {
+      AOG: 0,
+      RELEASE_BLOCKER: 1,
+      OVERDUE: 2,
+      DUE_TODAY: 3,
+      UPCOMING: 4,
+      NORMAL: 5
+    };
+    return scores[bucket];
+  }
+
+  private commandCenterSlaLabel(bucket: MaintenancePriorityBucket, dueAt: string | null) {
+    if (bucket === 'AOG') return 'SLA AOG';
+    if (bucket === 'RELEASE_BLOCKER') return 'SLA RB';
+    if (bucket === 'OVERDUE') return 'SLA OV';
+    if (bucket === 'DUE_TODAY') return 'SLA DT';
+    if (bucket === 'UPCOMING') return 'SLA UP';
+    return dueAt ? 'Terjadwal' : 'Monitoring';
+  }
+
+  private nextActionForPackage(workPackage: MaintenanceWorkPackageDto) {
+    if (workPackage.status === 'READY_FOR_RELEASE') return 'Review dan terbitkan rilis teknis.';
+    if (workPackage.status === 'IN_PROGRESS') return 'Selesaikan job card dan pemeriksaan wajib.';
+    if (workPackage.status === 'OPEN') return 'Siapkan resource, material, dan slot maintenance.';
+    return 'Monitor status pekerjaan.';
+  }
+
+  private commandCenterReleaseReadinessMix(
+    workPackages: MaintenanceWorkPackageDto[],
+    readyForRelease: MaintenanceWorkPackageDto[],
+    eligibilities: Array<{
+      workPackage: MaintenanceWorkPackageDto;
+      eligibility: MaintenanceReleaseEligibilityDto;
+    }>
+  ): MaintenanceReleaseReadinessMixDto[] {
+    const activePackages = workPackages.filter(
+      (item) => !['RELEASED', 'CANCELLED'].includes(item.status)
+    );
+    const readyIds = new Set(readyForRelease.map((item) => item.id));
+    const blockersByPackage = new Map(
+      eligibilities.map((item) => [item.workPackage.id, item.eligibility.blockers])
+    );
+    let readyCount = 0;
+    let materialCount = 0;
+    let documentCount = 0;
+    let technicalCount = 0;
+    for (const workPackage of activePackages) {
+      if (readyIds.has(workPackage.id)) {
+        readyCount += 1;
+        continue;
+      }
+      const blockers = blockersByPackage.get(workPackage.id) ?? [];
+      if (blockers.some((item) => item.category === 'MATERIAL')) {
+        materialCount += 1;
+        continue;
+      }
+      if (
+        blockers.some((item) =>
+          ['APPROVED_DATA', 'AUTHORIZATION', 'AMO_SCOPE'].includes(item.category)
+        )
+      ) {
+        documentCount += 1;
+        continue;
+      }
+      technicalCount += 1;
+    }
+    return [
+      { key: 'WAITING_TECHNICAL', label: 'Menunggu Tindakan Teknis', count: technicalCount },
+      { key: 'WAITING_DOCUMENT', label: 'Menunggu Dokumen', count: documentCount },
+      { key: 'WAITING_MATERIAL', label: 'Menunggu Material', count: materialCount },
+      { key: 'READY_TO_RELEASE', label: 'Ready to Release', count: readyCount }
+    ];
+  }
+
+  private commandCenterDueInspectionTasks(
+    dueControl: MaintenanceDueStatusDto[],
+    generatedAt: string
+  ): MaintenanceDueInspectionTaskDto[] {
+    const start = generatedAt.slice(0, 10);
+    const endDate = new Date(generatedAt);
+    endDate.setDate(endDate.getDate() + 7);
+    const end = endDate.toISOString().slice(0, 10);
+    return dueControl
+      .filter((item) => {
+        if (item.planningStatus === 'COMPLIED' || !item.active) return false;
+        if (item.nextDueAt !== null) {
+          const dueDay = item.nextDueAt.slice(0, 10);
+          return dueDay >= start && dueDay <= end;
+        }
+        return (
+          ['FH', 'FC'].includes(item.nearestBasis) &&
+          ['OVERDUE', 'DUE', 'DUE_SOON'].includes(item.status)
+        );
+      })
+      .sort((a, b) => {
+        if (a.nextDueAt && b.nextDueAt) return a.nextDueAt.localeCompare(b.nextDueAt);
+        if (a.nextDueAt) return -1;
+        if (b.nextDueAt) return 1;
+        return (
+          this.commandCenterDueStatusScore(a.status) - this.commandCenterDueStatusScore(b.status)
+        );
+      })
+      .map((item) => ({
+        id: item.id,
+        requirementId: item.requirementId,
+        aircraftId: item.aircraftId,
+        aircraftRegistrationNumber: item.aircraftRegistrationNumber,
+        aircraftImageUrl: item.aircraftImageUrl,
+        stationCode: null,
+        taskCode: item.code,
+        taskTitle: item.title,
+        taskType: item.recurring ? 'Recurring' : 'One-time',
+        description: item.calculationExplanation,
+        dueAt: item.nextDueAt,
+        dueBasisLabel:
+          item.nearestBasis === 'FH'
+            ? 'Flight hours'
+            : item.nearestBasis === 'FC'
+              ? 'Flight cycles'
+              : item.nextDueAt
+                ? 'Calendar'
+                : 'Monitoring',
+        usageLabel: this.commandCenterUsageLabel(item),
+        remainingLabel:
+          item.calendarRemainingDays === null
+            ? item.actionLabel
+            : item.calendarRemainingDays === 0
+              ? 'Due Today'
+              : `${item.calendarRemainingDays} hari lagi`,
+        status: item.status,
+        planningStatus: item.planningStatus
+      }));
+  }
+
+  private commandCenterDueStatusScore(status: DueControlStatus) {
+    const scores: Record<DueControlStatus, number> = {
+      OVERDUE: 0,
+      DUE: 1,
+      DUE_SOON: 2,
+      NOT_DUE: 3,
+      COMPLETED: 4,
+      INACTIVE: 5
+    };
+    return scores[status];
+  }
+
+  private commandCenterUsageLabel(item: MaintenanceDueStatusDto) {
+    const values = [
+      item.flightHoursRemaining !== null
+        ? `${Math.max(item.flightHoursRemaining, 0).toLocaleString('id-ID')} FH tersisa`
+        : item.nextDueFlightHours !== null
+          ? `Due ${item.nextDueFlightHours.toLocaleString('id-ID')} FH`
+          : null,
+      item.flightCyclesRemaining !== null
+        ? `${Math.max(item.flightCyclesRemaining, 0).toLocaleString('id-ID')} FC tersisa`
+        : item.nextDueFlightCycles !== null
+          ? `Due ${item.nextDueFlightCycles.toLocaleString('id-ID')} FC`
+          : null
+    ].filter(Boolean);
+    return values.length ? values.join(' / ') : '—';
   }
 
   listApprovedData(): MaintenanceApprovedDataDocumentDto[] {
@@ -649,35 +951,480 @@ export class MaintenanceService {
   getTechnicalRecordPackage(workPackageId: string): MaintenanceTechnicalRecordPackageDto {
     const workPackage = this.getWorkPackage(workPackageId);
     const generatedAt = now();
+    const releaseEligibility = this.evaluateReleaseEligibility(workPackageId);
+    const releaseSnapshot = this.latestReleaseEligibilitySnapshot(workPackageId);
+    const materialTraceability = this.materialTechnicalRecordEvidence(workPackageId);
+    const personnelEvidence = this.personnelTechnicalRecordEvidence(workPackageId);
+    const toolEvidence = this.toolTechnicalRecordEvidence(workPackageId);
+    const approvedDataReferences = this.approvedDataTechnicalRecordEvidence(workPackageId);
+    const facilityContext = workPackage.currentMaintenanceSlot ?? null;
+    const evidence = {
+      source: {
+        sourceFlightId: workPackage.sourceFlightId,
+        primaryDefectId: workPackage.primaryDefectId,
+        primaryDefectNumber: workPackage.primaryDefectNumber,
+        sourceDueRequirementId: workPackage.sourceDueRequirementId,
+        sourceDueStatusId: workPackage.sourceDueStatusId,
+        sourceDueRequirementCode: workPackage.sourceDueRequirementCode,
+        sourceDueRequirementTitle: workPackage.sourceDueRequirementTitle
+      },
+      jobCards: workPackage.jobCards,
+      nonRoutineFindings: workPackage.nonRoutineFindings ?? [],
+      materialTraceability,
+      personnelEvidence,
+      toolEvidence,
+      approvedDataReferences,
+      facilityContext,
+      technicalRelease: workPackage.release ?? null,
+      auditTimeline: workPackage.auditRecords ?? []
+    };
+    const releaseGates = this.technicalRecordReleaseGates(
+      workPackage,
+      releaseEligibility,
+      evidence
+    );
+    const latestAuditPack = this.latestAuditPack(workPackageId);
+    const documentIntegrity = this.technicalRecordIntegrity(
+      workPackage,
+      releaseEligibility,
+      generatedAt,
+      latestAuditPack?.manifestHash ?? null,
+      releaseSnapshot?.createdAt ?? null
+    );
+    const decisionSummary = this.technicalRecordDecisionSummary(
+      workPackage,
+      releaseEligibility,
+      releaseGates,
+      generatedAt
+    );
     return {
       workPackageId,
       releaseId: workPackage.releaseId,
       generatedAt,
       disclaimer: demoAuditPackDisclaimer,
+      decisionSummary,
+      completenessCards: this.technicalRecordCompletenessCards(releaseGates),
+      releaseGates,
+      nextRequiredActions: this.technicalRecordNextActions(releaseGates, releaseEligibility),
+      documentIntegrity,
+      freshness: {
+        generatedAt,
+        sourceUpdatedAt: workPackage.updatedAt,
+        mode: releaseSnapshot ? 'ONLINE_LATEST_SNAPSHOT' : 'LIVE_PREVIEW',
+        label: releaseSnapshot
+          ? 'Online - snapshot rilis terakhir tersedia'
+          : 'Online - preview data live dari backend'
+      },
       currentWorkPackage: workPackage,
-      releaseEligibility: this.evaluateReleaseEligibility(workPackageId),
-      releaseSnapshot: this.latestReleaseEligibilitySnapshot(workPackageId),
-      evidence: {
-        source: {
-          sourceFlightId: workPackage.sourceFlightId,
-          primaryDefectId: workPackage.primaryDefectId,
-          primaryDefectNumber: workPackage.primaryDefectNumber,
-          sourceDueRequirementId: workPackage.sourceDueRequirementId,
-          sourceDueStatusId: workPackage.sourceDueStatusId,
-          sourceDueRequirementCode: workPackage.sourceDueRequirementCode,
-          sourceDueRequirementTitle: workPackage.sourceDueRequirementTitle
-        },
-        jobCards: workPackage.jobCards,
-        nonRoutineFindings: workPackage.nonRoutineFindings ?? [],
-        materialTraceability: this.materialTechnicalRecordEvidence(workPackageId),
-        personnelEvidence: this.personnelTechnicalRecordEvidence(workPackageId),
-        toolEvidence: this.toolTechnicalRecordEvidence(workPackageId),
-        approvedDataReferences: this.approvedDataTechnicalRecordEvidence(workPackageId),
-        facilityContext: workPackage.currentMaintenanceSlot ?? null,
-        technicalRelease: workPackage.release ?? null,
-        auditTimeline: workPackage.auditRecords ?? []
-      }
+      releaseEligibility,
+      releaseSnapshot,
+      evidence
     };
+  }
+
+  private technicalRecordDecisionSummary(
+    workPackage: MaintenanceWorkPackageDto,
+    eligibility: MaintenanceReleaseEligibilityDto,
+    gates: MaintenanceTechnicalRecordPackageDto['releaseGates'],
+    generatedAt: string
+  ): MaintenanceTechnicalRecordPackageDto['decisionSummary'] {
+    const criticalBlockerCount = gates
+      .filter(
+        (gate) => ['BLOCKED', 'MISSING'].includes(gate.status) && gate.severity === 'CRITICAL'
+      )
+      .reduce((total, gate) => total + Math.max(1, gate.count), 0);
+    const blockingGate = gates.find((gate) => ['BLOCKED', 'MISSING'].includes(gate.status));
+    const released = Boolean(workPackage.releaseId || workPackage.release);
+    const canIssueRelease =
+      eligibility.eligible && workPackage.status === 'READY_FOR_RELEASE' && !released;
+    const status = released
+      ? 'RELEASED'
+      : criticalBlockerCount > 0 || !eligibility.eligible
+        ? 'BLOCKED'
+        : workPackage.status === 'READY_FOR_RELEASE'
+          ? 'READY_FOR_REVIEW'
+          : 'INCOMPLETE';
+    const title: Record<MaintenanceTechnicalRecordPackageDto['decisionSummary']['status'], string> =
+      {
+        BLOCKED: 'RELEASE BLOCKED',
+        READY_FOR_REVIEW: 'READY FOR RELEASE REVIEW',
+        RELEASED: 'TECHNICAL RELEASE ISSUED',
+        INCOMPLETE: 'RECORD INCOMPLETE'
+      };
+    const serviceability = workPackage.aircraftTechnicalState ?? 'UNKNOWN';
+    const disabledReason = canIssueRelease
+      ? null
+      : released
+        ? 'Rilis teknis sudah diterbitkan.'
+        : (blockingGate?.nextAction ??
+          blockingGate?.summary ??
+          'Ajukan review rilis setelah seluruh gate teknis lengkap.');
+    return {
+      status,
+      title: `${this.humanStatus(serviceability)} • ${title[status]}`,
+      subtitle:
+        status === 'RELEASED'
+          ? 'Catatan rilis teknis sudah tersedia dari backend.'
+          : status === 'READY_FOR_REVIEW'
+            ? 'Seluruh gate kritis sudah siap untuk evaluasi certifying staff.'
+            : 'Pesawat belum memenuhi syarat untuk rilis teknis. Selesaikan blocker kritis terlebih dahulu.',
+      serviceability,
+      serviceabilityLabel: this.humanStatus(serviceability),
+      criticalBlockerCount,
+      canIssueRelease,
+      disabledReason,
+      lastValidatedAt: generatedAt
+    };
+  }
+
+  private technicalRecordCompletenessCards(
+    gates: MaintenanceTechnicalRecordPackageDto['releaseGates']
+  ): MaintenanceTechnicalRecordPackageDto['completenessCards'] {
+    const pick = (key: MaintenanceTechnicalRecordPackageDto['releaseGates'][number]['key']) =>
+      gates.find((gate) => gate.key === key)!;
+    const job = pick('MANDATORY_JOB_CARD');
+    const source = pick('SOURCE_DEFECT_REVIEW');
+    const inspection = pick('INDEPENDENT_INSPECTION');
+    const traceability = pick('TRACEABILITY');
+    const facility = pick('FACILITY_SLOT');
+    return [
+      {
+        key: 'mandatoryJobCards',
+        label: 'Mandatory Job Cards',
+        value: job.summary,
+        helper: job.badge,
+        status: job.status,
+        severity: job.severity
+      },
+      {
+        key: 'openFindings',
+        label: 'Temuan / Defect Terbuka',
+        value: source.summary,
+        helper: source.badge,
+        status: source.status,
+        severity: source.severity
+      },
+      {
+        key: 'independentInspection',
+        label: 'Independent Inspection',
+        value: inspection.status === 'NOT_APPLICABLE' ? 'Tidak wajib' : inspection.badge,
+        helper: inspection.summary,
+        status: inspection.status,
+        severity: inspection.severity
+      },
+      {
+        key: 'traceability',
+        label: 'Materials / Personnel / Tools',
+        value: traceability.badge,
+        helper: traceability.summary,
+        status: traceability.status,
+        severity: traceability.severity
+      },
+      {
+        key: 'facilitySlot',
+        label: 'Facility Slot',
+        value: facility.badge,
+        helper: facility.summary,
+        status: facility.status,
+        severity: facility.severity
+      }
+    ];
+  }
+
+  private technicalRecordReleaseGates(
+    workPackage: MaintenanceWorkPackageDto,
+    eligibility: MaintenanceReleaseEligibilityDto,
+    evidence: MaintenanceTechnicalRecordPackageDto['evidence']
+  ): MaintenanceTechnicalRecordPackageDto['releaseGates'] {
+    const mandatoryCards = workPackage.jobCards.filter((card) => card.mandatoryFlag);
+    const mandatoryComplete = mandatoryCards.filter((card) =>
+      ['READY_FOR_RELEASE_REVIEW'].includes(card.status)
+    );
+    const mechanicComplete = mandatoryCards.filter((card) => this.cardHasSignoff(card, 'MECHANIC'));
+    const inspectionRequired = mandatoryCards.filter((card) => card.requiresIndependentInspection);
+    const inspectionComplete = inspectionRequired.filter((card) =>
+      this.cardHasSignoff(card, 'INDEPENDENT_INSPECTION')
+    );
+    const approvedDataComplete = mandatoryCards.filter((card) =>
+      evidence.approvedDataReferences.some(
+        (item) =>
+          String(item.job_card_id ?? '') === card.id &&
+          Boolean(item.approved_data_revision_id ?? card.maintenanceDataRef)
+      )
+    );
+    const openFindings = evidence.nonRoutineFindings.filter((finding) =>
+      ['OPEN', 'ADDED_TO_SCOPE'].includes(finding.status)
+    );
+    const openRework = mandatoryCards.flatMap((card) =>
+      card.reworkActions.filter((action) =>
+        ['REWORK_REQUIRED', 'CORRECTIVE_WORK_IN_PROGRESS', 'AWAITING_REINSPECTION'].includes(
+          action.status
+        )
+      )
+    );
+    const primaryDefectOpen =
+      workPackage.primaryDefect && ['OPEN'].includes(workPackage.primaryDefect.status) ? 1 : 0;
+    const blockersFor = (...categories: MaintenanceBlockerCategory[]) =>
+      eligibility.blockers.filter((blocker) => categories.includes(blocker.category));
+    const warningsFor = (...categories: MaintenanceBlockerCategory[]) =>
+      eligibility.warnings.filter((blocker) => categories.includes(blocker.category));
+    const blockingOrWarning = (
+      primaryStatus: MaintenanceTechnicalRecordPackageDto['releaseGates'][number]['status'],
+      blockers: MaintenanceEligibilityBlockerDto[],
+      warnings: MaintenanceEligibilityBlockerDto[]
+    ) => (blockers.length ? 'BLOCKED' : warnings.length ? 'WARNING' : primaryStatus);
+    const traceabilityBlockers = blockersFor('MATERIAL', 'TOOLING', 'AUTHORIZATION', 'AMO_SCOPE');
+    const traceabilityWarnings = warningsFor('MATERIAL', 'TOOLING', 'AUTHORIZATION', 'AMO_SCOPE');
+    const traceabilityEvidenceCount =
+      evidence.materialTraceability.length +
+      evidence.personnelEvidence.length +
+      evidence.toolEvidence.length;
+    const gates: MaintenanceTechnicalRecordPackageDto['releaseGates'] = [
+      {
+        key: 'MANDATORY_JOB_CARD',
+        label: 'Mandatory Job Card',
+        status: mandatoryCards.length
+          ? mandatoryComplete.length === mandatoryCards.length
+            ? 'COMPLETE'
+            : 'MISSING'
+          : 'MISSING',
+        badge: mandatoryCards.length
+          ? `${mandatoryComplete.length}/${mandatoryCards.length} selesai`
+          : 'Missing / Belum selesai',
+        severity: 'CRITICAL',
+        count: Math.max(
+          mandatoryCards.length - mandatoryComplete.length,
+          mandatoryCards.length ? 0 : 1
+        ),
+        summary: mandatoryCards.length
+          ? `${mandatoryComplete.length}/${mandatoryCards.length} mandatory job card selesai`
+          : 'Belum ada mandatory job card',
+        nextAction:
+          mandatoryCards.length && mandatoryComplete.length === mandatoryCards.length
+            ? null
+            : 'Selesaikan mandatory job card yang masih missing.',
+        blockers: blockersFor('WORK')
+      },
+      {
+        key: 'AMT_SIGNOFF',
+        label: 'AMT Sign-off',
+        status: mandatoryCards.length
+          ? mechanicComplete.length === mandatoryCards.length
+            ? 'COMPLETE'
+            : 'MISSING'
+          : 'MISSING',
+        badge:
+          mandatoryCards.length && mechanicComplete.length === mandatoryCards.length
+            ? 'Selesai'
+            : 'Belum lengkap',
+        severity: 'CRITICAL',
+        count: Math.max(
+          mandatoryCards.length - mechanicComplete.length,
+          mandatoryCards.length ? 0 : 1
+        ),
+        summary: `${mechanicComplete.length}/${Math.max(mandatoryCards.length, 1)} AMT sign-off tersedia`,
+        nextAction:
+          mandatoryCards.length && mechanicComplete.length === mandatoryCards.length
+            ? null
+            : 'Lengkapi AMT sign-off pada job card wajib.',
+        blockers: blockersFor('WORK', 'AUTHORIZATION')
+      },
+      {
+        key: 'INDEPENDENT_INSPECTION',
+        label: 'Independent Inspection',
+        status: inspectionRequired.length
+          ? inspectionComplete.length === inspectionRequired.length
+            ? 'COMPLETE'
+            : 'MISSING'
+          : 'NOT_APPLICABLE',
+        badge: inspectionRequired.length
+          ? inspectionComplete.length === inspectionRequired.length
+            ? 'Selesai'
+            : 'Belum selesai'
+          : 'Tidak wajib',
+        severity: inspectionRequired.length ? 'CRITICAL' : 'INFO',
+        count: Math.max(inspectionRequired.length - inspectionComplete.length, 0),
+        summary: inspectionRequired.length
+          ? `${inspectionComplete.length}/${inspectionRequired.length} inspection wajib selesai`
+          : 'Tidak ada inspection independen wajib',
+        nextAction:
+          inspectionRequired.length && inspectionComplete.length !== inspectionRequired.length
+            ? 'Selesaikan independent inspection yang diwajibkan.'
+            : null,
+        blockers: blockersFor('INSPECTION', 'REWORK')
+      },
+      {
+        key: 'APPROVED_MAINTENANCE_DATA',
+        label: 'Approved Maintenance Data',
+        status: blockingOrWarning(
+          mandatoryCards.length && approvedDataComplete.length === mandatoryCards.length
+            ? 'COMPLETE'
+            : 'MISSING',
+          blockersFor('APPROVED_DATA'),
+          warningsFor('APPROVED_DATA')
+        ),
+        badge:
+          mandatoryCards.length && approvedDataComplete.length === mandatoryCards.length
+            ? 'Verified'
+            : 'Belum diverifikasi',
+        severity: blockersFor('APPROVED_DATA').length ? 'CRITICAL' : 'WARNING',
+        count: Math.max(mandatoryCards.length - approvedDataComplete.length, 0),
+        summary: `${approvedDataComplete.length}/${Math.max(mandatoryCards.length, 1)} job card memiliki approved data`,
+        nextAction:
+          mandatoryCards.length && approvedDataComplete.length === mandatoryCards.length
+            ? null
+            : 'Tautkan revisi approved maintenance data yang aktif.',
+        blockers: blockersFor('APPROVED_DATA')
+      },
+      {
+        key: 'SOURCE_DEFECT_REVIEW',
+        label: 'Source Defect Review',
+        status:
+          primaryDefectOpen || openFindings.length || openRework.length ? 'WARNING' : 'COMPLETE',
+        badge:
+          primaryDefectOpen || openFindings.length || openRework.length
+            ? 'Pending closure'
+            : 'Selesai',
+        severity: blockersFor('DEFERMENT', 'AIRCRAFT_CONFIGURATION', 'REWORK').length
+          ? 'CRITICAL'
+          : primaryDefectOpen || openFindings.length || openRework.length
+            ? 'WARNING'
+            : 'INFO',
+        count: primaryDefectOpen + openFindings.length + openRework.length,
+        summary:
+          primaryDefectOpen || openFindings.length || openRework.length
+            ? `${primaryDefectOpen + openFindings.length + openRework.length} item masih perlu review`
+            : 'Source defect dan rework sudah terkendali',
+        nextAction:
+          primaryDefectOpen || openFindings.length || openRework.length
+            ? 'Tutup defect, finding, atau rework yang masih terbuka.'
+            : null,
+        blockers: blockersFor('DEFERMENT', 'AIRCRAFT_CONFIGURATION', 'REWORK')
+      },
+      {
+        key: 'TRACEABILITY',
+        label: 'Materials / Personnel / Tools Traceability',
+        status: traceabilityBlockers.length
+          ? 'BLOCKED'
+          : traceabilityWarnings.length
+            ? 'WARNING'
+            : traceabilityEvidenceCount
+              ? 'COMPLETE'
+              : 'UNAVAILABLE',
+        badge: traceabilityBlockers.length
+          ? 'Blocked'
+          : traceabilityWarnings.length
+            ? 'Perhatian'
+            : traceabilityEvidenceCount
+              ? 'Lengkap'
+              : 'Data tidak tersedia',
+        severity: traceabilityBlockers.length
+          ? 'CRITICAL'
+          : traceabilityWarnings.length
+            ? 'WARNING'
+            : 'INFO',
+        count:
+          traceabilityBlockers.length || traceabilityWarnings.length || traceabilityEvidenceCount,
+        summary: traceabilityEvidenceCount
+          ? `${traceabilityEvidenceCount} evidence material, personel, atau tools`
+          : 'Belum ada evidence traceability pada record ini',
+        nextAction:
+          traceabilityBlockers.length || traceabilityWarnings.length || !traceabilityEvidenceCount
+            ? 'Lengkapi evidence material, personel, tools, dan authorization.'
+            : null,
+        blockers: traceabilityBlockers
+      },
+      {
+        key: 'FACILITY_SLOT',
+        label: 'Facility Slot',
+        status: workPackage.currentMaintenanceSlot ? 'COMPLETE' : 'WARNING',
+        badge: workPackage.currentMaintenanceSlot ? 'Ditautkan' : 'Belum ditautkan',
+        severity: 'WARNING',
+        count: workPackage.currentMaintenanceSlot ? 0 : 1,
+        summary: workPackage.currentMaintenanceSlot
+          ? `${workPackage.currentMaintenanceSlot.facilityName} / ${workPackage.currentMaintenanceSlot.bayCode}`
+          : 'Belum ada facility slot aktif',
+        nextAction: workPackage.currentMaintenanceSlot
+          ? null
+          : 'Tautkan Facility Slot agar rilis dapat diterbitkan dari konteks hangar.',
+        blockers: []
+      }
+    ];
+    return gates.map((gate) => ({
+      ...gate,
+      status: blockingOrWarning(gate.status, gate.blockers, [])
+    }));
+  }
+
+  private technicalRecordNextActions(
+    gates: MaintenanceTechnicalRecordPackageDto['releaseGates'],
+    eligibility: MaintenanceReleaseEligibilityDto
+  ) {
+    const gateActions = gates
+      .filter((gate) => ['BLOCKED', 'MISSING', 'WARNING', 'UNAVAILABLE'].includes(gate.status))
+      .map((gate) => gate.nextAction ?? gate.summary)
+      .filter(Boolean);
+    const eligibilityActions = eligibility.blockers
+      .map((blocker) => blocker.nextAction ?? blocker.message)
+      .filter(Boolean);
+    return [...new Set([...gateActions, ...eligibilityActions])].slice(0, 6);
+  }
+
+  private technicalRecordIntegrity(
+    workPackage: MaintenanceWorkPackageDto,
+    eligibility: MaintenanceReleaseEligibilityDto,
+    generatedAt: string,
+    latestManifestHash: string | null,
+    verifiedAt: string | null
+  ): MaintenanceTechnicalRecordPackageDto['documentIntegrity'] {
+    const fallbackHash = createHash('sha256')
+      .update(
+        stableJson({
+          workPackageId: workPackage.id,
+          releaseId: workPackage.releaseId,
+          packageNumber: workPackage.packageNumber,
+          status: workPackage.status,
+          updatedAt: workPackage.updatedAt,
+          eligibility
+        })
+      )
+      .digest('hex');
+    const hash = latestManifestHash ?? fallbackHash;
+    return {
+      status: latestManifestHash || verifiedAt ? 'VERIFIED' : 'PENDING_SNAPSHOT',
+      label: latestManifestHash || verifiedAt ? 'Integrity Verified' : 'Preview hash generated',
+      manifestHash: hash,
+      shortHash: `${hash.slice(0, 8)}...${hash.slice(-6)}`,
+      generatedAt,
+      snapshotLabel: latestManifestHash ? 'Audit pack terbaru' : 'Snapshot preview',
+      verifiedAt
+    };
+  }
+
+  private latestAuditPack(workPackageId: string): MaintenanceAuditPackDto | null {
+    const row = this.sqlite
+      .prepare(
+        `SELECT *
+           FROM maintenance_audit_packs
+          WHERE work_package_id = ?
+          ORDER BY generated_at DESC
+          LIMIT 1`
+      )
+      .get(workPackageId) as SqlRow | undefined;
+    return row ? this.toAuditPackDto(row) : null;
+  }
+
+  private cardHasSignoff(card: MaintenanceJobCardDto, type: 'MECHANIC' | 'INDEPENDENT_INSPECTION') {
+    return card.signoffs.some(
+      (signoff) =>
+        signoff.signoffType === type &&
+        (type === 'MECHANIC' ? signoff.decision === 'COMPLETED' : signoff.decision === 'PASSED')
+    );
+  }
+
+  private humanStatus(value: string | null | undefined) {
+    if (!value) return 'UNKNOWN';
+    return value.replaceAll('_', ' ');
   }
 
   listQualityFindings(): MaintenanceQualityFindingDto[] {
@@ -706,6 +1453,7 @@ export class MaintenanceService {
         currentStationCode: item.currentStationCode,
         updatedAt: item.updatedAt
       })),
+      stations: this.stationOptions(),
       eligibleDefects: this.defectSummaries({
         onlyOpen: true,
         onlyUnlinked: true,
@@ -714,6 +1462,24 @@ export class MaintenanceService {
       vendors: this.vendorOptions(),
       signerLicenses: this.signerLicenseOptions(actor)
     };
+  }
+
+  private stationOptions(): MaintenanceSelectorDataDto['stations'] {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT id, station_code, station_name, city, timezone
+           FROM stations
+          WHERE is_active = 1
+          ORDER BY station_code ASC`
+      )
+      .all() as SqlRow[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      stationCode: String(row.station_code),
+      stationName: String(row.station_name),
+      city: nullableText(row.city),
+      timezone: nullableText(row.timezone)
+    }));
   }
 
   listMaintenanceFacilities(): MaintenanceFacilityDto[] {
@@ -1856,7 +2622,7 @@ export class MaintenanceService {
     const completedOccupancy = query.status
       ? null
       : this.listMaintenanceOccupancy({ ...query, status: 'COMPLETED' }, actor);
-    const occupancy = completedOccupancy
+    let occupancy = completedOccupancy
       ? {
           ...activeOccupancy,
           slots: [...activeOccupancy.slots, ...completedOccupancy.slots].filter(
@@ -1864,26 +2630,525 @@ export class MaintenanceService {
           )
         }
       : activeOccupancy;
+    if (!occupancy.slots.length && !query.status) {
+      occupancy = this.allFacilityOperationOccupancy(query, actor) ?? occupancy;
+    }
     const readiness = occupancy.slots.map((slot) => this.evaluateMaintenanceSlotReadiness(slot.id));
+    const custodies = this.listAircraftCustodies({
+      dateFrom: occupancy.dateFrom,
+      dateTo: occupancy.dateTo
+    });
+    const gseRequirements = occupancy.slots.flatMap((slot) =>
+      this.listGseRequirements(slot.workPackageId)
+    );
+    const gseAllocations = occupancy.slots.flatMap((slot) =>
+      this.listGseAllocations(slot.workPackageId)
+    );
+    const staging = occupancy.slots.flatMap((slot) => this.listResourceStaging(slot.id));
+    const handovers = occupancy.slots.flatMap((slot) => this.listShiftHandovers(slot.id));
     return {
       generatedAt: now(),
       facilities: this.listMaintenanceFacilities(),
       occupancy,
       readiness,
-      custodies: this.listAircraftCustodies({
-        dateFrom: occupancy.dateFrom,
-        dateTo: occupancy.dateTo
-      }),
-      gseRequirements: occupancy.slots.flatMap((slot) =>
-        this.listGseRequirements(slot.workPackageId)
-      ),
-      gseAllocations: occupancy.slots.flatMap((slot) =>
-        this.listGseAllocations(slot.workPackageId)
-      ),
-      staging: occupancy.slots.flatMap((slot) => this.listResourceStaging(slot.id)),
+      custodies,
+      gseRequirements,
+      gseAllocations,
+      staging,
       shifts: this.listFacilityShifts(query.facilityId),
-      handovers: occupancy.slots.flatMap((slot) => this.listShiftHandovers(slot.id))
+      handovers,
+      operations: this.facilityOperationSummaries(
+        occupancy.slots,
+        readiness,
+        custodies,
+        gseRequirements,
+        staging,
+        handovers
+      )
     };
+  }
+
+  private allFacilityOperationOccupancy(
+    query: MaintenanceFacilityOccupancyQuery,
+    actor: MaintenanceActor
+  ): MaintenanceFacilityOccupancyDto | null {
+    this.assertMaintenancePermission(actor, 'maintenance.package.read');
+    const where = ["slot.status IN ('BOOKED', 'IN_PROGRESS')"];
+    const params: unknown[] = [];
+    if (query.stationId) {
+      where.push('slot.station_id = ?');
+      params.push(query.stationId);
+    }
+    if (query.facilityId) {
+      where.push('slot.facility_id = ?');
+      params.push(query.facilityId);
+    }
+    if (query.aircraftId) {
+      where.push('slot.aircraft_id = ?');
+      params.push(query.aircraftId);
+    }
+    const rows = this.sqlite
+      .prepare(
+        `${this.maintenanceSlotSelectSql()} WHERE ${where.join(' AND ')}
+         ORDER BY slot.planned_start_at, station.station_code, facility.code, area.code, bay.code`
+      )
+      .all(...params) as SqlRow[];
+    const referenceTimestamp = Date.parse(query.dateFrom ?? now());
+    const slots = rows
+      .map((row) => this.toMaintenanceSlotDto(row))
+      .sort((left, right) => {
+        const leftDistance = Math.abs(Date.parse(left.plannedStartAt) - referenceTimestamp);
+        const rightDistance = Math.abs(Date.parse(right.plannedStartAt) - referenceTimestamp);
+        return leftDistance - rightDistance;
+      });
+    if (!slots.length) return null;
+    const dateFrom = slots.reduce(
+      (earliest, slot) => (slot.plannedStartAt < earliest ? slot.plannedStartAt : earliest),
+      slots[0].plannedStartAt
+    );
+    const dateTo = slots.reduce(
+      (latest, slot) => (slot.plannedEndAt > latest ? slot.plannedEndAt : latest),
+      slots[0].plannedEndAt
+    );
+    return {
+      generatedAt: now(),
+      dateFrom,
+      dateTo,
+      slots,
+      actualOccupancies: this.listAircraftCustodies({
+        dateFrom,
+        dateTo
+      }),
+      operationalConflicts: this.listOperationalOccupancyConflicts(dateFrom, dateTo)
+    };
+  }
+
+  private facilityOperationSummaries(
+    slots: MaintenanceSlotDto[],
+    readiness: MaintenanceSlotReadinessDto[],
+    custodies: MaintenanceAircraftCustodyDto[],
+    gseRequirements: MaintenanceGseRequirementDto[],
+    staging: MaintenanceFacilityResourceStagingDto[],
+    handovers: MaintenanceShiftHandoverDto[]
+  ): MaintenanceFacilityOperationDto[] {
+    return slots.map((slot) => {
+      const workPackage = this.getWorkPackage(slot.workPackageId);
+      const slotReadiness =
+        readiness.find((item) => item.slotId === slot.id) ??
+        this.evaluateMaintenanceSlotReadiness(slot.id);
+      const custody = this.currentCustodyForSlot(slot.id, custodies);
+      const packageRequirements = gseRequirements.filter(
+        (item) => item.workPackageId === slot.workPackageId && item.status !== 'CANCELLED'
+      );
+      const slotStaging = staging.filter((item) => item.slotId === slot.id);
+      const slotHandovers = handovers.filter((item) => item.slotId === slot.id);
+      const handbackReadiness = this.facilityHandbackReadiness(
+        slot,
+        workPackage,
+        slotReadiness,
+        custody,
+        packageRequirements,
+        slotStaging,
+        slotHandovers
+      );
+      const manpowerRequired = slotReadiness.manpowerCapacity.reduce(
+        (total, item) => total + item.required,
+        0
+      );
+      const manpowerAssigned = slotReadiness.manpowerCapacity.reduce(
+        (total, item) => total + item.assigned,
+        0
+      );
+
+      return {
+        slotId: slot.id,
+        workPackageId: slot.workPackageId,
+        packageNumber: slot.packageNumber,
+        workPackageTitle: workPackage.title,
+        workPackageStatus: workPackage.status,
+        aircraftId: slot.aircraftId,
+        aircraftRegistrationNumber: slot.aircraftRegistrationNumber,
+        aircraftImageUrl: workPackage.aircraftImageUrl ?? null,
+        aircraftType: workPackage.aircraftType ?? null,
+        aircraftModel: workPackage.aircraftModel ?? null,
+        priority: workPackage.priority,
+        riskLabel: this.facilityRiskLabel(workPackage.priority),
+        stationCode: slot.stationCode,
+        stationName: slot.stationName,
+        stationTimezone: slot.stationTimezone,
+        facilityName: slot.facilityName,
+        bayCode: slot.bayCode,
+        plannedStartAt: slot.plannedStartAt,
+        plannedEndAt: slot.plannedEndAt,
+        lastSyncedAt: slot.updatedAt,
+        custodyStatus: custody?.status ?? slot.status,
+        readinessStatus: slotReadiness.status,
+        counts: {
+          releaseBlockers: handbackReadiness.blockerCount,
+          melOpen: this.melBlockers(workPackage).length,
+          incompleteJobCards: this.incompleteJobCardCount(workPackage),
+          gsePending: this.pendingGseCount(packageRequirements),
+          manpowerRequired,
+          manpowerAssigned
+        },
+        handbackReadiness,
+        workflowSteps: this.facilityWorkflowSteps(custody, workPackage, handbackReadiness),
+        recentActivity: this.facilityRecentActivity(slot, custody, workPackage)
+      };
+    });
+  }
+
+  private currentCustodyForSlot(
+    slotId: string,
+    custodies: MaintenanceAircraftCustodyDto[]
+  ): MaintenanceAircraftCustodyDto | null {
+    const active = custodies.find(
+      (item) =>
+        item.slotId === slotId &&
+        ['MOVING_IN', 'IN_BAY', 'READY_FOR_MOVE_OUT', 'MOVING_OUT', 'HANDBACK_PENDING'].includes(
+          item.status
+        )
+    );
+    const listed = active ?? custodies.find((item) => item.slotId === slotId);
+    if (listed) return listed;
+    const row = this.sqlite
+      .prepare(
+        `${this.custodySelectSql()} WHERE custody.slot_id = ?
+         ORDER BY custody.status = 'HANDED_BACK', custody.updated_at DESC LIMIT 1`
+      )
+      .get(slotId) as SqlRow | undefined;
+    return row ? toMaintenanceAircraftCustodyDto(row) : null;
+  }
+
+  private facilityRiskLabel(priority: MaintenanceWorkPackageDto['priority']) {
+    if (priority === 'AOG') return 'AOG Risk';
+    if (priority === 'HIGH') return 'High Risk';
+    return null;
+  }
+
+  private facilityHandbackReadiness(
+    slot: MaintenanceSlotDto,
+    workPackage: MaintenanceWorkPackageDto,
+    readiness: MaintenanceSlotReadinessDto,
+    custody: MaintenanceAircraftCustodyDto | null,
+    requirements: MaintenanceGseRequirementDto[],
+    staging: MaintenanceFacilityResourceStagingDto[],
+    handovers: MaintenanceShiftHandoverDto[]
+  ): MaintenanceHandbackReadinessDto {
+    const gates = this.facilityReadinessGates(
+      workPackage,
+      readiness,
+      requirements,
+      staging,
+      handovers
+    );
+    const openGates = gates.filter(
+      (gate) => gate.status !== 'COMPLETE' && gate.status !== 'NOT_REQUIRED'
+    );
+    const blockerCount = openGates.reduce((total, gate) => total + Math.max(1, gate.count), 0);
+    const lifecycleReady =
+      custody?.status === 'MOVING_OUT' || custody?.status === 'HANDBACK_PENDING';
+    const canRequestHandback = lifecycleReady && openGates.length === 0;
+    const disabledReason = canRequestHandback
+      ? null
+      : lifecycleReady
+        ? 'Hand Back is disabled until all blockers are cleared.'
+        : 'Hand Back is disabled until the aircraft is moved out.';
+    const nextActions = Array.from(
+      new Set(
+        openGates
+          .map((gate) => gate.nextAction ?? gate.summary)
+          .filter((item): item is string => Boolean(item))
+      )
+    );
+
+    return {
+      slotId: slot.id,
+      workPackageId: slot.workPackageId,
+      status: canRequestHandback ? 'READY' : 'BLOCKED',
+      canRequestHandback,
+      disabledReason,
+      blockerCount,
+      nextActions,
+      gates
+    };
+  }
+
+  private facilityReadinessGates(
+    workPackage: MaintenanceWorkPackageDto,
+    readiness: MaintenanceSlotReadinessDto,
+    requirements: MaintenanceGseRequirementDto[],
+    staging: MaintenanceFacilityResourceStagingDto[],
+    handovers: MaintenanceShiftHandoverDto[]
+  ): MaintenanceFacilityReadinessGateDto[] {
+    const melBlockers = this.melBlockers(workPackage);
+    const jobCards = this.incompleteJobCards(workPackage);
+    const jobCardBlockers = this.jobCardBlockers(workPackage);
+    const jobCardCount = jobCards.length || jobCardBlockers.length;
+    const gsePending = this.pendingGseCount(requirements);
+    const stagedGse = staging.filter(
+      (item) => item.resourceType === 'GSE' && item.status !== 'CANCELLED'
+    );
+    const manpowerRequired = readiness.manpowerCapacity.reduce(
+      (total, item) => total + item.required,
+      0
+    );
+    const manpowerAssigned = readiness.manpowerCapacity.reduce(
+      (total, item) => total + item.assigned,
+      0
+    );
+    const acknowledgedHandover = handovers.find((item) => item.status === 'ACKNOWLEDGED');
+
+    return [
+      {
+        key: 'MEL',
+        label: 'MEL review completed',
+        status: melBlockers.length ? 'PENDING' : 'COMPLETE',
+        severity: melBlockers.length ? 'HIGH' : 'LOW',
+        count: melBlockers.length,
+        summary: melBlockers.length
+          ? `${melBlockers.length} MEL/deferred item requires review`
+          : 'No open MEL/deferred blocker',
+        nextAction: melBlockers.length
+          ? 'Complete MEL/deferred item review and close blocker.'
+          : null,
+        blockers: melBlockers
+      },
+      {
+        key: 'JOB_CARDS',
+        label: 'Job cards completed',
+        status: jobCardCount ? 'PENDING' : 'COMPLETE',
+        severity: jobCardCount ? 'CRITICAL' : 'LOW',
+        count: jobCardCount,
+        summary: jobCardCount ? `${jobCardCount} job card incomplete` : 'All job cards complete',
+        nextAction: jobCardCount
+          ? `Complete ${jobCardCount} incomplete job card${
+              jobCardCount === 1 ? '' : 's'
+            } in Work Package ${workPackage.packageNumber}.`
+          : null,
+        blockers: jobCardBlockers
+      },
+      {
+        key: 'GSE',
+        label: 'GSE confirmed removed/ready',
+        status: gsePending
+          ? 'PENDING'
+          : requirements.length ||
+              stagedGse.length ||
+              readiness.dimensions.gse.status !== 'NOT_REQUIRED'
+            ? 'COMPLETE'
+            : 'NOT_REQUIRED',
+        severity: gsePending ? 'MEDIUM' : 'LOW',
+        count: gsePending,
+        summary: gsePending
+          ? `${gsePending} mandatory GSE item pending`
+          : requirements.length
+            ? 'Mandatory GSE staged or satisfied'
+            : 'No GSE requirement',
+        nextAction: gsePending ? 'Confirm GSE removal or park status in bay.' : null,
+        blockers: readiness.dimensions.gse.blockers
+      },
+      {
+        key: 'MANPOWER',
+        label: 'Manpower sign-off',
+        status: manpowerRequired
+          ? manpowerAssigned >= manpowerRequired
+            ? 'COMPLETE'
+            : 'PENDING'
+          : 'NOT_REQUIRED',
+        severity: manpowerAssigned >= manpowerRequired ? 'LOW' : 'MEDIUM',
+        count: Math.max(manpowerRequired - manpowerAssigned, 0),
+        summary: manpowerRequired
+          ? `${manpowerAssigned}/${manpowerRequired} required roles assigned`
+          : 'No manpower requirement',
+        nextAction:
+          manpowerRequired && manpowerAssigned < manpowerRequired
+            ? 'Assign all required maintenance roles.'
+            : null,
+        blockers: readiness.dimensions.personnel.blockers
+      },
+      {
+        key: 'SHIFT_HANDOVER',
+        label: 'Shift handover acknowledged',
+        status: acknowledgedHandover ? 'COMPLETE' : 'PENDING',
+        severity: acknowledgedHandover ? 'LOW' : 'MEDIUM',
+        count: acknowledgedHandover ? 0 : 1,
+        summary: acknowledgedHandover
+          ? 'Incoming shift acknowledged'
+          : handovers.length
+            ? 'Awaiting incoming acknowledgement'
+            : 'No acknowledged shift handover',
+        nextAction: acknowledgedHandover ? null : 'Acknowledge the latest shift handover.',
+        blockers: []
+      }
+    ];
+  }
+
+  private melBlockers(workPackage: MaintenanceWorkPackageDto): MaintenanceEligibilityBlockerDto[] {
+    const blockers = workPackage.releaseEligibility?.blockers ?? [];
+    return blockers.filter((blocker) =>
+      [blocker.code, blocker.message, blocker.sourceId ?? ''].some((value) =>
+        /mel|defer/i.test(value)
+      )
+    );
+  }
+
+  private jobCardBlockers(
+    workPackage: MaintenanceWorkPackageDto
+  ): MaintenanceEligibilityBlockerDto[] {
+    const blockers = workPackage.releaseEligibility?.blockers ?? [];
+    return blockers.filter((blocker) =>
+      /job card|inspection|approved data|work scope|maintenance data/i.test(blocker.message)
+    );
+  }
+
+  private incompleteJobCards(workPackage: MaintenanceWorkPackageDto): MaintenanceJobCardDto[] {
+    return workPackage.jobCards.filter(
+      (card) =>
+        card.mandatoryFlag &&
+        card.status !== 'READY_FOR_RELEASE_REVIEW' &&
+        card.status !== 'CANCELLED'
+    );
+  }
+
+  private incompleteJobCardCount(workPackage: MaintenanceWorkPackageDto): number {
+    return this.incompleteJobCards(workPackage).length || this.jobCardBlockers(workPackage).length;
+  }
+
+  private pendingGseCount(requirements: MaintenanceGseRequirementDto[]): number {
+    return requirements
+      .filter((item) => item.mandatory && item.status !== 'CANCELLED')
+      .reduce((total, item) => total + Math.max(item.quantity - item.stagedQuantity, 0), 0);
+  }
+
+  private facilityWorkflowSteps(
+    custody: MaintenanceAircraftCustodyDto | null,
+    workPackage: MaintenanceWorkPackageDto,
+    handbackReadiness: MaintenanceHandbackReadinessDto
+  ): MaintenanceFacilityWorkflowStepDto[] {
+    const statusOrder = [
+      'MOVING_IN',
+      'IN_BAY',
+      'READY_FOR_MOVE_OUT',
+      'MOVING_OUT',
+      'HANDBACK_PENDING',
+      'HANDED_BACK'
+    ];
+    const rank = custody ? statusOrder.indexOf(custody.status) : -1;
+    const isAtLeast = (status: MaintenanceAircraftCustodyDto['status']) =>
+      rank >= statusOrder.indexOf(status);
+    const released = Boolean(workPackage.releaseId);
+
+    return [
+      {
+        key: 'MOVE_IN_REQUESTED',
+        step: 1,
+        label: 'Requested Move In',
+        status: custody ? 'COMPLETE' : 'PENDING',
+        timestamp: custody?.actualStartAt ?? null,
+        helper: null,
+        disabledReason: null
+      },
+      {
+        key: 'IN_BAY_CONFIRMED',
+        step: 2,
+        label: 'In Bay Confirmed',
+        status: isAtLeast('IN_BAY')
+          ? 'COMPLETE'
+          : custody?.status === 'MOVING_IN'
+            ? 'CURRENT'
+            : 'PENDING',
+        timestamp: custody?.inBayAt ?? null,
+        helper: null,
+        disabledReason: null
+      },
+      {
+        key: 'MAINTENANCE_IN_PROGRESS',
+        step: 3,
+        label: 'Maintenance In Progress',
+        status: isAtLeast('READY_FOR_MOVE_OUT')
+          ? 'COMPLETE'
+          : custody?.status === 'IN_BAY'
+            ? 'CURRENT'
+            : 'PENDING',
+        timestamp: custody?.inBayAt ?? null,
+        helper: custody?.status === 'IN_BAY' ? 'In Progress' : null,
+        disabledReason: null
+      },
+      {
+        key: 'READY_MOVE_OUT',
+        step: 4,
+        label: 'Ready Move Out',
+        status: isAtLeast('READY_FOR_MOVE_OUT')
+          ? custody?.status === 'READY_FOR_MOVE_OUT'
+            ? 'CURRENT'
+            : 'COMPLETE'
+          : released
+            ? 'PENDING'
+            : 'DISABLED',
+        timestamp: custody?.readyForMoveOutAt ?? null,
+        helper: isAtLeast('READY_FOR_MOVE_OUT') ? null : released ? 'Pending' : 'Awaiting release',
+        disabledReason: released ? null : 'Technical release is required before ready move out.'
+      },
+      {
+        key: 'MOVE_OUT',
+        step: 5,
+        label: 'Move Out',
+        status: isAtLeast('MOVING_OUT')
+          ? custody?.status === 'MOVING_OUT'
+            ? 'CURRENT'
+            : 'COMPLETE'
+          : 'PENDING',
+        timestamp: custody?.movingOutAt ?? null,
+        helper: isAtLeast('MOVING_OUT') ? null : 'Pending',
+        disabledReason: null
+      },
+      {
+        key: 'HAND_BACK',
+        step: 6,
+        label: 'Hand Back',
+        status:
+          custody?.status === 'HANDED_BACK'
+            ? 'COMPLETE'
+            : handbackReadiness.canRequestHandback
+              ? 'CURRENT'
+              : 'DISABLED',
+        timestamp: custody?.handedBackAt ?? null,
+        helper: custody?.status === 'HANDED_BACK' ? null : 'Disabled',
+        disabledReason: handbackReadiness.disabledReason
+      }
+    ];
+  }
+
+  private facilityRecentActivity(
+    slot: MaintenanceSlotDto,
+    custody: MaintenanceAircraftCustodyDto | null,
+    workPackage: MaintenanceWorkPackageDto
+  ) {
+    const relevantIds = new Set(
+      [slot.id, slot.workPackageId, workPackage.id, custody?.id].filter(Boolean)
+    );
+    const records = this.auditRecords(undefined, undefined, 80).filter(
+      (record) =>
+        relevantIds.has(record.entityId) ||
+        record.metadata.slotId === slot.id ||
+        record.metadata.workPackageId === slot.workPackageId
+    );
+    return records.slice(0, 6).map((record) => ({
+      id: record.id,
+      occurredAt: record.occurredAt,
+      title: this.auditActionTitle(record.action),
+      detail: record.actorRole,
+      actorRole: record.actorRole
+    }));
+  }
+
+  private auditActionTitle(action: string) {
+    return action
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   }
 
   listCompanyAuthorizations(personnelId?: string): MaintenanceCompanyAuthorizationDto[] {
@@ -2481,10 +3746,11 @@ export class MaintenanceService {
     input: CreateNonRoutineFindingInput,
     actor: MaintenanceActor
   ) {
+    const command = createNonRoutineFindingSchema.parse(input);
     this.assertMaintenancePermission(actor, 'maintenance.jobcard.work.sign');
     const workPackage = this.requireWorkPackage(workPackageId);
     this.assertWorkPackageMutable(workPackage);
-    const sourceCard = this.requireJobCard(input.sourceJobCardId);
+    const sourceCard = this.requireJobCard(command.sourceJobCardId);
     if (String(sourceCard.work_package_id) !== workPackageId) {
       throw maintenanceError(
         'INVALID_SOURCE_JOB_CARD',
@@ -2493,7 +3759,7 @@ export class MaintenanceService {
         {
           impact: 'Temuan non-routine tidak dibuat.',
           requiredAction: 'Pilih Job Card aktif dari Work Package yang sama.',
-          referenceId: input.sourceJobCardId
+          referenceId: command.sourceJobCardId
         }
       );
     }
@@ -2505,7 +3771,7 @@ export class MaintenanceService {
         {
           impact: 'Temuan non-routine tidak dibuat.',
           requiredAction: 'Start Job Card terlebih dahulu sebelum mencatat temuan.',
-          referenceId: input.sourceJobCardId
+          referenceId: command.sourceJobCardId
         }
       );
     }
@@ -2517,18 +3783,18 @@ export class MaintenanceService {
         {
           impact: 'Temuan non-routine tidak dibuat.',
           requiredAction: 'Catat temuan dari Job Card planned/originating, bukan corrective card.',
-          referenceId: input.sourceJobCardId
+          referenceId: command.sourceJobCardId
         }
       );
     }
 
-    const existing = input.idempotencyKey
+    const existing = command.idempotencyKey
       ? (this.sqlite
           .prepare(
             `SELECT * FROM maintenance_non_routine_findings
              WHERE create_idempotency_key = ?`
           )
-          .get(input.idempotencyKey) as SqlRow | undefined)
+          .get(command.idempotencyKey) as SqlRow | undefined)
       : null;
     if (existing) return this.getWorkPackage(String(existing.work_package_id));
 
@@ -2540,36 +3806,46 @@ export class MaintenanceService {
         this.sqlite
           .prepare(
             `INSERT INTO maintenance_non_routine_findings (
-              id, work_package_id, aircraft_id, job_card_id, finding_number, title,
-              description, severity, location, ata_chapter, immediate_safety_concern,
-              evidence_references_json, status, created_by_user_id, created_at, updated_at,
-              create_idempotency_key
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`
+	              id, work_package_id, aircraft_id, job_card_id, finding_number, title,
+	              description, severity, location, ata_chapter, detected_during, operational_impact,
+	              finding_classification, mel_cdl_assessment, immediate_action,
+	              aircraft_movement_prohibited, notify_maintenance_control, requires_inspector_review,
+	              immediate_safety_concern, evidence_references_json, status, created_by_user_id,
+	              created_at, updated_at, create_idempotency_key
+	            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`
           )
           .run(
             id,
             workPackageId,
             String(workPackage.aircraft_id),
-            input.sourceJobCardId,
+            command.sourceJobCardId,
             findingNumber,
-            input.title,
-            input.description,
-            input.severity,
-            input.location ?? null,
-            input.ataChapter ?? null,
-            input.immediateSafetyConcern ? 1 : 0,
-            JSON.stringify(input.evidenceReferences),
+            command.title,
+            command.description,
+            command.severity,
+            command.location ?? null,
+            command.ataChapter ?? null,
+            command.detectedDuring,
+            command.operationalImpact,
+            command.findingClassification,
+            command.melCdlAssessment,
+            command.immediateAction ?? null,
+            command.aircraftMovementProhibited ? 1 : 0,
+            command.notifyMaintenanceControl ? 1 : 0,
+            command.requiresInspectorReview ? 1 : 0,
+            command.immediateSafetyConcern ? 1 : 0,
+            JSON.stringify(command.evidenceReferences),
             actor.userId,
             timestamp,
             timestamp,
-            input.idempotencyKey ?? null
+            command.idempotencyKey ?? null
           );
         this.touchWorkPackage(workPackageId, number(workPackage.version));
         this.audit('NON_ROUTINE_FINDING', id, 'NR_CREATED', actor, null, 1, {
           workPackageId,
-          sourceJobCardId: input.sourceJobCardId,
+          sourceJobCardId: command.sourceJobCardId,
           findingNumber,
-          severity: input.severity
+          severity: command.severity
         });
       })();
     } catch (error) {
@@ -8585,6 +9861,22 @@ export class MaintenanceService {
       severity: String(row.severity ?? 'NORMAL') as MaintenanceNonRoutineFindingDto['severity'],
       location: nullableText(row.location),
       ataChapter: nullableText(row.ata_chapter),
+      detectedDuring: String(
+        row.detected_during ?? 'ACTIVE_WORK'
+      ) as MaintenanceNonRoutineFindingDto['detectedDuring'],
+      operationalImpact: String(
+        row.operational_impact ?? 'UNASSESSED'
+      ) as MaintenanceNonRoutineFindingDto['operationalImpact'],
+      findingClassification: String(
+        row.finding_classification ?? 'UNASSESSED'
+      ) as MaintenanceNonRoutineFindingDto['findingClassification'],
+      melCdlAssessment: String(
+        row.mel_cdl_assessment ?? 'UNASSESSED'
+      ) as MaintenanceNonRoutineFindingDto['melCdlAssessment'],
+      immediateAction: nullableText(row.immediate_action),
+      aircraftMovementProhibited: Boolean(row.aircraft_movement_prohibited),
+      notifyMaintenanceControl: Boolean(row.notify_maintenance_control),
+      requiresInspectorReview: Boolean(row.requires_inspector_review ?? 1),
       immediateSafetyConcern: Boolean(row.immediate_safety_concern),
       evidenceReferences: jsonArray(row.evidence_references_json),
       status: String(row.status) as MaintenanceNonRoutineFindingDto['status'],

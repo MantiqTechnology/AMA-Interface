@@ -1,7 +1,5 @@
-import { getDemoRole } from '../../utils/auth';
+import { requireDemoSession } from '../../utils/auth';
 import { defineApiEventHandler } from '../../utils/api-response';
+import { toDemoSessionDto } from '../../utils/demo-session';
 
-export default defineApiEventHandler((event) => ({
-  role: getDemoRole(event),
-  demoMode: String(useRuntimeConfig().demoMode) === 'true'
-}));
+export default defineApiEventHandler((event) => toDemoSessionDto(requireDemoSession(event)));

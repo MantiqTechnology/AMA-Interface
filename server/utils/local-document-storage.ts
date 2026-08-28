@@ -17,7 +17,7 @@ import {
 import { getDocumentTypeConfig } from '../../shared/constants/document-types';
 import { DomainError, notFound } from './errors';
 import { resetLocalUploadStorage } from './local-upload-storage';
-import { getUpload, getUploadStorageDriver, saveUpload } from './upload-storage';
+import { attachUpload, getUpload, getUploadStorageDriver, saveUpload } from './upload-storage';
 import { createDemoSeedContext, type DemoSeedContext } from '../db/seeds/context';
 
 const DEFAULT_MANIFEST_PATH = join(process.cwd(), 'data', 'local-documents.json');
@@ -42,7 +42,7 @@ type DemoDocumentSeed = {
 };
 
 function isEphemeralRuntime() {
-  return Boolean(process.env.VERCEL) || process.env.NODE_ENV === 'production';
+  return Boolean(process.env.VERCEL);
 }
 
 function resolveWritablePath(path: string) {
@@ -95,7 +95,12 @@ function normalizeOptional(value: string | undefined) {
   return value?.trim() || undefined;
 }
 
-function buildDocument(input: CreateDocumentBody, timestamp: string, version = 1): MasterDocument {
+function buildDocument(
+  input: CreateDocumentBody,
+  timestamp: string,
+  version = 1,
+  actorId = SYSTEM_USER
+): MasterDocument {
   return {
     id: `doc-${nanoid(12)}`,
     ownerType: input.ownerType,
@@ -113,7 +118,7 @@ function buildDocument(input: CreateDocumentBody, timestamp: string, version = 1
     visibility: input.visibility,
     notes: normalizeOptional(input.notes),
     version,
-    uploadedBy: SYSTEM_USER,
+    uploadedBy: actorId,
     uploadedAt: timestamp,
     createdAt: timestamp,
     updatedAt: timestamp
@@ -560,14 +565,15 @@ export async function getDocument(id: string) {
   return await toDto(document);
 }
 
-export async function createDocument(input: CreateDocumentBody) {
+export async function createDocument(input: CreateDocumentBody, actorId = SYSTEM_USER) {
   await getUpload(input.uploadId);
 
   const timestamp = new Date().toISOString();
   const manifest = await readSeededManifest();
-  const document = buildDocument(input, timestamp);
+  const document = buildDocument(input, timestamp, 1, actorId);
 
   await writeManifest({ documents: [document, ...manifest.documents] });
+  await attachUpload(input.uploadId, input.ownerType, input.ownerId);
   return await toDto(document);
 }
 
@@ -600,7 +606,7 @@ export async function updateDocument(id: string, input: UpdateDocumentBody) {
   return await toDto(updated);
 }
 
-export async function verifyDocument(id: string) {
+export async function verifyDocument(id: string, actorId = SYSTEM_USER) {
   const manifest = await readSeededManifest();
   const index = manifest.documents.findIndex((item) => item.id === id);
 
@@ -613,7 +619,7 @@ export async function verifyDocument(id: string) {
     ...manifest.documents[index],
     verificationStatus: 'VERIFIED',
     rejectionReason: undefined,
-    verifiedBy: SYSTEM_USER,
+    verifiedBy: actorId,
     verifiedAt: timestamp,
     updatedAt: timestamp
   };
@@ -623,7 +629,7 @@ export async function verifyDocument(id: string) {
   return await toDto(updated);
 }
 
-export async function rejectDocument(id: string, rejectionReason: string) {
+export async function rejectDocument(id: string, rejectionReason: string, actorId = SYSTEM_USER) {
   const manifest = await readSeededManifest();
   const index = manifest.documents.findIndex((item) => item.id === id);
 
@@ -635,7 +641,7 @@ export async function rejectDocument(id: string, rejectionReason: string) {
   const updated: MasterDocument = {
     ...manifest.documents[index],
     verificationStatus: 'REJECTED',
-    verifiedBy: undefined,
+    verifiedBy: actorId,
     verifiedAt: undefined,
     rejectionReason,
     updatedAt: timestamp
@@ -646,7 +652,11 @@ export async function rejectDocument(id: string, rejectionReason: string) {
   return await toDto(updated);
 }
 
-export async function supersedeDocument(id: string, input: SupersedeDocumentBody) {
+export async function supersedeDocument(
+  id: string,
+  input: SupersedeDocumentBody,
+  actorId = SYSTEM_USER
+) {
   await getUpload(input.uploadId);
 
   const manifest = await readSeededManifest();
@@ -675,7 +685,8 @@ export async function supersedeDocument(id: string, input: SupersedeDocumentBody
       notes: input.notes
     },
     timestamp,
-    existing.version + 1
+    existing.version + 1,
+    actorId
   );
   replacement.replacesDocumentId = existing.id;
 
@@ -687,6 +698,7 @@ export async function supersedeDocument(id: string, input: SupersedeDocumentBody
 
   manifest.documents[index] = superseded;
   await writeManifest({ documents: [replacement, ...manifest.documents] });
+  await attachUpload(input.uploadId, existing.ownerType, existing.ownerId);
   return await toDto(replacement);
 }
 
@@ -713,4 +725,10 @@ export async function deleteDocument(id: string) {
 export async function isUploadReferenced(uploadId: string) {
   const manifest = await readManifest();
   return manifest.documents.some((document) => document.uploadId === uploadId);
+}
+
+export async function getDocumentByUploadId(uploadId: string) {
+  const manifest = await readSeededManifest();
+  const document = manifest.documents.find((item) => item.uploadId === uploadId);
+  return document ? await toDto(document) : null;
 }

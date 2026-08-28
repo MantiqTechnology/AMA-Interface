@@ -155,7 +155,7 @@ test('M9 final Demo-v3 acceptance evidence covers MRO, facility, and Flight inte
 
   await setRole(context, baseURL, 'Maintenance Manager');
   await page.goto('/maintenance', { waitUntil: 'networkidle' });
-  await expect(page.getByRole('heading', { name: 'Ringkasan Maintenance' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Pusat Kendali MRO' })).toBeVisible();
   await screenshot(page, '01-maintenance-command-overview.png');
 
   await page.goto('/maintenance/due-control', { waitUntil: 'networkidle' });
