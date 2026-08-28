@@ -37,6 +37,11 @@ function patchVuetifySwitchPostcss() {
 }
 
 export default defineNuxtConfig({
+  // Tambahkan blok devServer ini agar bisa diakses di Docker
+  devServer: {
+    host: '0.0.0.0',
+    port: 3000
+  },
   buildDir: process.env.NUXT_BUILD_DIR ?? '.nuxt',
   compatibilityDate: '2026-07-04',
   devtools: {

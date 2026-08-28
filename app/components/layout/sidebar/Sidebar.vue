@@ -422,6 +422,61 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
+      label: 'Safety (SMS)',
+      icon: 'mdi-shield-account-variant-outline',
+      visible: true,
+      children: [
+        {
+          label: 'Safety Dashboard',
+          to: '/sms/Dashboard', // ➔ Mengarah ke Dashboard.vue
+          icon: 'mdi-view-dashboard-variant-outline',
+          visible: true
+        },
+        {
+          label: 'Hazard Reporting',
+          to: '/sms/Reporting', // ➔ Mengarah ke Reporting.vue
+          icon: 'mdi-file-document-edit-outline',
+          visible: true
+        },
+        {
+          label: 'Flight Risk (FRAT)',
+          to: '/sms/Frat', // ➔ Mengarah ke Frat.vue
+          icon: 'mdi-calculator-variant-outline',
+          visible: true
+        },
+        {
+          label: 'CAPA Management',
+          to: '/sms/Capa', // ➔ Mengarah ke Capa.vue
+          icon: 'mdi-clipboard-check-multiple-outline',
+          visible: true
+        },
+        {
+          label: 'Emergency & Response',
+          to: '/sms/EmergencyResponse', // ➔ Mengarah ke EmergencyResponse.vue
+          icon: 'mdi-ambulance',
+          visible: true
+        },
+        {
+          label: 'Safety Assurance',
+          to: '/sms/SafetyAssurance', // ➔ Mengarah ke SafetyAssurance.vue
+          icon: 'mdi-shield-check-outline',
+          visible: true
+        },
+        {
+          label: 'SPI & Analytics',
+          to: '/sms/SpiAnalytics', // ➔ Kita akan buat file SpiAnalytics.vue
+          icon: 'mdi-chart-box-outline',
+          visible: true
+        },
+        {
+          label: 'Safety Communication',
+          to: '/sms/Communication', // ➔ Mengarah ke Communication.vue
+          icon: 'mdi-message-alert-outline',
+          visible: true
+        }
+      ].filter((child) => child.visible)
+    },
+    {
       label: t('nav.ticketing'),
       icon: 'mdi-ticket-confirmation-outline',
       visible: excludedDemoModuleVisible,
