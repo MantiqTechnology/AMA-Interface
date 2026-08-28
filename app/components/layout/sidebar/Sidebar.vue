@@ -324,7 +324,62 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: t('nav.corporateAssets'),
+      label: 'Procurement',
+      icon: 'mdi-cart-outline',
+      visible: true,
+      children: [
+        {
+          label: 'Overview',
+          to: '/procurement',
+          icon: 'mdi-view-dashboard-outline',
+          visible: true
+        },
+        {
+          label: 'Suppliers & Vendors',
+          to: '/procurement/suppliers',
+          icon: 'mdi-domain',
+          visible: true
+        },
+        {
+          label: 'Purchase Requisition',
+          to: '/procurement/requisitions',
+          icon: 'mdi-clipboard-text-outline',
+          visible: true
+        },
+        {
+          label: 'Sourcing & Tender',
+          to: '/procurement/sourcing',
+          icon: 'mdi-gavel',
+          visible: true
+        },
+        {
+          label: 'Purchase Orders',
+          to: '/procurement/purchase-orders',
+          icon: 'mdi-file-sign',
+          visible: true
+        },
+        {
+          label: 'Receiving & Returns',
+          to: '/procurement/receiving',
+          icon: 'mdi-truck-check-outline',
+          visible: true
+        },
+        {
+          label: 'Vendor Performance',
+          to: '/procurement/vendor-performance',
+          icon: 'mdi-chart-line',
+          visible: true
+        },
+        {
+          label: 'Approval & Control',
+          to: '/procurement/approval-control',
+          icon: 'mdi-shield-check-outline',
+          visible: true
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'Corporate Asset',
       icon: 'mdi-toolbox-outline',
       visible: excludedDemoModuleVisible,
       children: [
