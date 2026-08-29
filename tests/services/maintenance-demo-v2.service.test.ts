@@ -72,6 +72,178 @@ describe('Maintenance Demo-v2 controls', () => {
     sqlite.close();
   });
 
+  it('returns demo-grade work instruction metadata and approved-data links on job cards', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    seedMroFoundationData(sqlite);
+
+    const workPackage = services.maintenance.getWorkPackage('mwp-mrov1-release-ready');
+    const jobCard = workPackage.jobCards.find((card) => card.id === 'mjc-mrov1-release-001');
+
+    expect(jobCard).toMatchObject({
+      ataChapter: '24-30-00',
+      aircraftArea: 'LH engine bay',
+      systemName: 'Electrical power',
+      componentName: 'Starter-generator indication wiring',
+      componentPosition: 'Generator control circuit',
+      accessPanel: 'ENG-LH-01',
+      estimatedManHours: 2,
+      skillRequirement: 'AME electrical authorization with C208B scope',
+      releaseImpact: 'BLOCKS_RELEASE'
+    });
+    expect(jobCard?.workSteps).toEqual(
+      expect.arrayContaining([
+        'Inspect starter-generator indication wiring and terminals.',
+        'Carry out operational check and record the result.'
+      ])
+    );
+    expect(jobCard?.acceptanceCriteria).toContain(
+      'Starter-generator indication remains stable during operational check.'
+    );
+    expect(jobCard?.requiredEvidence).toContain('Independent inspection record.');
+    expect(jobCard?.safetyCautions).toContain(
+      'Do not energize the electrical system while terminals are exposed.'
+    );
+    expect(jobCard?.prerequisites).toContain('Aircraft grounded for maintenance.');
+    expect(jobCard?.approvedDataLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          approvedDataRevisionId: 'mdata-rev-amm-c208-active',
+          documentType: 'AMM',
+          documentNumber: 'AMA-MROV2-AMM-001',
+          revisionStatus: 'ACTIVE',
+          demoFileLabel: 'AMM reference extract',
+          demoFileUrl: '/mro/reference/amm-c208b-rev-a.txt',
+          demoPageRef: '24-30-00 p. 4-7'
+        })
+      ])
+    );
+
+    sqlite.close();
+  });
+
+  it('stores new work-instruction fields when adding a job card and keeps safe defaults', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    seedMroFoundationData(sqlite);
+
+    const packageBefore = services.maintenance.getWorkPackage('mwp-mrov1-active');
+    let updated = services.maintenance.addJobCard(
+      packageBefore.id,
+      {
+        title: 'Demo borescope access inspection',
+        taskType: 'SCHEDULED_TASK',
+        maintenanceDataRef: 'AMM C208B 72-00-00',
+        maintenanceDataRevision: 'REV-MROV2-ACTIVE',
+        approvedDataRevisionId: 'mdata-rev-amm-c208-active',
+        ataChapter: '72-00-00',
+        aircraftArea: 'Engine bay',
+        systemName: 'Powerplant',
+        componentName: 'Borescope access port',
+        componentPosition: 'RH compressor case',
+        accessPanel: 'ENG-RH-04',
+        estimatedManHours: 0.75,
+        skillRequirement: 'AME powerplant authorization',
+        releaseImpact: 'NO_RELEASE_IMPACT',
+        workSteps: ['Open access panel.', 'Inspect access port condition.'],
+        acceptanceCriteria: ['No leakage or loose fastener found.'],
+        requiredEvidence: ['Access port condition photo.'],
+        safetyCautions: ['Allow engine section to cool before access.'],
+        prerequisites: ['Aircraft in maintenance custody.'],
+        dependencyJobCardIds: ['MWP-MROV1-ACTIVE-JC-001'],
+        mandatoryFlag: false,
+        requiresIndependentInspection: false,
+        expectedWorkPackageVersion: packageBefore.version
+      },
+      maintenance
+    );
+    const customCard = updated.jobCards.find(
+      (card) => card.title === 'Demo borescope access inspection'
+    );
+    expect(customCard).toMatchObject({
+      ataChapter: '72-00-00',
+      aircraftArea: 'Engine bay',
+      releaseImpact: 'NO_RELEASE_IMPACT',
+      estimatedManHours: 0.75,
+      dependencyJobCardIds: ['MWP-MROV1-ACTIVE-JC-001']
+    });
+    expect(customCard?.approvedDataLinks[0]).toMatchObject({
+      approvedDataRevisionId: 'mdata-rev-amm-c208-active',
+      demoFileUrl: '/mro/reference/amm-c208b-rev-a.txt'
+    });
+
+    updated = services.maintenance.addJobCard(
+      updated.id,
+      {
+        title: 'Optional advisory default card',
+        taskType: 'SCHEDULED_TASK',
+        maintenanceDataRef: 'AMM C208B DEMO',
+        maintenanceDataRevision: 'REV-MROV2-ACTIVE',
+        mandatoryFlag: false,
+        requiresIndependentInspection: false,
+        expectedWorkPackageVersion: updated.version
+      },
+      maintenance
+    );
+    const defaultCard = updated.jobCards.find(
+      (card) => card.title === 'Optional advisory default card'
+    );
+    expect(defaultCard).toMatchObject({
+      estimatedManHours: 0,
+      releaseImpact: 'ADVISORY',
+      workSteps: [],
+      acceptanceCriteria: [],
+      requiredEvidence: [],
+      safetyCautions: [],
+      prerequisites: [],
+      dependencyJobCardIds: [],
+      approvedDataLinks: []
+    });
+
+    sqlite.close();
+  });
+
+  it('backfills upgraded instruction metadata when foundation seed already exists', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    seedMroFoundationData(sqlite);
+    sqlite
+      .prepare(
+        `UPDATE maintenance_job_cards
+         SET ata_chapter = NULL,
+             aircraft_area = NULL,
+             work_steps_json = '[]',
+             acceptance_criteria_json = '[]',
+             required_evidence_json = '[]'
+         WHERE id = 'mjc-mrov1-release-001'`
+      )
+      .run();
+    sqlite
+      .prepare(
+        `UPDATE maintenance_approved_data_revisions
+         SET demo_file_label = NULL, demo_file_url = NULL, demo_page_ref = NULL
+         WHERE id = 'mdata-rev-amm-c208-active'`
+      )
+      .run();
+
+    seedMroFoundationData(sqlite);
+
+    const jobCard = services.maintenance
+      .getWorkPackage('mwp-mrov1-release-ready')
+      .jobCards.find((card) => card.id === 'mjc-mrov1-release-001');
+    expect(jobCard).toMatchObject({
+      ataChapter: '24-30-00',
+      aircraftArea: 'LH engine bay'
+    });
+    expect(jobCard?.workSteps).toContain(
+      'Inspect starter-generator indication wiring and terminals.'
+    );
+    expect(jobCard?.approvedDataLinks[0]).toMatchObject({
+      demoFileLabel: 'AMM reference extract',
+      demoFileUrl: '/mro/reference/amm-c208b-rev-a.txt',
+      demoPageRef: '24-30-00 p. 4-7'
+    });
+
+    sqlite.close();
+  });
+
   it('exposes and accepts a dedicated technician licence for mechanic sign-off demos', async () => {
     const { services, sqlite } = await createSeededTestServices();
     seedMroFoundationData(sqlite);

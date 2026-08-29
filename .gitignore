@@ -20,3 +20,5 @@ public/uploads/local
 # Local Pi runtime state
 .atl/
 .pi/
+.vercel/
+.env.local

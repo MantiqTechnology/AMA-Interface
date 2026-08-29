@@ -2,7 +2,11 @@
 import type { CurrencyOption } from '#shared/features/finance/currencies';
 import type { VendorOption } from '#shared/features/finance/vendors';
 import type { PurchaseOrderDto, PurchaseRequestDto } from '#shared/features/inventory';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryFilterBar from '../../features/inventory/InventoryFilterBar.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const { can } = useAuthorization();
 const { money, number, date, errorMessage } = useInventoryUi();
@@ -109,7 +113,10 @@ async function createOrder() {
     dialog.value = false;
     await Promise.all([refresh(), refreshRequests()]);
   } catch (value) {
-    actionError.value = errorMessage(value, 'Purchase order could not be created');
+    actionError.value = errorMessage(
+      value,
+      'Purchase order tidak dapat dibuat. Periksa vendor, tanggal, dan line.'
+    );
   } finally {
     saving.value = false;
   }
@@ -119,7 +126,10 @@ async function runAction(id: string, action: 'submit' | 'approve') {
   actionError.value = '';
   await fetchApi(`/api/inventory/purchase-orders/${id}/${action}`, { method: 'POST' }).catch(
     (value) => {
-      actionError.value = errorMessage(value, `Purchase order ${action} failed`);
+      actionError.value = errorMessage(
+        value,
+        `Aksi purchase order gagal. Perbarui data lalu coba lagi.`
+      );
       throw value;
     }
   );
@@ -132,7 +142,10 @@ async function reject(id: string) {
     method: 'POST',
     body: { reason: rejectReason.value }
   }).catch((value) => {
-    actionError.value = errorMessage(value, 'Purchase order rejection failed');
+    actionError.value = errorMessage(
+      value,
+      'Purchase order tidak dapat ditolak. Isi alasan lalu coba lagi.'
+    );
     throw value;
   });
   await refresh();
@@ -140,44 +153,51 @@ async function reject(id: string) {
 </script>
 
 <template>
-  <InventoryShell title="Purchase Orders">
+  <InventoryShell title="Purchase Order">
     <template #actions>
       <DsTooltipIconButton
         v-if="can('inventory.procurement.manage').allowed"
         color="primary"
         :disabled="!requestOptions.length"
         icon="mdi-plus"
-        tooltip="Create purchase order"
+        tooltip="Buat purchase order"
         variant="flat"
         @click="openCreate"
       />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh purchase orders"
+        tooltip="Perbarui purchase order"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
-    <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{ actionError || 'Purchase orders could not be loaded.' }}
-    </VAlert>
-    <VTextField
-      v-model="search"
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
       class="mb-4"
-      clearable
-      density="comfortable"
-      hide-details
-      label="Search purchase orders"
-      prepend-inner-icon="mdi-magnify"
-      variant="outlined"
-    />
-    <VCard border>
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Purchase order tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
+    </VAlert>
+    <InventoryFilterBar label="Filter purchase order">
+      <VTextField
+        v-model="search"
+        clearable
+        density="comfortable"
+        hide-details
+        label="Cari purchase order"
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+      />
+    </InventoryFilterBar>
+    <InventoryPanel title="Daftar Purchase Order">
       <VDataTable
         :headers="[
           { title: 'Order', key: 'orderNumber' },
           { title: 'Vendor', key: 'vendorName' },
           { title: 'Lines', key: 'lines', sortable: false },
-          { title: 'Expected', key: 'expectedAt' },
+          { title: 'Estimasi', key: 'expectedAt' },
           { title: 'Status', key: 'status' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
@@ -194,36 +214,36 @@ async function reject(id: string) {
             {{
               can('inventory.valuation.read').allowed
                 ? money(line.sourceUnitCostMinor, item.currencyCode)
-                : 'Restricted'
+                : 'Terbatas'
             }}
           </div>
         </template>
         <template #[`item.expectedAt`]="{ item }">{{ date(item.expectedAt) }}</template>
         <template #[`item.status`]="{ item }"><DsStatusBadge :value="item.status" /></template>
         <template #[`item.actions`]="{ item }">
-          <div class="d-flex justify-end ga-1">
+          <InventoryTableActions>
             <DsConfirmIconButton
               v-if="can('inventory.procurement.manage').allowed && item.status === 'DRAFT'"
               :action="() => runAction(item.id, 'submit')"
               confirm-icon="mdi-send-outline"
-              confirm-text="Submit order"
+              confirm-text="Ajukan order"
               icon="mdi-send-outline"
-              message="This order will be locked for Director review."
-              title="Submit purchase order"
+              message="Order ini akan dikunci untuk review Director."
+              title="Ajukan purchase order"
               tone="warning"
-              tooltip="Submit purchase order"
+              tooltip="Ajukan order"
               variant="text"
             />
             <DsConfirmIconButton
               v-if="can('inventory.po.approve').allowed && item.status === 'PENDING_APPROVAL'"
               :action="() => runAction(item.id, 'approve')"
               confirm-icon="mdi-check-circle-outline"
-              confirm-text="Approve order"
+              confirm-text="Setujui order"
               icon="mdi-check-circle-outline"
-              message="The approved order will become eligible for goods receipt."
-              title="Approve purchase order"
+              message="Order yang disetujui akan tersedia untuk proses penerimaan barang."
+              title="Setujui purchase order"
               tone="success"
-              tooltip="Approve purchase order"
+              tooltip="Setujui order"
               variant="text"
             />
             <DsConfirmIconButton
@@ -231,44 +251,44 @@ async function reject(id: string) {
               :action="() => reject(item.id)"
               :confirm-disabled="rejectReason.trim().length < 3"
               confirm-icon="mdi-close-circle-outline"
-              confirm-text="Reject order"
+              confirm-text="Tolak order"
               icon="mdi-close-circle-outline"
               max-width="520"
               persistent
-              title="Reject purchase order"
+              title="Tolak purchase order"
               tone="danger"
-              tooltip="Reject purchase order"
+              tooltip="Tolak order"
               variant="text"
               @click="rejectReason = ''"
             >
               <VTextarea
                 v-model="rejectReason"
                 autofocus
-                label="Rejection reason"
+                label="Alasan penolakan"
                 rows="3"
                 variant="outlined"
               />
             </DsConfirmIconButton>
-          </div>
+          </InventoryTableActions>
         </template>
         <template #no-data>
-          <div class="py-10 text-medium-emphasis">No purchase orders found.</div>
+          <div class="py-10 text-medium-emphasis">Tidak ada purchase order yang cocok.</div>
         </template>
       </VDataTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog v-model="dialog" max-width="800" persistent>
       <VCard>
-        <VCardTitle>Create purchase order</VCardTitle><VDivider />
+        <VCardTitle>Buat Purchase Order</VCardTitle><VDivider />
         <VCardText>
-          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
+          <VAlert v-if="actionError" aria-live="polite" class="mb-4" type="error" variant="tonal">
             {{ actionError }}
           </VAlert>
           <VSelect
             v-model="form.purchaseRequestId"
             class="mb-3"
             :items="requestOptions"
-            label="Purchase request"
+            label="Permintaan pembelian"
             variant="outlined"
           />
           <VRow dense>
@@ -295,7 +315,7 @@ async function reject(id: string) {
             <VCol cols="12" md="4">
               <VTextField
                 v-model.number="form.exchangeRateToIdrMicros"
-                label="Rate to IDR (micros)"
+                label="Kurs ke IDR (micros)"
                 min="1"
                 type="number"
                 variant="outlined"
@@ -306,7 +326,7 @@ async function reject(id: string) {
                 v-model="form.expectedAt"
                 prepend-icon=""
                 prepend-inner-icon="mdi-calendar"
-                label="Expected date"
+                label="Tanggal estimasi"
                 variant="outlined"
               />
             </VCol>
@@ -319,7 +339,7 @@ async function reject(id: string) {
                 <VTextField
                   v-model.number="line.quantity"
                   :hint="`Maximum ${line.maximumQuantity}`"
-                  label="Order quantity"
+                  label="Jumlah order"
                   :max="line.maximumQuantity"
                   min="1"
                   persistent-hint
@@ -330,7 +350,7 @@ async function reject(id: string) {
               <VCol cols="12" sm="6">
                 <VTextField
                   v-model.number="line.sourceUnitCostMinor"
-                  label="Unit cost (minor units)"
+                  label="Biaya unit (minor units)"
                   min="0"
                   type="number"
                   variant="outlined"
@@ -339,19 +359,12 @@ async function reject(id: string) {
             </VRow>
           </div>
         </VCardText>
-        <VCardActions>
-          <VSpacer /><VBtn
-            :disabled="saving"
-            text="Cancel"
-            variant="text"
-            @click="dialog = false"
-          /><VBtn
-            :loading="saving"
-            prepend-icon="mdi-content-save-outline"
-            text="Create order"
-            @click="createOrder"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="saving"
+          submit-text="Buat order"
+          @cancel="dialog = false"
+          @submit="createOrder"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

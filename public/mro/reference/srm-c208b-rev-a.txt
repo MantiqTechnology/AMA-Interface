@@ -1,0 +1,6 @@
+SRM C208B REV A - FICTIONAL SAMPLE REFERENCE
+
+This static file is a maintenance demo reference only. It is not approved maintenance data and is not valid for operational use.
+
+Reference section: 51-10-00 p. 2
+Task context: sample structural inspection limits and repair reference.

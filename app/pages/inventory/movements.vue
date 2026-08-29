@@ -5,7 +5,11 @@ import type {
   InventoryStockDto,
   InventoryWarehouseDto
 } from '#shared/features/inventory';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryFilterBar from '../../features/inventory/InventoryFilterBar.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const { can } = useAuthorization();
 const { money, number, dateTime, errorMessage } = useInventoryUi();
@@ -94,7 +98,10 @@ async function createCount() {
     tab.value = 'counts';
     await refreshCounts();
   } catch (value) {
-    actionError.value = errorMessage(value, 'Cycle count could not be recorded');
+    actionError.value = errorMessage(
+      value,
+      'Cycle count tidak dapat direkam. Periksa gudang, bin, dan alasan.'
+    );
   } finally {
     saving.value = false;
   }
@@ -103,7 +110,10 @@ async function createCount() {
 async function postCount(id: string) {
   actionError.value = '';
   await fetchApi(`/api/inventory/counts/${id}/post`, { method: 'POST' }).catch((value) => {
-    actionError.value = errorMessage(value, 'Cycle count posting failed');
+    actionError.value = errorMessage(
+      value,
+      'Cycle count tidak dapat diposting. Perbarui data lalu coba lagi.'
+    );
     throw value;
   });
   await Promise.all([refreshCounts(), refresh()]);
@@ -112,7 +122,10 @@ async function postCount(id: string) {
 async function reverseMovement(id: string) {
   actionError.value = '';
   await fetchApi(`/api/inventory/movements/${id}/reverse`, { method: 'POST' }).catch((value) => {
-    actionError.value = errorMessage(value, 'Movement reversal failed');
+    actionError.value = errorMessage(
+      value,
+      'Pergerakan tidak dapat dibalik. Pastikan reversal masih diperbolehkan.'
+    );
     throw value;
   });
   await refresh();
@@ -120,61 +133,66 @@ async function reverseMovement(id: string) {
 </script>
 
 <template>
-  <InventoryShell title="Movements & Cycle Counts">
+  <InventoryShell title="Pergerakan & Cycle Count">
     <template #actions>
       <DsTooltipIconButton
         v-if="can('inventory.count').allowed"
         color="primary"
         icon="mdi-clipboard-check-outline"
-        tooltip="Start cycle count"
+        tooltip="Mulai cycle count"
         variant="flat"
         @click="openCount"
       />
       <DsTooltipIconButton
         href="/api/inventory/reports/movements.csv"
         icon="mdi-download-outline"
-        tooltip="Export movement CSV"
+        tooltip="Export CSV pergerakan"
         variant="text"
       />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh movement audit"
+        tooltip="Perbarui audit pergerakan"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
-    <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{
-        actionError || 'Movement audit could not be loaded.'
-      }}
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Audit pergerakan tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
     </VAlert>
 
     <VBtnToggle v-model="tab" class="mb-4" color="primary" mandatory variant="outlined">
-      <VBtn prepend-icon="mdi-swap-horizontal" text="Movements" value="movements" />
-      <VBtn prepend-icon="mdi-clipboard-check-outline" text="Cycle counts" value="counts" />
+      <VBtn prepend-icon="mdi-swap-horizontal" text="Pergerakan" value="movements" />
+      <VBtn prepend-icon="mdi-clipboard-check-outline" text="Cycle count" value="counts" />
     </VBtnToggle>
 
     <template v-if="tab === 'movements'">
-      <VTextField
-        v-model="search"
-        class="mb-4"
-        clearable
-        density="comfortable"
-        hide-details
-        label="Search movement audit"
-        prepend-inner-icon="mdi-magnify"
-        variant="outlined"
-      />
-      <VCard border>
+      <InventoryFilterBar label="Filter audit pergerakan">
+        <VTextField
+          v-model="search"
+          clearable
+          density="comfortable"
+          hide-details
+          label="Cari audit pergerakan"
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+        />
+      </InventoryFilterBar>
+      <InventoryPanel title="Audit Pergerakan">
         <VDataTable
           :headers="[
-            { title: 'Movement', key: 'movementNumber' },
-            { title: 'Type', key: 'movementType' },
+            { title: 'Pergerakan', key: 'movementNumber' },
+            { title: 'Tipe', key: 'movementType' },
             { title: 'Station', key: 'stationId' },
-            { title: 'Reason', key: 'reason' },
-            { title: 'Value', key: 'totalBaseValueIdr', align: 'end' },
+            { title: 'Alasan', key: 'reason' },
+            { title: 'Nilai', key: 'totalBaseValueIdr', align: 'end' },
             { title: 'Status', key: 'status' },
-            { title: 'Created', key: 'createdAt' },
+            { title: 'Dibuat', key: 'createdAt' },
             { title: '', key: 'actions', sortable: false, align: 'end' }
           ]"
           :items="movementRows"
@@ -188,46 +206,48 @@ async function reverseMovement(id: string) {
           </template>
           <template #[`item.totalBaseValueIdr`]="{ item }">
             {{
-              can('inventory.valuation.read').allowed ? money(item.totalBaseValueIdr) : 'Restricted'
+              can('inventory.valuation.read').allowed ? money(item.totalBaseValueIdr) : 'Terbatas'
             }}
           </template>
           <template #[`item.status`]="{ item }"><DsStatusBadge :value="item.status" /></template>
           <template #[`item.createdAt`]="{ item }">{{ dateTime(item.createdAt) }}</template>
           <template #[`item.actions`]="{ item }">
-            <DsConfirmIconButton
-              v-if="
-                can('inventory.adjust').allowed &&
-                  item.status === 'POSTED' &&
-                  ['RECEIPT', 'ISSUE', 'ADJUSTMENT_GAIN', 'ADJUSTMENT_LOSS'].includes(
-                    item.movementType
-                  )
-              "
-              :action="() => reverseMovement(item.id)"
-              confirm-icon="mdi-undo-variant"
-              confirm-text="Reverse movement"
-              icon="mdi-undo-variant"
-              message="A linked reversal will be posted; the original movement remains in the audit trail."
-              title="Reverse inventory movement"
-              tone="danger"
-              tooltip="Reverse movement"
-              variant="text"
-            />
+            <InventoryTableActions>
+              <DsConfirmIconButton
+                v-if="
+                  can('inventory.adjust').allowed &&
+                    item.status === 'POSTED' &&
+                    ['RECEIPT', 'ISSUE', 'ADJUSTMENT_GAIN', 'ADJUSTMENT_LOSS'].includes(
+                      item.movementType
+                    )
+                "
+                :action="() => reverseMovement(item.id)"
+                confirm-icon="mdi-undo-variant"
+                confirm-text="Balikkan pergerakan"
+                icon="mdi-undo-variant"
+                message="Reversal tertaut akan diposting; pergerakan asli tetap tersimpan di audit trail."
+                title="Balikkan pergerakan inventory"
+                tone="danger"
+                tooltip="Balikkan pergerakan"
+                variant="text"
+              />
+            </InventoryTableActions>
           </template>
           <template #no-data>
-            <div class="py-10 text-medium-emphasis">No movements found.</div>
+            <div class="py-10 text-medium-emphasis">Tidak ada pergerakan yang cocok.</div>
           </template>
         </VDataTable>
-      </VCard>
+      </InventoryPanel>
     </template>
 
-    <VCard v-else border>
+    <InventoryPanel v-else title="Cycle Count">
       <VDataTable
         :headers="[
           { title: 'Count', key: 'countNumber' },
-          { title: 'Warehouse', key: 'warehouseCode' },
-          { title: 'Reason', key: 'reason' },
+          { title: 'Gudang', key: 'warehouseCode' },
+          { title: 'Alasan', key: 'reason' },
           { title: 'Status', key: 'status' },
-          { title: 'Created', key: 'createdAt' },
+          { title: 'Dibuat', key: 'createdAt' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
         :items="counts ?? []"
@@ -238,33 +258,33 @@ async function reverseMovement(id: string) {
         <template #[`item.status`]="{ item }"><DsStatusBadge :value="item.status" /></template>
         <template #[`item.createdAt`]="{ item }">{{ dateTime(item.createdAt) }}</template>
         <template #[`item.actions`]="{ item }">
-          <DsConfirmIconButton
-            v-if="can('inventory.count').allowed && item.status === 'COUNTED'"
-            :action="() => postCount(item.id)"
-            confirm-icon="mdi-check-decagram-outline"
-            confirm-text="Post variances"
-            icon="mdi-check-decagram-outline"
-            message="Every variance will create an immutable adjustment movement."
-            title="Post cycle count"
-            tone="warning"
-            tooltip="Post cycle count"
-            variant="text"
-          />
+          <InventoryTableActions>
+            <DsConfirmIconButton
+              v-if="can('inventory.count').allowed && item.status === 'COUNTED'"
+              :action="() => postCount(item.id)"
+              confirm-icon="mdi-check-decagram-outline"
+              confirm-text="Posting variance"
+              icon="mdi-check-decagram-outline"
+              message="Setiap variance akan membuat pergerakan penyesuaian immutable."
+              title="Posting cycle count"
+              tone="warning"
+              tooltip="Posting cycle count"
+              variant="text"
+            />
+          </InventoryTableActions>
         </template>
         <template #no-data>
-          <div class="py-10 text-medium-emphasis">No cycle counts found.</div>
+          <div class="py-10 text-medium-emphasis">Belum ada cycle count.</div>
         </template>
       </VDataTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog v-model="countDialog" max-width="760" persistent scrollable>
       <VCard>
-        <VCardTitle>Record cycle count</VCardTitle><VDivider />
+        <VCardTitle>Rekam Cycle Count</VCardTitle><VDivider />
         <VCardText>
-          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
-            {{
-              actionError
-            }}
+          <VAlert v-if="actionError" aria-live="polite" class="mb-4" type="error" variant="tonal">
+            {{ actionError }}
           </VAlert>
           <VRow dense>
             <VCol cols="12" md="6">
@@ -273,7 +293,7 @@ async function reverseMovement(id: string) {
                 item-title="warehouseCode"
                 item-value="id"
                 :items="warehouses ?? []"
-                label="Warehouse"
+                label="Gudang"
                 variant="outlined"
               />
             </VCol>
@@ -282,14 +302,14 @@ async function reverseMovement(id: string) {
                 v-model="countForm.binId"
                 clearable
                 :items="binOptions"
-                label="Bin (all when empty)"
+                label="Bin (semua jika kosong)"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="12">
               <VTextarea
                 v-model="countForm.reason"
-                label="Count reason"
+                label="Alasan count"
                 rows="2"
                 variant="outlined"
               />
@@ -304,7 +324,7 @@ async function reverseMovement(id: string) {
             <div class="min-w-0 flex-grow-1">
               <div class="font-weight-bold">{{ row.partNumber }}</div>
               <div class="text-caption text-medium-emphasis">
-                {{ row.binCode }} · {{ row.lotNumber ?? 'No lot' }} · Book
+                {{ row.binCode }} · {{ row.lotNumber ?? 'Tanpa lot' }} · Book
                 {{ number(row.onHandQuantity) }}
               </div>
             </div>
@@ -312,7 +332,7 @@ async function reverseMovement(id: string) {
               v-model.number="countForm.quantities[row.id]"
               density="comfortable"
               hide-details
-              label="Counted"
+              label="Terhitung"
               min="0"
               style="max-width: 150px"
               type="number"
@@ -320,24 +340,17 @@ async function reverseMovement(id: string) {
             />
           </div>
           <VAlert v-if="countForm.warehouseId && !countStock.length" color="info" variant="tonal">
-            No stock balances in the selected location.
+            Tidak ada saldo stok di lokasi yang dipilih.
           </VAlert>
         </VCardText>
-        <VDivider />
-        <VCardActions>
-          <VSpacer /><VBtn
-            :disabled="saving"
-            text="Cancel"
-            variant="text"
-            @click="countDialog = false"
-          /><VBtn
-            :disabled="!countStock.length || !countForm.reason.trim()"
-            :loading="saving"
-            prepend-icon="mdi-content-save-check-outline"
-            text="Record count"
-            @click="createCount"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="!countStock.length || !countForm.reason.trim()"
+          :loading="saving"
+          submit-icon="mdi-content-save-check-outline"
+          submit-text="Rekam count"
+          @cancel="countDialog = false"
+          @submit="createCount"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

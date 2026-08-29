@@ -13,12 +13,15 @@ export default defineNitroPlugin(() => {
   const resolvedPath = isAbsolute(configuredPath)
     ? configuredPath
     : resolve(process.cwd(), configuredPath);
-  if (process.env.VERCEL || resolvedPath === '/tmp' || resolvedPath.startsWith('/tmp/')) {
+  const allowEphemeralDemoDb = process.env.ALLOW_EPHEMERAL_DEMO_DB === 'true';
+  const usesEphemeralDb = resolvedPath === '/tmp' || resolvedPath.startsWith('/tmp/');
+
+  if ((process.env.VERCEL || usesEphemeralDb) && !allowEphemeralDemoDb) {
     throw new Error(
-      'Controlled demo mode refuses ephemeral SQLite. Use a local persistent AMA_DB_PATH; serverless deployment remains unsupported.'
+      'Controlled demo mode refuses ephemeral SQLite. Set ALLOW_EPHEMERAL_DEMO_DB=true only for disposable serverless demos.'
     );
   }
-  if (process.env.NODE_ENV === 'production' && !process.env.AMA_DB_PATH) {
+  if (process.env.NODE_ENV === 'production' && !process.env.AMA_DB_PATH && !allowEphemeralDemoDb) {
     throw new Error('AMA_DB_PATH must be set explicitly for the production-mode demo server.');
   }
 });

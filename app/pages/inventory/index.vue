@@ -9,6 +9,8 @@ import type {
   PurchaseOrderDto,
   PurchaseRequestDto
 } from '#shared/features/inventory';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
+import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 type RepairOrder = {
   id: string;
@@ -92,15 +94,6 @@ const { data: coreReturns, refresh: refreshCoreReturns } = await useAsyncData(
   () => fetchApi<InventoryCoreReturnDto[]>('/api/inventory/core-returns'),
   { server: false }
 );
-
-const tabs = [
-  { label: 'Overview', to: '/inventory', icon: 'mdi-view-dashboard-outline' },
-  { label: 'Stock', to: '/inventory/stock', icon: 'mdi-layers-triple-outline' },
-  { label: 'Material Ops', to: '/inventory/maintenance-demand', icon: 'mdi-package-variant' },
-  { label: 'Controlled Items', to: '/inventory/tools', icon: 'mdi-shield-check-outline' },
-  { label: 'Repairables', to: '/inventory/repairables', icon: 'mdi-wrench-cog-outline' },
-  { label: 'Requests', to: '/inventory/purchase-requests', icon: 'mdi-clipboard-text-outline' }
-];
 
 const demandRows = computed(() => maintenanceDemand.value ?? []);
 const stock = computed(() => stockRows.value ?? []);
@@ -405,51 +398,34 @@ function movementActor(movement: InventoryMovementDto) {
 </script>
 
 <template>
-  <VContainer fluid class="inventory-dashboard-page">
-    <header class="inventory-header">
-      <div>
-        <p class="inventory-eyebrow">Inventory / Spare Parts</p>
-        <h1>Pusat Kendali Inventory</h1>
-        <p>
-          Halaman ini memprioritaskan ketersediaan stock, kebutuhan material MRO, blocker release
-          pesawat, dan tindakan mendesak.
-        </p>
-      </div>
-      <div class="inventory-header__actions">
-        <VBtn
-          color="primary"
-          prepend-icon="mdi-refresh"
-          variant="outlined"
-          :loading="pending"
-          aria-label="Refresh inventory dashboard"
-          @click="refreshAll"
-        >
-          Refresh
-        </VBtn>
-        <span>Diperbarui {{ dateTime(updatedAt) }}</span>
-      </div>
-    </header>
+  <InventoryShell
+    description="Memprioritaskan ketersediaan stok, kebutuhan material MRO, blocker rilis pesawat, dan tindakan mendesak."
+    title="Pusat Kendali Inventory"
+    :updated-at="dateTime(updatedAt)"
+  >
+    <template #actions>
+      <DsTooltipIconButton
+        color="primary"
+        icon="mdi-refresh"
+        :loading="pending"
+        tooltip="Perbarui dashboard inventory"
+        variant="tonal"
+        @click="refreshAll"
+      />
+    </template>
 
-    <nav class="inventory-tabs" aria-label="Inventory dashboard sections">
-      <NuxtLink
-        v-for="tab in tabs"
-        :key="tab.to"
-        class="inventory-tab"
-        :class="{ 'inventory-tab--active': tab.to === '/inventory' }"
-        :to="tab.to"
-      >
-        <VIcon :icon="tab.icon" size="18" />
-        <span>{{ tab.label }}</span>
-      </NuxtLink>
-    </nav>
-
-    <VAlert v-if="error" class="mb-4" type="error" variant="tonal">
-      {{ errorMessage(error, 'Inventory dashboard could not be loaded.') }}
+    <VAlert v-if="error" aria-live="polite" class="mb-4" type="error" variant="tonal">
+      {{
+        errorMessage(
+          error,
+          'Dashboard inventory tidak dapat dimuat. Perbarui halaman lalu coba lagi.'
+        )
+      }}
     </VAlert>
 
     <VSkeletonLoader v-if="pending && !data" class="mb-4" type="list-item@6" />
     <template v-else>
-      <section class="kpi-grid" aria-label="Inventory priority metrics">
+      <section class="kpi-grid" aria-label="Metrik prioritas inventory">
         <NuxtLink
           v-for="card in kpis"
           :key="card.label"
@@ -469,10 +445,7 @@ function movementActor(movement: InventoryMovementDto) {
       </section>
 
       <section class="dashboard-grid">
-        <VCard class="dashboard-card material-card" border>
-          <VCardTitle>
-            <span>Material memerlukan tindakan</span>
-          </VCardTitle>
+        <InventoryPanel class="material-card" title="Material Memerlukan Tindakan">
           <div class="table-wrap">
             <VTable class="compact-table material-table">
               <thead>
@@ -537,11 +510,10 @@ function movementActor(movement: InventoryMovementDto) {
               Lihat semua material memerlukan tindakan
             </VBtn>
           </VCardActions>
-        </VCard>
+        </InventoryPanel>
 
         <aside class="side-stack">
-          <VCard class="dashboard-card" border>
-            <VCardTitle>A. Kesehatan stock</VCardTitle>
+          <InventoryPanel title="Kesehatan Stok">
             <VCardText>
               <div class="stock-bar">
                 <span
@@ -565,14 +537,13 @@ function movementActor(movement: InventoryMovementDto) {
               <div v-if="valuationSummary" class="valuation-note">
                 <span>Part tersedia</span>
                 <strong>{{ number(data?.availablePartCount ?? 0, 0) }}</strong>
-                <span>FIFO Valuation</span>
+                <span>Valuasi FIFO</span>
                 <strong>{{ valuationSummary }}</strong>
               </div>
             </VCardText>
-          </VCard>
+          </InventoryPanel>
 
-          <VCard class="dashboard-card" border>
-            <VCardTitle>B. Distribusi station</VCardTitle>
+          <InventoryPanel title="Distribusi Station">
             <VCardText>
               <div class="station-list">
                 <div v-for="station in stationDistribution" :key="station.station">
@@ -588,7 +559,7 @@ function movementActor(movement: InventoryMovementDto) {
                 </div>
               </div>
             </VCardText>
-          </VCard>
+          </InventoryPanel>
 
           <VAlert class="inventory-note" color="info" variant="tonal">
             Data berdasarkan inventory yang sudah diposting dan Permintaan MRO aktif.
@@ -597,8 +568,7 @@ function movementActor(movement: InventoryMovementDto) {
       </section>
 
       <section class="two-column">
-        <VCard class="dashboard-card" border>
-          <VCardTitle>Procurement & Fulfilment</VCardTitle>
+        <InventoryPanel title="Pengadaan & Fulfilment">
           <VCardText class="mini-grid">
             <div
               v-for="metric in procurementMetrics"
@@ -611,10 +581,9 @@ function movementActor(movement: InventoryMovementDto) {
               <span>{{ metric.note }}</span>
             </div>
           </VCardText>
-        </VCard>
+        </InventoryPanel>
 
-        <VCard class="dashboard-card" border>
-          <VCardTitle>Repairable & Core Return</VCardTitle>
+        <InventoryPanel title="Repairable & Core Return">
           <VCardText class="mini-grid mini-grid--five">
             <div
               v-for="metric in repairableMetrics"
@@ -627,11 +596,10 @@ function movementActor(movement: InventoryMovementDto) {
               <span>{{ metric.note }}</span>
             </div>
           </VCardText>
-        </VCard>
+        </InventoryPanel>
       </section>
 
-      <VCard class="dashboard-card" border>
-        <VCardTitle>Pergerakan terakhir</VCardTitle>
+      <InventoryPanel title="Pergerakan Terakhir">
         <div class="table-wrap">
           <VTable class="compact-table movement-table">
             <thead>
@@ -666,86 +634,12 @@ function movementActor(movement: InventoryMovementDto) {
             Lihat semua pergerakan
           </VBtn>
         </VCardActions>
-      </VCard>
+      </InventoryPanel>
     </template>
-  </VContainer>
+  </InventoryShell>
 </template>
 
 <style scoped>
-.inventory-dashboard-page {
-  min-width: 0;
-  padding: 22px 28px;
-  color: #0f1b3d;
-}
-
-.inventory-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 18px;
-}
-
-.inventory-eyebrow {
-  margin: 0 0 6px;
-  color: #0f63bd;
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.inventory-header h1 {
-  margin: 0 0 8px;
-  color: #0a1735;
-  font-size: 1.8rem;
-  font-weight: 850;
-  line-height: 1.15;
-  letter-spacing: 0;
-}
-
-.inventory-header p:last-child {
-  max-width: 980px;
-  margin: 0;
-  color: #4d5875;
-  font-size: 0.92rem;
-}
-
-.inventory-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  color: #53617e;
-  font-size: 0.84rem;
-  white-space: nowrap;
-}
-
-.inventory-tabs {
-  display: flex;
-  gap: 22px;
-  margin-bottom: 18px;
-  overflow-x: auto;
-  border-bottom: 1px solid #dbe3ef;
-}
-
-.inventory-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 0;
-  border-bottom: 2px solid transparent;
-  color: #283653;
-  font-size: 0.86rem;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.inventory-tab--active {
-  border-color: #0b5db8;
-  color: #0b5db8;
-}
-
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1089,20 +983,6 @@ function movementActor(movement: InventoryMovementDto) {
 }
 
 @media (max-width: 760px) {
-  .inventory-dashboard-page {
-    padding: 16px 12px;
-  }
-
-  .inventory-header,
-  .inventory-header__actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .inventory-header__actions {
-    gap: 10px;
-  }
-
   .kpi-grid,
   .mini-grid,
   .mini-grid--five {

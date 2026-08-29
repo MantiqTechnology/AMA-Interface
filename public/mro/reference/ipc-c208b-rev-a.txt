@@ -1,0 +1,6 @@
+IPC C208B REV A - FICTIONAL SAMPLE REFERENCE
+
+This static file is a maintenance demo reference only. It is not approved maintenance data and is not valid for operational use.
+
+Reference section: 33-40-00 fig. 1
+Task context: sample landing light circuit parts identification.

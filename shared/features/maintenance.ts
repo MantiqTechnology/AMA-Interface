@@ -62,6 +62,32 @@ const evidenceReferencesSchema = z
   .optional()
   .default([]);
 
+export const maintenanceJobCardReleaseImpactSchema = z.enum([
+  'BLOCKS_RELEASE',
+  'ADVISORY',
+  'NO_RELEASE_IMPACT'
+]);
+
+const workInstructionListSchema = z.array(z.string().trim().min(1).max(500)).max(20).optional();
+
+const jobCardInstructionFields = {
+  ataChapter: z.preprocess(emptyToNull, z.string().trim().max(20).nullable()).optional(),
+  aircraftArea: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
+  systemName: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
+  componentName: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
+  componentPosition: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
+  accessPanel: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
+  estimatedManHours: z.coerce.number().min(0).max(999).optional(),
+  skillRequirement: z.preprocess(emptyToNull, z.string().trim().max(240).nullable()).optional(),
+  releaseImpact: maintenanceJobCardReleaseImpactSchema.optional(),
+  workSteps: workInstructionListSchema,
+  acceptanceCriteria: workInstructionListSchema,
+  requiredEvidence: workInstructionListSchema,
+  safetyCautions: workInstructionListSchema,
+  prerequisites: workInstructionListSchema,
+  dependencyJobCardIds: z.array(z.string().trim().min(1).max(120)).max(12).optional()
+};
+
 export const createMaintenanceWorkPackageSchema = z
   .object({
     aircraftId: z.string().trim().min(1),
@@ -91,7 +117,8 @@ export const createMaintenanceWorkPackageSchema = z
           .preprocess(emptyToNull, z.string().trim().min(1).nullable())
           .optional(),
         mandatoryFlag: z.boolean().optional().default(true),
-        requiresIndependentInspection: z.boolean().optional().default(false)
+        requiresIndependentInspection: z.boolean().optional().default(false),
+        ...jobCardInstructionFields
       })
       .optional()
   })
@@ -117,6 +144,7 @@ export const createMaintenanceJobCardSchema = z.object({
   approvedDataRevisionId: z.preprocess(emptyToNull, z.string().trim().min(1).nullable()).optional(),
   mandatoryFlag: z.boolean().optional().default(true),
   requiresIndependentInspection: z.boolean().optional().default(false),
+  ...jobCardInstructionFields,
   expectedWorkPackageVersion: z.coerce.number().int().positive()
 });
 
@@ -433,6 +461,7 @@ export const createCorrectiveJobCardFromFindingSchema = z.object({
   approvedDataRevisionId: z.preprocess(emptyToNull, z.string().trim().min(1).nullable()).optional(),
   mandatoryFlag: z.boolean().optional().default(true),
   requiresIndependentInspection: z.boolean().optional().default(true),
+  ...jobCardInstructionFields,
   expectedWorkPackageVersion: z.coerce.number().int().positive()
 });
 
@@ -500,6 +529,7 @@ export type MaintenanceCompanyAuthorizationAction = z.infer<
 export type MaintenanceCompanyAuthorizationStatus = z.infer<
   typeof maintenanceCompanyAuthorizationStatusSchema
 >;
+export type MaintenanceJobCardReleaseImpact = z.infer<typeof maintenanceJobCardReleaseImpactSchema>;
 export type MaintenanceListQuery = z.infer<typeof maintenanceListQuerySchema>;
 export type MaintenanceAuditListQuery = z.infer<typeof maintenanceAuditListQuerySchema>;
 export type CreateMaintenanceWorkPackageInput = z.infer<typeof createMaintenanceWorkPackageSchema>;
@@ -545,6 +575,22 @@ export type MaintenanceJobCardDto = {
   taskType: string;
   maintenanceDataRef: string;
   maintenanceDataRevision: string;
+  ataChapter: string | null;
+  aircraftArea: string | null;
+  systemName: string | null;
+  componentName: string | null;
+  componentPosition: string | null;
+  accessPanel: string | null;
+  estimatedManHours: number;
+  skillRequirement: string | null;
+  releaseImpact: MaintenanceJobCardReleaseImpact;
+  workSteps: string[];
+  acceptanceCriteria: string[];
+  requiredEvidence: string[];
+  safetyCautions: string[];
+  prerequisites: string[];
+  dependencyJobCardIds: string[];
+  approvedDataLinks: MaintenanceJobCardApprovedDataLinkDto[];
   mandatoryFlag: boolean;
   requiresIndependentInspection: boolean;
   status: MaintenanceJobCardStatus;
@@ -555,6 +601,25 @@ export type MaintenanceJobCardDto = {
   signoffs: MaintenanceJobCardSignoffDto[];
   inspectionAttempts: MaintenanceInspectionAttemptDto[];
   reworkActions: MaintenanceReworkActionDto[];
+};
+
+export type MaintenanceJobCardApprovedDataLinkDto = {
+  id: string;
+  jobCardId: string;
+  approvedDataRevisionId: string;
+  usageNote: string | null;
+  snapshotDocumentNumber: string;
+  snapshotRevision: string;
+  snapshotEffectiveDate: string;
+  documentType: ApprovedDataDocumentType | null;
+  documentNumber: string | null;
+  documentTitle: string | null;
+  revision: string | null;
+  revisionStatus: ApprovedDataRevisionStatus | null;
+  demoFileLabel: string | null;
+  demoFileUrl: string | null;
+  demoPageRef: string | null;
+  createdAt: string;
 };
 
 export type MaintenanceJobCardSignoffDto = {
@@ -830,6 +895,9 @@ export type MaintenanceApprovedDataRevisionDto = {
   status: ApprovedDataRevisionStatus;
   supersededByRevisionId: string | null;
   fictionalDemo: boolean;
+  demoFileLabel: string | null;
+  demoFileUrl: string | null;
+  demoPageRef: string | null;
   notes: string | null;
 };
 
@@ -1386,50 +1454,6 @@ export type MaintenanceTechnicalRecordPackageDto = {
   };
 };
 
-export type MaintenanceQualityFindingDto = {
-  id: string;
-  reference: string;
-  sourceType: string;
-  sourceId: string;
-  aircraftId: string | null;
-  workPackageId: string | null;
-  classification: string;
-  description: string;
-  status: 'OPEN' | 'UNDER_REVIEW' | 'ACTION_REQUIRED' | 'COMPLETED' | 'CLOSED';
-  owner: string;
-  dueDate: string | null;
-  fictionalDemo: boolean;
-  capaActions: MaintenanceCapaActionDto[];
-  sdrAssessment: MaintenanceSdrAssessmentDto | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type MaintenanceCapaActionDto = {
-  id: string;
-  findingId: string;
-  actionType: string;
-  description: string;
-  owner: string;
-  dueDate: string | null;
-  completion: string | null;
-  effectivenessReview: string | null;
-  status: 'OPEN' | 'UNDER_REVIEW' | 'ACTION_REQUIRED' | 'COMPLETED' | 'CLOSED';
-};
-
-export type MaintenanceSdrAssessmentDto = {
-  id: string;
-  sourceType: string;
-  sourceId: string;
-  reportabilityStatus: string;
-  discoveredAt: string;
-  simulatedDueAt: string | null;
-  assessment: string;
-  decisionOwner: string;
-  status: 'OPEN' | 'UNDER_REVIEW' | 'ACTION_REQUIRED' | 'COMPLETED' | 'CLOSED';
-  fictionalDemo: boolean;
-};
-
 export type MaintenanceAuditRecordDto = {
   id: string;
   entityType: string;
@@ -1672,6 +1696,7 @@ export type MaintenanceSelectorDataDto = {
     timezone: string | null;
   }>;
   eligibleDefects: MaintenanceDefectSummaryDto[];
+  approvedData: MaintenanceApprovedDataDocumentDto[];
   vendors: Array<{
     id: string;
     vendorCode: string;

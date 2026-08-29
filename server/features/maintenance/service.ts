@@ -60,7 +60,6 @@ import type {
   MaintenancePriorityWorkPackageDto,
   MaintenanceReleaseReadinessMixDto,
   MaintenanceDueInspectionTaskDto,
-  MaintenanceQualityFindingDto,
   MaintenanceReadinessPanelDto,
   MaintenanceReleaseInput,
   MaintenanceOperationalAvailabilityDto,
@@ -189,6 +188,13 @@ function jsonObject(value: unknown): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function jobCardReleaseImpact(input: {
+  releaseImpact?: MaintenanceJobCardDto['releaseImpact'];
+  mandatoryFlag?: boolean;
+}) {
+  return input.releaseImpact ?? (input.mandatoryFlag === false ? 'ADVISORY' : 'BLOCKS_RELEASE');
 }
 
 function stableJson(value: unknown): string {
@@ -1427,17 +1433,6 @@ export class MaintenanceService {
     return value.replaceAll('_', ' ');
   }
 
-  listQualityFindings(): MaintenanceQualityFindingDto[] {
-    const rows = this.sqlite
-      .prepare(
-        `SELECT *
-         FROM maintenance_quality_findings
-         ORDER BY status IN ('OPEN', 'UNDER_REVIEW', 'ACTION_REQUIRED') DESC, updated_at DESC`
-      )
-      .all() as SqlRow[];
-    return rows.map((row) => this.toQualityFindingDto(row));
-  }
-
   selectorData(actor: MaintenanceActor): MaintenanceSelectorDataDto {
     return {
       generatedAt: now(),
@@ -1459,6 +1454,7 @@ export class MaintenanceService {
         onlyUnlinked: true,
         onlyPackageEligible: true
       }),
+      approvedData: this.listApprovedData(),
       vendors: this.vendorOptions(),
       signerLicenses: this.signerLicenseOptions(actor)
     };
@@ -3233,10 +3229,14 @@ export class MaintenanceService {
         this.sqlite
           .prepare(
             `INSERT INTO maintenance_job_cards (
-              id, work_package_id, card_number, title, task_type, maintenance_data_ref,
-              maintenance_data_revision, mandatory_flag, requires_independent_inspection,
-              status, created_by_user_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?)`
+	              id, work_package_id, card_number, title, task_type, maintenance_data_ref,
+	              maintenance_data_revision, ata_chapter, aircraft_area, system_name,
+	              component_name, component_position, access_panel, estimated_man_hours,
+	              skill_requirement, release_impact, work_steps_json, acceptance_criteria_json,
+	              required_evidence_json, safety_cautions_json, prerequisites_json,
+	              dependency_job_card_ids_json, mandatory_flag, requires_independent_inspection,
+	              status, created_by_user_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?)`
           )
           .run(
             initialJobCardId,
@@ -3246,6 +3246,21 @@ export class MaintenanceService {
             initialJobCard.taskType,
             initialJobCard.maintenanceDataRef,
             initialJobCard.maintenanceDataRevision,
+            initialJobCard.ataChapter ?? null,
+            initialJobCard.aircraftArea ?? null,
+            initialJobCard.systemName ?? null,
+            initialJobCard.componentName ?? null,
+            initialJobCard.componentPosition ?? null,
+            initialJobCard.accessPanel ?? null,
+            initialJobCard.estimatedManHours ?? 0,
+            initialJobCard.skillRequirement ?? null,
+            jobCardReleaseImpact(initialJobCard),
+            JSON.stringify(initialJobCard.workSteps ?? []),
+            JSON.stringify(initialJobCard.acceptanceCriteria ?? []),
+            JSON.stringify(initialJobCard.requiredEvidence ?? []),
+            JSON.stringify(initialJobCard.safetyCautions ?? []),
+            JSON.stringify(initialJobCard.prerequisites ?? []),
+            JSON.stringify(initialJobCard.dependencyJobCardIds ?? []),
             initialJobCard.mandatoryFlag ? 1 : 0,
             initialJobCard.requiresIndependentInspection ? 1 : 0,
             actor.userId,
@@ -3705,10 +3720,14 @@ export class MaintenanceService {
       this.sqlite
         .prepare(
           `INSERT INTO maintenance_job_cards (
-            id, work_package_id, card_number, title, task_type, maintenance_data_ref,
-            maintenance_data_revision, mandatory_flag, requires_independent_inspection,
-            status, created_by_user_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?)`
+	            id, work_package_id, card_number, title, task_type, maintenance_data_ref,
+	            maintenance_data_revision, ata_chapter, aircraft_area, system_name,
+	            component_name, component_position, access_panel, estimated_man_hours,
+	            skill_requirement, release_impact, work_steps_json, acceptance_criteria_json,
+	            required_evidence_json, safety_cautions_json, prerequisites_json,
+	            dependency_job_card_ids_json, mandatory_flag, requires_independent_inspection,
+	            status, created_by_user_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?)`
         )
         .run(
           id,
@@ -3718,6 +3737,21 @@ export class MaintenanceService {
           input.taskType,
           input.maintenanceDataRef,
           input.maintenanceDataRevision,
+          input.ataChapter ?? null,
+          input.aircraftArea ?? null,
+          input.systemName ?? null,
+          input.componentName ?? null,
+          input.componentPosition ?? null,
+          input.accessPanel ?? null,
+          input.estimatedManHours ?? 0,
+          input.skillRequirement ?? null,
+          jobCardReleaseImpact(input),
+          JSON.stringify(input.workSteps ?? []),
+          JSON.stringify(input.acceptanceCriteria ?? []),
+          JSON.stringify(input.requiredEvidence ?? []),
+          JSON.stringify(input.safetyCautions ?? []),
+          JSON.stringify(input.prerequisites ?? []),
+          JSON.stringify(input.dependencyJobCardIds ?? []),
           input.mandatoryFlag ? 1 : 0,
           input.requiresIndependentInspection ? 1 : 0,
           actor.userId,
@@ -3973,14 +4007,33 @@ export class MaintenanceService {
     const timestamp = now();
     const jobCardId = `mjc-${nanoid(12)}`;
     const cardNumber = `${String(workPackage.package_number)}-NRJC-${nanoid(4).toUpperCase()}`;
+    const correctiveAtaChapter = input.ataChapter ?? nullableText(finding.ata_chapter);
+    const correctiveAircraftArea = input.aircraftArea ?? nullableText(finding.location);
+    const correctiveWorkSteps = input.workSteps?.length
+      ? input.workSteps
+      : [
+          'Review non-routine finding and confirm affected area.',
+          'Rectify condition using referenced approved maintenance data.',
+          'Record corrective evidence and prepare for independent inspection.'
+        ];
+    const correctiveAcceptanceCriteria = input.acceptanceCriteria?.length
+      ? input.acceptanceCriteria
+      : ['Finding condition is no longer present.', 'Required inspection can be completed.'];
+    const correctiveRequiredEvidence = input.requiredEvidence?.length
+      ? input.requiredEvidence
+      : ['Corrective action photo or measurement.', 'Technician sign-off statement.'];
     this.sqlite.transaction(() => {
       this.sqlite
         .prepare(
           `INSERT INTO maintenance_job_cards (
             id, work_package_id, source_non_routine_finding_id, card_number, title, task_type,
-            maintenance_data_ref, maintenance_data_revision, mandatory_flag,
+            maintenance_data_ref, maintenance_data_revision, ata_chapter, aircraft_area,
+            system_name, component_name, component_position, access_panel, estimated_man_hours,
+            skill_requirement, release_impact, work_steps_json, acceptance_criteria_json,
+            required_evidence_json, safety_cautions_json, prerequisites_json,
+            dependency_job_card_ids_json, mandatory_flag,
             requires_independent_inspection, status, created_by_user_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'NON_ROUTINE', ?, ?, ?, ?, 'READY', ?, ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, 'NON_ROUTINE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?)`
         )
         .run(
           jobCardId,
@@ -3990,6 +4043,21 @@ export class MaintenanceService {
           input.title,
           input.maintenanceDataRef,
           input.maintenanceDataRevision,
+          correctiveAtaChapter,
+          correctiveAircraftArea,
+          input.systemName ?? null,
+          input.componentName ?? null,
+          input.componentPosition ?? null,
+          input.accessPanel ?? null,
+          input.estimatedManHours ?? 0,
+          input.skillRequirement ?? null,
+          jobCardReleaseImpact(input),
+          JSON.stringify(correctiveWorkSteps),
+          JSON.stringify(correctiveAcceptanceCriteria),
+          JSON.stringify(correctiveRequiredEvidence),
+          JSON.stringify(input.safetyCautions ?? []),
+          JSON.stringify(input.prerequisites ?? []),
+          JSON.stringify(input.dependencyJobCardIds ?? []),
           input.mandatoryFlag ? 1 : 0,
           input.requiresIndependentInspection ? 1 : 0,
           actor.userId,
@@ -4431,13 +4499,6 @@ export class MaintenanceService {
             cycleNumber,
             input
           );
-          const findingId = this.createQualityFindingForFailedInspection(
-            workPackage,
-            card,
-            attemptId,
-            reworkId,
-            input.statement
-          );
           this.updateJobCardStatus(jobCardId, input.expectedVersion, 'REJECTED_FOR_REWORK');
           this.touchWorkPackage(String(card.work_package_id), number(workPackage.version));
           this.audit(
@@ -4453,7 +4514,6 @@ export class MaintenanceService {
               jobCardId,
               jobCardNumber: String(card.card_number),
               reworkActionId: reworkId,
-              qualityFindingId: findingId,
               cycleNumber,
               companyAuthorizationNumber: inspectorSnapshot.companyAuthorizationNumber
             }
@@ -6169,6 +6229,9 @@ export class MaintenanceService {
       ) as MaintenanceApprovedDataDocumentDto['revisions'][number]['status'],
       supersededByRevisionId: nullableText(row.superseded_by_revision_id),
       fictionalDemo: Boolean(row.fictional_demo),
+      demoFileLabel: nullableText(row.demo_file_label),
+      demoFileUrl: nullableText(row.demo_file_url),
+      demoPageRef: nullableText(row.demo_page_ref),
       notes: nullableText(row.notes)
     };
   }
@@ -7146,15 +7209,38 @@ export class MaintenanceService {
   }
 
   private approvedDataLinksForJobCard(jobCardId: string) {
-    return this.sqlite
+    const rows = this.sqlite
       .prepare(
-        `SELECT link.*, doc.document_type, doc.document_number, doc.title, rev.status
+        `SELECT link.*, doc.document_type, doc.document_number, doc.title, rev.revision,
+                rev.status, rev.demo_file_label, rev.demo_file_url, rev.demo_page_ref
          FROM maintenance_job_card_approved_data_links link
          JOIN maintenance_approved_data_revisions rev ON rev.id = link.approved_data_revision_id
          JOIN maintenance_approved_data_documents doc ON doc.id = rev.document_id
          WHERE link.job_card_id = ?`
       )
       .all(jobCardId) as SqlRow[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      jobCardId: String(row.job_card_id),
+      approvedDataRevisionId: String(row.approved_data_revision_id),
+      usageNote: nullableText(row.usage_note),
+      snapshotDocumentNumber: String(row.snapshot_document_number),
+      snapshotRevision: String(row.snapshot_revision),
+      snapshotEffectiveDate: String(row.snapshot_effective_date),
+      documentType: nullableText(
+        row.document_type
+      ) as MaintenanceJobCardDto['approvedDataLinks'][number]['documentType'],
+      documentNumber: nullableText(row.document_number),
+      documentTitle: nullableText(row.title),
+      revision: nullableText(row.revision),
+      revisionStatus: nullableText(
+        row.status
+      ) as MaintenanceJobCardDto['approvedDataLinks'][number]['revisionStatus'],
+      demoFileLabel: nullableText(row.demo_file_label),
+      demoFileUrl: nullableText(row.demo_file_url),
+      demoPageRef: nullableText(row.demo_page_ref),
+      createdAt: String(row.created_at)
+    }));
   }
 
   private latestReleaseEligibilitySnapshot(
@@ -7281,137 +7367,6 @@ export class MaintenanceService {
       manifest: jsonObject(row.manifest_json) ?? {},
       manifestHash: String(row.manifest_hash),
       disclaimer: String(row.disclaimer)
-    };
-  }
-
-  private createQualityFindingForFailedInspection(
-    workPackage: SqlRow,
-    card: SqlRow,
-    inspectionAttemptId: string,
-    reworkId: string,
-    finding: string
-  ) {
-    const existing = this.sqlite
-      .prepare(
-        `SELECT id
-         FROM maintenance_quality_findings
-         WHERE source_type = 'INSPECTION_ATTEMPT' AND source_id = ?
-         LIMIT 1`
-      )
-      .get(inspectionAttemptId) as SqlRow | undefined;
-    if (existing) return String(existing.id);
-    const timestamp = now();
-    const id = `mqf-${nanoid(12)}`;
-    const reference = `QF-${String(workPackage.package_number)}-${String(card.card_number).slice(-6)}`;
-    this.sqlite
-      .prepare(
-        `INSERT INTO maintenance_quality_findings (
-          id, reference, source_type, source_id, aircraft_id, work_package_id, classification,
-          description, status, owner, due_date, fictional_demo, created_at, updated_at
-        ) VALUES (?, ?, 'INSPECTION_ATTEMPT', ?, ?, ?, 'FAILED_INSPECTION_DEMO',
-          ?, 'ACTION_REQUIRED', 'Chief Inspector / Quality Demo', ?, 1, ?, ?)`
-      )
-      .run(
-        id,
-        reference,
-        inspectionAttemptId,
-        String(workPackage.aircraft_id),
-        String(workPackage.id),
-        `Simulasi Quality & Safety dari failed inspection ${String(card.card_number)}: ${finding}`,
-        new Date(Date.parse(timestamp) + 7 * 86400000).toISOString(),
-        timestamp,
-        timestamp
-      );
-    const capaId = `mcapa-${nanoid(12)}`;
-    this.sqlite
-      .prepare(
-        `INSERT INTO maintenance_capa_actions (
-          id, finding_id, action_type, description, owner, due_date, status, created_at, updated_at
-        ) VALUES (?, ?, 'CORRECTIVE_ACTION_DEMO',
-          ?, 'Maintenance Control Demo', ?, 'ACTION_REQUIRED', ?, ?)`
-      )
-      .run(
-        capaId,
-        id,
-        `Tinjau corrective work ${reworkId}, verifikasi evidence re-inspection, dan catat effectiveness review demo.`,
-        new Date(Date.parse(timestamp) + 10 * 86400000).toISOString(),
-        timestamp,
-        timestamp
-      );
-    this.sqlite
-      .prepare(
-        `INSERT OR IGNORE INTO maintenance_sdr_assessments (
-          id, source_type, source_id, reportability_status, discovered_at, simulated_due_at,
-          assessment, decision_owner, status, fictional_demo, created_at, updated_at
-        ) VALUES (?, 'QUALITY_FINDING', ?, 'INTERNAL_ASSESSMENT_ONLY', ?, ?,
-          ?, 'Quality/Safety Demo', 'UNDER_REVIEW', 1, ?, ?)`
-      )
-      .run(
-        `msdr-${nanoid(12)}`,
-        id,
-        timestamp,
-        new Date(Date.parse(timestamp) + 4 * 86400000).toISOString(),
-        'Simulasi pelaporan internal. Bukan laporan resmi kepada regulator.',
-        timestamp,
-        timestamp
-      );
-    return id;
-  }
-
-  private toQualityFindingDto(row: SqlRow): MaintenanceQualityFindingDto {
-    const capaRows = this.sqlite
-      .prepare('SELECT * FROM maintenance_capa_actions WHERE finding_id = ? ORDER BY created_at')
-      .all(String(row.id)) as SqlRow[];
-    const sdr = this.sqlite
-      .prepare(
-        `SELECT *
-         FROM maintenance_sdr_assessments
-         WHERE source_type = 'QUALITY_FINDING' AND source_id = ?
-         LIMIT 1`
-      )
-      .get(String(row.id)) as SqlRow | undefined;
-    return {
-      id: String(row.id),
-      reference: String(row.reference),
-      sourceType: String(row.source_type),
-      sourceId: String(row.source_id),
-      aircraftId: nullableText(row.aircraft_id),
-      workPackageId: nullableText(row.work_package_id),
-      classification: String(row.classification),
-      description: String(row.description),
-      status: String(row.status) as MaintenanceQualityFindingDto['status'],
-      owner: String(row.owner),
-      dueDate: nullableText(row.due_date),
-      fictionalDemo: Boolean(row.fictional_demo),
-      capaActions: capaRows.map((capa) => ({
-        id: String(capa.id),
-        findingId: String(capa.finding_id),
-        actionType: String(capa.action_type),
-        description: String(capa.description),
-        owner: String(capa.owner),
-        dueDate: nullableText(capa.due_date),
-        completion: nullableText(capa.completion),
-        effectivenessReview: nullableText(capa.effectiveness_review),
-        status: String(capa.status) as MaintenanceQualityFindingDto['capaActions'][number]['status']
-      })),
-      sdrAssessment: sdr
-        ? {
-            id: String(sdr.id),
-            sourceType: String(sdr.source_type),
-            sourceId: String(sdr.source_id),
-            reportabilityStatus: String(sdr.reportability_status),
-            discoveredAt: String(sdr.discovered_at),
-            simulatedDueAt: nullableText(sdr.simulated_due_at),
-            assessment: String(sdr.assessment),
-            decisionOwner: String(sdr.decision_owner),
-            status: String(sdr.status) as NonNullable<
-              MaintenanceQualityFindingDto['sdrAssessment']
-            >['status'],
-            fictionalDemo: Boolean(sdr.fictional_demo)
-          }
-        : null,
-      createdAt: String(row.created_at),
-      updatedAt: String(row.updated_at)
     };
   }
 
@@ -9959,6 +9914,25 @@ export class MaintenanceService {
       taskType: String(row.task_type),
       maintenanceDataRef: String(row.maintenance_data_ref),
       maintenanceDataRevision: String(row.maintenance_data_revision),
+      ataChapter: nullableText(row.ata_chapter),
+      aircraftArea: nullableText(row.aircraft_area),
+      systemName: nullableText(row.system_name),
+      componentName: nullableText(row.component_name),
+      componentPosition: nullableText(row.component_position),
+      accessPanel: nullableText(row.access_panel),
+      estimatedManHours: number(row.estimated_man_hours),
+      skillRequirement: nullableText(row.skill_requirement),
+      releaseImpact: (nullableText(row.release_impact) ??
+        (Boolean(row.mandatory_flag)
+          ? 'BLOCKS_RELEASE'
+          : 'ADVISORY')) as MaintenanceJobCardDto['releaseImpact'],
+      workSteps: jsonArray(row.work_steps_json),
+      acceptanceCriteria: jsonArray(row.acceptance_criteria_json),
+      requiredEvidence: jsonArray(row.required_evidence_json),
+      safetyCautions: jsonArray(row.safety_cautions_json),
+      prerequisites: jsonArray(row.prerequisites_json),
+      dependencyJobCardIds: jsonArray(row.dependency_job_card_ids_json),
+      approvedDataLinks: this.approvedDataLinksForJobCard(String(row.id)),
       mandatoryFlag: Boolean(row.mandatory_flag),
       requiresIndependentInspection: Boolean(row.requires_independent_inspection),
       status: String(row.status) as MaintenanceJobCardStatus,

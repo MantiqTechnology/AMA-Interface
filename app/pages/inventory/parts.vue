@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { InventoryPartDto, InventoryPartInput } from '#shared/features/inventory';
 import DocumentPanel from '../../components/documents/DocumentPanel.vue';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryFilterBar from '../../features/inventory/InventoryFilterBar.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const { can } = useAuthorization();
 const { number, date, errorMessage } = useInventoryUi();
@@ -128,7 +132,10 @@ async function save() {
     dialog.value = false;
     await refresh();
   } catch (value) {
-    actionError.value = errorMessage(value, 'Part catalog could not be saved');
+    actionError.value = errorMessage(
+      value,
+      'Katalog part tidak dapat disimpan. Periksa field wajib.'
+    );
   } finally {
     saving.value = false;
   }
@@ -136,49 +143,50 @@ async function save() {
 </script>
 
 <template>
-  <InventoryShell title="Spare Part Catalog">
+  <InventoryShell title="Katalog Spare Part">
     <template #actions>
       <DsTooltipIconButton
         v-if="can('inventory.catalog.manage').allowed"
         color="primary"
         icon="mdi-plus"
-        tooltip="Add spare part"
+        tooltip="Tambah spare part"
         variant="flat"
         @click="openCreate"
       />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh parts"
+        tooltip="Perbarui part"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
 
-    <VAlert v-if="error" class="mb-4" type="error" variant="tonal">
-      Part catalog could not be loaded.
+    <VAlert v-if="error" aria-live="polite" class="mb-4" type="error" variant="tonal">
+      Katalog part tidak dapat dimuat. Perbarui halaman lalu coba lagi.
     </VAlert>
-    <VTextField
-      v-model="search"
-      class="mb-4"
-      clearable
-      density="comfortable"
-      hide-details
-      label="Search part number, name, or manufacturer"
-      prepend-inner-icon="mdi-magnify"
-      variant="outlined"
-    />
+    <InventoryFilterBar label="Filter katalog spare part">
+      <VTextField
+        v-model="search"
+        clearable
+        density="comfortable"
+        hide-details
+        label="Cari nomor part, nama, atau manufacturer"
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+      />
+    </InventoryFilterBar>
 
-    <VCard border>
+    <InventoryPanel title="Daftar Spare Part">
       <VDataTable
         :headers="[
           { title: 'Part', key: 'partNumber' },
           { title: 'Manufacturer', key: 'manufacturer' },
           { title: 'Lifecycle', key: 'lifecycleType' },
           { title: 'Tracking', key: 'trackingType' },
-          { title: 'Criticality', key: 'criticality' },
-          { title: 'Expiry Date', key: 'expiryDate', sortable: false },
+          { title: 'Kritikalitas', key: 'criticality' },
+          { title: 'Tanggal Expiry', key: 'expiryDate', sortable: false },
           { title: 'Countdown', key: 'expiryCountdown', sortable: false },
-          { title: 'Certificate', key: 'certificateRequired' },
+          { title: 'Sertifikat', key: 'certificateRequired' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
         :items="rows"
@@ -229,38 +237,42 @@ async function save() {
           />
         </template>
         <template #[`item.actions`]="{ item }">
-          <DsTooltipIconButton
-            icon="mdi-file-certificate-outline"
-            tooltip="Part certificates"
-            variant="text"
-            @click="documentPart = item"
-          />
-          <DsTooltipIconButton
-            v-if="can('inventory.catalog.manage').allowed"
-            icon="mdi-pencil-outline"
-            tooltip="Edit part"
-            variant="text"
-            @click="openEdit(item)"
-          />
+          <InventoryTableActions>
+            <DsTooltipIconButton
+              icon="mdi-file-certificate-outline"
+              tooltip="Sertifikat part"
+              variant="text"
+              @click="documentPart = item"
+            />
+            <DsTooltipIconButton
+              v-if="can('inventory.catalog.manage').allowed"
+              icon="mdi-pencil-outline"
+              tooltip="Edit part"
+              variant="text"
+              @click="openEdit(item)"
+            />
+          </InventoryTableActions>
         </template>
-        <template #no-data><div class="py-10 text-medium-emphasis">No parts found.</div></template>
+        <template #no-data>
+          <div class="py-10 text-medium-emphasis">Tidak ada part yang cocok dengan filter.</div>
+        </template>
       </VDataTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog v-model="dialog" max-width="760" persistent>
       <VCard>
-        <VCardTitle>{{ editingId ? 'Edit spare part' : 'Add spare part' }}</VCardTitle>
+        <VCardTitle>{{ editingId ? 'Edit spare part' : 'Tambah spare part' }}</VCardTitle>
         <VDivider />
         <VCardText>
-          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
+          <VAlert v-if="actionError" aria-live="polite" class="mb-4" type="error" variant="tonal">
             {{ actionError }}
           </VAlert>
           <VRow dense>
             <VCol cols="12" md="5">
-              <VTextField v-model="form.partNumber" label="Part number" variant="outlined" />
+              <VTextField v-model="form.partNumber" label="Nomor part" variant="outlined" />
             </VCol>
             <VCol cols="12" md="7">
-              <VTextField v-model="form.partName" label="Part name" variant="outlined" />
+              <VTextField v-model="form.partName" label="Nama part" variant="outlined" />
             </VCol>
             <VCol cols="12" md="7">
               <VTextField v-model="form.manufacturer" label="Manufacturer" variant="outlined" />
@@ -268,7 +280,7 @@ async function save() {
             <VCol cols="12" md="5">
               <VTextField
                 v-model="form.manufacturerPartNumber"
-                label="Manufacturer part number"
+                label="Nomor part manufacturer"
                 variant="outlined"
               />
             </VCol>
@@ -300,7 +312,7 @@ async function save() {
                   'SOFTWARE_NAVDB',
                   'MISSION_SPECIFIC'
                 ]"
-                label="Part Category"
+                label="Kategori part"
                 variant="outlined"
               />
             </VCol>
@@ -332,7 +344,7 @@ async function save() {
               <VTextField
                 v-model.number="form.maxFlightHours"
                 type="number"
-                label="Max Flight Hours (FH Limit)"
+                label="Batas Flight Hours"
                 variant="outlined"
               />
             </VCol>
@@ -340,7 +352,7 @@ async function save() {
               <VTextField
                 v-model.number="form.maxFlightCycles"
                 type="number"
-                label="Max Flight Cycles (FC Limit)"
+                label="Batas Flight Cycles"
                 variant="outlined"
               />
             </VCol>
@@ -349,7 +361,7 @@ async function save() {
                 v-model.number="form.shelfLifeDays"
                 clearable
                 :disabled="form.trackingType === 'QUANTITY'"
-                label="Shelf life days"
+                label="Shelf life hari"
                 min="1"
                 type="number"
                 variant="outlined"
@@ -360,20 +372,15 @@ async function save() {
                 v-model="form.certificateRequired"
                 color="primary"
                 :disabled="form.trackingType === 'QUANTITY'"
-                label="Certificate required"
+                label="Sertifikat wajib"
               />
             </VCol>
             <VCol cols="12">
-              <VTextarea
-                v-model="form.description"
-                label="Description"
-                rows="2"
-                variant="outlined"
-              />
+              <VTextarea v-model="form.description" label="Deskripsi" rows="2" variant="outlined" />
             </VCol>
           </VRow>
           <VDivider class="mb-4" />
-          <div class="mb-2 text-subtitle-2 font-weight-bold">Aircraft Applicability</div>
+          <div class="mb-2 text-subtitle-2 font-weight-bold">Applicability Pesawat</div>
           <div
             v-for="(item, index) in form.aircraftApplicability"
             :key="`${item.aircraftType}-${item.model}-${index}`"
@@ -382,7 +389,7 @@ async function save() {
             <VChip>{{ item.aircraftType }}{{ item.model ? ` / ${item.model}` : '' }}</VChip>
             <DsTooltipIconButton
               icon="mdi-close"
-              tooltip="Remove applicability"
+              tooltip="Hapus applicability"
               size="small"
               variant="text"
               @click="form.aircraftApplicability.splice(index, 1)"
@@ -393,7 +400,7 @@ async function save() {
               <VTextField
                 v-model="applicability.aircraftType"
                 hide-details
-                label="Aircraft type"
+                label="Tipe pesawat"
                 variant="outlined"
               />
             </VCol>
@@ -409,30 +416,26 @@ async function save() {
               <VTextField
                 v-model="applicability.note"
                 hide-details
-                label="Note"
+                label="Catatan"
                 variant="outlined"
               />
             </VCol>
             <VCol class="d-flex align-center" cols="12" md="1">
               <DsTooltipIconButton
                 icon="mdi-plus"
-                tooltip="Add applicability"
+                tooltip="Tambah applicability"
                 variant="tonal"
                 @click="addApplicability"
               />
             </VCol>
           </VRow>
         </VCardText>
-        <VCardActions>
-          <VSpacer />
-          <VBtn :disabled="saving" text="Cancel" variant="text" @click="dialog = false" />
-          <VBtn
-            :loading="saving"
-            prepend-icon="mdi-content-save-outline"
-            text="Save part"
-            @click="save"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="saving"
+          submit-text="Simpan part"
+          @cancel="dialog = false"
+          @submit="save"
+        />
       </VCard>
     </VDialog>
 
@@ -445,7 +448,7 @@ async function save() {
       <VSheet v-if="documentPart" class="pa-4" rounded="lg">
         <div class="mb-4 d-flex align-center">
           <div>
-            <div class="text-h6 font-weight-bold">Part Certificates</div>
+            <div class="text-h6 font-weight-bold">Sertifikat Part</div>
             <div class="text-caption text-medium-emphasis">
               {{ documentPart.partNumber }} · {{ documentPart.partName }}
             </div>
@@ -453,7 +456,7 @@ async function save() {
           <VSpacer />
           <DsTooltipIconButton
             icon="mdi-close"
-            tooltip="Close part certificates"
+            tooltip="Tutup sertifikat part"
             variant="text"
             @click="documentPart = null"
           />

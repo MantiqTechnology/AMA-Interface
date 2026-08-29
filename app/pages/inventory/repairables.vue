@@ -4,7 +4,10 @@ import type { CurrencyOption } from '#shared/features/finance/currencies';
 import type { VendorOption } from '#shared/features/finance/vendors';
 import type { InventorySerializedPartDto, InventoryWarehouseDto } from '#shared/features/inventory';
 import DocumentPanel from '../../components/documents/DocumentPanel.vue';
+import InventoryFilterBar from '../../features/inventory/InventoryFilterBar.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 type RepairOrder = {
   id: string;
@@ -153,7 +156,7 @@ function selectRepair(item: InventorySerializedPartDto) {
 async function mutate(path: string, body?: unknown) {
   actionError.value = '';
   await fetchApi(path, { method: 'POST', ...(body ? { body } : {}) }).catch((value) => {
-    actionError.value = errorMessage(value, 'Repairable action failed');
+    actionError.value = errorMessage(value, 'Aksi repairable gagal. Perbarui data lalu coba lagi.');
     throw value;
   });
   await Promise.all([refresh(), refreshRepairs()]);
@@ -211,6 +214,11 @@ function selectReturn() {
 function updateDocumentDialog(value: boolean) {
   if (!value) documentSerial.value = null;
 }
+
+function refreshRepairables() {
+  return Promise.all([refresh(), refreshRepairs()]);
+}
+
 function returnServiceable(order: RepairOrder) {
   return mutate(`/api/inventory/repair-orders/${order.id}/return-serviceable`, {
     ...returned,
@@ -221,42 +229,49 @@ function returnServiceable(order: RepairOrder) {
 </script>
 
 <template>
-  <InventoryShell title="Repairable & Rotable Lifecycle">
+  <InventoryShell title="Lifecycle Repairable & Rotable">
     <template #actions>
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh repairables"
+        tooltip="Perbarui repairable"
         variant="text"
-        @click="Promise.all([refresh(), refreshRepairs()])"
+        @click="refreshRepairables"
       />
     </template>
-    <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{ actionError || 'Repairable components could not be loaded.' }}
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Data repairable tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
     </VAlert>
     <VBtnToggle v-model="tab" class="mb-4" color="primary" mandatory variant="outlined">
-      <VBtn prepend-icon="mdi-cog-sync-outline" text="Serialized components" value="components" />
-      <VBtn prepend-icon="mdi-wrench-clock-outline" text="Repair orders" value="repairs" />
+      <VBtn prepend-icon="mdi-cog-sync-outline" text="Komponen serialized" value="components" />
+      <VBtn prepend-icon="mdi-wrench-clock-outline" text="Repair order" value="repairs" />
     </VBtnToggle>
 
     <template v-if="tab === 'components'">
-      <VTextField
-        v-model="search"
-        class="mb-4"
-        clearable
-        density="comfortable"
-        hide-details
-        label="Search serial, part, or aircraft"
-        prepend-inner-icon="mdi-magnify"
-        variant="outlined"
-      />
-      <VCard border>
+      <InventoryFilterBar label="Filter komponen repairable">
+        <VTextField
+          v-model="search"
+          clearable
+          density="comfortable"
+          hide-details
+          label="Cari serial, part, atau pesawat"
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+        />
+      </InventoryFilterBar>
+      <InventoryPanel title="Komponen Serialized">
         <VDataTable
           :headers="[
-            { title: 'Component', key: 'serialNumber' },
-            { title: 'Condition', key: 'condition' },
-            { title: 'Location', key: 'binCode' },
+            { title: 'Komponen', key: 'serialNumber' },
+            { title: 'Kondisi', key: 'condition' },
+            { title: 'Lokasi', key: 'binCode' },
             { title: 'TSN / CSN', key: 'hoursSinceNew' },
-            { title: 'Certificate', key: 'certificateReference' },
+            { title: 'Sertifikat', key: 'certificateReference' },
             { title: 'Repair', key: 'repairOrderStatus' },
             { title: '', key: 'actions', sortable: false, align: 'end' }
           ]"
@@ -296,10 +311,10 @@ function returnServiceable(order: RepairOrder) {
             >-</span>
           </template>
           <template #[`item.actions`]="{ item }">
-            <div class="d-flex justify-end ga-1">
+            <InventoryTableActions>
               <DsTooltipIconButton
                 icon="mdi-file-certificate-outline"
-                tooltip="Component certificates"
+                tooltip="Sertifikat komponen"
                 variant="text"
                 @click="documentSerial = item"
               />
@@ -308,13 +323,13 @@ function returnServiceable(order: RepairOrder) {
                 :action="installSelected"
                 :confirm-disabled="!install.aircraftId || !install.position.trim()"
                 confirm-icon="mdi-airplane-cog"
-                confirm-text="Install component"
+                confirm-text="Pasang komponen"
                 icon="mdi-airplane-cog"
                 max-width="600"
                 persistent
-                title="Install serialized component"
+                title="Pasang komponen serialized"
                 tone="warning"
-                tooltip="Install to aircraft"
+                tooltip="Pasang ke pesawat"
                 variant="text"
                 @click="selectInstall(item)"
               >
@@ -324,19 +339,19 @@ function returnServiceable(order: RepairOrder) {
                   item-title="registrationNumber"
                   item-value="id"
                   :items="aircraft ?? []"
-                  label="Aircraft"
+                  label="Pesawat"
                   variant="outlined"
                 />
                 <VTextField
                   v-model="install.position"
                   class="mb-3"
-                  label="Position"
+                  label="Posisi"
                   variant="outlined"
                 />
                 <VTextField
                   v-model="install.installedAt"
                   class="mb-3"
-                  label="Installed at"
+                  label="Waktu pemasangan"
                   type="datetime-local"
                   variant="outlined"
                 />
@@ -362,7 +377,7 @@ function returnServiceable(order: RepairOrder) {
                 <VSwitch
                   v-model="install.capitalizationCandidate"
                   color="primary"
-                  label="Capitalization candidate"
+                  label="Kandidat kapitalisasi"
                 />
                 <template v-if="install.capitalizationCandidate">
                   <VTextField
@@ -378,7 +393,7 @@ function returnServiceable(order: RepairOrder) {
                       { title: 'Heavy maintenance', value: 'HEAVY_MAINTENANCE' },
                       { title: 'Major replacement', value: 'MAJOR_REPLACEMENT' }
                     ]"
-                    label="Work order category"
+                    label="Kategori work order"
                     variant="outlined"
                   />
                   <VSelect
@@ -392,7 +407,7 @@ function returnServiceable(order: RepairOrder) {
                     <VCol cols="12" md="6">
                       <VTextField
                         v-model.number="install.capitalizationThresholdMinor"
-                        label="Capitalization threshold (IDR)"
+                        label="Ambang kapitalisasi (IDR)"
                         min="0"
                         type="number"
                         variant="outlined"
@@ -401,7 +416,7 @@ function returnServiceable(order: RepairOrder) {
                     <VCol cols="12" md="6">
                       <VTextField
                         v-model.number="install.expectedBenefitMonths"
-                        label="Useful life (months)"
+                        label="Umur manfaat (bulan)"
                         min="1"
                         type="number"
                         variant="outlined"
@@ -412,7 +427,7 @@ function returnServiceable(order: RepairOrder) {
                     v-model="install.readyForUseDate"
                     prepend-icon=""
                     prepend-inner-icon="mdi-calendar"
-                    label="Ready for use date"
+                    label="Tanggal siap pakai"
                     variant="outlined"
                   />
                 </template>
@@ -424,13 +439,13 @@ function returnServiceable(order: RepairOrder) {
                   !removal.quarantineBinId || removal.removalReason.trim().length < 3
                 "
                 confirm-icon="mdi-airplane-remove"
-                confirm-text="Remove component"
+                confirm-text="Lepas komponen"
                 icon="mdi-airplane-remove"
                 max-width="600"
                 persistent
-                title="Remove serialized component"
+                title="Lepas komponen serialized"
                 tone="danger"
-                tooltip="Remove from aircraft"
+                tooltip="Lepas dari pesawat"
                 variant="text"
                 @click="selectRemoval(item)"
               >
@@ -438,13 +453,13 @@ function returnServiceable(order: RepairOrder) {
                   v-model="removal.quarantineBinId"
                   class="mb-3"
                   :items="quarantineBins"
-                  label="Quarantine bin"
+                  label="Bin karantina"
                   variant="outlined"
                 />
                 <VTextField
                   v-model="removal.removedAt"
                   class="mb-3"
-                  label="Removed at"
+                  label="Waktu pelepasan"
                   type="datetime-local"
                   variant="outlined"
                 />
@@ -469,7 +484,7 @@ function returnServiceable(order: RepairOrder) {
                 </VRow>
                 <VTextarea
                   v-model="removal.removalReason"
-                  label="Removal reason"
+                  label="Alasan pelepasan"
                   rows="2"
                   variant="outlined"
                 />
@@ -483,13 +498,13 @@ function returnServiceable(order: RepairOrder) {
                 :action="createRepair"
                 :confirm-disabled="!repair.vendorId || repair.reason.trim().length < 3"
                 confirm-icon="mdi-wrench-clock-outline"
-                confirm-text="Create repair order"
+                confirm-text="Buat repair order"
                 icon="mdi-wrench-clock-outline"
                 max-width="560"
                 persistent
-                title="Create repair order"
+                title="Buat repair order"
                 tone="warning"
-                tooltip="Create repair order"
+                tooltip="Buat repair order"
                 variant="text"
                 @click="selectRepair(item)"
               >
@@ -499,7 +514,7 @@ function returnServiceable(order: RepairOrder) {
                   item-title="vendorName"
                   item-value="id"
                   :items="vendors ?? []"
-                  label="Repair vendor"
+                  label="Vendor repair"
                   variant="outlined"
                 />
                 <VDateInput
@@ -507,12 +522,12 @@ function returnServiceable(order: RepairOrder) {
                   prepend-icon=""
                   prepend-inner-icon="mdi-calendar"
                   class="mb-3"
-                  label="Expected return"
+                  label="Estimasi kembali"
                   variant="outlined"
                 />
                 <VTextarea
                   v-model="repair.reason"
-                  label="Repair reason"
+                  label="Alasan repair"
                   rows="2"
                   variant="outlined"
                 />
@@ -528,35 +543,35 @@ function returnServiceable(order: RepairOrder) {
                 "
                 :confirm-disabled="scrapReason.trim().length < 3"
                 confirm-icon="mdi-delete-forever-outline"
-                confirm-text="Scrap component"
+                confirm-text="Scrap komponen"
                 icon="mdi-delete-forever-outline"
                 max-width="520"
                 persistent
-                title="Scrap serialized component"
+                title="Scrap komponen serialized"
                 tone="danger"
-                tooltip="Scrap component"
+                tooltip="Scrap komponen"
                 variant="text"
                 @click="scrapReason = ''"
               >
-                <VTextarea v-model="scrapReason" label="Scrap reason" rows="3" variant="outlined" />
+                <VTextarea v-model="scrapReason" label="Alasan scrap" rows="3" variant="outlined" />
               </DsConfirmIconButton>
-            </div>
+            </InventoryTableActions>
           </template>
           <template #no-data>
-            <div class="py-10 text-medium-emphasis">No serialized components found.</div>
+            <div class="py-10 text-medium-emphasis">Tidak ada komponen serialized yang cocok.</div>
           </template>
         </VDataTable>
-      </VCard>
+      </InventoryPanel>
     </template>
 
-    <VCard v-else border>
+    <InventoryPanel v-else title="Repair Order">
       <VDataTable
         :headers="[
           { title: 'Repair', key: 'repairNumber' },
-          { title: 'Component', key: 'serialNumber' },
+          { title: 'Komponen', key: 'serialNumber' },
           { title: 'Vendor', key: 'vendorName' },
-          { title: 'Expected', key: 'expectedReturnAt' },
-          { title: 'Cost', key: 'baseRepairCostIdr', align: 'end' },
+          { title: 'Estimasi', key: 'expectedReturnAt' },
+          { title: 'Biaya', key: 'baseRepairCostIdr', align: 'end' },
           { title: 'Status', key: 'status' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
@@ -571,23 +586,21 @@ function returnServiceable(order: RepairOrder) {
         </template>
         <template #[`item.expectedReturnAt`]="{ item }">{{ date(item.expectedReturnAt) }}</template>
         <template #[`item.baseRepairCostIdr`]="{ item }">
-          {{
-            can('inventory.valuation.read').allowed ? money(item.baseRepairCostIdr) : 'Restricted'
-          }}
+          {{ can('inventory.valuation.read').allowed ? money(item.baseRepairCostIdr) : 'Terbatas' }}
         </template>
         <template #[`item.status`]="{ item }"><DsStatusBadge :value="item.status" /></template>
         <template #[`item.actions`]="{ item }">
-          <div v-if="can('inventory.repair.manage').allowed" class="d-flex justify-end ga-1">
+          <InventoryTableActions v-if="can('inventory.repair.manage').allowed">
             <DsConfirmIconButton
               v-if="item.status === 'DRAFT'"
               :action="() => mutate(`/api/inventory/repair-orders/${item.id}/send`)"
               confirm-icon="mdi-truck-fast-outline"
-              confirm-text="Send to vendor"
+              confirm-text="Kirim ke vendor"
               icon="mdi-truck-fast-outline"
-              message="The component will leave warehouse stock and enter in-repair status."
-              title="Send component for repair"
+              message="Komponen keluar dari stok gudang dan masuk status in-repair."
+              title="Kirim komponen untuk repair"
               tone="warning"
-              tooltip="Send to repair vendor"
+              tooltip="Kirim ke vendor repair"
               variant="text"
             />
             <DsConfirmIconButton
@@ -597,13 +610,13 @@ function returnServiceable(order: RepairOrder) {
                 !returned.usableBinId || returned.certificateReference.trim().length < 2
               "
               confirm-icon="mdi-shield-check-outline"
-              confirm-text="Return serviceable"
+              confirm-text="Kembalikan serviceable"
               icon="mdi-shield-check-outline"
               max-width="600"
               persistent
-              title="Return component to service"
+              title="Kembalikan komponen ke stok serviceable"
               tone="success"
-              tooltip="Return serviceable"
+              tooltip="Kembalikan serviceable"
               variant="text"
               @click="selectReturn"
             >
@@ -611,20 +624,20 @@ function returnServiceable(order: RepairOrder) {
                 v-model="returned.usableBinId"
                 class="mb-3"
                 :items="usableBins"
-                label="Usable bin"
+                label="Bin usable"
                 variant="outlined"
               />
               <VTextField
                 v-model="returned.returnedAt"
                 class="mb-3"
-                label="Returned at"
+                label="Waktu kembali"
                 type="datetime-local"
                 variant="outlined"
               />
               <VTextField
                 v-model="returned.certificateReference"
                 class="mb-3"
-                label="Verified certificate reference"
+                label="Referensi sertifikat terverifikasi"
                 variant="outlined"
               />
               <VRow density="comfortable">
@@ -634,13 +647,13 @@ function returnServiceable(order: RepairOrder) {
                     item-title="currencyCode"
                     item-value="id"
                     :items="currencies ?? []"
-                    label="Currency"
+                    label="Mata uang"
                     variant="outlined"
                   />
                 </VCol><VCol cols="12" md="4">
                   <VTextField
                     v-model.number="returned.sourceRepairCostMinor"
-                    label="Repair cost"
+                    label="Biaya repair"
                     min="0"
                     type="number"
                     variant="outlined"
@@ -648,7 +661,7 @@ function returnServiceable(order: RepairOrder) {
                 </VCol><VCol cols="12" md="4">
                   <VTextField
                     v-model.number="returned.exchangeRateToIdrMicros"
-                    label="Rate to IDR"
+                    label="Kurs ke IDR"
                     min="1"
                     type="number"
                     variant="outlined"
@@ -656,13 +669,13 @@ function returnServiceable(order: RepairOrder) {
                 </VCol>
               </VRow>
             </DsConfirmIconButton>
-          </div>
+          </InventoryTableActions>
         </template>
         <template #no-data>
-          <div class="py-10 text-medium-emphasis">No repair orders found.</div>
+          <div class="py-10 text-medium-emphasis">Belum ada repair order.</div>
         </template>
       </VDataTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog
       :model-value="Boolean(documentSerial)"
@@ -673,7 +686,7 @@ function returnServiceable(order: RepairOrder) {
       <VSheet v-if="documentSerial" class="pa-4" rounded="lg">
         <div class="mb-4 d-flex align-center">
           <div>
-            <div class="text-h6 font-weight-bold">Component Certificates</div>
+            <div class="text-h6 font-weight-bold">Sertifikat Komponen</div>
             <div class="text-caption text-medium-emphasis">
               {{ documentSerial.serialNumber }} · {{ documentSerial.partNumber }}
             </div>
@@ -681,7 +694,7 @@ function returnServiceable(order: RepairOrder) {
           <VSpacer />
           <DsTooltipIconButton
             icon="mdi-close"
-            tooltip="Close component certificates"
+            tooltip="Tutup sertifikat komponen"
             variant="text"
             @click="documentSerial = null"
           />

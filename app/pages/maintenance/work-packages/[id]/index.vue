@@ -153,9 +153,29 @@ const jobCardForm = reactive({
   taskType: 'DEFECT_RECTIFICATION',
   maintenanceDataRef: '',
   maintenanceDataRevision: 'REV-MROV1-2026-08',
+  approvedDataRevisionId: '',
+  ataChapter: '',
+  aircraftArea: '',
+  systemName: '',
+  componentName: '',
+  componentPosition: '',
+  accessPanel: '',
+  estimatedManHours: 1,
+  skillRequirement: '',
+  releaseImpact: 'BLOCKS_RELEASE' as MaintenanceJobCardDto['releaseImpact'],
+  prerequisitesText: 'Aircraft safe for maintenance\nReferenced maintenance data reviewed',
+  safetyCautionsText: 'Follow aircraft isolation and placarding procedure before work',
+  workStepsText:
+    'Inspect affected area\nPerform corrective action using referenced data\nRecord evidence and prepare sign-off',
+  acceptanceCriteriaText:
+    'Condition corrected within approved data limits\nNo open discrepancy remains for this task',
+  requiredEvidenceText:
+    'Technician sign-off statement\nPhoto or measurement evidence\nOperational/functional check result',
+  dependencyJobCardIdsText: '',
   mandatoryFlag: true,
   requiresIndependentInspection: true
 });
+const jobCardInstructionPanel = ref<string | null>(null);
 const nonRoutineDialog = ref(false);
 const nonRoutineSourceCard = ref<MaintenanceJobCardDto | null>(null);
 type NonRoutineSeverityUi = 'UNASSESSED' | 'LOW' | 'NORMAL' | 'HIGH' | 'AOG';
@@ -227,8 +247,9 @@ const nonRoutineCorrectiveForms = reactive<
 >({});
 const nonRoutineResolutionForms = reactive<Record<string, { note: string; evidence: string }>>({});
 const nonRoutineCloseForms = reactive<Record<string, { note: string; evidence: string }>>({});
-const workStatement = ref('');
-const workLicenseNumber = ref('');
+const workForms = reactive<Record<string, { statement: string; certifyingLicenseNumber: string }>>(
+  {}
+);
 const inspectionForm = reactive({
   statement: '',
   certifyingLicenseNumber: '',
@@ -383,13 +404,22 @@ watch(
 const checklist = computed(() => workPackage.value?.releaseChecklist);
 const releaseBlockers = computed(() => checklist.value?.blockers ?? []);
 const signerLicenses = computed(() => selectorData.value?.signerLicenses ?? []);
+const approvedDataRevisionItems = computed(() =>
+  (selectorData.value?.approvedData ?? []).flatMap((document) =>
+    document.revisions
+      .filter((revision) => revision.status === 'ACTIVE')
+      .map((revision) => ({
+        title: `${document.documentType} ${document.documentNumber} / ${revision.revision}`,
+        value: revision.id,
+        document,
+        revision
+      }))
+  )
+);
 const selectedSignerLicense = computed(() =>
   signerLicenses.value.find(
     (license) => license.licenseNumber === releaseForm.certifyingLicenseNumber
   )
-);
-const selectedWorkLicense = computed(() =>
-  signerLicenses.value.find((license) => license.licenseNumber === workLicenseNumber.value)
 );
 
 const canManage = computed(() => can('maintenance.jobcard.manage').allowed);
@@ -585,9 +615,6 @@ const canSubmitRelease = computed(
     Boolean(releaseForm.releasedAt) &&
     evidenceList(releaseForm.evidenceReferences).length > 0
 );
-const canSubmitWork = computed(
-  () => workStatement.value.trim().length >= 10 && Boolean(selectedWorkLicense.value)
-);
 
 const canSubmitInspection = computed(
   () =>
@@ -616,22 +643,13 @@ watch(
 );
 
 watch(
-  signerLicenses,
-  (licenses) => {
-    if (!workLicenseNumber.value) {
-      workLicenseNumber.value =
-        licenses.find((license) => license.isUsableNow)?.licenseNumber ||
-        licenses[0]?.licenseNumber ||
-        '';
-    }
-  },
-  { immediate: true }
-);
-
-watch(
   workPackage,
   (item) => {
     for (const card of item?.jobCards ?? []) {
+      workForms[card.id] ??= {
+        certifyingLicenseNumber: preferredSignerLicenseNumber(),
+        statement: ''
+      };
       for (const action of card.reworkActions) {
         reworkForms[action.id] ??= {
           correctiveActionDescription: action.correctiveActionDescription || '',
@@ -674,6 +692,39 @@ watch(
     }
   },
   { immediate: true }
+);
+
+watch(
+  signerLicenses,
+  () => {
+    for (const form of Object.values(workForms)) {
+      if (!form.certifyingLicenseNumber) {
+        form.certifyingLicenseNumber = preferredSignerLicenseNumber();
+      }
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => jobCardForm.approvedDataRevisionId,
+  (revisionId) => {
+    const item = approvedDataRevisionItems.value.find((entry) => entry.value === revisionId);
+    if (!item) return;
+    jobCardForm.maintenanceDataRef = item.document.documentNumber;
+    jobCardForm.maintenanceDataRevision = item.revision.revision;
+  }
+);
+
+watch(
+  () => jobCardForm.mandatoryFlag,
+  (mandatory) => {
+    if (!mandatory && jobCardForm.releaseImpact === 'BLOCKS_RELEASE') {
+      jobCardForm.releaseImpact = 'ADVISORY';
+    } else if (mandatory && jobCardForm.releaseImpact === 'ADVISORY') {
+      jobCardForm.releaseImpact = 'BLOCKS_RELEASE';
+    }
+  }
 );
 
 watch(
@@ -846,6 +897,103 @@ function authorizationSummary(action: string, licenseNumber: string) {
     return 'Pilih lisensi personel yang valid. Sistem akan memeriksa ulang lisensi dan wewenang saat tindakan dikirim.';
   }
   return `${authorizationWording} Tindakan: ${action}. Scope: ${license.scopeSummary}`;
+}
+
+function preferredSignerLicenseNumber() {
+  return (
+    signerLicenses.value.find((license) => license.isUsableNow)?.licenseNumber ||
+    signerLicenses.value[0]?.licenseNumber ||
+    ''
+  );
+}
+
+function selectedWorkLicense(card: MaintenanceJobCardDto) {
+  const form = workForms[card.id];
+  return form
+    ? signerLicenses.value.find((license) => license.licenseNumber === form.certifyingLicenseNumber)
+    : undefined;
+}
+
+function canSubmitWork(card: MaintenanceJobCardDto) {
+  const form = workForms[card.id];
+  return Boolean(form && form.statement.trim().length >= 10 && selectedWorkLicense(card));
+}
+
+function workSignoffPlaceholder(card: MaintenanceJobCardDto) {
+  return `Contoh: ${card.cardNumber} selesai sesuai ${card.maintenanceDataRef}; hasil kerja dan bukti teknisi sudah diperiksa.`;
+}
+
+function instructionLines(value: string) {
+  return value
+    .split(/\r?\n/u)
+    .map((item) => item.replace(/^[-*\d.\s]+/u, '').trim())
+    .filter(Boolean);
+}
+
+function dependencyIds(value: string) {
+  return value
+    .split(/[\n,]+/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function displayJobCardValue(value: string | number | null | undefined) {
+  if (value === 0) return '0';
+  return value ? String(value) : 'Belum ditentukan';
+}
+
+function releaseImpactLabel(value: MaintenanceJobCardDto['releaseImpact']) {
+  const labels: Record<MaintenanceJobCardDto['releaseImpact'], string> = {
+    BLOCKS_RELEASE: 'Memblokir rilis',
+    ADVISORY: 'Advisory',
+    NO_RELEASE_IMPACT: 'Tidak berdampak rilis'
+  };
+  return labels[value];
+}
+
+function releaseImpactColor(value: MaintenanceJobCardDto['releaseImpact']) {
+  if (value === 'BLOCKS_RELEASE') return 'error';
+  if (value === 'ADVISORY') return 'warning';
+  return 'success';
+}
+
+function approvedDataStatusColor(
+  status: MaintenanceJobCardDto['approvedDataLinks'][number]['revisionStatus']
+) {
+  if (status === 'ACTIVE') return 'success';
+  if (status === 'SUPERSEDED') return 'warning';
+  if (status === 'WITHDRAWN') return 'error';
+  return 'info';
+}
+
+function dependencyLabels(card: MaintenanceJobCardDto) {
+  if (!card.dependencyJobCardIds.length) return ['Tidak ada dependency'];
+  return card.dependencyJobCardIds.map((dependencyId) => {
+    const dependency = workPackage.value?.jobCards.find(
+      (candidate) => candidate.id === dependencyId || candidate.cardNumber === dependencyId
+    );
+    return dependency?.cardNumber ?? dependencyId;
+  });
+}
+
+function listOrFallback(items: string[], fallback = 'Belum ditentukan') {
+  return items.length ? items : [fallback];
+}
+
+function materialForCard(card: MaintenanceJobCardDto) {
+  return materialRequirements.value.filter((item) => item.jobCardId === card.id);
+}
+
+function toolsForCard(card: MaintenanceJobCardDto) {
+  return toolRequirements.value.filter((item) => item.jobCardId === card.id);
+}
+
+function personnelForCard(card: MaintenanceJobCardDto) {
+  return personnelRequirements.value.filter((item) => item.jobCardId === card.id);
+}
+
+function assignmentsForCard(card: MaintenanceJobCardDto) {
+  return personnelAssignments.value.filter((item) => item.jobCardId === card.id);
 }
 
 function latestInspectionAttempt(card: MaintenanceJobCardDto) {
@@ -1337,12 +1485,34 @@ async function addJobCard() {
     await fetchApi(`/api/maintenance/work-packages/${workPackage.value!.id}/job-cards`, {
       method: 'POST',
       body: {
-        ...jobCardForm,
+        title: jobCardForm.title,
+        taskType: jobCardForm.taskType,
+        maintenanceDataRef: jobCardForm.maintenanceDataRef,
+        maintenanceDataRevision: jobCardForm.maintenanceDataRevision,
+        approvedDataRevisionId: jobCardForm.approvedDataRevisionId || null,
+        ataChapter: jobCardForm.ataChapter || null,
+        aircraftArea: jobCardForm.aircraftArea || null,
+        systemName: jobCardForm.systemName || null,
+        componentName: jobCardForm.componentName || null,
+        componentPosition: jobCardForm.componentPosition || null,
+        accessPanel: jobCardForm.accessPanel || null,
+        estimatedManHours: jobCardForm.estimatedManHours,
+        skillRequirement: jobCardForm.skillRequirement || null,
+        releaseImpact: jobCardForm.releaseImpact,
+        workSteps: instructionLines(jobCardForm.workStepsText),
+        acceptanceCriteria: instructionLines(jobCardForm.acceptanceCriteriaText),
+        requiredEvidence: instructionLines(jobCardForm.requiredEvidenceText),
+        safetyCautions: instructionLines(jobCardForm.safetyCautionsText),
+        prerequisites: instructionLines(jobCardForm.prerequisitesText),
+        dependencyJobCardIds: dependencyIds(jobCardForm.dependencyJobCardIdsText),
+        mandatoryFlag: jobCardForm.mandatoryFlag,
+        requiresIndependentInspection: jobCardForm.requiresIndependentInspection,
         expectedWorkPackageVersion: workPackage.value!.version
       }
     });
     jobCardForm.title = '';
     jobCardForm.maintenanceDataRef = '';
+    jobCardForm.approvedDataRevisionId = '';
   });
 }
 
@@ -1356,17 +1526,19 @@ async function start(card: MaintenanceJobCardDto) {
 }
 
 async function signWork(card: MaintenanceJobCardDto) {
+  const form = workForms[card.id];
+  if (!form) return;
   await runAction(`sign-${card.id}`, () =>
     fetchApi(`/api/maintenance/job-cards/${card.id}/actions/sign-work`, {
       method: 'POST',
       body: {
         expectedVersion: card.version,
-        certifyingLicenseNumber: workLicenseNumber.value,
-        statement: workStatement.value,
+        certifyingLicenseNumber: form.certifyingLicenseNumber,
+        statement: form.statement,
         evidenceReferences: [`${card.cardNumber}-MECH-EVIDENCE`]
       }
     }).then(() => {
-      workStatement.value = '';
+      form.statement = '';
     })
   );
 }
@@ -1905,10 +2077,10 @@ async function runInternalAogPrimaryAction() {
     return;
   }
   if (scenario.phase === 'WORK_IN_PROGRESS') {
-    workLicenseNumber.value =
-      signerLicenses.value.find((license) => license.isUsableNow)?.licenseNumber ??
-      'AME-TECH-MRO-001';
-    workStatement.value =
+    const form = workForms[card.id];
+    if (!form) return;
+    form.certifyingLicenseNumber = preferredSignerLicenseNumber() || 'AME-TECH-MRO-001';
+    form.statement =
       'Main wheel tire replacement completed using controlled data; installation evidence attached.';
     await signWork(card);
     return;
@@ -2676,6 +2848,22 @@ watch(
                             </div>
                           </div>
                           <VSpacer />
+                          <VChip v-if="card.ataChapter" size="x-small" variant="tonal">
+                            ATA {{ card.ataChapter }}
+                          </VChip>
+                          <VChip v-if="card.componentName" size="x-small" variant="tonal">
+                            {{ card.componentName }}
+                          </VChip>
+                          <VChip
+                            :color="releaseImpactColor(card.releaseImpact)"
+                            size="x-small"
+                            variant="tonal"
+                          >
+                            {{ releaseImpactLabel(card.releaseImpact) }}
+                          </VChip>
+                          <VChip v-if="card.estimatedManHours" size="x-small" variant="tonal">
+                            {{ card.estimatedManHours }} MH
+                          </VChip>
                           <VChip
                             :color="ui.jobCardStatusColor(card.status)"
                             size="small"
@@ -2708,6 +2896,197 @@ watch(
                             </div>
                           </VCol>
                         </VRow>
+                        <div class="job-card-instruction mt-4">
+                          <div class="job-card-instruction__header">
+                            <div>
+                              <div class="text-overline text-primary">Work instruction demo</div>
+                              <div class="text-subtitle-1 font-weight-bold">
+                                Area, dokumen, instruksi, dan bukti untuk {{ card.cardNumber }}
+                              </div>
+                            </div>
+                            <div class="d-flex flex-wrap ga-2">
+                              <VChip
+                                :color="releaseImpactColor(card.releaseImpact)"
+                                size="small"
+                                variant="tonal"
+                              >
+                                {{ releaseImpactLabel(card.releaseImpact) }}
+                              </VChip>
+                              <VChip size="small" variant="tonal">
+                                {{ card.estimatedManHours || 0 }} MH
+                              </VChip>
+                            </div>
+                          </div>
+                          <VRow>
+                            <VCol cols="12" md="5">
+                              <div class="instruction-block">
+                                <div class="instruction-block__title">Area pesawat</div>
+                                <VList density="compact" class="bg-transparent pa-0">
+                                  <VListItem
+                                    title="ATA"
+                                    :subtitle="displayJobCardValue(card.ataChapter)"
+                                  />
+                                  <VListItem
+                                    title="Area"
+                                    :subtitle="displayJobCardValue(card.aircraftArea)"
+                                  />
+                                  <VListItem
+                                    title="System / component"
+                                    :subtitle="`${displayJobCardValue(card.systemName)} / ${displayJobCardValue(card.componentName)}`"
+                                  />
+                                  <VListItem
+                                    title="Position / access"
+                                    :subtitle="`${displayJobCardValue(card.componentPosition)} / ${displayJobCardValue(card.accessPanel)}`"
+                                  />
+                                </VList>
+                              </div>
+
+                              <div class="instruction-block mt-3">
+                                <div class="instruction-block__title">Dokumen kerja</div>
+                                <template v-if="card.approvedDataLinks.length">
+                                  <div
+                                    v-for="link in card.approvedDataLinks"
+                                    :key="link.id"
+                                    class="approved-data-link"
+                                  >
+                                    <div>
+                                      <strong>{{ link.documentType }} {{ link.documentNumber }}</strong>
+                                      <div class="text-caption text-medium-emphasis">
+                                        {{ link.documentTitle }}
+                                      </div>
+                                      <div class="text-caption">
+                                        Snapshot {{ link.snapshotRevision }} /
+                                        {{ link.snapshotEffectiveDate }}
+                                      </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap align-center ga-2">
+                                      <VChip
+                                        :color="approvedDataStatusColor(link.revisionStatus)"
+                                        size="x-small"
+                                        variant="tonal"
+                                      >
+                                        {{ link.revisionStatus ?? 'REFERENCE' }}
+                                      </VChip>
+                                      <VBtn
+                                        v-if="link.demoFileUrl"
+                                        :href="link.demoFileUrl"
+                                        target="_blank"
+                                        rel="noopener"
+                                        size="x-small"
+                                        variant="tonal"
+                                        prepend-icon="mdi-file-document-outline"
+                                      >
+                                        {{ link.demoFileLabel ?? 'Demo reference' }}
+                                      </VBtn>
+                                      <span class="text-caption text-medium-emphasis">
+                                        {{ link.demoPageRef ?? link.usageNote ?? 'Demo reference' }}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </template>
+                                <VAlert v-else type="warning" variant="tonal" density="compact">
+                                  Legacy reference: {{ card.maintenanceDataRef }} /
+                                  {{ card.maintenanceDataRevision }}
+                                </VAlert>
+                              </div>
+                            </VCol>
+
+                            <VCol cols="12" md="7">
+                              <div class="instruction-grid">
+                                <div class="instruction-block">
+                                  <div class="instruction-block__title">Prasyarat</div>
+                                  <ul>
+                                    <li
+                                      v-for="item in listOrFallback(card.prerequisites)"
+                                      :key="item"
+                                    >
+                                      {{ item }}
+                                    </li>
+                                  </ul>
+                                </div>
+                                <div class="instruction-block">
+                                  <div class="instruction-block__title">Safety caution</div>
+                                  <ul>
+                                    <li
+                                      v-for="item in listOrFallback(card.safetyCautions)"
+                                      :key="item"
+                                    >
+                                      {{ item }}
+                                    </li>
+                                  </ul>
+                                </div>
+                                <div class="instruction-block">
+                                  <div class="instruction-block__title">Langkah kerja</div>
+                                  <ol>
+                                    <li v-for="item in listOrFallback(card.workSteps)" :key="item">
+                                      {{ item }}
+                                    </li>
+                                  </ol>
+                                </div>
+                                <div class="instruction-block">
+                                  <div class="instruction-block__title">Acceptance criteria</div>
+                                  <ul>
+                                    <li
+                                      v-for="item in listOrFallback(card.acceptanceCriteria)"
+                                      :key="item"
+                                    >
+                                      {{ item }}
+                                    </li>
+                                  </ul>
+                                </div>
+                                <div class="instruction-block">
+                                  <div class="instruction-block__title">Bukti wajib</div>
+                                  <ul>
+                                    <li
+                                      v-for="item in listOrFallback(card.requiredEvidence)"
+                                      :key="item"
+                                    >
+                                      {{ item }}
+                                    </li>
+                                  </ul>
+                                </div>
+                                <div class="instruction-block">
+                                  <div class="instruction-block__title">Planning context</div>
+                                  <VList density="compact" class="bg-transparent pa-0">
+                                    <VListItem
+                                      title="Skill / license"
+                                      :subtitle="displayJobCardValue(card.skillRequirement)"
+                                    />
+                                    <VListItem
+                                      title="Dependency"
+                                      :subtitle="dependencyLabels(card).join(', ')"
+                                    />
+                                  </VList>
+                                </div>
+                              </div>
+
+                              <div class="instruction-block mt-3">
+                                <div class="instruction-block__title">
+                                  Resource terkait Job Card
+                                </div>
+                                <div class="resource-summary-row">
+                                  <VChip size="small" variant="tonal">
+                                    Material {{ materialForCard(card).length }}
+                                  </VChip>
+                                  <VChip size="small" variant="tonal">
+                                    Tool {{ toolsForCard(card).length }}
+                                  </VChip>
+                                  <VChip size="small" variant="tonal">
+                                    Personnel {{ personnelForCard(card).length }}
+                                  </VChip>
+                                  <VChip
+                                    v-if="assignmentsForCard(card).length"
+                                    color="success"
+                                    size="small"
+                                    variant="tonal"
+                                  >
+                                    Assigned {{ assignmentsForCard(card).length }}
+                                  </VChip>
+                                </div>
+                              </div>
+                            </VCol>
+                          </VRow>
+                        </div>
                         <VRow class="mt-2">
                           <VCol cols="12" md="3">
                             <div class="text-caption text-medium-emphasis">Pelaksana</div>
@@ -2977,6 +3356,78 @@ watch(
                         </div>
 
                         <VDivider class="my-4" />
+                        <div
+                          v-if="canSignCard(card) && workForms[card.id]"
+                          class="job-card-action-panel mb-4"
+                        >
+                          <div class="d-flex flex-wrap align-start justify-space-between ga-3 mb-3">
+                            <div>
+                              <div class="text-overline text-primary">Pengesahan pekerjaan</div>
+                              <div class="text-subtitle-2 font-weight-bold">
+                                Pernyataan penyelesaian untuk {{ card.cardNumber }}
+                              </div>
+                              <div class="text-body-2 text-medium-emphasis">
+                                Pernyataan ini hanya berlaku untuk Job Card yang sedang dibuka.
+                              </div>
+                            </div>
+                            <VChip color="primary" size="small" variant="tonal">
+                              {{ ui.label(card.status) }}
+                            </VChip>
+                          </div>
+                          <VRow>
+                            <VCol cols="12" md="5">
+                              <VSelect
+                                v-model="workForms[card.id].certifyingLicenseNumber"
+                                label="Lisensi teknisi untuk job card ini"
+                                :items="signerLicenses"
+                                item-value="licenseNumber"
+                                :item-title="signerLicenseTitle"
+                                density="compact"
+                                :loading="selectorsPending"
+                                no-data-text="Tidak ada lisensi untuk aktor aktif"
+                                variant="outlined"
+                              />
+                              <VAlert type="success" variant="tonal" density="compact">
+                                {{
+                                  authorizationSummary(
+                                    `Pengesahan pekerjaan ${card.cardNumber}`,
+                                    workForms[card.id].certifyingLicenseNumber
+                                  )
+                                }}
+                              </VAlert>
+                            </VCol>
+                            <VCol cols="12" md="7">
+                              <VTextarea
+                                v-model="workForms[card.id].statement"
+                                label="Pernyataan penyelesaian pekerjaan"
+                                :placeholder="workSignoffPlaceholder(card)"
+                                rows="3"
+                                auto-grow
+                                density="compact"
+                                variant="outlined"
+                              />
+                            </VCol>
+                          </VRow>
+                          <div class="d-flex flex-wrap align-center ga-2">
+                            <VAlert
+                              type="info"
+                              variant="tonal"
+                              density="compact"
+                              class="flex-grow-1"
+                            >
+                              Pemeriksaan independen tetap dicatat terpisah oleh personel berwenang
+                              yang berbeda.
+                            </VAlert>
+                            <VBtn
+                              color="primary"
+                              :disabled="immutablePackage || !canSubmitWork(card)"
+                              :loading="actionLoading === `sign-${card.id}`"
+                              @click="signWork(card)"
+                            >
+                              Sahkan pekerjaan {{ card.cardNumber }}
+                            </VBtn>
+                          </div>
+                        </div>
                         <div class="d-flex flex-wrap ga-2">
                           <VBtn
                             v-if="canWork && card.status === 'READY'"
@@ -2986,16 +3437,6 @@ watch(
                             @click="start(card)"
                           >
                             Mulai pekerjaan
-                          </VBtn>
-                          <VBtn
-                            v-if="canSignCard(card)"
-                            size="small"
-                            color="primary"
-                            :disabled="immutablePackage || !canSubmitWork"
-                            :loading="actionLoading === `sign-${card.id}`"
-                            @click="signWork(card)"
-                          >
-                            Sahkan pekerjaan
                           </VBtn>
                           <VBtn
                             v-if="canInspectCard(card)"
@@ -3054,6 +3495,160 @@ watch(
                     v-model="jobCardForm.maintenanceDataRevision"
                     label="Revision snapshot"
                   />
+                  <VSelect
+                    v-model="jobCardForm.approvedDataRevisionId"
+                    label="Dokumen kerja demo"
+                    :items="approvedDataRevisionItems"
+                    item-title="title"
+                    item-value="value"
+                    clearable
+                    variant="outlined"
+                    density="compact"
+                    no-data-text="Belum ada approved data demo"
+                  />
+                  <VExpansionPanels v-model="jobCardInstructionPanel" class="mb-3">
+                    <VExpansionPanel value="instruction">
+                      <VExpansionPanelTitle>Detail instruksi demo</VExpansionPanelTitle>
+                      <VExpansionPanelText>
+                        <VRow>
+                          <VCol cols="12" md="6">
+                            <VTextField
+                              v-model="jobCardForm.ataChapter"
+                              label="ATA chapter"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12" md="6">
+                            <VTextField
+                              v-model="jobCardForm.aircraftArea"
+                              label="Area pesawat"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12" md="6">
+                            <VTextField
+                              v-model="jobCardForm.systemName"
+                              label="System"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12" md="6">
+                            <VTextField
+                              v-model="jobCardForm.componentName"
+                              label="Component"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12" md="6">
+                            <VTextField
+                              v-model="jobCardForm.componentPosition"
+                              label="Position"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12" md="6">
+                            <VTextField
+                              v-model="jobCardForm.accessPanel"
+                              label="Access panel"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12" md="6">
+                            <VTextField
+                              v-model.number="jobCardForm.estimatedManHours"
+                              label="Estimated MH"
+                              type="number"
+                              min="0"
+                              step="0.25"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12" md="6">
+                            <VSelect
+                              v-model="jobCardForm.releaseImpact"
+                              label="Release impact"
+                              :items="[
+                                { title: 'Memblokir rilis', value: 'BLOCKS_RELEASE' },
+                                { title: 'Advisory', value: 'ADVISORY' },
+                                { title: 'Tidak berdampak rilis', value: 'NO_RELEASE_IMPACT' }
+                              ]"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12">
+                            <VTextField
+                              v-model="jobCardForm.skillRequirement"
+                              label="Skill / license requirement"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12">
+                            <VTextarea
+                              v-model="jobCardForm.prerequisitesText"
+                              label="Prasyarat"
+                              rows="2"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12">
+                            <VTextarea
+                              v-model="jobCardForm.safetyCautionsText"
+                              label="Safety caution"
+                              rows="2"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12">
+                            <VTextarea
+                              v-model="jobCardForm.workStepsText"
+                              label="Langkah kerja"
+                              rows="3"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12">
+                            <VTextarea
+                              v-model="jobCardForm.acceptanceCriteriaText"
+                              label="Acceptance criteria"
+                              rows="2"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12">
+                            <VTextarea
+                              v-model="jobCardForm.requiredEvidenceText"
+                              label="Bukti wajib"
+                              rows="2"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                          <VCol cols="12">
+                            <VTextarea
+                              v-model="jobCardForm.dependencyJobCardIdsText"
+                              label="Dependency Job Card ID / number"
+                              rows="2"
+                              density="compact"
+                              variant="outlined"
+                            />
+                          </VCol>
+                        </VRow>
+                      </VExpansionPanelText>
+                    </VExpansionPanel>
+                  </VExpansionPanels>
                   <VSwitch
                     v-model="jobCardForm.mandatoryFlag"
                     label="Pekerjaan wajib"
@@ -3074,31 +3669,6 @@ watch(
                   >
                     Tambah kartu kerja
                   </VBtn>
-                </VCardText>
-              </VCard>
-
-              <VCard border class="mb-4">
-                <VCardTitle>Pernyataan tindakan</VCardTitle>
-                <VCardText>
-                  <VSelect
-                    v-model="workLicenseNumber"
-                    label="Lisensi teknisi"
-                    :items="signerLicenses"
-                    item-value="licenseNumber"
-                    :item-title="signerLicenseTitle"
-                    density="compact"
-                    :loading="selectorsPending"
-                    no-data-text="Tidak ada lisensi untuk aktor aktif"
-                    variant="outlined"
-                  />
-                  <VAlert type="success" variant="tonal" density="compact" class="mb-3">
-                    {{ authorizationSummary('Pengesahan pekerjaan teknisi', workLicenseNumber) }}
-                  </VAlert>
-                  <VTextarea v-model="workStatement" label="Pernyataan teknisi" rows="3" />
-                  <VAlert type="info" variant="tonal" density="compact">
-                    Pemeriksaan independen akan ditolak oleh backend bila dilakukan oleh teknisi
-                    yang mengesahkan pekerjaan.
-                  </VAlert>
                 </VCardText>
               </VCard>
 
@@ -3529,6 +4099,7 @@ watch(
                     :color="
                       workPackage.aircraftTechnicalEligibility === 'BLOCKED' ? 'error' : 'warning'
                     "
+                    class="flex justify-center place-items-center"
                     variant="outlined"
                   >
                     {{ nonRoutineContext.technicalState }}
@@ -4298,7 +4869,6 @@ watch(
           <VDialog
             v-model="auditPackDialog"
             max-width="1320"
-            scrollable
             aria-label="Rekam Teknis Work Package"
           >
             <VCard class="technical-record-card">
@@ -6263,6 +6833,89 @@ watch(
   padding: 14px;
 }
 
+.job-card-instruction {
+  border: 1px solid rgba(var(--v-theme-primary), 0.22);
+  border-left: 4px solid rgb(var(--v-theme-primary));
+  border-radius: 6px;
+  background: rgba(var(--v-theme-primary), 0.035);
+  padding: 14px;
+}
+
+.job-card-instruction__header,
+.approved-data-link,
+.resource-summary-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.job-card-instruction__header,
+.approved-data-link {
+  justify-content: space-between;
+}
+
+.instruction-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.instruction-block {
+  border: 1px solid var(--mro-border);
+  border-radius: 6px;
+  background: rgb(var(--v-theme-surface));
+  padding: 10px 12px;
+}
+
+.instruction-block__title {
+  margin-bottom: 6px;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.instruction-block ul,
+.instruction-block ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.instruction-block li {
+  margin-bottom: 4px;
+  line-height: 1.35;
+}
+
+.approved-data-link {
+  border-bottom: 1px solid var(--mro-border);
+  padding: 8px 0;
+}
+
+.approved-data-link:last-child {
+  border-bottom: 0;
+}
+
+.resource-summary-row {
+  flex-wrap: wrap;
+}
+
+.job-card-action-panel {
+  border: 1px solid rgba(var(--v-theme-primary), 0.28);
+  border-left: 4px solid rgb(var(--v-theme-primary));
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--v-theme-primary), 0.06),
+    rgb(var(--v-theme-surface)) 38%
+  );
+  padding: 14px;
+}
+
+.job-card-action-panel :deep(.v-btn) {
+  min-height: 40px;
+  white-space: normal;
+}
+
 .readiness-card {
   min-height: 180px;
   padding: 14px;
@@ -6702,7 +7355,6 @@ watch(
 }
 
 .non-routine-body {
-  display: grid;
   gap: 18px;
 }
 
@@ -6805,6 +7457,10 @@ watch(
   .non-routine-impact-preview {
     grid-template-columns: 1fr 1fr;
   }
+
+  .instruction-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -6828,6 +7484,8 @@ watch(
   }
 
   .non-routine-header,
+  .job-card-instruction__header,
+  .approved-data-link,
   .non-routine-actions,
   .non-routine-sync {
     align-items: stretch;

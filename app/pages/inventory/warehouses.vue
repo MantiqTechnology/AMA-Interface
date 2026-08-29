@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { InventoryPartDto, InventoryWarehouseDto } from '#shared/features/inventory';
 import type { StationOption } from '#shared/features/operations/stations';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryEmptyState from '../../features/inventory/InventoryEmptyState.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { can } = useAuthorization();
@@ -77,7 +80,10 @@ async function createWarehouse() {
     dialog.value = false;
     await refresh();
   } catch (value) {
-    actionError.value = errorMessage(value, 'Warehouse could not be created');
+    actionError.value = errorMessage(
+      value,
+      'Gudang tidak dapat dibuat. Periksa station, kode gudang, dan bin.'
+    );
   } finally {
     saving.value = false;
   }
@@ -90,7 +96,10 @@ async function saveReorder() {
     await fetchApi('/api/inventory/reorder-rules', { method: 'POST', body: reorder });
     reorderDialog.value = false;
   } catch (value) {
-    actionError.value = errorMessage(value, 'Reorder rule could not be saved');
+    actionError.value = errorMessage(
+      value,
+      'Reorder rule tidak dapat disimpan. Periksa part dan batas stok.'
+    );
   } finally {
     saving.value = false;
   }
@@ -98,48 +107,44 @@ async function saveReorder() {
 </script>
 
 <template>
-  <InventoryShell title="Warehouses & Bins">
+  <InventoryShell title="Gudang & Bin">
     <template #actions>
       <DsTooltipIconButton
         v-if="can('inventory.catalog.manage').allowed"
         color="primary"
         icon="mdi-plus"
-        tooltip="Add warehouse"
+        tooltip="Tambah gudang"
         variant="flat"
         @click="resetWarehouse"
       />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh warehouses"
+        tooltip="Perbarui gudang"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
-    <VAlert v-if="error" class="mb-4" type="error" variant="tonal">
-      Warehouses could not be loaded.
+    <VAlert v-if="error" aria-live="polite" class="mb-4" type="error" variant="tonal">
+      Gudang tidak dapat dimuat. Perbarui halaman lalu coba lagi.
     </VAlert>
 
     <VRow>
       <VCol v-for="warehouse in data ?? []" :key="warehouse.id" cols="12" lg="6">
-        <VCard border height="100%">
-          <VCardTitle class="d-flex align-center">
-            <VIcon class="me-2" icon="mdi-warehouse" />
-            <div>
-              <div class="text-subtitle-1 font-weight-bold">{{ warehouse.warehouseCode }}</div>
-              <div class="text-caption text-medium-emphasis">
-                {{ warehouse.stationCode }} · {{ warehouse.warehouseName }}
-              </div>
-            </div>
-            <VSpacer />
+        <InventoryPanel
+          height="100%"
+          icon="mdi-warehouse"
+          :subtitle="`${warehouse.stationCode} · ${warehouse.warehouseName}`"
+          :title="warehouse.warehouseCode"
+        >
+          <template #actions>
             <DsTooltipIconButton
               v-if="can('inventory.catalog.manage').allowed"
               icon="mdi-bell-cog-outline"
-              tooltip="Configure reorder rule"
+              tooltip="Atur reorder rule"
               variant="text"
               @click="openReorder(warehouse)"
             />
-          </VCardTitle>
-          <VDivider />
+          </template>
           <VList density="compact">
             <VListItem
               v-for="bin in warehouse.bins"
@@ -159,7 +164,7 @@ async function saveReorder() {
               <template #append><DsStatusBadge :value="bin.binType" /></template>
             </VListItem>
           </VList>
-        </VCard>
+        </InventoryPanel>
       </VCol>
       <template v-if="pending">
         <VCol v-for="index in 2" :key="index" cols="12" lg="6">
@@ -167,17 +172,19 @@ async function saveReorder() {
         </VCol>
       </template>
       <VCol v-if="!pending && !(data?.length ?? 0)" cols="12">
-        <VAlert color="info" variant="tonal">
-          No warehouses are available in this station scope.
-        </VAlert>
+        <InventoryEmptyState
+          description="Gudang akan muncul setelah station scope memiliki warehouse aktif."
+          icon="mdi-warehouse-off"
+          title="Belum ada gudang dalam scope ini"
+        />
       </VCol>
     </VRow>
 
     <VDialog v-model="dialog" max-width="700" persistent>
       <VCard>
-        <VCardTitle>Add warehouse</VCardTitle><VDivider />
+        <VCardTitle>Tambah Gudang</VCardTitle><VDivider />
         <VCardText>
-          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
+          <VAlert v-if="actionError" aria-live="polite" class="mb-4" type="error" variant="tonal">
             {{ actionError }}
           </VAlert>
           <VRow dense>
@@ -192,17 +199,17 @@ async function saveReorder() {
               />
             </VCol>
             <VCol cols="12" md="4">
-              <VTextField v-model="form.warehouseCode" label="Warehouse code" variant="outlined" />
+              <VTextField v-model="form.warehouseCode" label="Kode gudang" variant="outlined" />
             </VCol>
             <VCol cols="12" md="4">
-              <VTextField v-model="form.warehouseName" label="Warehouse name" variant="outlined" />
+              <VTextField v-model="form.warehouseName" label="Nama gudang" variant="outlined" />
             </VCol>
           </VRow>
           <div class="mb-2 d-flex align-center">
-            <div class="text-subtitle-2 font-weight-bold">Bins</div>
+            <div class="text-subtitle-2 font-weight-bold">Bin</div>
             <VSpacer /><DsTooltipIconButton
               icon="mdi-plus"
-              tooltip="Add bin"
+              tooltip="Tambah bin"
               size="small"
               variant="tonal"
               @click="addBin"
@@ -210,16 +217,16 @@ async function saveReorder() {
           </div>
           <VRow v-for="(bin, index) in form.bins" :key="index" dense>
             <VCol cols="12" md="3">
-              <VTextField v-model="bin.binCode" label="Bin code" variant="outlined" />
+              <VTextField v-model="bin.binCode" label="Kode bin" variant="outlined" />
             </VCol>
             <VCol cols="12" md="4">
-              <VTextField v-model="bin.binName" label="Bin name" variant="outlined" />
+              <VTextField v-model="bin.binName" label="Nama bin" variant="outlined" />
             </VCol>
             <VCol cols="10" md="4">
               <VSelect
                 v-model="bin.binType"
                 :items="['USABLE', 'QUARANTINE', 'REPAIR', 'TRANSIT']"
-                label="Type"
+                label="Tipe"
                 variant="outlined"
               />
             </VCol>
@@ -227,34 +234,27 @@ async function saveReorder() {
               <DsTooltipIconButton
                 :disabled="form.bins.length === 1"
                 icon="mdi-delete-outline"
-                tooltip="Remove bin"
+                tooltip="Hapus bin"
                 variant="text"
                 @click="form.bins.splice(index, 1)"
               />
             </VCol>
           </VRow>
         </VCardText>
-        <VCardActions>
-          <VSpacer /><VBtn
-            :disabled="saving"
-            text="Cancel"
-            variant="text"
-            @click="dialog = false"
-          /><VBtn
-            :loading="saving"
-            prepend-icon="mdi-content-save-outline"
-            text="Create warehouse"
-            @click="createWarehouse"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="saving"
+          submit-text="Buat gudang"
+          @cancel="dialog = false"
+          @submit="createWarehouse"
+        />
       </VCard>
     </VDialog>
 
     <VDialog v-model="reorderDialog" max-width="560" persistent>
       <VCard>
-        <VCardTitle>Configure reorder rule</VCardTitle><VDivider />
+        <VCardTitle>Atur Reorder Rule</VCardTitle><VDivider />
         <VCardText>
-          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
+          <VAlert v-if="actionError" aria-live="polite" class="mb-4" type="error" variant="tonal">
             {{ actionError }}
           </VAlert>
           <VSelect
@@ -297,7 +297,7 @@ async function saveReorder() {
             <VCol cols="12" sm="6">
               <VTextField
                 v-model.number="reorder.leadTimeDays"
-                label="Lead time days"
+                label="Lead time hari"
                 min="0"
                 type="number"
                 variant="outlined"
@@ -305,19 +305,12 @@ async function saveReorder() {
             </VCol>
           </VRow>
         </VCardText>
-        <VCardActions>
-          <VSpacer /><VBtn
-            :disabled="saving"
-            text="Cancel"
-            variant="text"
-            @click="reorderDialog = false"
-          /><VBtn
-            :loading="saving"
-            prepend-icon="mdi-content-save-outline"
-            text="Save rule"
-            @click="saveReorder"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="saving"
+          submit-text="Simpan rule"
+          @cancel="reorderDialog = false"
+          @submit="saveReorder"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

@@ -148,7 +148,6 @@ const maintenanceDemoV2ReadPermissions = [
   'maintenance.approved_data.read',
   'maintenance.due.read',
   'maintenance.tooling.read',
-  'maintenance.quality.read',
   'maintenance.audit_pack.export'
 ] as const;
 
@@ -187,11 +186,6 @@ const maintenanceReleasePermissions = [
   ...maintenanceReadPermissions,
   'maintenance.jobcard.inspect',
   'maintenance.release.issue'
-] as const;
-
-const maintenanceQualityPermissions = [
-  ...maintenanceReadPermissions,
-  'maintenance.quality.manage'
 ] as const;
 
 export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
@@ -440,8 +434,7 @@ export const demoRolePermissions: Record<DemoRole, readonly string[]> = {
     'aircraft.deferment.manage',
     'maintenance.material.request',
     ...maintenanceControlPermissions,
-    ...maintenanceExecutionPermissions,
-    ...maintenanceQualityPermissions
+    ...maintenanceExecutionPermissions
   ],
   'Maintenance Technician': [
     'capability.preview.read',

@@ -63,7 +63,7 @@ test('MRO golden path issues technical release from authoritative work-package d
 
   await page.goto('/maintenance', { waitUntil: 'networkidle' });
   await expect(page.getByRole('heading', { name: 'Pusat Kendali MRO' })).toBeVisible();
-  await expect(page.getByText('Starter-generator indication rectification')).toBeVisible();
+  await expect(page.getByText('Work Package by Priority')).toBeVisible();
 
   await page.goto('/maintenance/work-packages/mwp-mrov1-release-ready', {
     waitUntil: 'networkidle'
@@ -76,6 +76,31 @@ test('MRO golden path issues technical release from authoritative work-package d
     page.getByText('Starter-generator indication rectification', { exact: true }).first()
   ).toBeVisible();
   await page.getByRole('button', { name: /Rectify starter-generator indication wiring/u }).click();
+  const jobCardPanel = page.locator('.v-expansion-panel').filter({
+    hasText: 'Rectify starter-generator indication wiring'
+  });
+  await expect(jobCardPanel.getByText('Work instruction demo')).toBeVisible();
+  await expect(jobCardPanel.getByText('Area pesawat')).toBeVisible();
+  await expect(jobCardPanel.getByText('ATA 24-30-00').first()).toBeVisible();
+  await expect(
+    jobCardPanel.getByText('Electrical power / Starter-generator indication wiring')
+  ).toBeVisible();
+  await expect(jobCardPanel.getByText('Dokumen kerja')).toBeVisible();
+  await expect(jobCardPanel.getByRole('link', { name: 'AMM reference extract' })).toHaveAttribute(
+    'href',
+    '/mro/reference/amm-c208b-rev-a.txt'
+  );
+  await expect(jobCardPanel.getByText('Langkah kerja')).toBeVisible();
+  await expect(
+    jobCardPanel.getByText('Inspect starter-generator indication wiring and terminals.')
+  ).toBeVisible();
+  await expect(jobCardPanel.getByText('Acceptance criteria')).toBeVisible();
+  await expect(
+    jobCardPanel.getByText('Starter-generator indication remains stable during operational check.')
+  ).toBeVisible();
+  await expect(jobCardPanel.getByText('Bukti wajib')).toBeVisible();
+  await expect(jobCardPanel.getByText('Independent inspection record.')).toBeVisible();
+  await expect(jobCardPanel.getByText('Resource terkait Job Card')).toBeVisible();
   await expect(page.getByText('Pemeriksaan independen lulus').first()).toBeVisible();
   await expect(page.getByText('Seluruh pekerjaan wajib selesai')).toBeVisible();
 

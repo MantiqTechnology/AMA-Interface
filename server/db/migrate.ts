@@ -2221,6 +2221,54 @@ export function runMigrations(sqlite: Database.Database) {
       'source_non_routine_finding_id',
       'TEXT REFERENCES maintenance_non_routine_findings(id)'
     );
+    ensureColumn(sqlite, 'maintenance_job_cards', 'ata_chapter', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_job_cards', 'aircraft_area', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_job_cards', 'system_name', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_job_cards', 'component_name', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_job_cards', 'component_position', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_job_cards', 'access_panel', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_job_cards', 'estimated_man_hours', 'REAL NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'maintenance_job_cards', 'skill_requirement', 'TEXT');
+    ensureColumn(
+      sqlite,
+      'maintenance_job_cards',
+      'release_impact',
+      "TEXT NOT NULL DEFAULT 'BLOCKS_RELEASE'"
+    );
+    ensureColumn(sqlite, 'maintenance_job_cards', 'work_steps_json', "TEXT NOT NULL DEFAULT '[]'");
+    ensureColumn(
+      sqlite,
+      'maintenance_job_cards',
+      'acceptance_criteria_json',
+      "TEXT NOT NULL DEFAULT '[]'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_job_cards',
+      'required_evidence_json',
+      "TEXT NOT NULL DEFAULT '[]'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_job_cards',
+      'safety_cautions_json',
+      "TEXT NOT NULL DEFAULT '[]'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_job_cards',
+      'prerequisites_json',
+      "TEXT NOT NULL DEFAULT '[]'"
+    );
+    ensureColumn(
+      sqlite,
+      'maintenance_job_cards',
+      'dependency_job_card_ids_json',
+      "TEXT NOT NULL DEFAULT '[]'"
+    );
+    ensureColumn(sqlite, 'maintenance_approved_data_revisions', 'demo_file_label', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_approved_data_revisions', 'demo_file_url', 'TEXT');
+    ensureColumn(sqlite, 'maintenance_approved_data_revisions', 'demo_page_ref', 'TEXT');
     ensureColumn(
       sqlite,
       'maintenance_work_packages',

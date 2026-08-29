@@ -3,24 +3,25 @@ defineProps<{
   title: string;
   eyebrow?: string;
   description?: string;
+  updatedAt?: string | null;
 }>();
 
 const route = useRoute();
 const tabs = [
-  { label: 'Overview', to: '/inventory', icon: 'mdi-view-dashboard-outline' },
-  { label: 'Stock', to: '/inventory/stock', icon: 'mdi-layers-triple-outline' },
+  { label: 'Ringkasan', to: '/inventory', icon: 'mdi-view-dashboard-outline' },
+  { label: 'Stok', to: '/inventory/stock', icon: 'mdi-layers-triple-outline' },
   { label: 'Kebutuhan MRO', to: '/inventory/maintenance-demand', icon: 'mdi-airplane-wrench' },
-  { label: 'Parts', to: '/inventory/parts', icon: 'mdi-cog-outline' },
-  { label: 'Warehouses', to: '/inventory/warehouses', icon: 'mdi-warehouse' },
-  { label: 'Quarantine', to: '/inventory/quarantine', icon: 'mdi-shield-alert-outline' },
+  { label: 'Katalog Part', to: '/inventory/parts', icon: 'mdi-cog-outline' },
+  { label: 'Gudang & Bin', to: '/inventory/warehouses', icon: 'mdi-warehouse' },
+  { label: 'Karantina', to: '/inventory/quarantine', icon: 'mdi-shield-alert-outline' },
   { label: 'Tool Control', to: '/inventory/tools', icon: 'mdi-wrench-clock-outline' },
   { label: 'Core Returns', to: '/inventory/core-returns', icon: 'mdi-backup-restore' },
   { label: 'NavDB & Software', to: '/inventory/software-navdb', icon: 'mdi-satellite-variant' },
   { label: 'Fly Away Kits', to: '/inventory/fly-away-kits', icon: 'mdi-briefcase-variant-outline' },
-  { label: 'Requests', to: '/inventory/purchase-requests', icon: 'mdi-clipboard-text-outline' },
-  { label: 'Orders', to: '/inventory/purchase-orders', icon: 'mdi-file-sign' },
-  { label: 'Receipts', to: '/inventory/receipts', icon: 'mdi-truck-check-outline' },
-  { label: 'Movements', to: '/inventory/movements', icon: 'mdi-swap-horizontal' },
+  { label: 'Permintaan', to: '/inventory/purchase-requests', icon: 'mdi-clipboard-text-outline' },
+  { label: 'Order', to: '/inventory/purchase-orders', icon: 'mdi-file-sign' },
+  { label: 'Penerimaan', to: '/inventory/receipts', icon: 'mdi-truck-check-outline' },
+  { label: 'Pergerakan', to: '/inventory/movements', icon: 'mdi-swap-horizontal' },
   { label: 'Repairables', to: '/inventory/repairables', icon: 'mdi-wrench-cog-outline' }
 ];
 
@@ -35,8 +36,9 @@ const activeTab = computed(() => {
     <DsOperationalPageHeader
       class="mb-4"
       :description="description"
-      :eyebrow="eyebrow ?? 'Inventory / Spare Parts'"
+      :eyebrow="eyebrow ?? 'Inventory / Spare Part'"
       :title="title"
+      :updated-at="updatedAt"
     >
       <template #actions><slot name="actions" /></template>
     </DsOperationalPageHeader>

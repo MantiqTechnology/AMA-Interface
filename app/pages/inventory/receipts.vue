@@ -5,7 +5,10 @@ import type {
   InventoryWarehouseDto,
   PurchaseOrderDto
 } from '#shared/features/inventory';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const { can } = useAuthorization();
 const { money, number, dateTime, errorMessage } = useInventoryUi();
@@ -151,7 +154,10 @@ async function postReceipt() {
     dialog.value = false;
     await Promise.all([refresh(), refreshOrders(), refreshStock()]);
   } catch (value) {
-    actionError.value = errorMessage(value, 'Goods receipt could not be posted');
+    actionError.value = errorMessage(
+      value,
+      'Penerimaan barang tidak dapat diposting. Periksa order, gudang, dan line.'
+    );
   } finally {
     saving.value = false;
   }
@@ -162,7 +168,10 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
   await fetchApi(`/api/inventory/movements/${receipt.movementId}/reverse`, {
     method: 'POST'
   }).catch((value) => {
-    actionError.value = errorMessage(value, 'Receipt reversal failed');
+    actionError.value = errorMessage(
+      value,
+      'Penerimaan tidak dapat dibalik. Pastikan layer biaya belum digunakan.'
+    );
     throw value;
   });
   await Promise.all([refresh(), refreshOrders()]);
@@ -170,35 +179,41 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
 </script>
 
 <template>
-  <InventoryShell title="Goods Receipts">
+  <InventoryShell title="Penerimaan Barang">
     <template #actions>
       <DsTooltipIconButton
         v-if="can('inventory.receive').allowed"
         color="primary"
         :disabled="!orderOptions.length"
         icon="mdi-plus"
-        tooltip="Post goods receipt"
+        tooltip="Posting penerimaan barang"
         variant="flat"
         @click="openCreate"
       />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh receipts"
+        tooltip="Perbarui penerimaan"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
-    <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{ actionError || 'Goods receipts could not be loaded.' }}
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Penerimaan barang tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
     </VAlert>
-    <VCard border>
+    <InventoryPanel title="Daftar Penerimaan Barang">
       <VDataTable
         :headers="[
-          { title: 'Receipt', key: 'receiptNumber' },
+          { title: 'Penerimaan', key: 'receiptNumber' },
           { title: 'Purchase Order', key: 'orderNumber' },
-          { title: 'Document', key: 'documentReference' },
-          { title: 'Received', key: 'receivedAt' },
-          { title: 'Value', key: 'totalBaseValueIdr', align: 'end' },
+          { title: 'Dokumen', key: 'documentReference' },
+          { title: 'Diterima', key: 'receivedAt' },
+          { title: 'Nilai', key: 'totalBaseValueIdr', align: 'end' },
           { title: 'Status', key: 'status' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
@@ -210,36 +225,36 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
         </template>
         <template #[`item.receivedAt`]="{ item }">{{ dateTime(item.receivedAt) }}</template>
         <template #[`item.totalBaseValueIdr`]="{ item }">
-          {{
-            can('inventory.valuation.read').allowed ? money(item.totalBaseValueIdr) : 'Restricted'
-          }}
+          {{ can('inventory.valuation.read').allowed ? money(item.totalBaseValueIdr) : 'Terbatas' }}
         </template>
         <template #[`item.status`]="{ item }"><DsStatusBadge :value="item.status" /></template>
         <template #[`item.actions`]="{ item }">
-          <DsConfirmIconButton
-            v-if="can('inventory.adjust').allowed && item.status === 'POSTED'"
-            :action="() => reverseReceipt(item)"
-            confirm-icon="mdi-undo-variant"
-            confirm-text="Reverse receipt"
-            icon="mdi-undo-variant"
-            message="Reversal is only allowed while every received cost layer remains unconsumed."
-            title="Reverse goods receipt"
-            tone="danger"
-            tooltip="Reverse goods receipt"
-            variant="text"
-          />
+          <InventoryTableActions>
+            <DsConfirmIconButton
+              v-if="can('inventory.adjust').allowed && item.status === 'POSTED'"
+              :action="() => reverseReceipt(item)"
+              confirm-icon="mdi-undo-variant"
+              confirm-text="Balikkan penerimaan"
+              icon="mdi-undo-variant"
+              message="Reversal hanya bisa dilakukan saat semua layer biaya penerimaan belum digunakan."
+              title="Balikkan penerimaan barang"
+              tone="danger"
+              tooltip="Balikkan penerimaan"
+              variant="text"
+            />
+          </InventoryTableActions>
         </template>
         <template #no-data>
-          <div class="py-10 text-medium-emphasis">No receipts have been posted.</div>
+          <div class="py-10 text-medium-emphasis">Belum ada penerimaan barang yang diposting.</div>
         </template>
       </VDataTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog v-model="dialog" max-width="900" persistent scrollable>
       <VCard>
-        <VCardTitle>Post goods receipt</VCardTitle><VDivider />
+        <VCardTitle>Posting Penerimaan Barang</VCardTitle><VDivider />
         <VCardText>
-          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
+          <VAlert v-if="actionError" aria-live="polite" class="mb-4" type="error" variant="tonal">
             {{ actionError }}
           </VAlert>
           <VRow dense>
@@ -257,14 +272,14 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
                 item-title="warehouseCode"
                 item-value="id"
                 :items="warehouses ?? []"
-                label="Receiving warehouse"
+                label="Gudang penerima"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.receivedAt"
-                label="Received at"
+                label="Waktu diterima"
                 type="datetime-local"
                 variant="outlined"
               />
@@ -272,7 +287,7 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
             <VCol cols="12" md="6">
               <VTextField
                 v-model="form.documentReference"
-                label="Receipt document reference"
+                label="Referensi dokumen penerimaan"
                 variant="outlined"
               />
             </VCol>
@@ -283,7 +298,7 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
               <div class="text-subtitle-2 font-weight-bold">{{ line.partNumber }}</div>
               <VSpacer />
               <VChip v-if="line.shelfLifeDays" class="me-2" size="small" variant="tonal">
-                Shelf life {{ number(line.shelfLifeDays, 0) }} days
+                Shelf life {{ number(line.shelfLifeDays, 0) }} hari
               </VChip>
               <VChip size="small" variant="tonal">{{ line.trackingType }}</VChip>
             </div>
@@ -292,7 +307,7 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
                 <VTextField
                   v-model.number="line.quantity"
                   :hint="`Outstanding ${number(line.maximumQuantity)}`"
-                  label="Quantity"
+                  label="Jumlah"
                   :max="line.maximumQuantity"
                   min="1"
                   persistent-hint
@@ -304,18 +319,18 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
                 <VSelect
                   v-model="line.binId"
                   :items="binOptions"
-                  label="Destination bin"
+                  label="Bin tujuan"
                   variant="outlined"
                 />
               </VCol>
               <VCol v-if="line.trackingType !== 'QUANTITY'" cols="12" md="5">
-                <VTextField v-model="line.lotNumber" label="Lot number" variant="outlined" />
+                <VTextField v-model="line.lotNumber" label="Nomor lot" variant="outlined" />
               </VCol>
               <VCol v-if="line.trackingType === 'SERIAL'" cols="12">
                 <VTextarea
                   v-model="line.serialNumbersText"
-                  hint="One serial per line or comma separated"
-                  label="Serial numbers"
+                  hint="Satu nomor seri per baris atau dipisah koma"
+                  label="Nomor seri"
                   persistent-hint
                   rows="2"
                   variant="outlined"
@@ -326,7 +341,7 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
                   v-model="line.manufacturedAt"
                   prepend-icon=""
                   prepend-inner-icon="mdi-calendar"
-                  label="Manufactured date"
+                  label="Tanggal produksi"
                   variant="outlined"
                 />
               </VCol>
@@ -337,10 +352,10 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
                   prepend-inner-icon="mdi-calendar"
                   :hint="
                     line.shelfLifeDays
-                      ? `Default countdown starts from received date + ${number(line.shelfLifeDays, 0)} days`
+                      ? `Default countdown mulai dari tanggal diterima + ${number(line.shelfLifeDays, 0)} hari`
                       : undefined
                   "
-                  label="Expiry date"
+                  label="Tanggal expiry"
                   persistent-hint
                   variant="outlined"
                 />
@@ -348,7 +363,7 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
               <VCol v-if="line.certificateRequired" cols="12" md="4">
                 <VTextField
                   v-model="line.certificateReference"
-                  label="Certificate reference"
+                  label="Referensi sertifikat"
                   variant="outlined"
                 />
               </VCol>
@@ -359,26 +374,19 @@ async function reverseReceipt(receipt: GoodsReceiptDto) {
                   size="small"
                   variant="tonal"
                 >
-                  Verified part certificate required
+                  Sertifikat part wajib diverifikasi
                 </VChip>
               </VCol>
             </VRow>
           </div>
         </VCardText>
-        <VDivider />
-        <VCardActions>
-          <VSpacer /><VBtn
-            :disabled="saving"
-            text="Cancel"
-            variant="text"
-            @click="dialog = false"
-          /><VBtn
-            :loading="saving"
-            prepend-icon="mdi-package-down"
-            text="Post receipt"
-            @click="postReceipt"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="saving"
+          submit-icon="mdi-package-down"
+          submit-text="Posting penerimaan"
+          @cancel="dialog = false"
+          @submit="postReceipt"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

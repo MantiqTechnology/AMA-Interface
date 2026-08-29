@@ -1,0 +1,6 @@
+AMM C208B OLD REVISION - FICTIONAL SAMPLE REFERENCE
+
+This static file is a maintenance demo reference only. It is not approved maintenance data and is not valid for operational use.
+
+Reference section: 24-30-00 p. 3-6
+Task context: superseded starter-generator indication wiring reference.

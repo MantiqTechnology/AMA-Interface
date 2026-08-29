@@ -6,14 +6,32 @@ type Row = Record<string, string | number | null>;
 const authorizationNotice = 'Licence and PT AMA authorization verified.';
 const cessnaCaravanImageUrl = 'aircraft/Cessna-208-Caravan-PNC-0219-1.jpg';
 
+function list(values: string[]) {
+  return JSON.stringify(values);
+}
+
+function columnName(key: string) {
+  return key.replace(/[A-Z]/gu, (letter) => `_${letter.toLowerCase()}`);
+}
+
 function insertIgnore(sqlite: Database.Database, table: string, row: Row) {
   const keys = Object.keys(row);
-  const columns = keys.map((key) => key.replace(/[A-Z]/gu, (letter) => `_${letter.toLowerCase()}`));
+  const columns = keys.map(columnName);
   sqlite
     .prepare(
       `INSERT OR IGNORE INTO ${table} (${columns.join(', ')}) VALUES (${keys
         .map((key) => `@${key}`)
         .join(', ')})`
+    )
+    .run(row);
+}
+
+function updateColumns(sqlite: Database.Database, table: string, row: Row, keys: string[]) {
+  sqlite
+    .prepare(
+      `UPDATE ${table}
+       SET ${keys.map((key) => `${columnName(key)} = @${key}`).join(', ')}
+       WHERE id = @id`
     )
     .run(row);
 }
@@ -605,6 +623,39 @@ export function seedMroFoundationData(
         taskType: 'DEFECT_RECTIFICATION',
         maintenanceDataRef: 'AMM PAC750XL 77-30-00',
         maintenanceDataRevision: 'REV-MROV1-2026-08',
+        ataChapter: '77-30-00',
+        aircraftArea: 'Engine nacelle',
+        systemName: 'Engine indicating',
+        componentName: 'Sensor harness reference',
+        componentPosition: 'Forward engine bay',
+        accessPanel: 'ENG-RH-02',
+        estimatedManHours: 1.5,
+        skillRequirement: 'AME airframe/powerplant with engine indication scope',
+        releaseImpact: 'BLOCKS_RELEASE',
+        workStepsJson: list([
+          'Review pilot report and engine indication trend.',
+          'Inspect sensor harness routing and connector security.',
+          'Perform continuity check and restore connector locking.',
+          'Record operational check result before inspection.'
+        ]),
+        acceptanceCriteriaJson: list([
+          'No intermittent indication during ground run check.',
+          'Harness connector is secure and protected from chafing.',
+          'Independent inspection can verify the corrective action.'
+        ]),
+        requiredEvidenceJson: list([
+          'Connector condition photo after rectification.',
+          'Continuity or operational check result.',
+          'Technician sign-off statement.'
+        ]),
+        safetyCautionsJson: list([
+          'Confirm ignition and electrical power are isolated before harness work.'
+        ]),
+        prerequisitesJson: list([
+          'Aircraft parked and made safe for maintenance.',
+          'Referenced maintenance data reviewed by assigned technician.'
+        ]),
+        dependencyJobCardIdsJson: list([]),
         mandatoryFlag: 1,
         requiresIndependentInspection: 1,
         status: 'INSPECTION_REQUIRED',
@@ -621,6 +672,39 @@ export function seedMroFoundationData(
         taskType: 'DEFECT_RECTIFICATION',
         maintenanceDataRef: 'AMM C208B 24-30-00',
         maintenanceDataRevision: 'REV-MROV1-2026-08',
+        ataChapter: '24-30-00',
+        aircraftArea: 'LH engine bay',
+        systemName: 'Electrical power',
+        componentName: 'Starter-generator indication wiring',
+        componentPosition: 'Generator control circuit',
+        accessPanel: 'ENG-LH-01',
+        estimatedManHours: 2,
+        skillRequirement: 'AME electrical authorization with C208B scope',
+        releaseImpact: 'BLOCKS_RELEASE',
+        workStepsJson: list([
+          'Confirm aircraft battery isolation and warning tag.',
+          'Inspect starter-generator indication wiring and terminals.',
+          'Rectify loose terminal seating using approved data.',
+          'Carry out operational check and record the result.'
+        ]),
+        acceptanceCriteriaJson: list([
+          'Starter-generator indication remains stable during operational check.',
+          'Terminal seating and wire security meet approved data.',
+          'Required independent inspection is passed.'
+        ]),
+        requiredEvidenceJson: list([
+          'Before/after terminal seating photo.',
+          'Operational check result.',
+          'Independent inspection record.'
+        ]),
+        safetyCautionsJson: list([
+          'Do not energize the electrical system while terminals are exposed.'
+        ]),
+        prerequisitesJson: list([
+          'Aircraft grounded for maintenance.',
+          'Material and calibrated electrical test equipment available.'
+        ]),
+        dependencyJobCardIdsJson: list([]),
         mandatoryFlag: 1,
         requiresIndependentInspection: 1,
         status: 'READY_FOR_RELEASE_REVIEW',
@@ -637,6 +721,37 @@ export function seedMroFoundationData(
         taskType: 'DEFECT_RECTIFICATION',
         maintenanceDataRef: 'PTAMA-C208B-ELECT-33-40-MROV1',
         maintenanceDataRevision: 'REV-MROV1-2026-08',
+        ataChapter: '33-40-00',
+        aircraftArea: 'Left wing leading edge',
+        systemName: 'Exterior lighting',
+        componentName: 'Landing light circuit',
+        componentPosition: 'LH landing light assembly',
+        accessPanel: 'WING-LH-LL',
+        estimatedManHours: 1.25,
+        skillRequirement: 'AME electrical authorization',
+        releaseImpact: 'BLOCKS_RELEASE',
+        workStepsJson: list([
+          'Open landing light access panel and inspect wiring condition.',
+          'Correct connector seating and circuit protection routing.',
+          'Perform landing light operational check.',
+          'Prepare re-inspection package after corrective work.'
+        ]),
+        acceptanceCriteriaJson: list([
+          'Landing light operates without intermittent failure.',
+          'Wiring is secured clear of chafing points.',
+          'Re-inspection result is passed.'
+        ]),
+        requiredEvidenceJson: list([
+          'Access panel and connector photo.',
+          'Operational check result.',
+          'Re-inspection pass record.'
+        ]),
+        safetyCautionsJson: list(['Keep lighting circuit de-energized while connector is open.']),
+        prerequisitesJson: list([
+          'Aircraft positioned in safe maintenance bay.',
+          'Replacement consumables and lighting test setup available.'
+        ]),
+        dependencyJobCardIdsJson: list([]),
         mandatoryFlag: 1,
         requiresIndependentInspection: 1,
         status: 'READY_FOR_RELEASE_REVIEW',
@@ -653,6 +768,39 @@ export function seedMroFoundationData(
         taskType: 'SCHEDULED_TASK',
         maintenanceDataRef: 'AMP PC6 MROV1 05-20-00',
         maintenanceDataRevision: 'REV-MROV1-2026-08',
+        ataChapter: '05-20-00',
+        aircraftArea: 'Airframe general',
+        systemName: 'Scheduled maintenance programme',
+        componentName: '100 FH inspection items',
+        componentPosition: 'Aircraft general zones',
+        accessPanel: 'Multiple inspection panels',
+        estimatedManHours: 3,
+        skillRequirement: 'AME scheduled inspection authorization',
+        releaseImpact: 'BLOCKS_RELEASE',
+        workStepsJson: list([
+          'Review due-control status and inspection package.',
+          'Perform scheduled inspection items listed in AMP reference.',
+          'Record findings or confirm no defects observed.',
+          'Complete maintenance record review for technical release.'
+        ]),
+        acceptanceCriteriaJson: list([
+          'All mandatory inspection items are recorded.',
+          'No open finding remains unresolved.',
+          'Maintenance record is ready for release review.'
+        ]),
+        requiredEvidenceJson: list([
+          'Completed inspection checklist reference.',
+          'Finding/no-finding statement.',
+          'Maintenance record review sign-off.'
+        ]),
+        safetyCautionsJson: list([
+          'Use access equipment and panel control procedure for general inspection.'
+        ]),
+        prerequisitesJson: list([
+          'Due-control package reviewed.',
+          'Aircraft available in maintenance custody.'
+        ]),
+        dependencyJobCardIdsJson: list([]),
         mandatoryFlag: 1,
         requiresIndependentInspection: 0,
         status: 'READY_FOR_RELEASE_REVIEW',
@@ -663,6 +811,23 @@ export function seedMroFoundationData(
       }
     ] as const) {
       insertIgnore(sqlite, 'maintenance_job_cards', card);
+      updateColumns(sqlite, 'maintenance_job_cards', card, [
+        'ataChapter',
+        'aircraftArea',
+        'systemName',
+        'componentName',
+        'componentPosition',
+        'accessPanel',
+        'estimatedManHours',
+        'skillRequirement',
+        'releaseImpact',
+        'workStepsJson',
+        'acceptanceCriteriaJson',
+        'requiredEvidenceJson',
+        'safetyCautionsJson',
+        'prerequisitesJson',
+        'dependencyJobCardIdsJson'
+      ]);
     }
 
     for (const signoff of [
@@ -1135,6 +1300,9 @@ export function seedMroFoundationData(
         effectiveDate: context.date(-30),
         status: 'ACTIVE',
         supersededByRevisionId: null,
+        demoFileLabel: 'AMM reference extract',
+        demoFileUrl: '/mro/reference/amm-c208b-rev-a.txt',
+        demoPageRef: '24-30-00 p. 4-7',
         notes: 'Fictional active revision for MRO-v2 job-card linking.'
       },
       {
@@ -1144,6 +1312,9 @@ export function seedMroFoundationData(
         effectiveDate: context.date(-180),
         status: 'SUPERSEDED',
         supersededByRevisionId: 'mdata-rev-amm-c208-active',
+        demoFileLabel: 'Superseded AMM reference extract',
+        demoFileUrl: '/mro/reference/amm-c208b-rev-old.txt',
+        demoPageRef: '24-30-00 p. 3-6',
         notes: 'Fictional superseded revision used to show obsolete-data blockers.'
       },
       {
@@ -1153,6 +1324,9 @@ export function seedMroFoundationData(
         effectiveDate: context.date(-20),
         status: 'ACTIVE',
         supersededByRevisionId: null,
+        demoFileLabel: 'SRM reference extract',
+        demoFileUrl: '/mro/reference/srm-c208b-rev-a.txt',
+        demoPageRef: '51-10-00 p. 2',
         notes: 'Fictional SRM reference; not approved maintenance data.'
       },
       {
@@ -1162,6 +1336,9 @@ export function seedMroFoundationData(
         effectiveDate: context.date(-20),
         status: 'ACTIVE',
         supersededByRevisionId: null,
+        demoFileLabel: 'IPC reference extract',
+        demoFileUrl: '/mro/reference/ipc-c208b-rev-a.txt',
+        demoPageRef: '33-40-00 fig. 1',
         notes: 'Fictional IPC reference; not approved maintenance data.'
       }
     ] as const) {
@@ -1171,6 +1348,11 @@ export function seedMroFoundationData(
         createdAt: seedNow,
         updatedAt: seedNow
       });
+      updateColumns(sqlite, 'maintenance_approved_data_revisions', revision, [
+        'demoFileLabel',
+        'demoFileUrl',
+        'demoPageRef'
+      ]);
     }
 
     for (const link of [
@@ -1404,51 +1586,6 @@ export function seedMroFoundationData(
       validFrom: context.date(-30),
       validUntil: context.date(180),
       notes: 'Fictional AMO capability scope for M5 browser golden path. Not an approval record.',
-      createdAt: seedNow,
-      updatedAt: seedNow
-    });
-
-    insertIgnore(sqlite, 'maintenance_quality_findings', {
-      id: 'mqf-mrov2-rework',
-      reference: 'QF-MROV2-FAILED-INSP-001',
-      sourceType: 'INSPECTION_ATTEMPT',
-      sourceId: 'minsp-mrov1-rework-failed',
-      aircraftId: 'ac-pk-mrc',
-      workPackageId: 'mwp-mrov1-rework',
-      classification: 'FAILED_INSPECTION_SAMPLE',
-      description:
-        'Simulasi Quality & Safety dari failed inspection. Data fiktif; bukan QMS/SMS production.',
-      status: 'ACTION_REQUIRED',
-      owner: 'Chief Inspector / Quality Sample',
-      dueDate: context.date(7),
-      fictionalDemo: 1,
-      createdAt: seedNow,
-      updatedAt: seedNow
-    });
-    insertIgnore(sqlite, 'maintenance_capa_actions', {
-      id: 'mcapa-mrov2-rework',
-      findingId: 'mqf-mrov2-rework',
-      actionType: 'CORRECTIVE_ACTION_SAMPLE',
-      description: 'Review corrective work evidence and record effectiveness review sample.',
-      owner: 'Maintenance Control Sample',
-      dueDate: context.date(10),
-      completion: null,
-      effectivenessReview: null,
-      status: 'ACTION_REQUIRED',
-      createdAt: seedNow,
-      updatedAt: seedNow
-    });
-    insertIgnore(sqlite, 'maintenance_sdr_assessments', {
-      id: 'msdr-mrov2-rework',
-      sourceType: 'QUALITY_FINDING',
-      sourceId: 'mqf-mrov2-rework',
-      reportabilityStatus: 'INTERNAL_ASSESSMENT_ONLY',
-      discoveredAt: context.at(-1, '14:45'),
-      simulatedDueAt: context.date(4),
-      assessment: 'Simulasi pelaporan internal. Bukan laporan resmi kepada regulator.',
-      decisionOwner: 'Quality/Safety Sample',
-      status: 'UNDER_REVIEW',
-      fictionalDemo: 1,
       createdAt: seedNow,
       updatedAt: seedNow
     });

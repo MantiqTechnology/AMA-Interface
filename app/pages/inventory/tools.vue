@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import type { InventoryToolDto } from '#shared/features/inventory';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const { errorMessage } = useInventoryUi();
 const { can } = useAuthorization();
 const {
   data: tools,
   pending,
+  error,
   refresh
 } = await useAsyncData('inventory-tools', () =>
   fetchApi<InventoryToolDto[]>('/api/inventory/tools')
@@ -19,6 +23,8 @@ const showCalibrateModal = ref(false);
 
 const selectedTool = ref<InventoryToolDto | null>(null);
 const isSubmitting = ref(false);
+const actionError = ref('');
+const actionMessage = ref('');
 
 // Add Tool Form
 const newTool = reactive({
@@ -65,15 +71,21 @@ function openCalibrate(tool: InventoryToolDto) {
 async function submitCreateTool() {
   if (!newTool.toolNumber || !newTool.serialNumber || !newTool.toolName) return;
   isSubmitting.value = true;
+  actionError.value = '';
+  actionMessage.value = '';
   try {
     await fetchApi('/api/inventory/tools', {
       method: 'POST',
       body: newTool
     });
     showAddTool.value = false;
+    actionMessage.value = 'Tool / GSE berhasil didaftarkan.';
     await refresh();
   } catch (err: unknown) {
-    alert(errorMessage(err, 'Gagal menambahkan tool.'));
+    actionError.value = errorMessage(
+      err,
+      'Tool tidak dapat ditambahkan. Periksa nomor, serial, dan nama tool.'
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -82,6 +94,8 @@ async function submitCreateTool() {
 async function submitCheckout() {
   if (!selectedTool.value) return;
   isSubmitting.value = true;
+  actionError.value = '';
+  actionMessage.value = '';
   try {
     await fetchApi('/api/inventory/tools/checkout', {
       method: 'POST',
@@ -92,9 +106,13 @@ async function submitCheckout() {
       }
     });
     showCheckoutModal.value = false;
+    actionMessage.value = 'Tool berhasil di-check-out.';
     await refresh();
   } catch (err: unknown) {
-    alert(errorMessage(err, 'Gagal check-out tool.'));
+    actionError.value = errorMessage(
+      err,
+      'Check-out tool gagal. Periksa work order dan status tool.'
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -103,6 +121,8 @@ async function submitCheckout() {
 async function submitReturn(missing = false) {
   if (!selectedTool.value) return;
   isSubmitting.value = true;
+  actionError.value = '';
+  actionMessage.value = '';
   try {
     await fetchApi('/api/inventory/tools/return', {
       method: 'POST',
@@ -113,9 +133,15 @@ async function submitReturn(missing = false) {
       }
     });
     showReturnModal.value = false;
+    actionMessage.value = missing
+      ? 'Tool dikembalikan dengan laporan hilang/rusak.'
+      : 'Tool berhasil dikembalikan laik pakai.';
     await refresh();
   } catch (err: unknown) {
-    alert(errorMessage(err, 'Gagal kembalikan tool.'));
+    actionError.value = errorMessage(
+      err,
+      'Pengembalian tool gagal. Perbarui status lalu coba lagi.'
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -124,6 +150,8 @@ async function submitReturn(missing = false) {
 async function submitCalibrate() {
   if (!selectedTool.value || !calDate.value || !nextDue.value || !certNo.value) return;
   isSubmitting.value = true;
+  actionError.value = '';
+  actionMessage.value = '';
   try {
     await fetchApi('/api/inventory/tools/calibrate', {
       method: 'POST',
@@ -135,9 +163,13 @@ async function submitCalibrate() {
       }
     });
     showCalibrateModal.value = false;
+    actionMessage.value = 'Sertifikat kalibrasi berhasil diperbarui.';
     await refresh();
   } catch (err: unknown) {
-    alert(errorMessage(err, 'Gagal update kalibrasi.'));
+    actionError.value = errorMessage(
+      err,
+      'Kalibrasi tidak dapat diperbarui. Periksa sertifikat dan tanggal.'
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -145,21 +177,21 @@ async function submitCalibrate() {
 </script>
 
 <template>
-  <InventoryShell title="Tool Control & GSE Calibration Management">
+  <InventoryShell title="Tool Control & Kalibrasi GSE">
     <template #actions>
-      <VBtn
+      <DsTooltipIconButton
         v-if="can('inventory.tool.manage').allowed"
         color="primary"
-        prepend-icon="mdi-plus"
+        icon="mdi-plus"
+        tooltip="Daftarkan tool / GSE"
+        variant="flat"
         @click="showAddTool = true"
-      >
-        Daftarkan Tool / GSE Baru
-      </VBtn>
+      />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh list tools"
+        tooltip="Perbarui tool"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
 
@@ -168,18 +200,30 @@ async function submitCalibrate() {
       Sertifikat Kalibrasi aktif. Tool yang terlewat tanggal kalibrasinya (<em>Expired</em>)
       di-block otomatis oleh sistem dari proses Check-Out dan Sign-Off Task Card Perawatan.
     </VAlert>
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Data tool tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
+    </VAlert>
+    <VAlert
+      v-if="actionMessage"
+      aria-live="polite"
+      closable
+      class="mb-4"
+      type="success"
+      variant="tonal"
+    >
+      {{ actionMessage }}
+    </VAlert>
 
-    <VCard border>
-      <VCardTitle class="d-flex align-center py-3 px-4">
-        <div>
-          <h2 class="text-h6 font-weight-bold">Master Tool & Test Equipment</h2>
-          <div class="text-caption text-medium-emphasis">
-            Pelacakan kalibrasi, check-out / check-in, dan lokasi penyimpanan tool
-          </div>
-        </div>
-        <VSpacer />
-      </VCardTitle>
-
+    <InventoryPanel
+      subtitle="Pelacakan kalibrasi, check-out / check-in, dan lokasi penyimpanan tool"
+      title="Master Tool & Test Equipment"
+    >
       <VTable>
         <thead>
           <tr>
@@ -206,11 +250,9 @@ async function submitCalibrate() {
             </td>
             <td>
               <VChip v-if="tool.isExpired" color="error" size="small" variant="flat">
-                🔴 EXPIRED / BLOCKED
+                EXPIRED / BLOCKED
               </VChip>
-              <VChip v-else color="success" size="small" variant="flat">
-                🟡 CALIBRATED & VALID
-              </VChip>
+              <VChip v-else color="success" size="small" variant="flat"> CALIBRATED & VALID </VChip>
             </td>
             <td>
               <VChip
@@ -228,42 +270,39 @@ async function submitCalibrate() {
               </VChip>
             </td>
             <td class="text-end">
-              <div class="d-flex justify-end ga-2">
-                <VBtn
+              <InventoryTableActions>
+                <DsTooltipIconButton
                   v-if="
                     can('inventory.tool.checkout').allowed &&
                       tool.status === 'AVAILABLE' &&
                       !tool.isExpired
                   "
                   color="primary"
+                  icon="mdi-export"
                   size="small"
+                  tooltip="Check-out tool"
                   variant="tonal"
-                  prepend-icon="mdi-export"
                   @click="openCheckout(tool)"
-                >
-                  Check-Out
-                </VBtn>
-                <VBtn
+                />
+                <DsTooltipIconButton
                   v-if="can('inventory.tool.checkout').allowed && tool.status === 'CHECKED_OUT'"
                   color="warning"
+                  icon="mdi-import"
                   size="small"
+                  tooltip="Kembalikan tool"
                   variant="tonal"
-                  prepend-icon="mdi-import"
                   @click="openReturn(tool)"
-                >
-                  Return Tool
-                </VBtn>
-                <VBtn
+                />
+                <DsTooltipIconButton
                   v-if="can('inventory.tool.manage').allowed"
                   color="info"
+                  icon="mdi-certificate-outline"
                   size="small"
+                  tooltip="Update kalibrasi"
                   variant="text"
-                  prepend-icon="mdi-certificate"
                   @click="openCalibrate(tool)"
-                >
-                  Update Kalibrasi
-                </VBtn>
-              </div>
+                />
+              </InventoryTableActions>
             </td>
           </tr>
           <tr v-if="!pending && !(tools?.length ?? 0)">
@@ -273,7 +312,7 @@ async function submitCalibrate() {
           </tr>
         </tbody>
       </VTable>
-    </VCard>
+    </InventoryPanel>
 
     <!-- Dialog Add Tool -->
     <VDialog v-model="showAddTool" max-width="500">
@@ -330,12 +369,13 @@ async function submitCalibrate() {
             variant="outlined"
           />
         </VCardText>
-        <VCardActions class="justify-end px-4 pb-4">
-          <VBtn variant="text" @click="showAddTool = false">Batal</VBtn>
-          <VBtn color="primary" variant="flat" :loading="isSubmitting" @click="submitCreateTool">
-            Simpan Tool
-          </VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="!newTool.toolNumber || !newTool.serialNumber || !newTool.toolName"
+          :loading="isSubmitting"
+          submit-text="Simpan tool"
+          @cancel="showAddTool = false"
+          @submit="submitCreateTool"
+        />
       </VCard>
     </VDialog>
 
@@ -351,7 +391,7 @@ async function submitCalibrate() {
           <VTextField
             v-model="checkoutWorkOrder"
             label="Nomor Work Order / Task Card"
-            placeholder="e.g. WO-2026-0812"
+            placeholder="Contoh: WO-2026-0812…"
             density="compact"
             variant="outlined"
             class="mb-3"
@@ -363,12 +403,13 @@ async function submitCalibrate() {
             variant="outlined"
           />
         </VCardText>
-        <VCardActions class="justify-end px-4 pb-4">
-          <VBtn variant="text" @click="showCheckoutModal = false">Batal</VBtn>
-          <VBtn color="primary" variant="flat" :loading="isSubmitting" @click="submitCheckout">
-            Proses Check-Out
-          </VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="isSubmitting"
+          submit-icon="mdi-export"
+          submit-text="Proses check-out"
+          @cancel="showCheckoutModal = false"
+          @submit="submitCheckout"
+        />
       </VCard>
     </VDialog>
 
@@ -380,15 +421,25 @@ async function submitCalibrate() {
           <div class="mb-4">
             Konfirmasi pengembalian <strong>{{ selectedTool?.toolName }}</strong> ke gudang.
           </div>
+          <VBtn
+            block
+            color="error"
+            :disabled="isSubmitting"
+            prepend-icon="mdi-alert-circle-outline"
+            variant="tonal"
+            @click="submitReturn(true)"
+          >
+            Lapor hilang / rusak
+          </VBtn>
         </VCardText>
-        <VCardActions class="justify-end ga-2 px-4 pb-4">
-          <VBtn color="error" variant="tonal" @click="submitReturn(true)">
-            Lapor Hilang / Damaged
-          </VBtn>
-          <VBtn color="success" variant="flat" :loading="isSubmitting" @click="submitReturn(false)">
-            Kembalikan (Laik Pakai)
-          </VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="isSubmitting"
+          submit-color="success"
+          submit-icon="mdi-import"
+          submit-text="Kembalikan laik pakai"
+          @cancel="showReturnModal = false"
+          @submit="submitReturn(false)"
+        />
       </VCard>
     </VDialog>
 
@@ -420,12 +471,15 @@ async function submitCalibrate() {
             variant="outlined"
           />
         </VCardText>
-        <VCardActions class="justify-end px-4 pb-4">
-          <VBtn variant="text" @click="showCalibrateModal = false">Batal</VBtn>
-          <VBtn color="success" variant="flat" :loading="isSubmitting" @click="submitCalibrate">
-            Perbarui Sertifikat
-          </VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="!calDate || !nextDue || !certNo"
+          :loading="isSubmitting"
+          submit-color="success"
+          submit-icon="mdi-certificate"
+          submit-text="Perbarui sertifikat"
+          @cancel="showCalibrateModal = false"
+          @submit="submitCalibrate"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

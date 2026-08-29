@@ -4,7 +4,10 @@ import type {
   InventoryStockDto,
   InventoryWarehouseDto
 } from '#shared/features/inventory';
+import InventoryFilterBar from '../../features/inventory/InventoryFilterBar.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 import { useDisplay } from 'vuetify';
 
 const { can } = useAuthorization();
@@ -98,10 +101,13 @@ async function postTransfer() {
       reason: transfer.reason
     }
   }).catch((value) => {
-    actionError.value = errorMessage(value, 'Transfer failed');
+    actionError.value = errorMessage(
+      value,
+      'Transfer stok gagal. Periksa tujuan, jumlah, dan alasan.'
+    );
     throw value;
   });
-  actionMessage.value = 'Inventory transfer posted.';
+  actionMessage.value = 'Transfer stok berhasil diposting.';
   await refresh();
 }
 
@@ -120,74 +126,85 @@ async function postAdjustment() {
       reason: adjustment.reason
     }
   }).catch((value) => {
-    actionError.value = errorMessage(value, 'Adjustment failed');
+    actionError.value = errorMessage(value, 'Penyesuaian stok gagal. Periksa selisih dan alasan.');
     throw value;
   });
-  actionMessage.value = 'Stock adjustment posted.';
+  actionMessage.value = 'Penyesuaian stok berhasil diposting.';
   await refresh();
 }
 </script>
 
 <template>
-  <InventoryShell title="Stock Availability">
+  <InventoryShell title="Ketersediaan Stok">
     <template #actions>
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh stock"
+        tooltip="Perbarui stok"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
 
-    <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{ actionError || 'Stock availability could not be loaded.' }}
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Ketersediaan stok tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
     </VAlert>
-    <VAlert v-if="actionMessage" closable class="mb-4" type="success" variant="tonal">
+    <VAlert
+      v-if="actionMessage"
+      aria-live="polite"
+      closable
+      class="mb-4"
+      type="success"
+      variant="tonal"
+    >
       {{ actionMessage }}
     </VAlert>
 
-    <VCard border class="mb-4">
-      <VCardText>
-        <VRow density="compact">
-          <VCol cols="12" md="6">
-            <VTextField
-              v-model="search"
-              clearable
-              density="comfortable"
-              hide-details
-              label="Search part, lot, bin, or station"
-              prepend-inner-icon="mdi-magnify"
-              variant="outlined"
-            />
-          </VCol>
-          <VCol cols="12" md="4">
-            <VSelect
-              v-model="warehouseId"
-              clearable
-              density="comfortable"
-              hide-details
-              :items="warehouseOptions"
-              label="Warehouse"
-              variant="outlined"
-            />
-          </VCol>
-          <VCol class="d-flex align-center" cols="12" md="2">
-            <VSwitch v-model="lowStockOnly" color="warning" hide-details label="Low stock" />
-          </VCol>
-        </VRow>
-      </VCardText>
-    </VCard>
+    <InventoryFilterBar label="Filter ketersediaan stok">
+      <VRow density="compact">
+        <VCol cols="12" md="6">
+          <VTextField
+            v-model="search"
+            clearable
+            density="comfortable"
+            hide-details
+            label="Cari part, lot, bin, atau station"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+          />
+        </VCol>
+        <VCol cols="12" md="4">
+          <VSelect
+            v-model="warehouseId"
+            clearable
+            density="comfortable"
+            hide-details
+            :items="warehouseOptions"
+            label="Gudang"
+            variant="outlined"
+          />
+        </VCol>
+        <VCol class="d-flex align-center" cols="12" md="2">
+          <VSwitch v-model="lowStockOnly" color="warning" hide-details label="Stok rendah" />
+        </VCol>
+      </VRow>
+    </InventoryFilterBar>
 
-    <VCard border>
+    <InventoryPanel title="Daftar Stok">
       <VDataTable
         :headers="[
           { title: 'Part', key: 'partNumber' },
-          { title: 'Location', key: 'warehouseCode' },
+          { title: 'Lokasi', key: 'warehouseCode' },
           { title: 'Lot / Expiry', key: 'lotNumber' },
-          { title: 'Condition', key: 'condition' },
+          { title: 'Kondisi', key: 'condition' },
           { title: 'On Hand', key: 'onHandQuantity', align: 'end' },
-          { title: 'Available', key: 'availableQuantity', align: 'end' },
-          { title: 'FIFO Value', key: 'fifoValueIdr', align: 'end' },
+          { title: 'Tersedia', key: 'availableQuantity', align: 'end' },
+          { title: 'Nilai FIFO', key: 'fifoValueIdr', align: 'end' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
         :items="rows"
@@ -229,10 +246,10 @@ async function postAdjustment() {
           </span>
         </template>
         <template #[`item.fifoValueIdr`]="{ item }">
-          {{ can('inventory.valuation.read').allowed ? money(item.fifoValueIdr) : 'Restricted' }}
+          {{ can('inventory.valuation.read').allowed ? money(item.fifoValueIdr) : 'Terbatas' }}
         </template>
         <template #[`item.actions`]="{ item }">
-          <div class="d-flex justify-end ga-1">
+          <InventoryTableActions>
             <DsConfirmIconButton
               v-if="can('inventory.transfer').allowed && item.onHandQuantity > 0"
               :action="postTransfer"
@@ -245,13 +262,13 @@ async function postAdjustment() {
                     transfer.serialIds.length !== transfer.quantity)
               "
               confirm-icon="mdi-swap-horizontal"
-              confirm-text="Post transfer"
+              confirm-text="Posting transfer"
               icon="mdi-swap-horizontal"
               max-width="560"
               persistent
-              title="Post inventory transfer"
+              title="Posting transfer stok"
               tone="warning"
-              tooltip="Transfer stock"
+              tooltip="Transfer stok"
               variant="text"
               @click="selectTransfer(item)"
             >
@@ -264,14 +281,14 @@ async function postAdjustment() {
                 class="mb-3"
                 density="comfortable"
                 :items="destinationBins"
-                label="Destination bin"
+                label="Bin tujuan"
                 variant="outlined"
               />
               <VTextField
                 v-model.number="transfer.quantity"
                 class="mb-3"
                 density="comfortable"
-                label="Quantity"
+                label="Jumlah"
                 min="1"
                 type="number"
                 variant="outlined"
@@ -283,11 +300,11 @@ async function postAdjustment() {
                 chips
                 density="comfortable"
                 :items="serialOptions"
-                label="Serial numbers"
+                label="Nomor seri"
                 multiple
                 variant="outlined"
               />
-              <VTextarea v-model="transfer.reason" label="Reason" rows="2" variant="outlined" />
+              <VTextarea v-model="transfer.reason" label="Alasan" rows="2" variant="outlined" />
             </DsConfirmIconButton>
 
             <DsConfirmIconButton
@@ -295,13 +312,13 @@ async function postAdjustment() {
               :action="postAdjustment"
               :confirm-disabled="adjustment.quantityDelta === 0 || !adjustment.reason.trim()"
               confirm-icon="mdi-scale-balance"
-              confirm-text="Post adjustment"
+              confirm-text="Posting penyesuaian"
               icon="mdi-scale-balance"
               max-width="520"
               persistent
-              title="Post stock adjustment"
+              title="Posting penyesuaian stok"
               tone="danger"
-              tooltip="Adjust stock"
+              tooltip="Sesuaikan stok"
               variant="text"
               @click="selectAdjustment(item)"
             >
@@ -312,7 +329,7 @@ async function postAdjustment() {
                 v-model.number="adjustment.quantityDelta"
                 class="mb-3"
                 density="comfortable"
-                label="Quantity variance"
+                label="Selisih jumlah"
                 type="number"
                 variant="outlined"
               />
@@ -321,19 +338,19 @@ async function postAdjustment() {
                 v-model.number="adjustment.sourceUnitCostMinor"
                 class="mb-3"
                 density="comfortable"
-                label="Unit cost IDR"
+                label="Biaya unit IDR"
                 min="0"
                 type="number"
                 variant="outlined"
               />
-              <VTextarea v-model="adjustment.reason" label="Reason" rows="2" variant="outlined" />
+              <VTextarea v-model="adjustment.reason" label="Alasan" rows="2" variant="outlined" />
             </DsConfirmIconButton>
-          </div>
+          </InventoryTableActions>
         </template>
         <template #no-data>
-          <div class="py-10 text-medium-emphasis">No stock matches the current filters.</div>
+          <div class="py-10 text-medium-emphasis">Tidak ada stok yang cocok dengan filter.</div>
         </template>
       </VDataTable>
-    </VCard>
+    </InventoryPanel>
   </InventoryShell>
 </template>

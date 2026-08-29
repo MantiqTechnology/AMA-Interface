@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import type { InventoryMaintenanceDemandDto } from '#shared/features/inventory';
 import type { MaintenanceInventoryReservationDto } from '#shared/features/maintenance-v21';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryEmptyState from '../../features/inventory/InventoryEmptyState.vue';
+import InventoryFilterBar from '../../features/inventory/InventoryFilterBar.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -206,13 +211,31 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
     title="Kebutuhan Material MRO"
   >
     <template #actions>
-      <VBtn prepend-icon="mdi-refresh" text="Perbarui" variant="tonal" @click="refresh" />
+      <DsTooltipIconButton
+        icon="mdi-refresh"
+        tooltip="Perbarui kebutuhan MRO"
+        variant="text"
+        @click="() => refresh()"
+      />
     </template>
 
-    <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
       {{ actionError || 'Kebutuhan material MRO tidak dapat dimuat.' }}
     </VAlert>
-    <VAlert v-if="actionMessage" closable class="mb-4" type="success" variant="tonal">
+    <VAlert
+      v-if="actionMessage"
+      aria-live="polite"
+      closable
+      class="mb-4"
+      type="success"
+      variant="tonal"
+    >
       {{ actionMessage }}
     </VAlert>
 
@@ -226,41 +249,39 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
 
     <DsMetricStrip class="mb-4" :items="metrics" />
 
-    <VCard border class="mb-4">
-      <VCardText>
-        <VRow>
-          <VCol cols="12" md="8">
-            <VTextField
-              v-model="search"
-              clearable
-              hide-details
-              label="Cari part, aircraft, atau paket pekerjaan"
-              prepend-inner-icon="mdi-magnify"
-              variant="outlined"
-            />
-          </VCol>
-          <VCol cols="12" md="4">
-            <VSelect
-              v-model="status"
-              clearable
-              hide-details
-              :items="[
-                { title: 'Diminta', value: 'REQUESTED' },
-                { title: 'Direservasi', value: 'RESERVED' },
-                { title: 'Dikeluarkan', value: 'ISSUED' },
-                { title: 'Terblokir', value: 'BLOCKED' }
-              ]"
-              label="Status kebutuhan"
-              variant="outlined"
-            />
-          </VCol>
-        </VRow>
-      </VCardText>
-    </VCard>
+    <InventoryFilterBar label="Filter kebutuhan material MRO">
+      <VRow density="compact">
+        <VCol cols="12" md="8">
+          <VTextField
+            v-model="search"
+            clearable
+            hide-details
+            label="Cari part, aircraft, atau paket pekerjaan"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+          />
+        </VCol>
+        <VCol cols="12" md="4">
+          <VSelect
+            v-model="status"
+            clearable
+            hide-details
+            :items="[
+              { title: 'Diminta', value: 'REQUESTED' },
+              { title: 'Direservasi', value: 'RESERVED' },
+              { title: 'Dikeluarkan', value: 'ISSUED' },
+              { title: 'Terblokir', value: 'BLOCKED' }
+            ]"
+            label="Status kebutuhan"
+            variant="outlined"
+          />
+        </VCol>
+      </VRow>
+    </InventoryFilterBar>
 
     <VSkeletonLoader v-if="pending && !data" type="table" />
     <template v-else>
-      <VCard border class="d-none d-sm-block demand-table">
+      <InventoryPanel class="d-none d-sm-block demand-table" title="Antrean Material MRO">
         <VTable>
           <thead>
             <tr>
@@ -306,11 +327,11 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
               </td>
               <td>
                 <div class="text-caption">
-                  Reserved {{ number(row.requirement.reservedQuantity) }}
+                  Reservasi {{ number(row.requirement.reservedQuantity) }}
                 </div>
                 <div class="text-caption">Issued {{ number(row.requirement.issuedQuantity) }}</div>
                 <div class="text-caption">
-                  Installed {{ number(row.requirement.installedQuantity) }}
+                  Terpasang {{ number(row.requirement.installedQuantity) }}
                 </div>
               </td>
               <td>
@@ -318,33 +339,38 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
                 <div v-if="row.blocker" class="mt-1 text-caption text-error">{{ row.blocker }}</div>
               </td>
               <td class="text-right text-no-wrap">
-                <VBtn
-                  v-if="row.nextAction === 'RESERVE'"
-                  size="small"
-                  text="Reservasi stok"
-                  variant="tonal"
-                  @click="openReserve(row)"
-                />
-                <VBtn
-                  v-else-if="row.nextAction === 'ISSUE'"
-                  :loading="working"
-                  size="small"
-                  text="Issue ke MRO"
-                  variant="tonal"
-                  @click="openIssue(row)"
-                />
-                <VBtn
-                  v-else-if="row.nextAction === 'WAIT_INSTALL'"
-                  size="small"
-                  text="Return"
-                  variant="text"
-                  @click="openReturn(row)"
-                />
+                <InventoryTableActions>
+                  <DsTooltipIconButton
+                    v-if="row.nextAction === 'RESERVE'"
+                    icon="mdi-package-variant-plus"
+                    size="small"
+                    tooltip="Reservasi stok"
+                    variant="tonal"
+                    @click="openReserve(row)"
+                  />
+                  <DsTooltipIconButton
+                    v-else-if="row.nextAction === 'ISSUE'"
+                    icon="mdi-package-up"
+                    :loading="working"
+                    size="small"
+                    tooltip="Issue ke MRO"
+                    variant="tonal"
+                    @click="openIssue(row)"
+                  />
+                  <DsTooltipIconButton
+                    v-else-if="row.nextAction === 'WAIT_INSTALL'"
+                    icon="mdi-keyboard-return"
+                    size="small"
+                    tooltip="Kembalikan material"
+                    variant="text"
+                    @click="openReturn(row)"
+                  />
+                </InventoryTableActions>
               </td>
             </tr>
           </tbody>
         </VTable>
-      </VCard>
+      </InventoryPanel>
 
       <div class="d-sm-none d-grid ga-3">
         <VCard
@@ -404,15 +430,11 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
         </VCard>
       </div>
 
-      <VCard v-if="!(data?.length ?? 0)" border>
-        <VCardText class="py-12 text-center">
-          <VIcon class="mb-3" icon="mdi-package-variant-closed-check" size="36" />
-          <h2 class="text-h6">Tidak ada kebutuhan material aktif</h2>
-          <p class="text-medium-emphasis">
-            Kebutuhan baru akan muncul setelah MRO menambah material pada work package.
-          </p>
-        </VCardText>
-      </VCard>
+      <InventoryEmptyState
+        v-if="!(data?.length ?? 0)"
+        description="Kebutuhan baru akan muncul setelah MRO menambah material pada work package."
+        title="Tidak ada kebutuhan material aktif"
+      />
     </template>
 
     <VDialog v-model="reserveDialog" aria-label="Reservasi stok untuk MRO" max-width="600">
@@ -445,14 +467,14 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
             variant="outlined"
           />
         </VCardText>
-        <VCardActions>
-          <VSpacer /><VBtn text="Batal" variant="text" @click="reserveDialog = false" /><VBtn
-            :disabled="!selectedCandidateId || reserveQuantity <= 0"
-            :loading="working"
-            text="Reservasi stok"
-            @click="reserve"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="!selectedCandidateId || reserveQuantity <= 0"
+          :loading="working"
+          submit-icon="mdi-package-variant-closed-check"
+          submit-text="Reservasi stok"
+          @cancel="reserveDialog = false"
+          @submit="reserve"
+        />
       </VCard>
     </VDialog>
 
@@ -472,11 +494,13 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
             </div>
           </VAlert>
         </VCardText>
-        <VCardActions>
-          <VSpacer />
-          <VBtn text="Batal" variant="text" @click="issueDialog = false" />
-          <VBtn color="primary" :loading="working" @click="issue">Issue material</VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="working"
+          submit-icon="mdi-package-up"
+          submit-text="Issue material"
+          @cancel="issueDialog = false"
+          @submit="issue"
+        />
       </VCard>
     </VDialog>
 
@@ -501,14 +525,14 @@ function nextActionLabel(value: InventoryMaintenanceDemandDto['nextAction']) {
             variant="outlined"
           />
         </VCardText>
-        <VCardActions>
-          <VSpacer /><VBtn text="Batal" variant="text" @click="returnDialog = false" /><VBtn
-            :disabled="returnForm.reason.trim().length < 3"
-            :loading="working"
-            text="Kembalikan"
-            @click="returnMaterial"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="returnForm.reason.trim().length < 3"
+          :loading="working"
+          submit-icon="mdi-keyboard-return"
+          submit-text="Kembalikan"
+          @cancel="returnDialog = false"
+          @submit="returnMaterial"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

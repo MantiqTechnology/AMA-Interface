@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import type { InventoryQuarantineItemDto } from '#shared/features/inventory';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const { errorMessage } = useInventoryUi();
 const { can } = useAuthorization();
 const {
   data: items,
   pending,
+  error,
   refresh
 } = await useAsyncData('quarantine-items', () =>
   fetchApi<InventoryQuarantineItemDto[]>('/api/inventory/quarantine')
@@ -17,17 +21,22 @@ const selectedSerial = ref<InventoryQuarantineItemDto | null>(null);
 const releaseTargetBinId = ref('');
 const releaseCertRef = ref('');
 const isSubmitting = ref(false);
+const actionError = ref('');
+const actionMessage = ref('');
 
 function openRelease(item: InventoryQuarantineItemDto) {
   selectedSerial.value = item;
   releaseTargetBinId.value = '';
   releaseCertRef.value = '';
+  actionError.value = '';
   showReleaseModal.value = true;
 }
 
 async function submitRelease() {
   if (!selectedSerial.value || !releaseTargetBinId.value || !releaseCertRef.value) return;
   isSubmitting.value = true;
+  actionError.value = '';
+  actionMessage.value = '';
   try {
     await fetchApi('/api/inventory/quarantine/release', {
       method: 'POST',
@@ -38,9 +47,13 @@ async function submitRelease() {
       }
     });
     showReleaseModal.value = false;
+    actionMessage.value = 'Part karantina berhasil dilepas ke bin serviceable.';
     await refresh();
   } catch (err: unknown) {
-    alert(errorMessage(err, 'Quarantine release failed.'));
+    actionError.value = errorMessage(
+      err,
+      'Quarantine release gagal. Verifikasi sertifikat dan target bin.'
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -48,13 +61,13 @@ async function submitRelease() {
 </script>
 
 <template>
-  <InventoryShell title="Digital Quarantine & SUP Management">
+  <InventoryShell title="Karantina Digital & SUP">
     <template #actions>
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh quarantine records"
+        tooltip="Perbarui record karantina"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
 
@@ -64,39 +77,53 @@ async function submitRelease() {
       Order atau di-transfer sampai Inspektur QA memverifikasi sertifikat (FAA Form 8130-3 / EASA
       Form 1) dan menyetujui Quarantine Release.
     </VAlert>
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Data karantina tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
+    </VAlert>
+    <VAlert
+      v-if="actionMessage"
+      aria-live="polite"
+      closable
+      class="mb-4"
+      type="success"
+      variant="tonal"
+    >
+      {{ actionMessage }}
+    </VAlert>
 
-    <VCard border>
-      <VCardTitle class="d-flex align-center py-3 px-4">
-        <div>
-          <h2 class="text-h6 font-weight-bold">Quarantine Area & Locked Stock</h2>
-          <div class="text-caption text-medium-emphasis">
-            Daftar komponen yang ditahan untuk inspeksi & verifikasi sertifikat kelaikan
-          </div>
-        </div>
-        <VSpacer />
+    <InventoryPanel
+      subtitle="Daftar komponen yang ditahan untuk inspeksi & verifikasi sertifikat kelaikan"
+      title="Area Karantina & Stok Terkunci"
+    >
+      <template #actions>
         <VChip color="warning" size="small" variant="flat">
-          {{ items?.length ?? 0 }} Items Quarantined
+          {{ items?.length ?? 0 }} item dikarantina
         </VChip>
-      </VCardTitle>
-
+      </template>
       <VTable>
         <thead>
           <tr>
-            <th>Airworthiness Tag</th>
-            <th>Part Number</th>
-            <th>Part Name</th>
-            <th>Serial Number</th>
-            <th>Quarantine Reason</th>
-            <th>Location / Station</th>
+            <th>Tag Kelaikan</th>
+            <th>Nomor Part</th>
+            <th>Nama Part</th>
+            <th>Nomor Seri</th>
+            <th>Alasan Karantina</th>
+            <th>Lokasi / Station</th>
             <th>SUP Flag</th>
-            <th class="text-end">Actions</th>
+            <th class="text-end">Tindakan</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="item in items ?? []" :key="item.serialId">
             <td>
               <VChip color="orange-darken-2" size="small" variant="flat" class="font-weight-bold">
-                🟠 ORANGE - QUARANTINE
+                ORANGE - QUARANTINE
               </VChip>
             </td>
             <td class="font-weight-bold text-no-wrap">{{ item.partNumber }}</td>
@@ -109,21 +136,22 @@ async function submitRelease() {
             </td>
             <td>
               <VChip v-if="item.isSuspectedUnapproved" color="error" size="x-small" variant="flat">
-                🔴 SUSPECTED UNAPPROVED PART
+                SUSPECTED UNAPPROVED PART
               </VChip>
-              <span v-else class="text-caption text-medium-emphasis">Pending Inspection</span>
+              <span v-else class="text-caption text-medium-emphasis">Menunggu inspeksi</span>
             </td>
             <td class="text-end">
-              <VBtn
-                v-if="can('inventory.quarantine.release').allowed"
-                color="success"
-                size="small"
-                prepend-icon="mdi-lock-open-check-outline"
-                variant="tonal"
-                @click="openRelease(item)"
-              >
-                Release to Available
-              </VBtn>
+              <InventoryTableActions>
+                <DsTooltipIconButton
+                  v-if="can('inventory.quarantine.release').allowed"
+                  color="success"
+                  icon="mdi-lock-open-check-outline"
+                  size="small"
+                  tooltip="Release ke serviceable"
+                  variant="tonal"
+                  @click="openRelease(item)"
+                />
+              </InventoryTableActions>
             </td>
           </tr>
           <tr v-if="!pending && !(items?.length ?? 0)">
@@ -133,14 +161,12 @@ async function submitRelease() {
           </tr>
         </tbody>
       </VTable>
-    </VCard>
+    </InventoryPanel>
 
     <!-- Quarantine Release Dialog -->
     <VDialog v-model="showReleaseModal" max-width="500">
       <VCard>
-        <VCardTitle class="font-weight-bold">
-          Quarantine Release (Release to Serviceable)
-        </VCardTitle>
+        <VCardTitle class="font-weight-bold">Quarantine Release</VCardTitle>
         <VCardText>
           <div class="mb-3 text-body-2">
             Verifikasi sertifikat kelaikan (CoC / Form 8130-3 / EASA Form 1) untuk melepas kuncian
@@ -149,26 +175,29 @@ async function submitRelease() {
           </div>
           <VTextField
             v-model="releaseCertRef"
-            label="Airworthiness Certificate Ref (Form 8130-3 / EASA Form 1)"
-            placeholder="e.g. FAA-8130-2026-90412"
+            label="Referensi sertifikat kelaikan"
+            placeholder="Contoh: FAA-8130-2026-90412…"
             density="compact"
             variant="outlined"
             class="mb-3"
           />
           <VTextField
             v-model="releaseTargetBinId"
-            label="Target Serviceable Bin ID"
-            placeholder="e.g. inv-bin-djj-shelf-a"
+            label="Target serviceable bin ID"
+            placeholder="Contoh: inv-bin-djj-shelf-a…"
             density="compact"
             variant="outlined"
           />
         </VCardText>
-        <VCardActions class="justify-end px-4 pb-4">
-          <VBtn variant="text" @click="showReleaseModal = false">Batal</VBtn>
-          <VBtn color="success" variant="flat" :loading="isSubmitting" @click="submitRelease">
-            Approve Release (🟡 Yellow Tag)
-          </VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="!releaseTargetBinId || !releaseCertRef"
+          :loading="isSubmitting"
+          submit-color="success"
+          submit-icon="mdi-lock-open-check-outline"
+          submit-text="Setujui release"
+          @cancel="showReleaseModal = false"
+          @submit="submitRelease"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

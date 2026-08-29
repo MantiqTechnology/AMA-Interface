@@ -91,7 +91,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         description:
           'Ditemukan kawanan burung yang bermigrasi di dekat ujung landasan pacu 30 Sentani saat pagi hari.',
         is_anonymous: 0,
-        reported_by_user_id: 'emp-010',
+        reported_by_user_id: 'crew-ground-001',
         evidence_ids_json: '["ev-djj-bird-01"]',
         status: 'CAPA_ISSUED',
         created_at: ctx.at(-5, '07:30'),
@@ -102,7 +102,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         report_number: 'OCC-2026-102',
         report_category: 'OCCURRENCE',
         station_id: 'st-wmx',
-        aircraft_id: 'ac-pk-mra',
+        aircraft_id: 'ac-pk-ama',
         flight_operation_id: null,
         description:
           'Hard landing akibat windshear mendadak di Wamena. Pesawat mendarat aman namun butuh inspeksi struktural.',
@@ -122,7 +122,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         flight_operation_id: null,
         description: 'Indikasi bahan bakar tidak stabil pada drum penyimpan stasiun Dekai.',
         is_anonymous: 0,
-        reported_by_user_id: 'emp-050',
+        reported_by_user_id: 'crew-ops-001',
         evidence_ids_json: '[]',
         status: 'SUBMITTED',
         created_at: ctx.at(-1, '08:15'),
@@ -132,12 +132,12 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         id: 'srep-004',
         report_number: 'TEC-2026-012',
         report_category: 'TECHNICAL_FINDING',
-        station_id: 'st-nab',
-        aircraft_id: 'ac-pk-mrb',
+        station_id: 'st-nbx',
+        aircraft_id: 'ac-pk-amb',
         flight_operation_id: null,
         description: 'Repetitive defect pada sistem komunikasi VHF-2 di Nabire.',
         is_anonymous: 0,
-        reported_by_user_id: 'emp-031',
+        reported_by_user_id: 'crew-certifying-staff',
         evidence_ids_json: '[]',
         status: 'CAPA_ISSUED',
         created_at: ctx.at(-7, '11:00'),
@@ -181,10 +181,10 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
           'Koordinasi dengan otoritas bandara untuk pembersihan semak di area perimeter landasan pacu.',
         status: 'ACTION',
         priority: 'HIGH',
-        assigned_to_user_id: 'emp-007',
+        assigned_to_user_id: 'crew-ground-001',
         due_date: ctx.date(-1),
         is_overdue_escalated: 1,
-        escalated_to_user_id: 'emp-001',
+        escalated_to_user_id: 'crew-ops-001',
         resolved_at: null,
         created_at: ctx.at(-4, '09:00'),
         updated_at: now
@@ -198,7 +198,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
           'Melaksanakan inspeksi sesuai manual MRO paska laporan hard landing di Wamena.',
         status: 'VERIFIED',
         priority: 'CRITICAL',
-        assigned_to_user_id: 'crew-maintenance-manager',
+        assigned_to_user_id: 'crew-certifying-staff',
         due_date: ctx.date(2),
         is_overdue_escalated: 0,
         escalated_to_user_id: null,
@@ -215,7 +215,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
           'Melakukan pergantian modul radio komunikasi VHF-2 yang mengalami repetitive fault.',
         status: 'NEW',
         priority: 'MEDIUM',
-        assigned_to_user_id: 'emp-031',
+        assigned_to_user_id: 'crew-certifying-staff',
         due_date: ctx.date(5),
         is_overdue_escalated: 0,
         escalated_to_user_id: null,
@@ -314,7 +314,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
             140,
             'RED',
             1,
-            'emp-001',
+            'crew-ops-001',
             'Payload dikurangi 20% sebagai mitigasi darurat logistik rintis.',
             'OVERRIDDEN',
             now,
@@ -329,7 +329,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
             'FRAT',
             'frat-003',
             'OVERRIDE_HARD_LOCK',
-            'emp-001',
+            'crew-ops-001',
             'Chief of Pilot',
             'Override Hard-Lock rintis logistik',
             now,
@@ -344,14 +344,29 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     sqlite
       .prepare(
         `INSERT OR REPLACE INTO safety_meetings (id, meeting_type, title, scheduled_at, location, status, created_by_user_id, created_at, updated_at)
-       VALUES ('smeet-001', 'SRB', 'Safety Review Board - Bulanan Q3', ?, 'HQ Sentani Boardroom', 'CONDUCTED', 'emp-001', ?, ?)`
+       VALUES ('smeet-001', 'SRB', 'Safety Review Board - Bulanan Q3', ?, 'HQ Sentani Boardroom', 'CONDUCTED', 'crew-ops-001', ?, ?)`
       )
       .run(ctx.date(-10), ctx.at(-12, '09:00'), ctx.at(-10, '12:00'));
 
     const attendees = [
-      { id: 'att-01', meeting_id: 'smeet-001', employee_id: 'emp-001', status: 'ATTENDED' },
-      { id: 'att-02', meeting_id: 'smeet-001', employee_id: 'emp-003', status: 'ATTENDED' },
-      { id: 'att-03', meeting_id: 'smeet-001', employee_id: 'emp-004', status: 'ATTENDED' }
+      {
+        id: 'att-01',
+        meeting_id: 'smeet-001',
+        employee_id: 'crew-ops-001',
+        status: 'ATTENDED'
+      },
+      {
+        id: 'att-02',
+        meeting_id: 'smeet-001',
+        employee_id: 'crew-ground-001',
+        status: 'ATTENDED'
+      },
+      {
+        id: 'att-03',
+        meeting_id: 'smeet-001',
+        employee_id: 'crew-certifying-staff',
+        status: 'ATTENDED'
+      }
     ];
     for (const att of attendees) {
       sqlite
@@ -377,14 +392,14 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         'erp-001',
         'SAR-AMA-2026-001A',
         null,
-        'ac-pk-mra',
+        'ac-pk-ama',
         'st-wmx',
         'ALERFA',
         'Weather Emergency (Severe Windshear)',
         12,
         '02 Hrs 30 Mins',
         "04°05'S 138°56'E",
-        'emp-007',
+        'crew-ops-001',
         ctx.at(-2, '14:25'),
         JSON.stringify({
           basarnas_api: 'ACKNOWLEDGED',
@@ -520,7 +535,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     sqlite
       .prepare(
         `INSERT OR REPLACE INTO regulatory_compliance_reports (id, reference_number, source_report_id, report_type, target_authority, generated_by_user_id, generated_at, submitted_at, authority_receipt_number, status, created_at, updated_at)
-       VALUES ('reg-001', 'MOR-2026-001', 'srep-002', 'MOR', 'DKUPPU', 'emp-001', ?, ?, 'DGCA-REC-88412', 'SUBMITTED', ?, ?)`
+       VALUES ('reg-001', 'MOR-2026-001', 'srep-002', 'MOR', 'DKUPPU', 'crew-ops-001', ?, ?, 'DGCA-REC-88412', 'SUBMITTED', ?, ?)`
       )
       .run(ctx.at(-1, '09:00'), ctx.at(-1, '11:00'), ctx.at(-1, '09:00'), ctx.at(-1, '11:00'));
   });

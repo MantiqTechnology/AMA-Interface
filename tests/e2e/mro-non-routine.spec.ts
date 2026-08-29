@@ -85,8 +85,9 @@ test('plays non-routine finding corrective workflow through Work Package UI', as
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: /Corrective work - Hydraulic hose chafing/u }).click();
   await page.getByRole('button', { name: 'Mulai pekerjaan' }).click();
+  await expect(page.getByText('Pernyataan penyelesaian untuk').first()).toBeVisible();
   await page
-    .getByLabel('Pernyataan teknisi')
+    .getByLabel('Pernyataan penyelesaian pekerjaan')
     .fill('Corrective non-routine work completed with required evidence.');
   await page.screenshot({ path: output('07-corrective-signoff.png'), fullPage: true });
   await page.getByRole('button', { name: 'Sahkan pekerjaan' }).click();

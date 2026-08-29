@@ -866,12 +866,6 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Simulasi Quality & Safety',
-          to: '/maintenance/quality',
-          icon: 'mdi-shield-check-outline',
-          visible: can('maintenance.quality.read').allowed
-        },
-        {
           label: 'Rilis Teknis',
           to: '/maintenance/releases',
           icon: 'mdi-certificate-outline',

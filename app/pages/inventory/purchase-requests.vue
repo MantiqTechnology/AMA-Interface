@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { InventoryPartDto, PurchaseRequestDto } from '#shared/features/inventory';
 import type { StationOption } from '#shared/features/operations/stations';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryFilterBar from '../../features/inventory/InventoryFilterBar.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
+import InventoryTableActions from '../../features/inventory/InventoryTableActions.vue';
 
 const { can } = useAuthorization();
 const { number, date, errorMessage } = useInventoryUi();
@@ -63,7 +67,10 @@ async function createRequest() {
     dialog.value = false;
     await refresh();
   } catch (value) {
-    actionError.value = errorMessage(value, 'Purchase request could not be created');
+    actionError.value = errorMessage(
+      value,
+      'Permintaan pembelian tidak dapat dibuat. Periksa station dan line part.'
+    );
   } finally {
     saving.value = false;
   }
@@ -73,7 +80,10 @@ async function submitRequest(id: string) {
   actionError.value = '';
   await fetchApi(`/api/inventory/purchase-requests/${id}/submit`, { method: 'POST' }).catch(
     (value) => {
-      actionError.value = errorMessage(value, 'Purchase request could not be submitted');
+      actionError.value = errorMessage(
+        value,
+        'Permintaan pembelian tidak dapat diajukan. Perbarui data lalu coba lagi.'
+      );
       throw value;
     }
   );
@@ -82,45 +92,54 @@ async function submitRequest(id: string) {
 </script>
 
 <template>
-  <InventoryShell title="Purchase Requests">
+  <InventoryShell title="Permintaan Pembelian">
     <template #actions>
       <DsTooltipIconButton
         v-if="can('inventory.procurement.request').allowed"
         color="primary"
         icon="mdi-plus"
-        tooltip="Create purchase request"
+        tooltip="Buat permintaan pembelian"
         variant="flat"
         @click="openCreate"
       />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh purchase requests"
+        tooltip="Perbarui permintaan pembelian"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
-    <VAlert v-if="error || actionError" class="mb-4" type="error" variant="tonal">
-      {{ actionError || 'Purchase requests could not be loaded.' }}
-    </VAlert>
-    <VTextField
-      v-model="search"
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
       class="mb-4"
-      clearable
-      density="comfortable"
-      hide-details
-      label="Search purchase requests"
-      prepend-inner-icon="mdi-magnify"
-      variant="outlined"
-    />
-    <VCard border>
+      type="error"
+      variant="tonal"
+    >
+      {{
+        actionError || 'Permintaan pembelian tidak dapat dimuat. Perbarui halaman lalu coba lagi.'
+      }}
+    </VAlert>
+    <InventoryFilterBar label="Filter permintaan pembelian">
+      <VTextField
+        v-model="search"
+        clearable
+        density="comfortable"
+        hide-details
+        label="Cari permintaan pembelian"
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+      />
+    </InventoryFilterBar>
+    <InventoryPanel title="Daftar Permintaan Pembelian">
       <VDataTable
         :headers="[
-          { title: 'Request', key: 'requestNumber' },
+          { title: 'Permintaan', key: 'requestNumber' },
           { title: 'Station', key: 'stationCode' },
-          { title: 'Reason', key: 'requestReason' },
+          { title: 'Alasan', key: 'requestReason' },
           { title: 'Lines', key: 'lines', sortable: false },
           { title: 'Status', key: 'status' },
-          { title: 'Created', key: 'createdAt' },
+          { title: 'Dibuat', key: 'createdAt' },
           { title: '', key: 'actions', sortable: false, align: 'end' }
         ]"
         :items="rows"
@@ -137,30 +156,32 @@ async function submitRequest(id: string) {
         <template #[`item.status`]="{ item }"><DsStatusBadge :value="item.status" /></template>
         <template #[`item.createdAt`]="{ item }">{{ date(item.createdAt) }}</template>
         <template #[`item.actions`]="{ item }">
-          <DsConfirmIconButton
-            v-if="can('inventory.procurement.request').allowed && item.status === 'DRAFT'"
-            :action="() => submitRequest(item.id)"
-            confirm-icon="mdi-send-outline"
-            confirm-text="Submit request"
-            icon="mdi-send-outline"
-            message="This request will become available for purchase-order conversion."
-            title="Submit purchase request"
-            tone="warning"
-            tooltip="Submit purchase request"
-            variant="text"
-          />
+          <InventoryTableActions>
+            <DsConfirmIconButton
+              v-if="can('inventory.procurement.request').allowed && item.status === 'DRAFT'"
+              :action="() => submitRequest(item.id)"
+              confirm-icon="mdi-send-outline"
+              confirm-text="Ajukan permintaan"
+              icon="mdi-send-outline"
+              message="Permintaan ini akan tersedia untuk konversi purchase order."
+              title="Ajukan permintaan pembelian"
+              tone="warning"
+              tooltip="Ajukan permintaan"
+              variant="text"
+            />
+          </InventoryTableActions>
         </template>
         <template #no-data>
-          <div class="py-10 text-medium-emphasis">No purchase requests found.</div>
+          <div class="py-10 text-medium-emphasis">Tidak ada permintaan pembelian yang cocok.</div>
         </template>
       </VDataTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog v-model="dialog" max-width="800" persistent>
       <VCard>
-        <VCardTitle>Create purchase request</VCardTitle><VDivider />
+        <VCardTitle>Buat Permintaan Pembelian</VCardTitle><VDivider />
         <VCardText>
-          <VAlert v-if="actionError" class="mb-4" type="error" variant="tonal">
+          <VAlert v-if="actionError" aria-live="polite" class="mb-4" type="error" variant="tonal">
             {{ actionError }}
           </VAlert>
           <VSelect
@@ -175,15 +196,15 @@ async function submitRequest(id: string) {
           <VTextarea
             v-model="form.requestReason"
             class="mb-3"
-            label="Request reason"
+            label="Alasan permintaan"
             rows="2"
             variant="outlined"
           />
           <div class="mb-2 d-flex align-center">
-            <div class="text-subtitle-2 font-weight-bold">Requested parts</div>
+            <div class="text-subtitle-2 font-weight-bold">Part Diminta</div>
             <VSpacer /><DsTooltipIconButton
               icon="mdi-plus"
-              tooltip="Add part line"
+              tooltip="Tambah line part"
               size="small"
               variant="tonal"
               @click="addLine"
@@ -203,7 +224,7 @@ async function submitRequest(id: string) {
             <VCol cols="6" md="2">
               <VTextField
                 v-model.number="line.quantity"
-                label="Quantity"
+                label="Jumlah"
                 min="1"
                 type="number"
                 variant="outlined"
@@ -214,37 +235,30 @@ async function submitRequest(id: string) {
                 v-model="line.requiredAt"
                 prepend-icon=""
                 prepend-inner-icon="mdi-calendar"
-                label="Required date"
+                label="Tanggal dibutuhkan"
                 variant="outlined"
               />
             </VCol>
             <VCol cols="10" md="2">
-              <VTextField v-model="line.note" label="Note" variant="outlined" />
+              <VTextField v-model="line.note" label="Catatan" variant="outlined" />
             </VCol>
             <VCol class="d-flex align-center" cols="2" md="1">
               <DsTooltipIconButton
                 :disabled="form.lines.length === 1"
                 icon="mdi-delete-outline"
-                tooltip="Remove line"
+                tooltip="Hapus line"
                 variant="text"
                 @click="form.lines.splice(index, 1)"
               />
             </VCol>
           </VRow>
         </VCardText>
-        <VCardActions>
-          <VSpacer /><VBtn
-            :disabled="saving"
-            text="Cancel"
-            variant="text"
-            @click="dialog = false"
-          /><VBtn
-            :loading="saving"
-            prepend-icon="mdi-content-save-outline"
-            text="Create request"
-            @click="createRequest"
-          />
-        </VCardActions>
+        <InventoryDialogActions
+          :loading="saving"
+          submit-text="Buat permintaan"
+          @cancel="dialog = false"
+          @submit="createRequest"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

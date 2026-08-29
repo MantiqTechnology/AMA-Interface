@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { InventoryFlyAwayKitDto } from '#shared/features/inventory';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { errorMessage } = useInventoryUi();
@@ -7,6 +9,7 @@ const { can } = useAuthorization();
 const {
   data: kits,
   pending,
+  error,
   refresh
 } = await useAsyncData('fly-away-kits', () =>
   fetchApi<InventoryFlyAwayKitDto[]>('/api/inventory/fly-away-kits')
@@ -14,6 +17,8 @@ const {
 
 const showModal = ref(false);
 const isSubmitting = ref(false);
+const actionError = ref('');
+const actionMessage = ref('');
 
 const form = reactive({
   kitNumber: '',
@@ -26,6 +31,8 @@ const form = reactive({
 async function submitCreateKit() {
   if (!form.kitNumber || !form.partId) return;
   isSubmitting.value = true;
+  actionError.value = '';
+  actionMessage.value = '';
   try {
     await fetchApi('/api/inventory/fly-away-kits', {
       method: 'POST',
@@ -43,9 +50,13 @@ async function submitCreateKit() {
       }
     });
     showModal.value = false;
+    actionMessage.value = 'Fly Away Kit berhasil disimpan.';
     await refresh();
   } catch (err: unknown) {
-    alert(errorMessage(err, 'Gagal membuat Fly Away Kit.'));
+    actionError.value = errorMessage(
+      err,
+      'Fly Away Kit tidak dapat dibuat. Periksa aircraft, part, dan jumlah.'
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -53,21 +64,21 @@ async function submitCreateKit() {
 </script>
 
 <template>
-  <InventoryShell title="Fly Away Kit (FAK) Onboard Spare Parts">
+  <InventoryShell title="Fly Away Kit (FAK)">
     <template #actions>
-      <VBtn
+      <DsTooltipIconButton
         v-if="can('inventory.catalog.manage').allowed"
         color="primary"
-        prepend-icon="mdi-plus"
+        icon="mdi-plus"
+        tooltip="Daftarkan Fly Away Kit"
+        variant="flat"
         @click="showModal = true"
-      >
-        Daftarkan Fly Away Kit Baru
-      </VBtn>
+      />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh list kit"
+        tooltip="Perbarui kit"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
 
@@ -76,18 +87,30 @@ async function submitCreateKit() {
       (seperti O-ring, filter, spark plug, fluid, fastener) yang wajib dibawa dalam penerbangan ke
       daerah terpencil. Kelengkapan kit diaudit secara berkala sebelum keberangkatan.
     </VAlert>
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Data Fly Away Kit tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
+    </VAlert>
+    <VAlert
+      v-if="actionMessage"
+      aria-live="polite"
+      closable
+      class="mb-4"
+      type="success"
+      variant="tonal"
+    >
+      {{ actionMessage }}
+    </VAlert>
 
-    <VCard border>
-      <VCardTitle class="d-flex align-center py-3 px-4">
-        <div>
-          <h2 class="text-h6 font-weight-bold">Daftar Fly Away Kit Terpasang / Onboard</h2>
-          <div class="text-caption text-medium-emphasis">
-            Status kelengkapan komponen cadangan darurat per registrasi pesawat
-          </div>
-        </div>
-        <VSpacer />
-      </VCardTitle>
-
+    <InventoryPanel
+      subtitle="Status kelengkapan komponen cadangan darurat per registrasi pesawat"
+      title="Daftar Fly Away Kit Onboard"
+    >
       <VTable>
         <thead>
           <tr>
@@ -103,7 +126,7 @@ async function submitCreateKit() {
           <tr v-for="kit in kits ?? []" :key="kit.id">
             <td class="font-weight-bold">{{ kit.kitNumber }}</td>
             <td class="font-weight-bold text-primary">
-              {{ kit.aircraftRegistration ?? 'Movable / Unassigned' }}
+              {{ kit.aircraftRegistration ?? 'Movable / belum ditugaskan' }}
             </td>
             <td>
               <VChip color="info" size="small" variant="flat">{{ kit.status }}</VChip>
@@ -129,7 +152,7 @@ async function submitCreateKit() {
           </tr>
         </tbody>
       </VTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog v-model="showModal" max-width="500">
       <VCard>
@@ -137,7 +160,8 @@ async function submitCreateKit() {
         <VCardText>
           <VTextField
             v-model="form.kitNumber"
-            label="Kode Kit (e.g. FAK-PK-AMA-02)"
+            label="Kode kit"
+            placeholder="Contoh: FAK-PK-AMA-02…"
             density="compact"
             variant="outlined"
             class="mb-3"
@@ -151,7 +175,7 @@ async function submitCreateKit() {
           />
           <VTextField
             v-model="form.partId"
-            label="Initial Spare Part ID"
+            label="ID spare part awal"
             density="compact"
             variant="outlined"
             class="mb-3"
@@ -161,7 +185,7 @@ async function submitCreateKit() {
               <VTextField
                 v-model.number="form.requiredQuantity"
                 type="number"
-                label="Required Qty"
+                label="Jumlah wajib"
                 density="compact"
                 variant="outlined"
               />
@@ -170,19 +194,20 @@ async function submitCreateKit() {
               <VTextField
                 v-model.number="form.currentQuantity"
                 type="number"
-                label="Current Qty Onboard"
+                label="Jumlah onboard"
                 density="compact"
                 variant="outlined"
               />
             </VCol>
           </VRow>
         </VCardText>
-        <VCardActions class="justify-end px-4 pb-4">
-          <VBtn variant="text" @click="showModal = false">Batal</VBtn>
-          <VBtn color="primary" variant="flat" :loading="isSubmitting" @click="submitCreateKit">
-            Simpan Kit
-          </VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="!form.kitNumber || !form.partId"
+          :loading="isSubmitting"
+          submit-text="Simpan kit"
+          @cancel="showModal = false"
+          @submit="submitCreateKit"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

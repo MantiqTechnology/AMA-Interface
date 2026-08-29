@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { InventorySoftwareNavdbDto } from '#shared/features/inventory';
+import InventoryDialogActions from '../../features/inventory/InventoryDialogActions.vue';
+import InventoryPanel from '../../features/inventory/InventoryPanel.vue';
 import InventoryShell from '../../features/inventory/InventoryShell.vue';
 
 const { errorMessage } = useInventoryUi();
@@ -7,6 +9,7 @@ const { can } = useAuthorization();
 const {
   data: list,
   pending,
+  error,
   refresh
 } = await useAsyncData('software-navdb', () =>
   fetchApi<InventorySoftwareNavdbDto[]>('/api/inventory/software-navdb')
@@ -14,6 +17,8 @@ const {
 
 const showModal = ref(false);
 const isSubmitting = ref(false);
+const actionError = ref('');
+const actionMessage = ref('');
 const form = reactive({
   softwareName: '',
   systemType: 'FMS / GPS',
@@ -26,15 +31,21 @@ const form = reactive({
 async function submitSave() {
   if (!form.softwareName || !form.version || !form.expirationDate) return;
   isSubmitting.value = true;
+  actionError.value = '';
+  actionMessage.value = '';
   try {
     await fetchApi('/api/inventory/software-navdb', {
       method: 'POST',
       body: form
     });
     showModal.value = false;
+    actionMessage.value = 'Siklus AIRAC / software berhasil disimpan.';
     await refresh();
   } catch (err: unknown) {
-    alert(errorMessage(err, 'Gagal update database NavDB.'));
+    actionError.value = errorMessage(
+      err,
+      'Database NavDB tidak dapat diperbarui. Periksa nama, versi, dan tanggal expiry.'
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -42,21 +53,21 @@ async function submitSave() {
 </script>
 
 <template>
-  <InventoryShell title="Avionics Software & AIRAC NavDB Tracker">
+  <InventoryShell title="AIRAC NavDB & Software Avionik">
     <template #actions>
-      <VBtn
+      <DsTooltipIconButton
         v-if="can('inventory.catalog.manage').allowed"
         color="primary"
-        prepend-icon="mdi-plus"
+        icon="mdi-plus"
+        tooltip="Update AIRAC / software"
+        variant="flat"
         @click="showModal = true"
-      >
-        Update Database AIRAC / Software
-      </VBtn>
+      />
       <DsTooltipIconButton
         icon="mdi-refresh"
-        tooltip="Refresh list NavDB"
+        tooltip="Perbarui NavDB"
         variant="text"
-        @click="refresh"
+        @click="() => refresh()"
       />
     </template>
 
@@ -65,27 +76,39 @@ async function submitSave() {
       (Garmin G1000, FMS, EGPWS) wajib diperbarui setiap siklus 28 hari. Sistem memberikan
       peringatan dini otomatis ketika database mendekati tanggal kedaluwarsa.
     </VAlert>
+    <VAlert
+      v-if="error || actionError"
+      aria-live="polite"
+      class="mb-4"
+      type="error"
+      variant="tonal"
+    >
+      {{ actionError || 'Data AIRAC NavDB tidak dapat dimuat. Perbarui halaman lalu coba lagi.' }}
+    </VAlert>
+    <VAlert
+      v-if="actionMessage"
+      aria-live="polite"
+      closable
+      class="mb-4"
+      type="success"
+      variant="tonal"
+    >
+      {{ actionMessage }}
+    </VAlert>
 
-    <VCard border>
-      <VCardTitle class="d-flex align-center py-3 px-4">
-        <div>
-          <h2 class="text-h6 font-weight-bold">Status Database Navigasi & Versi Software Armada</h2>
-          <div class="text-caption text-medium-emphasis">
-            Pelacakan masa berlaku siklus AIRAC 28-hari & versi firmware avionik
-          </div>
-        </div>
-        <VSpacer />
-      </VCardTitle>
-
+    <InventoryPanel
+      subtitle="Pelacakan masa berlaku siklus AIRAC 28-hari & versi firmware avionik"
+      title="Status Database Navigasi & Versi Software Armada"
+    >
       <VTable>
         <thead>
           <tr>
-            <th>System Type</th>
+            <th>Tipe Sistem</th>
             <th>Nama Software / NavDB</th>
             <th>Siklus AIRAC</th>
             <th>Versi Software</th>
-            <th>Effective Date</th>
-            <th>Expiration Date</th>
+            <th>Tanggal Efektif</th>
+            <th>Tanggal Expiry</th>
             <th>Sisa Hari</th>
             <th>Status Kelaikan</th>
           </tr>
@@ -128,7 +151,7 @@ async function submitSave() {
           </tr>
         </tbody>
       </VTable>
-    </VCard>
+    </InventoryPanel>
 
     <VDialog v-model="showModal" max-width="500">
       <VCard>
@@ -144,7 +167,7 @@ async function submitSave() {
           />
           <VTextField
             v-model="form.systemType"
-            label="System Type (e.g. FMS, GPS, EGPWS)"
+            label="Tipe sistem (contoh: FMS, GPS, EGPWS)"
             density="compact"
             variant="outlined"
             class="mb-3"
@@ -158,7 +181,7 @@ async function submitSave() {
           />
           <VTextField
             v-model="form.airacCycle"
-            label="Kode Siklus AIRAC (e.g. AIRAC 2608)"
+            label="Kode siklus AIRAC (contoh: AIRAC 2608)"
             density="compact"
             variant="outlined"
             class="mb-3"
@@ -174,17 +197,18 @@ async function submitSave() {
           <VTextField
             v-model="form.expirationDate"
             type="date"
-            label="Tanggal Expiration (Kedaluwarsa)"
+            label="Tanggal expiry"
             density="compact"
             variant="outlined"
           />
         </VCardText>
-        <VCardActions class="justify-end px-4 pb-4">
-          <VBtn variant="text" @click="showModal = false">Batal</VBtn>
-          <VBtn color="primary" variant="flat" :loading="isSubmitting" @click="submitSave">
-            Simpan Siklus Baru
-          </VBtn>
-        </VCardActions>
+        <InventoryDialogActions
+          :disabled="!form.softwareName || !form.version || !form.expirationDate"
+          :loading="isSubmitting"
+          submit-text="Simpan siklus"
+          @cancel="showModal = false"
+          @submit="submitSave"
+        />
       </VCard>
     </VDialog>
   </InventoryShell>

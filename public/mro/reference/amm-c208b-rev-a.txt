@@ -1,0 +1,6 @@
+AMM C208B REV A - FICTIONAL SAMPLE REFERENCE
+
+This static file is a maintenance demo reference only. It is not approved maintenance data and is not valid for operational use.
+
+Reference section: 24-30-00 p. 4-7
+Task context: starter-generator indication wiring inspection and terminal seating.
