@@ -80,6 +80,7 @@ export default defineNuxtConfig({
     }
   },
   nitro: {
+    sourceMap: false,
     experimental: {
       openAPI: true,
       tasks: true
