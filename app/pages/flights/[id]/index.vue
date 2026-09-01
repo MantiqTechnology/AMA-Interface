@@ -792,6 +792,10 @@ function historyActor(item: FlightStatusHistoryDto) {
   if (item.changedByUserId === 'USR-001') return 'Rian - OCC Staff';
   return item.changedByUserId ?? 'System';
 }
+
+function handleActionSuccessVisibility(open: boolean) {
+  if (!open) actionSuccess.value = '';
+}
 </script>
 
 <template>
@@ -2457,7 +2461,13 @@ function historyActor(item: FlightStatusHistoryDto) {
           </VCardActions>
         </VCard>
       </VDialog>
-      <VSnackbar v-model="actionSuccess" color="success" location="top end" timeout="3000">
+      <VSnackbar
+        :model-value="Boolean(actionSuccess)"
+        color="success"
+        location="top end"
+        timeout="3000"
+        @update:model-value="handleActionSuccessVisibility"
+      >
         {{ actionSuccess }}
       </VSnackbar>
     </template>

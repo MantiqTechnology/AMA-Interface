@@ -95,6 +95,64 @@ const statusOptions = computed(() => lookups.value?.flightOperationStatuses ?? [
 const flightTypeOptions = computed(() => lookups.value?.flightTypes ?? []);
 
 const filteredFlights = computed(() => data.value?.flights ?? []);
+type OperationalAlert = {
+  id: string;
+  color: 'error' | 'warning' | 'info';
+  icon: string;
+  message: string;
+  title: string;
+  to: string;
+};
+
+const operationalAlerts = computed<OperationalAlert[]>(() => {
+  const alerts: OperationalAlert[] = [];
+
+  for (const flight of filteredFlights.value) {
+    if (flight.currentStatus === 'BLOCKED') {
+      alerts.push({
+        id: `${flight.id}-blocked`,
+        color: 'error',
+        icon: 'mdi-alert-octagon-outline',
+        title: `${flight.flightNumber} blocked`,
+        message: flight.blockingReason ?? 'Readiness requirements are incomplete.',
+        to: `/flights/${flight.id}`
+      });
+      continue;
+    }
+
+    if (flight.readinessPercent < 100 && !['CANCELLED', 'CLOSED'].includes(flight.currentStatus)) {
+      alerts.push({
+        id: `${flight.id}-readiness`,
+        color: 'warning',
+        icon: 'mdi-alert-outline',
+        title: `${flight.flightNumber} readiness incomplete`,
+        message: `${flight.readinessPercent}% of required checks are complete.`,
+        to: `/flights/${flight.id}`
+      });
+      continue;
+    }
+
+    if (flight.currentStatus === 'PENDING_CLOSURE') {
+      alerts.push({
+        id: `${flight.id}-closure`,
+        color: 'info',
+        icon: 'mdi-information-outline',
+        title: `${flight.flightNumber} awaits closure`,
+        message: 'Operational evidence is ready for closure review.',
+        to: `/flights/${flight.id}`
+      });
+    }
+  }
+
+  return alerts;
+});
+const visibleOperationalAlerts = computed(() => operationalAlerts.value.slice(0, 5));
+const hiddenOperationalAlertCount = computed(() =>
+  Math.max(0, operationalAlerts.value.length - visibleOperationalAlerts.value.length)
+);
+const criticalOperationalAlertCount = computed(
+  () => operationalAlerts.value.filter((alert) => alert.color === 'error').length
+);
 
 const hasDashboardDrilldown = computed(() =>
   [
@@ -158,6 +216,53 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
 
     <VAlert v-if="error" class="mb-4" type="error" variant="tonal">
       Unable to load flight board.
+    </VAlert>
+
+    <VAlert
+      v-if="operationalAlerts.length"
+      class="mb-4"
+      :color="criticalOperationalAlertCount ? 'error' : 'warning'"
+      icon="mdi-bell-alert-outline"
+      variant="tonal"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="font-weight-bold">
+            {{ operationalAlerts.length }} active operational alert{{
+              operationalAlerts.length > 1 ? 's' : ''
+            }}
+          </div>
+          <div class="text-caption">
+            Alerts below follow the same blocked, readiness, and closure rules as the global
+            notification bell.
+          </div>
+        </div>
+        <VChip v-if="criticalOperationalAlertCount" color="error" size="small" variant="flat">
+          {{ criticalOperationalAlertCount }} critical
+        </VChip>
+      </div>
+
+      <div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <div v-for="alert in visibleOperationalAlerts" :key="alert.id" class="overview-alert-row">
+          <VIcon :color="alert.color" :icon="alert.icon" size="20" />
+          <div class="min-w-0 flex-1">
+            <div class="overview-alert-row__title">{{ alert.title }}</div>
+            <div class="overview-alert-row__message">{{ alert.message }}</div>
+          </div>
+          <VBtn
+            aria-label="Open flight alert"
+            density="comfortable"
+            icon="mdi-open-in-new"
+            :to="alert.to"
+            variant="text"
+          />
+        </div>
+      </div>
+
+      <div v-if="hiddenOperationalAlertCount" class="mt-2 text-caption">
+        {{ hiddenOperationalAlertCount }} more alert{{ hiddenOperationalAlertCount > 1 ? 's' : '' }}
+        hidden by the compact overview.
+      </div>
     </VAlert>
 
     <VRow class="mb-4">
@@ -290,3 +395,30 @@ const cards: Array<{ label: string; status: FlightOperationStatus; icon: string 
     </VCard>
   </VContainer>
 </template>
+
+<style scoped>
+.overview-alert-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgb(var(--v-theme-border));
+  background: rgb(var(--v-theme-surface));
+  padding: 10px 12px;
+}
+
+.overview-alert-row__title {
+  overflow: hidden;
+  color: rgb(var(--v-theme-text-primary));
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-alert-row__message {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+</style>

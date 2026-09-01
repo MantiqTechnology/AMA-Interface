@@ -50,6 +50,14 @@ function safeSection<T extends { source: { href: string } }>(section: T) {
 const metrics = computed(() =>
   (data.value?.metrics ?? []).map((metric) => ({ ...metric, to: safeHref(metric.href) }))
 );
+const controlAlerts = computed(() => data.value?.actions.data ?? []);
+const visibleControlAlerts = computed(() => controlAlerts.value.slice(0, 5));
+const hiddenControlAlertCount = computed(() =>
+  Math.max(0, controlAlerts.value.length - visibleControlAlerts.value.length)
+);
+const criticalControlAlertCount = computed(
+  () => controlAlerts.value.filter((alert) => alert.severity === 'critical').length
+);
 const stationOptions = computed(() =>
   (data.value?.stationOptions ?? []).map((item) => ({
     ...item,
@@ -380,6 +388,48 @@ function severityColor(severity: string) {
         <span>{{ shortDate(data.meta.dateFrom) }} — {{ shortDate(data.meta.dateTo) }}</span>
         <span>Snapshot {{ updatedAt(data.meta.generatedAt) }} WIT</span>
       </div>
+      <VAlert
+        v-if="controlAlerts.length"
+        class="mt-3"
+        :color="criticalControlAlertCount ? 'error' : 'warning'"
+        icon="mdi-bell-alert-outline"
+        variant="tonal"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div class="font-weight-bold">{{ controlAlerts.length }} alert operasional aktif</div>
+            <div class="text-caption">
+              Flight non-terminal dengan blocker, readiness, atau closure terbuka.
+            </div>
+          </div>
+          <VChip v-if="criticalControlAlertCount" color="error" size="small" variant="flat">
+            {{ criticalControlAlertCount }} critical
+          </VChip>
+        </div>
+
+        <div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div v-for="alert in visibleControlAlerts" :key="alert.id" class="dashboard-alert-row">
+            <VIcon :color="severityColor(alert.severity)" icon="mdi-alert-outline" size="20" />
+            <div class="min-w-0 flex-1">
+              <div class="dashboard-alert-row__title">
+                {{ alert.flightNumber }} · {{ alert.owner }}
+              </div>
+              <div class="dashboard-alert-row__message">{{ alert.issue }}</div>
+            </div>
+            <VBtn
+              aria-label="Buka alert flight"
+              density="comfortable"
+              icon="mdi-open-in-new"
+              :to="alert.href"
+              variant="text"
+            />
+          </div>
+        </div>
+
+        <div v-if="hiddenControlAlertCount" class="mt-2 text-caption">
+          {{ hiddenControlAlertCount }} alert lain ditampilkan di tabel action queue.
+        </div>
+      </VAlert>
       <DsMetricStrip class="mt-3" :items="metrics" />
 
       <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
@@ -558,6 +608,28 @@ function severityColor(severity: string) {
 .action-issue {
   min-width: 260px;
   max-width: 560px;
+}
+.dashboard-alert-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgb(var(--v-theme-border));
+  background: rgb(var(--v-theme-surface));
+  padding: 10px 12px;
+}
+.dashboard-alert-row__title {
+  overflow: hidden;
+  color: rgb(var(--v-theme-text-primary));
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dashboard-alert-row__message {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 @media (max-width: 900px) {
   .dashboard-filter-row {
