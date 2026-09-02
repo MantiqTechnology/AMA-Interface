@@ -18,6 +18,10 @@ describe('i18n foundation', () => {
       expect(messages[locale].actions.openNavigation).toBeTruthy();
       expect(messages[locale].stationOperations.taskTitles.ORIGIN_HANDOVER).toBeTruthy();
       expect(messages[locale].stationOperations.taskTitles.DESTINATION_HANDOVER).toBeTruthy();
+      expect(messages[locale].nav.maintenanceOperations).toBeTruthy();
+      expect(messages[locale].nav.workPackages).toBeTruthy();
+      expect(messages[locale].nav.approvedMaintenanceData).toBeTruthy();
+      expect(messages[locale].nav.technicalReleases).toBeTruthy();
     }
   });
 
@@ -28,6 +32,40 @@ describe('i18n foundation', () => {
     expect(messages.id.stationOperations.taskTitles.DESTINATION_HANDOVER).toBe(
       'Serah terima penumpang dan kargo selesai'
     );
+  });
+
+  it('keeps maintenance glossary terms stable in Indonesian copy', () => {
+    expect(messages.id.maintenance.terms.workPackage).toBe('Work Package');
+    expect(messages.id.maintenance.terms.jobCard).toBe('Job Card');
+    expect(messages.id.maintenance.terms.approvedMaintenanceData).toBe('Approved Maintenance Data');
+    expect(messages.id.maintenance.terms.technicalRelease).toBe('Technical Release');
+    expect(messages.id.maintenance.terms.inspection).toBe('Inspection');
+
+    expect(messages.id.maintenance.status.WORK_PACKAGE).toBe('Work Package');
+    expect(messages.id.maintenance.status.JOB_CARD).toBe('Job Card');
+    expect(messages.id.maintenance.status.TECHNICAL_RELEASE).toBe('Technical Release');
+    expect(messages.id.maintenance.status.READY_FOR_RELEASE).toBe('Menunggu Technical Release');
+    expect(messages.id.maintenance.releaseImpact.BLOCKS_RELEASE).toBe(
+      'Memblokir Technical Release'
+    );
+    expect(messages.id.maintenance.facilityOperations.openWorkPackage).toBe('Buka Work Package');
+    expect(messages.id.nav.maintenanceOperations).toBe('Operasi Maintenance');
+    expect(messages.id.nav.workPackages).toBe('Work Packages');
+    expect(messages.id.nav.approvedMaintenanceData).toBe('Approved Maintenance Data');
+    expect(messages.id.nav.technicalReleases).toBe('Technical Releases');
+  });
+
+  it('keeps maintenance namespaces available in every locale', () => {
+    for (const locale of supportedLocales) {
+      expect(messages[locale].maintenance.terms.workPackage).toBeTruthy();
+      expect(messages[locale].maintenance.status.READY_FOR_RELEASE).toBeTruthy();
+      expect(messages[locale].maintenance.permissionActions.releaseIssue).toBeTruthy();
+      expect(messages[locale].maintenance.operationalActions.requiredAction).toBeTruthy();
+      expect(messages[locale].maintenance.jobCardWorkflow.authorizationSummary).toBeTruthy();
+      expect(messages[locale].maintenance.workPackagesList.queueTitle).toBeTruthy();
+      expect(messages[locale].maintenance.myWork.title).toBeTruthy();
+      expect(messages[locale].maintenance.facilityOperations.title).toBeTruthy();
+    }
   });
 
   it('allows API errors to carry translation metadata without breaking message fallback', () => {

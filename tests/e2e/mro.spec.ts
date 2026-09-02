@@ -53,7 +53,7 @@ test('MRO work package list renders API failure without empty state', async ({
   await expect(page.getByText('Tidak ada paket pekerjaan sesuai filter.')).toHaveCount(0);
 });
 
-test('MRO golden path issues technical release from authoritative work-package detail', async ({
+test('MRO workspace deep links split overview, execution, records, and release', async ({
   baseURL,
   context,
   page
@@ -68,14 +68,23 @@ test('MRO golden path issues technical release from authoritative work-package d
   await page.goto('/maintenance/work-packages/mwp-mrov1-release-ready', {
     waitUntil: 'networkidle'
   });
+  await expect(page).toHaveURL(/\/maintenance\/work-packages\/mwp-mrov1-release-ready\/overview/u);
   await expect(
     page.getByRole('heading', { name: 'Starter-generator indication rectification' })
   ).toBeVisible();
   await expect(page.getByText('MWP-MROV1-RTS', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Release Readiness Summary')).toBeVisible();
+  await expect(page.getByText('Next Required Actions')).toBeVisible();
   await expect(
-    page.getByText('Starter-generator indication rectification', { exact: true }).first()
-  ).toBeVisible();
-  await page.getByRole('button', { name: /Rectify starter-generator indication wiring/u }).click();
+    page.getByRole('button', { name: 'Authenticate and Issue Technical Release' })
+  ).toHaveCount(0);
+
+  await page.goto(
+    '/maintenance/work-packages/mwp-mrov1-release-ready/execution/job-cards/mjc-mrov1-release-001',
+    {
+      waitUntil: 'networkidle'
+    }
+  );
   const jobCardPanel = page.locator('.v-expansion-panel').filter({
     hasText: 'Rectify starter-generator indication wiring'
   });
@@ -101,25 +110,28 @@ test('MRO golden path issues technical release from authoritative work-package d
   await expect(jobCardPanel.getByText('Bukti wajib')).toBeVisible();
   await expect(jobCardPanel.getByText('Independent inspection record.')).toBeVisible();
   await expect(jobCardPanel.getByText('Resource terkait Job Card')).toBeVisible();
-  await expect(page.getByText('Pemeriksaan independen lulus').first()).toBeVisible();
-  await expect(page.getByText('Seluruh pekerjaan wajib selesai')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Terbitkan rilis teknis' }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Konfirmasi rilis teknis pesawat' })
-  ).toBeVisible();
+  await page.goto('/maintenance/work-packages/mwp-mrov1-release-ready/records', {
+    waitUntil: 'networkidle'
+  });
+  await expect(page.getByText('Technical Records')).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Mandatory Job Card', exact: true })).toBeVisible();
+
+  await page.goto('/maintenance/work-packages/mwp-mrov1-release-ready/release', {
+    waitUntil: 'networkidle'
+  });
+  await expect(page.getByText('Technical Release', { exact: true })).toBeVisible();
   await expect(page.getByText('AME-CERT-MRO-001').first()).toBeVisible();
-  await expect(page.getByText('Lisensi dan wewenang PT AMA terverifikasi').first()).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Authenticate and Issue Technical Release' })
+  ).toBeEnabled();
 
-  await page.getByRole('button', { name: 'Terbitkan rilis teknis' }).last().click();
+  await page.getByRole('button', { name: 'Authenticate and Issue Technical Release' }).click();
   await expect(page.getByText('Rilis teknis selesai')).toBeVisible();
-  await page.getByRole('button', { name: 'Tutup' }).click();
-
-  await expect(page.getByText('Snapshot wewenang signer')).toBeVisible();
   await expect(page.getByText('Serviceable', { exact: true }).first()).toBeVisible();
 });
 
-test('MRO technical record renders release decision modal and gates drawer', async ({
+test('MRO technical record workspace renders release gates without release action', async ({
   baseURL,
   context,
   page
@@ -129,25 +141,24 @@ test('MRO technical record renders release decision modal and gates drawer', asy
     { name: 'ama_demo_role', value: 'Maintenance Manager', url: cookieUrl }
   ]);
 
-  await page.goto('/maintenance/work-packages/mwp-mrov21-conflict', { waitUntil: 'networkidle' });
+  await page.goto('/maintenance/work-packages/mwp-mrov21-conflict/records', {
+    waitUntil: 'networkidle'
+  });
   await expect(page.getByText('MWP-MROV21-CONFLICT').first()).toBeVisible();
-  await page.getByRole('button', { name: 'Tampilkan Rekam Teknis' }).click();
+  await expect(page.getByText('Technical Records')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('cell', { name: 'Mandatory Job Card', exact: true })).toBeVisible();
+  await expect(page.getByText('Missing').first()).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Authenticate and Issue Technical Release' })
+  ).toHaveCount(0);
 
-  await expect(page.getByText('Rekam Teknis Work Package')).toBeVisible({ timeout: 15000 });
-  const dialog = page.locator('.technical-record-card');
-  await expect(dialog.getByText('UNSERVICEABLE • RELEASE BLOCKED')).toBeVisible();
-  await expect(dialog.getByText('DEMO - NOT FOR OPERATIONAL USE')).toBeVisible();
-  await expect(dialog.getByText('Mandatory Job Cards')).toBeVisible();
-  await expect(dialog.getByText('Belum ditautkan').first()).toBeVisible();
-
-  await dialog.getByRole('tab', { name: 'Job Cards' }).click();
-  await expect(dialog.getByText('No job card linked')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Lihat Gates Rilis' }).click();
-
-  await expect(page.getByRole('heading', { name: 'Gates Rilis Teknis' })).toBeVisible();
-  await expect(page.getByText('Missing / Belum selesai').first()).toBeVisible();
-  await expect(page.getByText('Next required actions')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Terbitkan Rilis Teknis' }).last()).toBeDisabled();
+  await page.goto('/maintenance/work-packages/mwp-mrov21-conflict/release', {
+    waitUntil: 'networkidle'
+  });
+  await expect(page.getByText('Technical Release', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Authenticate and Issue Technical Release' })
+  ).toBeDisabled();
 });
 
 test('MRO command center renders priority dashboard, filters rows, and opens assign modal tabs', async ({
@@ -215,9 +226,62 @@ test('MRO command center renders priority dashboard, filters rows, and opens ass
   await dialog.getByRole('tab', { name: 'Personnel' }).click();
   await expect(dialog.getByLabel('Mode pelaksanaan')).toBeVisible();
   await dialog.getByRole('tab', { name: 'Material' }).click();
-  await expect(dialog.getByLabel('Approved maintenance data reference')).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Approved maintenance data' })).toBeVisible();
+  await expect(
+    dialog.getByRole('textbox', { name: 'Approved maintenance data reference' })
+  ).toBeVisible();
+  await expect(dialog.getByRole('textbox', { name: 'Revision snapshot' })).toBeVisible();
   await dialog.getByRole('tab', { name: 'Catatan' }).click();
   await expect(dialog.getByLabel('Bukti atau alasan perencanaan')).toBeVisible();
+});
+
+test('MRO command center creates initial job card with selected approved data', async ({
+  baseURL,
+  context,
+  page
+}) => {
+  const cookieUrl = new URL('/', baseURL ?? 'http://localhost:3100').toString();
+  await context.addCookies([
+    { name: 'ama_demo_role', value: 'Maintenance Manager', url: cookieUrl }
+  ]);
+
+  await page.goto('/maintenance?defect=DEF-MROV1-MRB-001', { waitUntil: 'networkidle' });
+  const dialog = page.getByRole('dialog', { name: 'Assign Work Package' });
+  await expect(dialog).toBeVisible({ timeout: 15000 });
+
+  await dialog.getByRole('tab', { name: 'Material' }).click();
+  await dialog.getByRole('combobox', { name: 'Approved maintenance data' }).click();
+  await page.getByRole('option', { name: 'AMM AMA-MROV2-AMM-001 / REV-MROV2-ACTIVE' }).click();
+  await expect(
+    dialog.getByRole('textbox', { name: 'Approved maintenance data reference' })
+  ).toHaveValue('AMA-MROV2-AMM-001');
+  await expect(dialog.getByRole('textbox', { name: 'Revision snapshot' })).toHaveValue(
+    'REV-MROV2-ACTIVE'
+  );
+
+  await dialog.getByRole('tab', { name: 'Catatan' }).click();
+  await dialog
+    .getByLabel('Bukti atau alasan perencanaan')
+    .fill('Demo package created with controlled approved data selected from library.');
+  await dialog.getByRole('button', { name: 'Simpan' }).click();
+
+  await expect(page).toHaveURL(/\/maintenance\/work-packages\/mwp-[^/]+\/overview/u, {
+    timeout: 15000
+  });
+  await page.goto(`${page.url().replace(/\/overview$/u, '')}/execution`, {
+    waitUntil: 'networkidle'
+  });
+  await page.getByRole('button', { name: /Brake wear indication/u }).click();
+  const jobCardPanel = page.locator('.v-expansion-panel').filter({
+    hasText: 'Brake wear indication'
+  });
+  await expect(jobCardPanel.getByText('Dokumen kerja')).toBeVisible();
+  await expect(jobCardPanel.getByText('AMA-MROV2-AMM-001 / REV-MROV2-ACTIVE')).toBeVisible();
+  await expect(jobCardPanel.getByRole('link', { name: 'AMM reference extract' })).toHaveAttribute(
+    'href',
+    '/mro/reference/amm-c208b-rev-a.txt'
+  );
+  await expect(jobCardPanel.getByText('Approved data belum tertaut')).toHaveCount(0);
 });
 
 test('MRO command center remains usable across desktop, tablet, and mobile widths', async ({

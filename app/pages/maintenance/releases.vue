@@ -5,16 +5,19 @@ const ui = useMaintenanceUi();
 const format = useLocaleFormat();
 const route = useRoute();
 const { resolveAircraftImageUrl } = useAircraftImageUrl();
+type TechnicalRelease = MaintenanceCommandCenterDto['technicalReleases'][number];
+type ReleaseResult = TechnicalRelease['resultingStatus'];
+
 const filters = reactive({
   search: String(route.query.search ?? ''),
   aircraft: '',
   signer: '',
-  result: '',
+  result: null as ReleaseResult | null,
   dateFrom: '',
   dateTo: ''
 });
 const releaseDrawer = ref(false);
-const selectedRelease = ref<MaintenanceCommandCenterDto['technicalReleases'][number] | null>(null);
+const selectedRelease = ref<TechnicalRelease | null>(null);
 
 const { data, pending, error, refresh } = await useAsyncData('maintenance-technical-releases', () =>
   fetchApi<MaintenanceCommandCenterDto>('/api/maintenance/command-center')
@@ -75,20 +78,18 @@ const releases = computed(() => {
   });
 });
 
-function releaseSignerName(release: MaintenanceCommandCenterDto['technicalReleases'][number]) {
+function releaseSignerName(release: TechnicalRelease) {
   const name = release.signerAuthorizationSnapshot?.personnelName;
   return typeof name === 'string' ? name : 'Certifying Staff';
 }
 
-function linkedPackage(release: MaintenanceCommandCenterDto['technicalReleases'][number]) {
+function linkedPackage(release: TechnicalRelease) {
   return (data.value?.workPackages ?? []).find(
     (item) => item.packageNumber === release.workOrderReference
   );
 }
 
-function linkedDefectDisposition(
-  release: MaintenanceCommandCenterDto['technicalReleases'][number]
-) {
+function linkedDefectDisposition(release: TechnicalRelease) {
   const defects = (data.value?.defects ?? []).filter((defect) =>
     release.defectIds.includes(defect.id)
   );
@@ -96,10 +97,7 @@ function linkedDefectDisposition(
   return defects.map((defect) => `${defect.defectNumber}: ${ui.label(defect.status)}`).join(', ');
 }
 
-function snapshotValue(
-  release: MaintenanceCommandCenterDto['technicalReleases'][number],
-  key: string
-) {
+function snapshotValue(release: TechnicalRelease, key: string) {
   if (!release.signerAuthorizationSnapshot && key === 'companyAuthorizationNumber') {
     return 'Catatan lama - snapshot wewenang PT AMA tidak tersedia.';
   }
@@ -109,7 +107,7 @@ function snapshotValue(
   return String(value);
 }
 
-function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][number]) {
+function openRelease(release: TechnicalRelease) {
   selectedRelease.value = release;
   releaseDrawer.value = true;
 }
@@ -121,7 +119,7 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
       <div>
         <h1 class="text-h4 font-weight-bold">Rilis Teknis Pesawat</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Catatan rilis teknis dengan snapshot lisensi dan Wewenang PT AMA.
+          Catatan Technical Release dengan snapshot lisensi dan Wewenang PT AMA.
           <span class="text-caption">Technical Releases</span>
         </p>
       </div>
@@ -135,7 +133,7 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
       <div>Langkah berikutnya: gunakan role dengan izin membaca maintenance.</div>
     </VAlert>
     <VAlert v-else-if="error" type="error" variant="tonal" class="mb-4">
-      <strong>Catatan rilis teknis belum dapat dimuat.</strong>
+      <strong>Catatan Technical Release belum dapat dimuat.</strong>
       <div>
         Dampak: rilis yang sudah ditandatangani dan snapshot wewenang belum dapat diperiksa.
       </div>
@@ -214,13 +212,15 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
             </thead>
             <tbody>
               <tr v-if="pending">
-                <td colspan="5">Memuat rilis teknis...</td>
+                <td colspan="5">Memuat Technical Release...</td>
               </tr>
               <tr v-else-if="accessRestricted">
                 <td colspan="5">Akses dibatasi untuk role aktif.</td>
               </tr>
               <tr v-else-if="error">
-                <td colspan="5">Data rilis teknis belum tersedia sampai permintaan berhasil.</td>
+                <td colspan="5">
+                  Data Technical Release belum tersedia sampai permintaan berhasil.
+                </td>
               </tr>
               <template v-else>
                 <tr v-for="release in releases" :key="release.id">
@@ -281,8 +281,8 @@ function openRelease(release: MaintenanceCommandCenterDto['technicalReleases'][n
                   <td colspan="5">
                     {{
                       hasFilters
-                        ? 'Tidak ada rilis teknis sesuai filter.'
-                        : 'Belum ada rilis teknis tercatat.'
+                        ? 'Tidak ada Technical Release sesuai filter.'
+                        : 'Belum ada Technical Release tercatat.'
                     }}
                   </td>
                 </tr>

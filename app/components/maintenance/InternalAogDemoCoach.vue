@@ -96,8 +96,8 @@ async function confirmReset() {
       <VCard>
         <VCardTitle>Reset skenario Internal AOG?</VCardTitle>
         <VCardText>
-          Reservasi, issue, instalasi, sign-off, pemeriksaan, dan rilis pada skenario ini akan
-          kembali ke baseline awal.
+          Reservasi, issue, instalasi, Sign-off, Inspection, dan Technical Release pada skenario ini
+          akan kembali ke baseline awal.
           <VAlert v-if="resetError" type="error" variant="tonal" class="mt-4">
             {{ resetError }}
           </VAlert>

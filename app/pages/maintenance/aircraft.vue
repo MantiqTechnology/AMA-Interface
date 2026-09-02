@@ -4,12 +4,14 @@ import type { StationOption } from '#shared/features/operations/stations';
 import StationSelect from '../../features/operations/stations/StationSelect.vue';
 
 const ui = useMaintenanceUi();
+type FleetAircraft = MaintenanceCommandCenterDto['fleet'][number];
+type TechnicalEligibility = FleetAircraft['technicalEligibility'];
 
 const filters = reactive({
   search: '',
   stationId: '' as string | null,
   serviceability: '',
-  eligibility: '',
+  eligibility: null as TechnicalEligibility | null,
   dueState: ''
 });
 

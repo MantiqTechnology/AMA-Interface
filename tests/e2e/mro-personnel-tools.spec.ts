@@ -20,7 +20,15 @@ async function unwrap<T>(response: APIResponse): Promise<T> {
 }
 
 async function clickResourceTab(page: Page, name: 'Tool' | 'Personnel' | 'MRO Eligibility') {
-  await page.getByRole('tab', { name }).click();
+  const resourceRoute =
+    name === 'Tool' ? 'tools' : name === 'Personnel' ? 'personnel' : 'facilities';
+  const url = new URL(page.url());
+  const workPackageIndex = url.pathname.indexOf('/maintenance/work-packages/');
+  const workPackageBase = url.pathname
+    .slice(workPackageIndex)
+    .match(/^\/maintenance\/work-packages\/[^/]+/u)?.[0];
+  if (!workPackageBase) throw new Error(`Unexpected work package URL: ${url.pathname}`);
+  await page.goto(`${workPackageBase}/resources/${resourceRoute}`, { waitUntil: 'networkidle' });
 }
 
 async function createScheduledResourceWorkPackage(

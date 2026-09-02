@@ -1,5 +1,4 @@
-import { expect, test, type BrowserContext } from '@playwright/test';
-import { Buffer } from 'node:buffer';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -7,6 +6,19 @@ async function setRole(context: BrowserContext, baseURL: string | undefined, rol
   const cookieUrl = new URL('/', baseURL ?? 'http://localhost:3100').toString();
   await context.clearCookies();
   await context.addCookies([{ name: 'ama_demo_role', value: role, url: cookieUrl }]);
+}
+
+async function selectApprovedData(page: Page) {
+  await page
+    .locator('.v-input')
+    .filter({ has: page.getByText('Approved maintenance data', { exact: true }) })
+    .locator('.v-field__input')
+    .click();
+  await page
+    .getByRole('listbox', { name: 'Approved maintenance data' })
+    .getByRole('option')
+    .first()
+    .click();
 }
 
 test('plays non-routine finding corrective workflow through Work Package UI', async ({
@@ -22,9 +34,11 @@ test('plays non-routine finding corrective workflow through Work Package UI', as
   const findingTitle = 'Hydraulic hose chafing at LH main landing gear';
 
   await setRole(context, baseURL, 'Maintenance Manager');
-  await page.goto('/maintenance/work-packages/mwp-mrov1-active', { waitUntil: 'networkidle' });
+  await page.goto('/maintenance/work-packages/mwp-mrov1-active/execution', {
+    waitUntil: 'networkidle'
+  });
   await page.getByLabel('Judul').fill(sourceTitle);
-  await page.getByLabel('Approved maintenance data reference').fill('AMM DEMO 05-20-00');
+  await selectApprovedData(page);
   await page.getByRole('button', { name: 'Tambah kartu kerja' }).click();
   await expect(page.getByText(sourceTitle)).toBeVisible();
 
@@ -36,53 +50,45 @@ test('plays non-routine finding corrective workflow through Work Package UI', as
   await page.screenshot({ path: output('01-job-card-active.png'), fullPage: true });
 
   await page.getByRole('button', { name: 'Catat Temuan' }).click();
-  await expect(page.getByRole('heading', { name: 'Catat Temuan Non-Routine' })).toBeVisible();
-  await expect(page.getByText('Work Package', { exact: true })).toBeVisible();
-  await expect(page.getByText('Field wajib belum lengkap')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Record Non-Routine Finding' })).toBeVisible();
   await page.getByLabel('Judul temuan').fill(findingTitle);
   await page
-    .getByLabel('Deskripsi temuan')
+    .getByLabel('Observed condition')
     .fill('Mechanic found unexpected hydraulic hose chafing during planned inspection.');
-  await page.getByLabel('Ada dampak keselamatan langsung').click();
-  await expect(page.getByText('Concern keselamatan aktif')).toBeVisible();
-  await expect(page.getByLabel('Dampak operasional')).toHaveValue('Grounding / AOG');
-  await expect(page.getByLabel('Klasifikasi temuan')).toHaveValue('Safety critical');
+  await page.getByLabel('Immediate safety concern').click();
+  await expect(page.getByLabel('Operational impact')).toHaveValue('Grounding / AOG');
+  await expect(page.getByLabel('Finding classification')).toHaveValue('Safety critical');
   await expect(page.getByLabel('Prioritas')).toHaveValue('AOG');
-  await page.getByLabel('Lokasi / Sistem').fill('LH main landing gear');
+  await page.getByLabel('Location / system').fill('LH main landing gear');
   await page.getByRole('textbox', { name: 'ATA', exact: true }).fill('29');
   await page
-    .getByLabel('Tindakan segera')
+    .getByLabel('Immediate action')
     .fill('Stop aircraft movement and notify Maintenance Control for grounding assessment.');
-  await page.locator('.non-routine-dialog input[type="file"]').setInputFiles({
-    name: 'm4-non-routine-evidence.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l1E9YQAAAABJRU5ErkJggg==',
-      'base64'
-    )
-  });
-  await page.getByRole('button', { name: 'Upload Bukti' }).click();
-  await expect(page.getByText('m4-non-routine-evidence.png')).toBeVisible();
   await page.screenshot({ path: output('02-create-non-routine.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Simpan & Eskalasi Temuan' }).click();
-  await expect(page.getByText('Release readiness akan terblokir')).toBeVisible();
-  await expect(page.getByText('Menunggu Assessment').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Record Finding' }).click();
+  await expect(page.getByText('Temuan non-routine tercatat')).toBeVisible();
+  await expect(page.getByText(findingTitle).first()).toBeVisible();
   await page.screenshot({ path: output('03-nr-waiting-assessment.png'), fullPage: true });
 
   await setRole(context, baseURL, 'Maintenance Manager');
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.getByLabel('Approved-data reference').first().fill('AMM DEMO 29-10-00');
+  await page.goto('/maintenance/work-packages/mwp-mrov1-active/findings', {
+    waitUntil: 'networkidle'
+  });
+  await page.getByText(findingTitle).first().click();
+  await page.getByLabel('Approved data reference').fill('AMM DEMO 29-10-00');
   await page.screenshot({ path: output('04-nr-assessment.png'), fullPage: true });
   await page.getByRole('button', { name: 'Simpan Assessment' }).click();
-  await expect(page.getByText('Buat/Lanjutkan Pekerjaan Korektif').first()).toBeVisible();
+  await expect(page.getByText('Buat Job Card Korektif').first()).toBeVisible();
 
-  await page.getByLabel('Approved maintenance data reference').first().fill('AMM DEMO 29-10-00');
+  await selectApprovedData(page);
   await page.screenshot({ path: output('05-corrective-job-card.png'), fullPage: true });
   await page.getByRole('button', { name: 'Buat Job Card Korektif' }).click();
-  await expect(page.getByText(/Corrective work - Hydraulic hose chafing/u).first()).toBeVisible();
+  await expect(page.getByText('Lanjutkan Job Card korektif').first()).toBeVisible();
 
   await setRole(context, baseURL, 'Maintenance Technician');
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.goto('/maintenance/work-packages/mwp-mrov1-active/execution', {
+    waitUntil: 'networkidle'
+  });
   await page.getByRole('button', { name: /Corrective work - Hydraulic hose chafing/u }).click();
   await page.getByRole('button', { name: 'Mulai pekerjaan' }).click();
   await expect(page.getByText('Pernyataan penyelesaian untuk').first()).toBeVisible();
@@ -90,11 +96,13 @@ test('plays non-routine finding corrective workflow through Work Package UI', as
     .getByLabel('Pernyataan penyelesaian pekerjaan')
     .fill('Corrective non-routine work completed with required evidence.');
   await page.screenshot({ path: output('07-corrective-signoff.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Sahkan pekerjaan' }).click();
-  await expect(page.getByText('Menunggu Inspeksi').first()).toBeVisible();
+  await page.getByRole('button', { name: /Sahkan pekerjaan/u }).click();
+  await expect(page.getByText('Menunggu pemeriksaan').first()).toBeVisible();
 
   await setRole(context, baseURL, 'Certifying Staff');
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.goto('/maintenance/work-packages/mwp-mrov1-active/execution', {
+    waitUntil: 'networkidle'
+  });
   await page.getByRole('button', { name: /Corrective work - Hydraulic hose chafing/u }).click();
   await page.getByRole('button', { name: 'Catat pemeriksaan independen' }).click();
   await page
@@ -105,15 +113,22 @@ test('plays non-routine finding corrective workflow through Work Package UI', as
     .check();
   await page.screenshot({ path: output('08-nr-inspection.png'), fullPage: true });
   await page.getByRole('button', { name: 'Catat pemeriksaan', exact: true }).click();
+  await page.goto('/maintenance/work-packages/mwp-mrov1-active/findings', {
+    waitUntil: 'networkidle'
+  });
+  await page.getByText(findingTitle).first().click();
   await expect(page.getByText('Resolve Temuan').first()).toBeVisible();
   await page.screenshot({ path: output('09-nr-resolved-ready.png'), fullPage: true });
 
   await setRole(context, baseURL, 'Maintenance Manager');
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.goto('/maintenance/work-packages/mwp-mrov1-active/findings', {
+    waitUntil: 'networkidle'
+  });
+  await page.getByText(findingTitle).first().click();
   await page.getByRole('button', { name: 'Resolve Temuan' }).click();
   await expect(page.getByText('Tutup Temuan').first()).toBeVisible();
   await page.screenshot({ path: output('10-nr-resolved.png'), fullPage: true });
   await page.getByRole('button', { name: 'Tutup Temuan' }).click();
-  await expect(page.getByText('Riwayat tertutup').first()).toBeVisible();
+  await expect(page.getByText('Ditutup').first()).toBeVisible();
   await page.screenshot({ path: output('11-nr-closed.png'), fullPage: true });
 });

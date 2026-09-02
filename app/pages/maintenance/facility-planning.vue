@@ -180,7 +180,10 @@ function slotTime(slot: MaintenanceSlotDto) {
     </div>
 
     <VAlert v-if="apiError" type="error" variant="tonal" class="mb-4">
-      {{ apiError.message }}
+      <strong>{{ apiError.title }}</strong>
+      <div>{{ apiError.impact }}</div>
+      <div class="text-caption">Langkah berikutnya: {{ apiError.requiredAction }}</div>
+      <div v-if="apiError.requestId" class="text-caption">Referensi: {{ apiError.requestId }}</div>
     </VAlert>
 
     <VCard border class="mb-4">

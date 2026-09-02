@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { FlightMaintenanceHandoffDto } from '#shared/contracts/flight-operations';
+import type {
+  AircraftServiceabilityStatus,
+  FlightMaintenanceHandoffDto,
+  MaintenanceHandoffStatus
+} from '#shared/contracts/flight-operations';
 import type {
   InventorySerializedPartDto,
   InventoryStockDto,
@@ -25,8 +29,8 @@ const filters = reactive({
   search: typeof route.query.search === 'string' ? route.query.search : '',
   date: '',
   stationId: '',
-  serviceability: '',
-  status: ''
+  serviceability: null as AircraftServiceabilityStatus | null,
+  status: null as MaintenanceHandoffStatus | null
 });
 
 watch(
@@ -192,7 +196,7 @@ function display(value: string | null) {
   return value ? value.replaceAll('_', ' ') : '-';
 }
 
-function serviceabilityColor(status: string) {
+function serviceabilityColor(status: AircraftServiceabilityStatus) {
   if (status === 'SERVICEABLE') return 'success';
   if (status === 'SERVICEABLE_WITH_RESTRICTIONS') return 'warning';
   if (status === 'UNSERVICEABLE' || status === 'MAINTENANCE_DUE') return 'error';
@@ -218,8 +222,8 @@ function resetFilters() {
   filters.search = '';
   filters.date = '';
   filters.stationId = '';
-  filters.serviceability = '';
-  filters.status = '';
+  filters.serviceability = null;
+  filters.status = null;
 }
 
 async function approve(row: FlightMaintenanceHandoffDto) {
@@ -236,6 +240,11 @@ async function approve(row: FlightMaintenanceHandoffDto) {
   } finally {
     loadingId.value = '';
   }
+}
+
+function approveSelectedRecord() {
+  if (!selectedRecord.value) return Promise.resolve();
+  return approve(selectedRecord.value);
 }
 
 function openIssueDialog() {
@@ -289,7 +298,7 @@ async function issueParts() {
   <VContainer class="px-3 py-5 md:px-4" fluid>
     <DsOperationalPageHeader
       class="mb-4"
-      description="Kendalikan bukti pekerjaan, biaya maintenance, dan approval handoff sebelum flight closure. Rilis teknis tetap menjadi kewenangan Certifying Staff."
+      description="Kendalikan bukti pekerjaan, biaya Maintenance, dan approval handoff sebelum flight closure. Technical Release tetap menjadi kewenangan Certifying Staff."
       eyebrow="Maintenance Operations"
       title="Flight Handoffs"
     >
@@ -721,7 +730,7 @@ async function issueParts() {
             </VBtn>
             <DsConfirmIconButton
               v-if="canApproveRecord(selectedRecord)"
-              :action="() => approve(selectedRecord)"
+              :action="approveSelectedRecord"
               aria-label="Review and approve closure handoff"
               color="success"
               confirm-icon="mdi-check-decagram-outline"

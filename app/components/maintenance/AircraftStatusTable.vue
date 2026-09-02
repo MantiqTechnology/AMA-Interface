@@ -3,7 +3,7 @@ import type { MaintenanceCommandCenterDto } from '#shared/features/maintenance';
 import type { DataTableHeader } from 'vuetify';
 import ExpandedTable from '../common/table/Expanded.vue';
 
-type Aircraft = MaintenanceCommandCoenterDto['fleet'][number];
+type Aircraft = MaintenanceCommandCenterDto['fleet'][number];
 type Defect = MaintenanceCommandCenterDto['defects'][number];
 type Release = MaintenanceCommandCenterDto['technicalReleases'][number];
 
@@ -79,7 +79,7 @@ function fetchDetail(aircraft: Aircraft) {
 
 <template>
   <ExpandedTable
-    cache-ttl="30000"
+    :cache-ttl="30000"
     class="aircraft-status-table"
     item-value="aircraftId"
     :fetch-detail="fetchDetail"
@@ -192,7 +192,7 @@ function fetchDetail(aircraft: Aircraft) {
         </section>
 
         <section class="aircraft-detail-dropdown__panel">
-          <div class="aircraft-detail-dropdown__title">Paket pekerjaan aktif</div>
+          <div class="aircraft-detail-dropdown__title">Work Package aktif</div>
           <template v-if="item.activeWorkPackageId">
             <div class="aircraft-detail-dropdown__fact">
               <span>Nomor</span>
@@ -213,7 +213,7 @@ function fetchDetail(aircraft: Aircraft) {
         </section>
 
         <section class="aircraft-detail-dropdown__panel">
-          <div class="aircraft-detail-dropdown__title">Rilis teknis terakhir</div>
+          <div class="aircraft-detail-dropdown__title">Technical Release terakhir</div>
           <template v-if="latestReleaseByAircraft.get(item.aircraftId)">
             <div class="aircraft-detail-dropdown__fact">
               <span>Nomor</span>

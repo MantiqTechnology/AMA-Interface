@@ -99,8 +99,9 @@ const createForm = reactive({
   location: '',
   planningNote: '',
   jobCardTitle: '',
+  approvedDataRevisionId: '',
   maintenanceDataRef: '',
-  maintenanceDataRevision: 'REV-MROV1-2026-08',
+  maintenanceDataRevision: '',
   requiresIndependentInspection: true,
   evidenceNote: ''
 });
@@ -126,6 +127,21 @@ const selectedDefect = computed(() =>
 );
 const selectedVendor = computed(() =>
   (selectorData.value?.vendors ?? []).find((vendor) => vendor.id === createForm.vendorId)
+);
+const approvedDataRevisionItems = computed(() =>
+  (selectorData.value?.approvedData ?? []).flatMap((document) =>
+    document.revisions
+      .filter((revision) => revision.status === 'ACTIVE')
+      .map((revision) => ({
+        title: `${document.documentType} ${document.documentNumber} / ${revision.revision}`,
+        value: revision.id,
+        document,
+        revision
+      }))
+  )
+);
+const selectedApprovedDataRevision = computed(() =>
+  approvedDataRevisionItems.value.find((item) => item.value === createForm.approvedDataRevisionId)
 );
 
 const priorityFilterItems = computed(() => {
@@ -230,7 +246,7 @@ const summaryCards = computed(() => [
     value: data.value?.summary.readyForRelease ?? '-',
     icon: 'mdi-shield-check-outline',
     color: 'success',
-    helper: 'Menunggu rilis teknis'
+    helper: 'Menunggu Technical Release'
   },
   {
     label: 'On-time Performance',
@@ -290,8 +306,8 @@ const creationWarnings = computed(() => {
   if (createForm.executionMode === 'EXTERNAL_AMO_VENDOR' && !selectedVendor.value) {
     warnings.push('Pekerjaan eksternal perlu provider maintenance.');
   }
-  if (!createForm.maintenanceDataRef.trim() || !createForm.maintenanceDataRevision.trim()) {
-    warnings.push('Kartu kerja wajib perlu referensi approved maintenance data dan revisi.');
+  if (!createForm.approvedDataRevisionId) {
+    warnings.push('Pilih dokumen dari Data Perawatan Terkendali untuk kartu kerja wajib.');
   }
   if (!createForm.evidenceNote.trim()) {
     warnings.push('Isi bukti/catatan planning sebelum membuat paket pekerjaan.');
@@ -306,6 +322,7 @@ const canCreatePackage = computed(
     Boolean(createForm.defectId) &&
     createForm.title.trim().length >= 5 &&
     createForm.jobCardTitle.trim().length >= 5 &&
+    Boolean(createForm.approvedDataRevisionId) &&
     createForm.maintenanceDataRef.trim().length >= 2 &&
     createForm.maintenanceDataRevision.trim().length >= 1 &&
     createForm.evidenceNote.trim().length >= 10 &&
@@ -354,6 +371,15 @@ watch(
 );
 
 watch(
+  () => createForm.approvedDataRevisionId,
+  () => {
+    const selected = selectedApprovedDataRevision.value;
+    createForm.maintenanceDataRef = selected?.document.documentNumber ?? '';
+    createForm.maintenanceDataRevision = selected?.revision.revision ?? '';
+  }
+);
+
+watch(
   () => [selectorData.value?.generatedAt, route.query.defect],
   () => {
     const defectReference = String(route.query.defect ?? '');
@@ -393,8 +419,9 @@ function resetCreateForm() {
     location: '',
     planningNote: '',
     jobCardTitle: '',
+    approvedDataRevisionId: '',
     maintenanceDataRef: '',
-    maintenanceDataRevision: 'REV-MROV1-2026-08',
+    maintenanceDataRevision: '',
     requiresIndependentInspection: true,
     evidenceNote: ''
   });
@@ -642,6 +669,7 @@ async function createPackage() {
           taskType: 'DEFECT_RECTIFICATION',
           maintenanceDataRef: createForm.maintenanceDataRef,
           maintenanceDataRevision: createForm.maintenanceDataRevision,
+          approvedDataRevisionId: createForm.approvedDataRevisionId,
           mandatoryFlag: true,
           requiresIndependentInspection: createForm.requiresIndependentInspection
         }
@@ -873,7 +901,12 @@ async function createPackage() {
                     </td>
                     <td>{{ formatOperationalText(item.issue) }}</td>
                     <td>
-                      <VChip :color="statusColor(item.status)" size="small" variant="tonal">
+                      <VChip
+                        class="text-wrap h-full py-5 text-center justify-center content-center w-full"
+                        :color="statusColor(item.status)"
+                        size="small"
+                        variant="tonal"
+                      >
                         {{ ui.label(item.status) }}
                       </VChip>
                     </td>
@@ -1101,7 +1134,6 @@ async function createPackage() {
         </VCard>
       </aside>
     </div>
-
     <VDialog
       v-model="createDialog"
       aria-label="Assign Work Package"
@@ -1291,7 +1323,7 @@ async function createPackage() {
                 <VSwitch
                   v-model="createForm.requiresIndependentInspection"
                   color="primary"
-                  label="Wajib pemeriksaan independen"
+                  label="Wajib independent Inspection"
                 />
                 <VAlert
                   v-if="createForm.executionMode === 'EXTERNAL_AMO_VENDOR' && !selectedVendor"
@@ -1306,13 +1338,24 @@ async function createPackage() {
 
             <VWindowItem value="material">
               <div class="mro-dialog-grid">
+                <VAutocomplete
+                  v-model="createForm.approvedDataRevisionId"
+                  label="Approved maintenance data"
+                  :items="approvedDataRevisionItems"
+                  item-title="title"
+                  item-value="value"
+                  :loading="selectorsPending"
+                  no-data-text="Tidak ada approved data aktif"
+                />
                 <VTextField
                   v-model="createForm.maintenanceDataRef"
                   label="Approved maintenance data reference"
+                  readonly
                 />
                 <VTextField
                   v-model="createForm.maintenanceDataRevision"
-                  label="Approved data revision snapshot"
+                  label="Revision snapshot"
+                  readonly
                 />
                 <VTextField v-model="createForm.jobCardTitle" label="Judul kartu kerja" />
                 <VAlert type="info" variant="tonal">

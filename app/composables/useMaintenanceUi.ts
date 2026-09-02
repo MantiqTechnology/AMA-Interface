@@ -9,98 +9,8 @@ export type MaintenanceErrorPresentation = {
   requestId: string | null;
 };
 
-function label(value: string | null | undefined) {
+function fallbackLabel(value: string | null | undefined) {
   if (!value) return '-';
-  const labels: Record<string, string> = {
-    ACTIVE: 'Aktif',
-    AOG: 'AOG',
-    AWAITING_REINSPECTION: 'Menunggu pemeriksaan ulang',
-    BLOCKED: 'Terblokir',
-    CANCELLED: 'Dibatalkan',
-    CLOSED: 'Ditutup',
-    COMPLETED: 'Selesai',
-    COMPONENT_CHANGE: 'Penggantian komponen',
-    CORRECTIVE_WORK_IN_PROGRESS: 'Perbaikan ulang sedang dikerjakan',
-    CREATE: 'Dibuat',
-    DEFECT: 'Temuan',
-    DEFECT_RECTIFICATION: 'Perbaikan temuan',
-    DEFER: 'Ditunda dengan kontrol teknis',
-    DEFERRED: 'Ditunda',
-    ELIGIBLE: 'Dapat dirilis',
-    EXTERNAL_AMO_VENDOR: 'Provider maintenance eksternal',
-    ACTIVE_WORK: 'Pekerjaan aktif',
-    FAILED: 'Tidak lulus',
-    FUNCTIONAL_TEST: 'Functional test',
-    GROUND: 'Pesawat ditahan sampai diperbaiki',
-    GROUNDING: 'Grounding',
-    GROUNDING_AOG: 'Grounding / AOG',
-    HANDED_OFF: 'Sudah diserahkan',
-    HIGH: 'Tinggi',
-    IN_PROGRESS: 'Sedang dikerjakan',
-    INACTIVE: 'Tidak aktif',
-    INDEPENDENT_INSPECTION: 'Pemeriksaan independen',
-    INDEPENDENT_INSPECTION_FAILED: 'Pemeriksaan tidak lulus',
-    INDEPENDENT_INSPECTION_PASSED: 'Pemeriksaan lulus',
-    INDEPENDENT_REINSPECTION: 'Pemeriksaan ulang independen',
-    INSPECTION: 'Pemeriksaan',
-    INSPECTION_ATTEMPT: 'Catatan pemeriksaan',
-    INSPECTION_REQUIRED: 'Menunggu pemeriksaan',
-    INTERNAL: 'Dikerjakan internal',
-    JOB_CARD: 'Kartu kerja',
-    LINK_REQUIREMENT: 'Requirement ditautkan',
-    LOW: 'Rendah',
-    MAINTENANCE_RELEASE_APPROVED_DATA_REQUIRED: 'Data maintenance belum lengkap',
-    MAINTENANCE_RELEASE_INCOMPLETE_JOB_CARDS: 'Kartu kerja wajib belum selesai',
-    MAINTENANCE_RELEASE_INSPECTION_REQUIRED: 'Pemeriksaan independen belum selesai',
-    MAINTENANCE_RELEASE_JOB_CARD_REQUIRED: 'Kartu kerja wajib belum ada',
-    MAINTENANCE_RELEASE_MECHANIC_EVIDENCE_REQUIRED: 'Bukti pengesahan teknisi belum lengkap',
-    MAINTENANCE_RELEASE_REINSPECTION_REQUIRED: 'Pemeriksaan ulang belum lulus',
-    MAINTENANCE_RELEASE_REWORK_APPROVED_DATA_REQUIRED: 'Data perbaikan ulang belum lengkap',
-    MAINTENANCE_RELEASE_REWORK_REQUIRED: 'Perbaikan ulang masih diperlukan',
-    MAINTENANCE_RELEASE_REWORK_SIGNOFF_REQUIRED: 'Perbaikan ulang belum disahkan teknisi',
-    MAINTENANCE_RELEASE_REWORK_UNSIGNED: 'Perbaikan ulang belum ditandatangani',
-    MAINTENANCE_ONLY: 'Maintenance only',
-    MECHANIC: 'Teknisi',
-    MEL_CDL_CANDIDATE: 'MEL/CDL candidate',
-    MECHANIC_SIGNOFF: 'Pengesahan pekerjaan teknisi',
-    MECHANIC_SIGN_OFF: 'Pengesahan pekerjaan teknisi',
-    NO_IMPACT: 'Tidak berdampak maintenance',
-    NON_ROUTINE: 'Pekerjaan non-rutin',
-    NORMAL: 'Normal',
-    NOT_READY: 'Belum siap',
-    NO_RELEASE_IMPACT: 'Tidak berdampak release',
-    OPEN: 'Terbuka',
-    OPERATIONAL_CHECK: 'Operational check',
-    OPERATIONAL_LIMITATION: 'Operational limitation',
-    PASSED: 'Lulus',
-    POSTED: 'Sudah diposting',
-    READY: 'Siap dikerjakan',
-    READY_FOR_HANDOFF: 'Siap diserahkan',
-    READY_FOR_RELEASE: 'Menunggu rilis teknis',
-    READY_FOR_RELEASE_REVIEW: 'Siap diajukan untuk rilis teknis',
-    READINESS_RECALCULATED: 'Kesiapan teknis dihitung ulang',
-    REMOVAL: 'Removal',
-    REJECTED_FOR_REWORK: 'Pemeriksaan tidak lulus',
-    RELEASED: 'Sudah dirilis',
-    REINSPECTION_FAILED: 'Pemeriksaan ulang tidak lulus',
-    REINSPECTION_PASSED: 'Pemeriksaan ulang lulus',
-    RESTRICTED: 'Terbatas',
-    REWORK_ACTION: 'Perbaikan ulang',
-    REWORK_REQUIRED: 'Perbaikan ulang diperlukan',
-    REWORK_SIGN_OFF: 'Pengesahan perbaikan ulang',
-    SCHEDULED_TASK: 'Pekerjaan terjadwal',
-    SERVICEABLE: 'Serviceable',
-    SERVICEABLE_WITH_RESTRICTIONS: 'Serviceable dengan pembatasan',
-    SAFETY_CRITICAL: 'Safety critical',
-    UNASSESSED: 'Belum dinilai',
-    START: 'Pekerjaan dimulai',
-    TECHNICAL_RELEASE: 'Rilis teknis pesawat',
-    UNserviceable: 'Unserviceable',
-    UNSERVICEABLE: 'Unserviceable',
-    WORK_PACKAGE: 'Paket pekerjaan'
-  };
-  if (value === 'LEGACY_NEXT_MAINTENANCE') return 'Maintenance berikutnya jatuh tempo';
-  if (labels[value]) return labels[value];
   return value
     .replaceAll('_', ' ')
     .toLowerCase()
@@ -114,14 +24,33 @@ function errorDetails(error: ApiClientError) {
 }
 
 export function useMaintenanceUi() {
-  const companyAuthorizationTitles: Record<string, string> = {
-    COMPANY_AUTHORIZATION_REQUIRED: 'Wewenang PT AMA belum sesuai',
-    COMPANY_AUTHORIZATION_INACTIVE: 'Wewenang PT AMA tidak aktif',
-    COMPANY_AUTHORIZATION_EXPIRED: 'Wewenang PT AMA sudah kedaluwarsa',
-    COMPANY_AUTHORIZATION_ACTION_NOT_PERMITTED: 'Tindakan ini tidak termasuk wewenang PT AMA',
-    COMPANY_AUTHORIZATION_AIRCRAFT_SCOPE_MISMATCH: 'Scope pesawat tidak sesuai wewenang',
-    COMPANY_AUTHORIZATION_LICENCE_MISMATCH: 'Lisensi personel tidak sesuai'
+  const { t } = useI18n();
+
+  const companyAuthorizationTitleKeys: Record<string, string> = {
+    COMPANY_AUTHORIZATION_REQUIRED: 'maintenance.errors.companyAuthorizationRequired',
+    COMPANY_AUTHORIZATION_INACTIVE: 'maintenance.errors.companyAuthorizationInactive',
+    COMPANY_AUTHORIZATION_EXPIRED: 'maintenance.errors.companyAuthorizationExpired',
+    COMPANY_AUTHORIZATION_ACTION_NOT_PERMITTED:
+      'maintenance.errors.companyAuthorizationActionNotPermitted',
+    COMPANY_AUTHORIZATION_AIRCRAFT_SCOPE_MISMATCH:
+      'maintenance.errors.companyAuthorizationAircraftScopeMismatch',
+    COMPANY_AUTHORIZATION_LICENCE_MISMATCH: 'maintenance.errors.companyAuthorizationLicenceMismatch'
   };
+
+  const permissionActionKeys: Record<string, string> = {
+    'maintenance.release.issue': 'maintenance.permissionActions.releaseIssue',
+    'maintenance.package.plan': 'maintenance.permissionActions.packagePlan',
+    'maintenance.jobcard.manage': 'maintenance.permissionActions.jobCardManage',
+    'maintenance.jobcard.work.sign': 'maintenance.permissionActions.jobCardWorkSign',
+    'maintenance.jobcard.inspect': 'maintenance.permissionActions.jobCardInspect'
+  };
+
+  function label(value: string | null | undefined) {
+    if (!value) return '-';
+    const key = `maintenance.status.${value}`;
+    const localized = t(key);
+    return localized === key ? fallbackLabel(value) : localized;
+  }
 
   function workPackageStatusColor(status: string | null | undefined) {
     if (status === 'RELEASED') return 'success';
@@ -147,40 +76,40 @@ export function useMaintenanceUi() {
   }
 
   function permissionHint(allowed: boolean, permission: string, role: string) {
-    const labels: Record<string, string> = {
-      'maintenance.release.issue': 'menerbitkan rilis teknis pesawat',
-      'maintenance.package.plan': 'membuat paket pekerjaan',
-      'maintenance.jobcard.manage': 'mengelola kartu kerja',
-      'maintenance.jobcard.work.sign': 'mengesahkan pekerjaan teknisi',
-      'maintenance.jobcard.inspect': 'melakukan pemeriksaan independen'
-    };
+    const action = t(permissionActionKeys[permission] ?? 'maintenance.permissionActions.fallback');
     return allowed
-      ? 'Tindakan tersedia untuk role ini.'
-      : `${role} tidak dapat ${labels[permission] ?? 'melakukan tindakan ini'}.`;
+      ? t('maintenance.permission.available')
+      : t('maintenance.permission.denied', { role, action });
   }
 
   function operationalAction(value: string | null | undefined) {
     if (!value) return '-';
     return value
-      .replace('Backend blockers', 'Penghambat dari sistem')
-      .replace('Required action:', 'Langkah berikutnya:')
-      .replace('Technical release cannot proceed.', 'Rilis teknis belum dapat dilakukan.')
-      .replace('Technical release is blocked.', 'Rilis teknis sedang terblokir.')
+      .replace('Backend blockers', t('maintenance.operationalActions.backendBlockers'))
+      .replace('Required action:', t('maintenance.operationalActions.requiredAction'))
+      .replace(
+        'Technical release cannot proceed.',
+        t('maintenance.operationalActions.technicalReleaseCannotProceed')
+      )
+      .replace(
+        'Technical release is blocked.',
+        t('maintenance.operationalActions.technicalReleaseBlocked')
+      )
       .replace(
         'Complete independent inspection with evidence.',
-        'Selesaikan pemeriksaan independen dengan bukti.'
+        t('maintenance.operationalActions.completeIndependentInspection')
       )
       .replace(
         'Complete corrective work and submit the required re-inspection.',
-        'Selesaikan perbaikan ulang, lalu minta pemeriksaan ulang.'
+        t('maintenance.operationalActions.completeCorrectiveWork')
       )
       .replace(
         'Complete mechanic work and required inspection.',
-        'Selesaikan pekerjaan teknisi dan pemeriksaan yang diwajibkan.'
+        t('maintenance.operationalActions.completeMechanicWork')
       )
       .replace(
         'Record the approved data reference and revision snapshot.',
-        'Isi referensi approved maintenance data dan revisinya.'
+        t('maintenance.operationalActions.recordApprovedData')
       );
   }
 
@@ -189,15 +118,17 @@ export function useMaintenanceUi() {
       const details = errorDetails(errorValue);
       return {
         code: errorValue.code,
-        title: companyAuthorizationTitles[errorValue.code] ?? errorValue.message,
+        title: companyAuthorizationTitleKeys[errorValue.code]
+          ? t(companyAuthorizationTitleKeys[errorValue.code])
+          : errorValue.message,
         impact:
           typeof details.impact === 'string'
             ? operationalAction(details.impact)
-            : 'Tindakan tidak diterapkan oleh sistem.',
+            : t('maintenance.errors.systemDidNotApplyAction'),
         requiredAction:
           typeof details.requiredAction === 'string'
             ? operationalAction(details.requiredAction)
-            : 'Muat ulang data, selesaikan penghambat, lalu coba lagi.',
+            : t('maintenance.errors.reloadResolveBlockerRetry'),
         referenceId:
           typeof details.referenceId === 'string'
             ? details.referenceId
@@ -209,9 +140,12 @@ export function useMaintenanceUi() {
     }
     return {
       code: 'CLIENT_ACTION_FAILED',
-      title: errorValue instanceof Error ? errorValue.message : 'Tindakan maintenance gagal.',
-      impact: 'UI belum dapat memastikan apakah tindakan sudah diterapkan.',
-      requiredAction: 'Muat ulang halaman dan periksa status backend sebelum mencoba lagi.',
+      title:
+        errorValue instanceof Error
+          ? errorValue.message
+          : t('maintenance.errors.clientActionFailed'),
+      impact: t('maintenance.errors.uiCannotConfirmAction'),
+      requiredAction: t('maintenance.errors.reloadAndCheckBackend'),
       referenceId: null,
       requestId: null
     };

@@ -801,36 +801,36 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Maintenance Pesawat',
+      label: t('nav.maintenanceOperations'),
       icon: 'mdi-airplane-cog',
       visible: can('maintenance.package.read').allowed,
       children: [
         {
-          label: 'Ringkasan Maintenance',
+          label: t('nav.maintenanceOverview'),
           to: '/maintenance',
           icon: 'mdi-view-dashboard-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Pekerjaan Saya',
+          label: t('nav.myWork'),
           to: '/maintenance/my-work',
           icon: 'mdi-account-hard-hat',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Pesawat',
+          label: t('nav.aircraft'),
           to: '/maintenance/aircraft',
           icon: 'mdi-airplane-check',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Temuan',
+          label: t('nav.defects'),
           to: '/maintenance/defects',
           icon: 'mdi-alert-octagon-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Paket Pekerjaan',
+          label: t('nav.workPackages'),
           to: '/maintenance/work-packages',
           icon: 'mdi-clipboard-list-outline',
           visible: can('maintenance.package.read').allowed
@@ -842,19 +842,19 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Data Perawatan Terkendali',
+          label: t('nav.approvedMaintenanceData'),
           to: '/maintenance/approved-data',
           icon: 'mdi-file-certificate-outline',
           visible: can('maintenance.approved_data.read').allowed
         },
         {
-          label: 'Jatuh Tempo Perawatan',
+          label: t('nav.dueControl'),
           to: '/maintenance/due-control',
           icon: 'mdi-calendar-alert',
           visible: can('maintenance.due.read').allowed
         },
         {
-          label: 'Timeline Hangar',
+          label: t('nav.facilityPlanning'),
           to: '/maintenance/facility-planning',
           icon: 'mdi-calendar-clock',
           visible: can('maintenance.package.read').allowed
@@ -866,13 +866,13 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Rilis Teknis',
+          label: t('nav.technicalReleases'),
           to: '/maintenance/releases',
           icon: 'mdi-certificate-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: 'Riwayat Aktivitas',
+          label: t('nav.maintenanceRecords'),
           to: '/maintenance/records',
           icon: 'mdi-history',
           visible: can('maintenance.audit.read').allowed

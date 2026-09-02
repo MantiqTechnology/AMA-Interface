@@ -18,6 +18,7 @@ type WorkTask = {
 
 const format = useLocaleFormat();
 const ui = useMaintenanceUi();
+const { t } = useI18n();
 const session = useDemoSession();
 const { can } = useAuthorization();
 const filters = reactive({
@@ -38,19 +39,19 @@ const canPlan = computed(() => can('maintenance.package.plan').allowed);
 const apiError = computed(() => (error.value ? ui.presentError(error.value) : null));
 const accessRestricted = computed(() => apiError.value?.code === 'FORBIDDEN');
 
-const typeItems = [
-  { title: 'Semua jenis', value: '' },
-  { title: 'Pekerjaan teknisi', value: 'work' },
-  { title: 'Pemeriksaan', value: 'inspection' },
-  { title: 'Rilis teknis', value: 'release' },
-  { title: 'Penghambat', value: 'blocker' },
-  { title: 'Temuan perlu tindakan', value: 'defect' }
-];
-const itemsPerPageOptions = [
-  { title: '10 / halaman', value: 10 },
-  { title: '20 / halaman', value: 20 },
-  { title: '50 / halaman', value: 50 }
-];
+const typeItems = computed(() => [
+  { title: t('maintenance.myWork.allTypes'), value: '' },
+  { title: t('maintenance.myWork.mechanicWork'), value: 'work' },
+  { title: t('maintenance.terms.inspection'), value: 'inspection' },
+  { title: t('maintenance.myWork.technicalRelease'), value: 'release' },
+  { title: t('maintenance.myWork.blocker'), value: 'blocker' },
+  { title: t('maintenance.myWork.defectAction'), value: 'defect' }
+]);
+const itemsPerPageOptions = computed(() => [
+  { title: t('maintenance.myWork.perPage10'), value: 10 },
+  { title: t('maintenance.myWork.perPage20'), value: 20 },
+  { title: t('maintenance.myWork.perPage50'), value: 50 }
+]);
 
 const allTasks = computed<WorkTask[]>(() => {
   const tasks: WorkTask[] = [];
@@ -65,12 +66,12 @@ const allTasks = computed<WorkTask[]>(() => {
         status: ui.label(card.status),
         blocker:
           card.status === 'REJECTED_FOR_REWORK'
-            ? 'Pemeriksaan tidak lulus dan perlu perbaikan ulang.'
-            : 'Kartu kerja menunggu tindakan teknisi.',
+            ? t('maintenance.myWork.workRejected')
+            : t('maintenance.myWork.workWaiting'),
         nextAction:
           card.status === 'READY'
-            ? 'Buka paket pekerjaan dan mulai pekerjaan.'
-            : 'Buka paket pekerjaan dan lengkapi pengesahan pekerjaan.',
+            ? t('maintenance.myWork.startWork')
+            : t('maintenance.myWork.completeSignoff'),
         owner: 'Teknisi / Maintenance Control',
         updatedAt: card.updatedAt,
         route: `/maintenance/work-packages/${card.workPackageId}`,
@@ -88,8 +89,8 @@ const allTasks = computed<WorkTask[]>(() => {
         title: card.title,
         reference: `${card.packageNumber} / ${card.cardNumber}`,
         status: ui.label(card.status),
-        blocker: 'Pekerjaan teknisi sudah disahkan dan menunggu pemeriksaan independen.',
-        nextAction: 'Buka paket pekerjaan dan catat hasil pemeriksaan.',
+        blocker: t('maintenance.myWork.inspectionWaiting'),
+        nextAction: t('maintenance.myWork.recordInspection'),
         owner: 'Inspector / Certifying Staff',
         updatedAt: card.updatedAt,
         route: `/maintenance/work-packages/${card.workPackageId}`,
@@ -107,8 +108,8 @@ const allTasks = computed<WorkTask[]>(() => {
         title: item.title,
         reference: item.packageNumber,
         status: ui.label(item.status),
-        blocker: 'Checklist backend menyatakan paket siap menunggu rilis teknis.',
-        nextAction: 'Buka konfirmasi rilis teknis dan periksa lisensi serta wewenang PT AMA.',
+        blocker: t('maintenance.myWork.releaseReady'),
+        nextAction: t('maintenance.myWork.issueRelease'),
         owner: 'Certifying Staff',
         updatedAt: item.updatedAt,
         route: `/maintenance/work-packages/${item.id}`,
@@ -123,15 +124,15 @@ const allTasks = computed<WorkTask[]>(() => {
       id: `blocker-${item.workPackageId}-${blocker?.code ?? 'unknown'}`,
       aircraft: item.aircraftRegistrationNumber,
       location: '-',
-      title: blocker ? ui.label(blocker.code) : 'Penghambat rilis teknis',
+      title: blocker ? ui.label(blocker.code) : t('maintenance.myWork.releaseBlockerTitle'),
       reference: item.packageNumber,
-      status: 'Terblokir',
+      status: ui.label('BLOCKED'),
       blocker: blocker?.message
         ? ui.operationalAction(blocker.message)
-        : 'Ada prasyarat rilis yang belum lengkap.',
+        : t('maintenance.myWork.releaseBlockerFallback'),
       nextAction: blocker?.requiredAction
         ? ui.operationalAction(blocker.requiredAction)
-        : 'Buka paket pekerjaan dan selesaikan penghambat.',
+        : t('maintenance.myWork.resolveBlocker'),
       owner: ownerForBlocker(blocker?.code),
       updatedAt: data.value?.generatedAt ?? '',
       route: `/maintenance/work-packages/${item.workPackageId}`,
@@ -150,13 +151,13 @@ const allTasks = computed<WorkTask[]>(() => {
         reference: defect.defectNumber,
         status: defect.assessmentDecision
           ? ui.label(defect.assessmentDecision)
-          : 'Menunggu penilaian',
+          : t('maintenance.myWork.assessmentPending'),
         blocker: defect.assessmentDecision
-          ? 'Temuan sudah dinilai tetapi belum masuk paket pekerjaan.'
-          : 'Temuan belum dinilai oleh Maintenance Control.',
+          ? t('maintenance.myWork.defectAssessedNoPackage')
+          : t('maintenance.myWork.defectNotAssessed'),
         nextAction: defect.assessmentDecision
-          ? 'Buat paket pekerjaan dari temuan ini.'
-          : 'Buka halaman Temuan dan lakukan penilaian.',
+          ? t('maintenance.myWork.createPackageFromDefect')
+          : t('maintenance.myWork.openDefectsAssessment'),
         owner: 'PPC / Maintenance Manager',
         updatedAt: defect.updatedAt,
         route: defect.assessmentDecision
@@ -224,11 +225,11 @@ watch(totalPages, (value) => {
 });
 
 function taskTypeLabel(task: WorkTask) {
-  if (task.id.startsWith('work-')) return 'Pekerjaan teknisi';
-  if (task.id.startsWith('inspection-')) return 'Pemeriksaan';
-  if (task.id.startsWith('release-')) return 'Rilis teknis';
-  if (task.id.startsWith('blocker-')) return 'Penghambat';
-  return 'Temuan';
+  if (task.id.startsWith('work-')) return t('maintenance.myWork.mechanicWork');
+  if (task.id.startsWith('inspection-')) return t('maintenance.terms.inspection');
+  if (task.id.startsWith('release-')) return t('maintenance.myWork.technicalRelease');
+  if (task.id.startsWith('blocker-')) return t('maintenance.myWork.blocker');
+  return t('maintenance.status.DEFECT');
 }
 
 function taskIcon(task: WorkTask) {
@@ -261,17 +262,17 @@ function ownerForBlocker(code: string | undefined) {
         <VIcon icon="mdi-clipboard-check-outline" size="42" />
       </div>
       <div class="work-hero__copy">
-        <p class="work-hero__eyebrow">Pekerjaan Saya</p>
-        <h1>Daftar pekerjaan maintenance</h1>
-        <p>Daftar tindakan maintenance yang relevan untuk role aktif.</p>
-        <p>Data berasal dari backend MRO.</p>
+        <p class="work-hero__eyebrow">{{ t('maintenance.myWork.eyebrow') }}</p>
+        <h1>{{ t('maintenance.myWork.title') }}</h1>
+        <p>{{ t('maintenance.myWork.description') }}</p>
+        <p>{{ t('maintenance.myWork.source') }}</p>
       </div>
       <div class="work-hero__actions">
         <VChip class="role-chip" variant="tonal" append-icon="mdi-chevron-down">
           {{ session.role.value }}
         </VChip>
         <VBtn
-          aria-label="Refresh daftar pekerjaan"
+          :aria-label="t('maintenance.myWork.refreshAria')"
           icon="mdi-refresh"
           variant="text"
           :loading="pending"
@@ -281,17 +282,19 @@ function ownerForBlocker(code: string | undefined) {
     </section>
 
     <VAlert v-if="accessRestricted" type="warning" variant="tonal" class="mb-4">
-      <strong>Akses dibatasi.</strong>
-      <div>Dampak: daftar pekerjaan MRO tidak dapat ditampilkan untuk role ini.</div>
-      <div>Langkah berikutnya: gunakan role yang memiliki izin membaca paket pekerjaan.</div>
+      <strong>{{ t('maintenance.myWork.restrictedTitle') }}</strong>
+      <div>{{ t('maintenance.myWork.restrictedImpact') }}</div>
+      <div>{{ t('maintenance.myWork.restrictedNextAction') }}</div>
     </VAlert>
     <VAlert v-else-if="error" type="error" variant="tonal" class="mb-4">
-      <strong>Daftar pekerjaan belum dapat dimuat.</strong>
-      <div>Dampak: tugas terbaru belum dapat dipastikan dari sistem.</div>
-      <div>Langkah berikutnya: muat ulang data saat koneksi stabil.</div>
+      <strong>{{ t('maintenance.myWork.loadErrorTitle') }}</strong>
+      <div>{{ t('maintenance.myWork.loadErrorImpact') }}</div>
+      <div>{{ t('maintenance.myWork.loadErrorNextAction') }}</div>
       <div v-if="apiError?.requestId" class="text-caption">Referensi: {{ apiError.requestId }}</div>
       <template #append>
-        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">Coba lagi</VBtn>
+        <VBtn size="small" variant="text" :loading="pending" @click="refresh()">
+          {{ t('maintenance.workPackagesList.retry') }}
+        </VBtn>
       </template>
     </VAlert>
 
@@ -300,8 +303,8 @@ function ownerForBlocker(code: string | undefined) {
         <div class="work-toolbar">
           <VTextField
             v-model="filters.search"
-            aria-label="Cari pesawat, paket, kartu kerja, atau penghambat"
-            placeholder="Cari pesawat, paket, kartu kerja, atau penghambat..."
+            :aria-label="t('maintenance.myWork.searchAria')"
+            :placeholder="t('maintenance.myWork.searchPlaceholder')"
             prepend-inner-icon="mdi-magnify"
             clearable
             density="compact"
@@ -309,10 +312,10 @@ function ownerForBlocker(code: string | undefined) {
             class="work-search"
           />
           <div class="work-type">
-            <div class="work-field-label">Jenis tugas</div>
+            <div class="work-field-label">{{ t('maintenance.myWork.taskType') }}</div>
             <VSelect
               v-model="filters.type"
-              aria-label="Jenis tugas"
+              :aria-label="t('maintenance.myWork.taskType')"
               :items="typeItems"
               density="compact"
               hide-details
@@ -320,7 +323,7 @@ function ownerForBlocker(code: string | undefined) {
           </div>
           <VSpacer />
           <VBtn prepend-icon="mdi-filter-variant" variant="tonal" color="default" disabled>
-            Filter lanjutan
+            {{ t('maintenance.myWork.advancedFilter') }}
           </VBtn>
           <VBtn
             prepend-icon="mdi-plus"
@@ -329,10 +332,10 @@ function ownerForBlocker(code: string | undefined) {
             to="/maintenance"
             :disabled="!canPlan"
           >
-            Buat kartu kerja
+            {{ t('maintenance.myWork.createJobCard') }}
           </VBtn>
           <VChip class="task-count" variant="tonal" color="primary">
-            {{ filteredTasks.length }} tugas
+            {{ t('maintenance.myWork.taskCount', { count: filteredTasks.length }) }}
           </VChip>
         </div>
 
@@ -340,24 +343,26 @@ function ownerForBlocker(code: string | undefined) {
           <VTable class="maintenance-table maintenance-table--my-work">
             <thead>
               <tr>
-                <th>Pesawat</th>
-                <th>Tugas</th>
-                <th>Status</th>
-                <th>Penghambat dan langkah berikutnya</th>
-                <th>Penanggung jawab</th>
-                <th aria-label="Aksi" />
+                <th>{{ t('maintenance.myWork.aircraft') }}</th>
+                <th>{{ t('maintenance.myWork.task') }}</th>
+                <th>{{ t('maintenance.myWork.status') }}</th>
+                <th>{{ t('maintenance.myWork.blockerAndNextAction') }}</th>
+                <th>{{ t('maintenance.myWork.owner') }}</th>
+                <th :aria-label="t('maintenance.myWork.actionsAria')" />
               </tr>
             </thead>
             <tbody>
               <tr v-if="pending">
-                <td colspan="6" class="state-cell">Memuat pekerjaan...</td>
+                <td colspan="6" class="state-cell">{{ t('maintenance.myWork.loading') }}</td>
               </tr>
               <tr v-else-if="accessRestricted">
-                <td colspan="6" class="state-cell">Akses dibatasi untuk role aktif.</td>
+                <td colspan="6" class="state-cell">
+                  {{ t('maintenance.myWork.accessRestricted') }}
+                </td>
               </tr>
               <tr v-else-if="error">
                 <td colspan="6" class="state-cell">
-                  Data pekerjaan belum tersedia sampai permintaan berhasil.
+                  {{ t('maintenance.myWork.requestFailed') }}
                 </td>
               </tr>
               <template v-else>
@@ -383,7 +388,7 @@ function ownerForBlocker(code: string | undefined) {
                       variant="tonal"
                       prepend-icon="mdi-briefcase-eye-outline"
                     >
-                      Buka pekerjaan
+                      {{ t('maintenance.myWork.openWork') }}
                     </VBtn>
                     <div class="task-reference">{{ task.reference }}</div>
                   </td>
@@ -398,7 +403,9 @@ function ownerForBlocker(code: string | undefined) {
                   </td>
                   <td>
                     <div class="blocker-text">{{ task.blocker }}</div>
-                    <div class="next-action">Langkah berikutnya: {{ task.nextAction }}</div>
+                    <div class="next-action">
+                      {{ t('maintenance.myWork.nextActionPrefix') }} {{ task.nextAction }}
+                    </div>
                   </td>
                   <td>
                     <div class="owner-text">{{ task.owner }}</div>
@@ -410,7 +417,7 @@ function ownerForBlocker(code: string | undefined) {
                       prepend-icon="mdi-arrow-right-circle-outline"
                       :to="task.route"
                     >
-                      Buka pekerjaan
+                      {{ t('maintenance.myWork.openWork') }}
                     </VBtn>
                   </td>
                   <td class="action-cell">
@@ -418,7 +425,7 @@ function ownerForBlocker(code: string | undefined) {
                       <template #activator="{ props }">
                         <VBtn
                           v-bind="props"
-                          aria-label="Aksi pekerjaan"
+                          :aria-label="t('maintenance.myWork.actionsAria')"
                           icon="mdi-dots-vertical"
                           variant="text"
                           size="small"
@@ -428,7 +435,7 @@ function ownerForBlocker(code: string | undefined) {
                         <VListItem
                           :to="task.route"
                           prepend-icon="mdi-open-in-new"
-                          title="Buka pekerjaan"
+                          :title="t('maintenance.myWork.openWork')"
                         />
                         <VListItem
                           prepend-icon="mdi-tag-outline"
@@ -443,8 +450,8 @@ function ownerForBlocker(code: string | undefined) {
                   <td colspan="6" class="state-cell">
                     {{
                       filters.search || filters.type
-                        ? 'Tidak ada pekerjaan yang sesuai filter.'
-                        : 'Tidak ada pekerjaan yang menunggu tindakan role ini.'
+                        ? t('maintenance.myWork.noFiltered')
+                        : t('maintenance.myWork.noRoleTasks')
                     }}
                   </td>
                 </tr>
@@ -455,12 +462,17 @@ function ownerForBlocker(code: string | undefined) {
 
         <div class="work-pagination">
           <div>
-            Menampilkan {{ paginationStart }} - {{ paginationEnd }} dari
-            {{ filteredTasks.length }} tugas
+            {{
+              t('maintenance.myWork.pagination', {
+                start: paginationStart,
+                end: paginationEnd,
+                total: filteredTasks.length
+              })
+            }}
           </div>
           <div class="work-pagination__controls">
             <VBtn
-              aria-label="Halaman sebelumnya"
+              :aria-label="t('maintenance.myWork.previousPage')"
               icon="mdi-chevron-left"
               variant="tonal"
               :disabled="page <= 1 || pending"
@@ -468,7 +480,7 @@ function ownerForBlocker(code: string | undefined) {
             />
             <VBtn class="page-indicator" color="primary" variant="flat">{{ page }}</VBtn>
             <VBtn
-              aria-label="Halaman berikutnya"
+              :aria-label="t('maintenance.myWork.nextPage')"
               icon="mdi-chevron-right"
               variant="tonal"
               :disabled="page >= totalPages || pending"
@@ -476,7 +488,7 @@ function ownerForBlocker(code: string | undefined) {
             />
             <VSelect
               v-model="itemsPerPage"
-              aria-label="Jumlah tugas per halaman"
+              :aria-label="t('maintenance.myWork.perPageAria')"
               :items="itemsPerPageOptions"
               density="compact"
               hide-details

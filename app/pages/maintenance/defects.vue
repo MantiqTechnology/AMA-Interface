@@ -206,7 +206,7 @@ function currentBlocker(defect: MaintenanceCommandCenterDto['defects'][number]) 
   if (defect.defermentStatus === 'EXPIRED') return 'Deferred sudah melewati batas.';
   if (!defect.assessmentDecision) return 'Temuan perlu dinilai oleh Maintenance Control.';
   if (defect.assessmentDecision === 'NO_IMPACT') return 'Penilaian tidak memerlukan paket MRO.';
-  return 'Paket pekerjaan belum dibuat.';
+  return 'Work Package belum dibuat.';
 }
 
 function requiredAction(defect: MaintenanceCommandCenterDto['defects'][number]) {
