@@ -44,28 +44,28 @@ defineProps<{
 }
 
 .metric-card--blue {
-  --metric-color: #3456d1;
-  --metric-soft: #edf1ff;
+  --metric-color: rgb(var(--v-theme-info));
+  --metric-soft: rgba(var(--v-theme-info), 0.11);
 }
 
 .metric-card--green {
-  --metric-color: #168461;
-  --metric-soft: #e5f5ef;
+  --metric-color: rgb(var(--v-theme-success));
+  --metric-soft: rgba(var(--v-theme-success), 0.11);
 }
 
 .metric-card--amber {
-  --metric-color: #b66a08;
-  --metric-soft: #fff2dc;
+  --metric-color: rgb(var(--v-theme-warning));
+  --metric-soft: rgba(var(--v-theme-warning), 0.14);
 }
 
 .metric-card--red {
-  --metric-color: #c53b43;
-  --metric-soft: #fdebed;
+  --metric-color: rgb(var(--v-theme-danger));
+  --metric-soft: rgba(var(--v-theme-danger), 0.11);
 }
 
 .metric-card--slate {
-  --metric-color: #596579;
-  --metric-soft: #eef1f5;
+  --metric-color: rgb(var(--v-theme-text-secondary));
+  --metric-soft: rgba(var(--v-theme-text-secondary), 0.1);
 }
 
 .metric-icon {

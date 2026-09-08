@@ -8,7 +8,8 @@ type RouteAccessRule = {
 };
 
 const routeAccessRules: RouteAccessRule[] = [
-  { prefix: '/asset-management', denied: true },
+  { prefix: '/asset-management/finance', all: ['asset.finance.read'] },
+  { prefix: '/asset-management', all: ['asset.read'] },
   { prefix: '/careers', denied: true },
   { prefix: '/crm-marketing', denied: true },
   { prefix: '/hris', denied: true },

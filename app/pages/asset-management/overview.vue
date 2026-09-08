@@ -99,15 +99,30 @@ const countBy = (field: string, palette: string[]) => {
     color: palette[index % palette.length]
   })).sort((a, b) => b.value - a.value);
 };
-const categorySegments = computed(() =>
-  countBy('category', ['#3456d1', '#168461', '#b66a08', '#596579', '#7a56b3', '#c53b43'])
-);
-const conditionSegments = computed(() =>
-  countBy('conditionStatus', ['#168461', '#b66a08', '#3456d1', '#c53b43'])
-);
-const stationSegments = computed(() =>
-  countBy('stationCode', ['#27449a', '#168461', '#b66a08', '#7a56b3', '#596579'])
-);
+const categoryPalette = [
+  'rgb(var(--v-theme-primary))',
+  'rgb(var(--v-theme-secondary))',
+  'rgb(var(--v-theme-info))',
+  'rgb(var(--v-theme-text-secondary))',
+  'rgb(var(--v-theme-accent-cenderawasih))',
+  'rgb(var(--v-theme-success))'
+];
+const conditionPalette = [
+  'rgb(var(--v-theme-success))',
+  'rgb(var(--v-theme-warning))',
+  'rgb(var(--v-theme-info))',
+  'rgb(var(--v-theme-danger))'
+];
+const stationPalette = [
+  'rgb(var(--v-theme-primary))',
+  'rgb(var(--v-theme-secondary))',
+  'rgb(var(--v-theme-info))',
+  'rgb(var(--v-theme-accent-cenderawasih))',
+  'rgb(var(--v-theme-text-secondary))'
+];
+const categorySegments = computed(() => countBy('category', categoryPalette));
+const conditionSegments = computed(() => countBy('conditionStatus', conditionPalette));
+const stationSegments = computed(() => countBy('stationCode', stationPalette));
 const liveMaintenance = computed(
   () =>
     filteredMaintenance.value.filter((work: any) =>

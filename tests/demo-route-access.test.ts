@@ -19,19 +19,28 @@ describe('demo route access', () => {
     expect(safeDemoRoleRedirectPath('OCC', '/master-data/routes')).toBeNull();
     expect(safeDemoRoleRedirectPath('OCC', '/ops')).toBeNull();
     expect(safeDemoRoleRedirectPath('OCC', '/flights/dashboard')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Director', '/asset-management/overview')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Station Admin', '/asset-management/register')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Finance Reviewer', '/asset-management/finance')).toBeNull();
     expect(safeDemoRoleRedirectPath('Inventory Controller', '/ops')).toBe('/dashboard');
   });
 
   it('blocks excluded and frontend-only demo modules regardless of broad permissions', () => {
     expect(safeDemoRoleRedirectPath('Demo Admin', '/ticketing/passenger')).toBe('/dashboard');
-    expect(safeDemoRoleRedirectPath('Director', '/asset-management/overview')).toBe('/dashboard');
-    expect(safeDemoRoleRedirectPath('Finance Reviewer', '/asset-management/finance')).toBe(
-      '/dashboard'
-    );
     expect(safeDemoRoleRedirectPath('Station Admin', '/crm-marketing/leads')).toBe('/dashboard');
     expect(safeDemoRoleRedirectPath('HR Manager', '/hris')).toBe('/dashboard');
     expect(safeDemoRoleRedirectPath('Inventory Controller', '/uploads')).toBe('/dashboard');
     expect(safeDemoRoleRedirectPath('HR Staff', '/careers')).toBe('/dashboard');
+  });
+
+  it('keeps Corporate Assets scoped by asset permissions', () => {
+    expect(safeDemoRoleRedirectPath('OCC', '/asset-management/overview')).toBe('/dashboard');
+    expect(safeDemoRoleRedirectPath('OCC', '/asset-management/assets/asset-gse-gpu-01')).toBe(
+      '/dashboard'
+    );
+    expect(safeDemoRoleRedirectPath('Station Admin', '/asset-management/finance')).toBe(
+      '/dashboard'
+    );
   });
 
   it('limits the station network dashboard to Director and Demo Admin', () => {

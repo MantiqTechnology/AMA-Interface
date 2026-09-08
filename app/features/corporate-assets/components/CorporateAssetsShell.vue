@@ -62,8 +62,9 @@ const active = computed(() => tabs.value.find((tab) => route.path.startsWith(tab
   padding: 18px 20px;
   overflow: hidden;
   background:
-    linear-gradient(100deg, rgba(39, 68, 154, 0.1), transparent 52%), rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+    linear-gradient(100deg, rgba(var(--v-theme-primary), 0.09), transparent 52%),
+    rgb(var(--v-theme-surface));
+  border: 1px solid rgb(var(--v-theme-border-default));
   border-radius: 16px;
 }
 
@@ -76,7 +77,7 @@ const active = computed(() => tabs.value.find((tab) => route.path.startsWith(tab
   content: '';
   background: repeating-radial-gradient(
     circle,
-    rgba(52, 86, 209, 0.13) 0 1px,
+    rgba(var(--v-theme-primary), 0.13) 0 1px,
     transparent 1px 12px
   );
   border-radius: 50%;
@@ -96,7 +97,7 @@ const active = computed(() => tabs.value.find((tab) => route.path.startsWith(tab
 }
 
 .asset-tabs {
-  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-bottom: 1px solid rgb(var(--v-theme-border-default));
 }
 
 .asset-tabs :deep(.v-tab) {

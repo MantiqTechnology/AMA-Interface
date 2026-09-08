@@ -43,6 +43,7 @@ const financeVisible = computed(
 const commercialVisible = computed(
   () => masterDataVisible.value || can('commercial.contract.read').allowed
 );
+const corporateAssetsVisible = computed(() => can('asset.read').allowed);
 const excludedDemoModuleVisible = false;
 
 const navItems = computed<NavItem[]>(() =>
@@ -381,19 +382,19 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'Corporate Asset',
       icon: 'mdi-toolbox-outline',
-      visible: excludedDemoModuleVisible,
+      visible: corporateAssetsVisible.value,
       children: [
         {
           label: t('nav.overview'),
           to: '/asset-management/overview',
           icon: 'mdi-view-dashboard-outline',
-          visible: excludedDemoModuleVisible
+          visible: corporateAssetsVisible.value
         },
         {
           label: t('nav.assetRegister'),
           to: '/asset-management/register',
           icon: 'mdi-clipboard-list-outline',
-          visible: excludedDemoModuleVisible
+          visible: corporateAssetsVisible.value
         },
         {
           label: t('nav.assignments'),

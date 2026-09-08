@@ -1,5 +1,19 @@
 import { expect, test } from '@playwright/test';
 
+test('Director can open Corporate Assets from the sidebar', async ({ context, page }) => {
+  await context.addCookies([
+    { name: 'ama_demo_role', value: 'Director', url: 'http://localhost:3100' }
+  ]);
+
+  await page.goto('/dashboard', { waitUntil: 'networkidle' });
+  await page.getByText('Corporate Asset', { exact: true }).click();
+  const registerLink = page.getByRole('link', { name: 'Asset Register' });
+  await expect(registerLink).toBeVisible();
+  await registerLink.click();
+  await expect(page).toHaveURL(/\/asset-management\/register$/u);
+  await expect(page.getByRole('heading', { level: 1, name: 'Asset Register' })).toBeVisible();
+});
+
 test('Demo Admin uses the persistent Corporate Assets register and detail', async ({
   context,
   page

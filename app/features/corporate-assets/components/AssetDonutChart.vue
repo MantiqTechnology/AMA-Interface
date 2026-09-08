@@ -9,7 +9,11 @@ const ringStyle = computed(() => {
     cursor += (segment.value / denominator) * 100;
     return `${segment.color} ${start}% ${cursor}%`;
   });
-  return { background: stops.length ? `conic-gradient(${stops.join(',')})` : '#e8ebf0' };
+  return {
+    background: stops.length
+      ? `conic-gradient(${stops.join(',')})`
+      : 'rgb(var(--v-theme-border-default))'
+  };
 });
 const legend = computed(() =>
   props.segments.map((segment: Segment) => ({
