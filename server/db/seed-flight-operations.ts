@@ -2043,6 +2043,24 @@ export function seedFlightOperationsData(
       capturedAt: context.at(0, '08:15')
     });
 
+    insertIgnore(sqlite, 'flight_maintenance_handoffs', {
+      id: 'fop-closed-today-revenue-maintenance',
+      flightId: 'fop-closed-today-revenue',
+      aircraftId: 'ac-pk-ama',
+      serviceabilityStatusId: 'aircraft-serviceability-status-serviceable',
+      workOrderReference: `WO-AMA-${context.compactDate(0)}-009`,
+      maintenanceNote: 'Post-flight inspection clear; aircraft released after morning charter.',
+      sparePartReference: null,
+      maintenanceCost: 0,
+      currencyId: 'cur-idr',
+      statusId: 'maintenance-handoff-status-approved',
+      recordedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedByUserId: 'USR-MAINTENANCE-MANAGER',
+      approvedAt: context.at(0, '07:15'),
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+
     seedFinance(sqlite, context, 'fop-cancelled-fuel', 'VOID');
     insertIgnore(sqlite, 'flight_finance_handoffs', {
       id: 'fop-cancelled-fuel-void',
