@@ -499,6 +499,38 @@ describe('OperationsMonitoringService', () => {
     sqlite.close();
   });
 
+  it('uses issued invoices and approved actual costs when finance snapshots are not available', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const currentDate = (
+      sqlite
+        .prepare(`SELECT flight_date AS value FROM flight_operations WHERE id = ?`)
+        .get('fop-closed-today-revenue') as { value: string }
+    ).value;
+    const dateFrom = new Date(`${currentDate}T00:00:00Z`);
+    dateFrom.setUTCDate(dateFrom.getUTCDate() - 6);
+    sqlite.prepare(`DELETE FROM invoice_finance_snapshots`).run();
+
+    const dashboard = services.aviationDashboard.management(
+      {
+        dateFrom: dateFrom.toISOString().slice(0, 10),
+        dateTo: currentDate,
+        operationType: 'ALL',
+        comparison: 'PREVIOUS_PERIOD'
+      },
+      ['ALL']
+    );
+    const finance = dashboard.metricGroups.find((group) => group.key === 'finance')?.metrics;
+    const revenue = finance?.find((metric) => metric.key === 'REVENUE');
+    const invoiced = finance?.find((metric) => metric.key === 'INVOICED');
+
+    expect(revenue).toMatchObject({ dataState: 'FRESH', direction: 'DOWN' });
+    expect(revenue?.value).toBeTypeOf('number');
+    expect(invoiced?.value).toBeTypeOf('number');
+    expect(revenue?.previousValue).toBeTypeOf('number');
+
+    sqlite.close();
+  });
+
   it('presents lifecycle timestamp conflicts as reconciliation work instead of an extreme delay', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const flight = sqlite

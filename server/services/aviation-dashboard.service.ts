@@ -1472,7 +1472,7 @@ export class AviationDashboardService {
           'REVENUE',
           'Revenue recognized',
           value(finance?.revenue ?? 0),
-          'Immutable finance snapshots for flights in scope.',
+          'Issued invoices in scope, using captured finance values when available.',
           'mdi-chart-line',
           'success',
           '/finance/dashboard'
@@ -1486,7 +1486,7 @@ export class AviationDashboardService {
           'COST',
           'Operational cost',
           value(finance?.operationalCost ?? 0),
-          'Fuel, station, and maintenance cost in finance snapshots.',
+          'Posted fuel plus approved station and maintenance costs in scope.',
           'mdi-cash-minus',
           'info',
           '/finance/hpp'
@@ -1557,7 +1557,16 @@ export class AviationDashboardService {
   private financeDataState(rows: FinanceRow[]): DashboardDataState {
     if (!rows.length) return 'NO_DATA';
     const latest = this.sqlite
-      .prepare(`SELECT MAX(captured_at) AS value FROM invoice_finance_snapshots`)
+      .prepare(
+        `SELECT MAX(value) AS value
+         FROM (
+           SELECT captured_at AS value FROM invoice_finance_snapshots
+           UNION ALL
+           SELECT updated_at AS value FROM invoices WHERE status != 'void'
+           UNION ALL
+           SELECT paid_at AS value FROM payments
+         )`
+      )
       .get() as { value: string | null };
     if (!latest.value) return 'NO_DATA';
     const ageMinutes = Math.max(
@@ -1573,20 +1582,69 @@ export class AviationDashboardService {
     const placeholders = ids.map(() => '?').join(',');
     return this.sqlite
       .prepare(
-        `SELECT snapshot.currency_code AS currencyCode,
-                SUM(snapshot.total_revenue) AS revenue,
-                SUM(snapshot.total_operational_cost) AS operationalCost,
-                SUM(snapshot.gross_margin) AS grossMargin,
-                SUM(snapshot.ticket_revenue) AS ticketRevenue,
-                SUM(snapshot.cargo_revenue) AS cargoRevenue,
-                SUM(snapshot.charter_revenue) AS charterRevenue,
+        `SELECT COALESCE(snapshot.currency_code, invoice.currency) AS currencyCode,
+                SUM(COALESCE(snapshot.total_revenue, invoice.subtotal)) AS revenue,
+                SUM(COALESCE(snapshot.total_operational_cost, (
+                  SELECT COALESCE(SUM(request.total_cost), 0)
+                  FROM flight_fuel_requests request
+                  JOIN fuel_workflow_statuses status ON status.id = request.status_id AND status.code = 'POSTED'
+                  JOIN currencies currency ON currency.id = request.currency_id AND currency.currency_code = invoice.currency
+                  WHERE request.flight_id = invoice.flight_operation_id AND request.total_cost IS NOT NULL
+                ) + (
+                  SELECT COALESCE(SUM(COALESCE(cost.approved_amount, cost.actual_amount, cost.amount)), 0)
+                  FROM flight_station_costs cost
+                  JOIN station_cost_statuses status ON status.id = cost.status_id AND status.code = 'APPROVED'
+                  JOIN currencies currency ON currency.id = COALESCE(cost.approved_currency_id, cost.currency_id)
+                    AND currency.currency_code = invoice.currency
+                  WHERE cost.flight_id = invoice.flight_operation_id
+                ) + (
+                  SELECT COALESCE(SUM(handoff.maintenance_cost), 0)
+                  FROM flight_maintenance_handoffs handoff
+                  JOIN maintenance_handoff_statuses status ON status.id = handoff.status_id
+                    AND status.code IN ('APPROVED', 'POSTED')
+                  JOIN currencies currency ON currency.id = handoff.currency_id AND currency.currency_code = invoice.currency
+                  WHERE handoff.flight_id = invoice.flight_operation_id
+                ))) AS operationalCost,
+                SUM(COALESCE(snapshot.gross_margin, invoice.subtotal - (
+                  SELECT COALESCE(SUM(request.total_cost), 0)
+                  FROM flight_fuel_requests request
+                  JOIN fuel_workflow_statuses status ON status.id = request.status_id AND status.code = 'POSTED'
+                  JOIN currencies currency ON currency.id = request.currency_id AND currency.currency_code = invoice.currency
+                  WHERE request.flight_id = invoice.flight_operation_id AND request.total_cost IS NOT NULL
+                ) - (
+                  SELECT COALESCE(SUM(COALESCE(cost.approved_amount, cost.actual_amount, cost.amount)), 0)
+                  FROM flight_station_costs cost
+                  JOIN station_cost_statuses status ON status.id = cost.status_id AND status.code = 'APPROVED'
+                  JOIN currencies currency ON currency.id = COALESCE(cost.approved_currency_id, cost.currency_id)
+                    AND currency.currency_code = invoice.currency
+                  WHERE cost.flight_id = invoice.flight_operation_id
+                ) - (
+                  SELECT COALESCE(SUM(handoff.maintenance_cost), 0)
+                  FROM flight_maintenance_handoffs handoff
+                  JOIN maintenance_handoff_statuses status ON status.id = handoff.status_id
+                    AND status.code IN ('APPROVED', 'POSTED')
+                  JOIN currencies currency ON currency.id = handoff.currency_id AND currency.currency_code = invoice.currency
+                  WHERE handoff.flight_id = invoice.flight_operation_id
+                ))) AS grossMargin,
+                SUM(COALESCE(snapshot.ticket_revenue, (
+                  SELECT COALESCE(SUM(line.subtotal), 0) FROM invoice_line_items line
+                  WHERE line.invoice_id = invoice.id AND line.source_type = 'PASSENGER_TICKET'
+                ))) AS ticketRevenue,
+                SUM(COALESCE(snapshot.cargo_revenue, (
+                  SELECT COALESCE(SUM(line.subtotal), 0) FROM invoice_line_items line
+                  WHERE line.invoice_id = invoice.id AND line.source_type = 'CARGO_BOOKING'
+                ))) AS cargoRevenue,
+                SUM(COALESCE(snapshot.charter_revenue, (
+                  SELECT COALESCE(SUM(line.subtotal), 0) FROM invoice_line_items line
+                  WHERE line.invoice_id = invoice.id AND line.source_type = 'CHARTER'
+                ))) AS charterRevenue,
                 SUM(invoice.total) AS invoiced,
                 COALESCE(SUM((SELECT SUM(payment.amount) FROM payments payment WHERE payment.invoice_id = invoice.id)), 0) AS paid
-         FROM invoice_finance_snapshots snapshot
-         JOIN invoices invoice ON invoice.id = snapshot.invoice_id AND invoice.status != 'void'
-         WHERE snapshot.flight_operation_id IN (${placeholders})
-         GROUP BY snapshot.currency_code
-         ORDER BY snapshot.currency_code`
+         FROM invoices invoice
+         LEFT JOIN invoice_finance_snapshots snapshot ON snapshot.invoice_id = invoice.id
+         WHERE invoice.flight_operation_id IN (${placeholders}) AND invoice.status != 'void'
+         GROUP BY COALESCE(snapshot.currency_code, invoice.currency)
+         ORDER BY COALESCE(snapshot.currency_code, invoice.currency)`
       )
       .all(...ids) as FinanceRow[];
   }
