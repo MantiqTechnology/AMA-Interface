@@ -22,13 +22,28 @@ export interface UiScreenDefinition {
 }
 
 const seedDate = process.env.DEMO_SEED_DATE ?? '2026-07-17';
+const seedWindowStart = (() => {
+  const date = new Date(`${seedDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 6);
+  return date.toISOString().slice(0, 10);
+})();
 
 export const uiScreens: UiScreenDefinition[] = [
   {
     id: 'operations-dashboard',
     path: '/dashboard',
     ready: { heading: 'PT AMA Aviation Dashboard', level: 1 },
-    roles: ['Demo Admin']
+    roles: ['Director', 'Finance Reviewer']
+  },
+  {
+    id: 'management-dashboard',
+    path: `/dashboard?tab=management&dateFrom=${seedWindowStart}&dateTo=${seedDate}`,
+    ready: { heading: 'PT AMA Aviation Dashboard', level: 1 },
+    roles: ['Director', 'Finance Reviewer'],
+    prepare: async (page) => {
+      await page.getByRole('tab', { name: 'Management Performance' }).waitFor();
+      await page.getByText('Operational Performance', { exact: true }).waitFor();
+    }
   },
   {
     id: 'ops-overview-dashboard',

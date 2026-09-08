@@ -36,6 +36,14 @@ export default defineConfig({
       }
     },
     {
+      name: 'director-dashboard',
+      metadata: { role: 'Director' },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 }
+      }
+    },
+    {
       name: 'station-tablet',
       metadata: { role: 'Station Admin' },
       use: {
@@ -78,7 +86,7 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: `env -u BASH_ENV PATH=${nodeBinDirectory}:/usr/local/bin:/usr/bin:/bin bash --noprofile --norc -c 'export DEMO_SEED_DATE=2026-07-17 NUXT_BUILD_DIR=.nuxt-playwright AMA_DB_PATH=./data/playwright.sqlite AMA_DOCUMENT_MANIFEST=./data/playwright-documents.json AMA_UPLOAD_MANIFEST=./data/playwright-uploads.json AMA_UPLOAD_DIR=./data/uploads/playwright; pnpm demo:reset && pnpm exec nuxi cleanup && pnpm exec nuxi prepare && pnpm dev --port ${port}'`,
+    command: `env -u BASH_ENV PATH=${nodeBinDirectory}:/usr/local/bin:/usr/bin:/bin bash --noprofile --norc -c 'export DEMO_SEED_DATE=2026-07-17 DEMO_SESSION_SECRET=ama-playwright-session-secret-at-least-32-bytes DEMO_ACCOUNT_HELPER=true AMA_ALLOW_LEGACY_TEST_ROLE_COOKIE=true NUXT_BUILD_DIR=.nuxt-playwright AMA_DB_PATH=./data/playwright.sqlite AMA_DOCUMENT_MANIFEST=./data/playwright-documents.json AMA_UPLOAD_MANIFEST=./data/playwright-uploads.json AMA_UPLOAD_DIR=./data/uploads/playwright; pnpm demo:reset && pnpm exec nuxi cleanup && pnpm exec nuxi prepare && pnpm dev --port ${port}'`,
     url: process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${port}`,
     reuseExistingServer: true,
     timeout: 120_000

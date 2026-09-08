@@ -25,6 +25,7 @@ import { createFinanceGovernanceService } from '../features/finance/governance';
 import { createMaintenanceService } from '../features/maintenance';
 import { InternalAogDemoService } from '../features/maintenance/internal-aog-demo.service';
 import { ResourceV21Service } from './resource-v21.service';
+import { AviationDashboardService } from './aviation-dashboard.service';
 
 export type Services = ReturnType<typeof createServices>;
 
@@ -43,6 +44,7 @@ export function createServices(sqlite: Database.Database) {
   );
   const financeHandoffs = createFinanceHandoffService(sqlite, accounting);
   const financeReporting = createFinanceReportingService(sqlite);
+  const aviationDashboard = new AviationDashboardService(sqlite, flightOperations);
   return {
     flightOperations,
     aircraftTracking: new AircraftTrackingService(sqlite),
@@ -61,6 +63,7 @@ export function createServices(sqlite: Database.Database) {
     financeGovernance: createFinanceGovernanceService(sqlite, financeReporting),
     invoices: createInvoiceService(sqlite, accounting, financeTransactions),
     dashboard: new DashboardService(sqlite),
+    aviationDashboard,
     operationsMonitoring: new OperationsMonitoringService(sqlite),
     operationalDashboards: new OperationalDashboardsService(sqlite),
     hris: new HrisService(sqlite, financeHandoffs)
