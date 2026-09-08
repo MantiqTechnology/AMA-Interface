@@ -121,13 +121,30 @@ function compactNumber(value: number) {
 }
 function metricValue(metric: DashboardDeltaMetric) {
   if (metric.dataState === 'NO_DATA') return 'Data unavailable';
+  return metricComparableValue(metric, metric.value);
+}
+function metricComparableValue(metric: DashboardDeltaMetric, value: number | string) {
   if (
-    typeof metric.value === 'number' &&
+    typeof value === 'number' &&
     ['REVENUE', 'COST', 'MARGIN', 'INVOICED', 'PAID', 'AR'].includes(metric.key)
   )
-    return money(metric.value);
-  if (metric.key === 'UTILIZATION' && typeof metric.value === 'number') return `${metric.value} FH`;
-  return metric.value;
+    return money(value);
+  if (metric.key === 'UTILIZATION' && typeof value === 'number') return `${value} FH`;
+  if (
+    typeof value === 'number' &&
+    ['COMPLETION', 'OTP', 'AVAILABILITY', 'DISPATCH_RELIABILITY'].includes(metric.key)
+  )
+    return `${value}%`;
+  return value;
+}
+function metricPreviousLabel(metric: DashboardDeltaMetric) {
+  if (
+    metric.dataState === 'NO_DATA' ||
+    metric.previousValue === null ||
+    metric.previousValue === undefined
+  )
+    return null;
+  return `Previous period: ${metricComparableValue(metric, metric.previousValue)}`;
 }
 function metricDeltaLabel(metric: DashboardDeltaMetric) {
   if (metric.comparisonValue === null || metric.comparisonValue === undefined)
@@ -245,6 +262,9 @@ function formatMinutes(value: number | null | undefined) {
             <small :class="`text-${toneColor(metricDeltaTone(metric))}`">{{
               metricDeltaLabel(metric)
             }}</small>
+            <small v-if="metricPreviousLabel(metric)" class="management-metric__baseline">{{
+              metricPreviousLabel(metric)
+            }}</small>
             <em
               v-if="metric.target"
               :class="metric.target.status === 'MET' ? 'text-success' : 'text-danger'"
@@ -274,8 +294,7 @@ function formatMinutes(value: number | null | undefined) {
           <div>
             <span>{{ item.message }}</span><small>{{ shortDate(item.date) }}</small>
           </div>
-          <strong>{{ item.actionLabel ?? 'Review insight'
-          }}<VIcon icon="mdi-arrow-right" size="16" /></strong>
+          <strong>{{ item.actionLabel ?? 'Review insight' }}<VIcon icon="mdi-arrow-right" size="16" /></strong>
         </NuxtLink>
       </div>
       <div v-else class="panel-empty">
@@ -650,6 +669,12 @@ function formatMinutes(value: number | null | undefined) {
   margin-top: 8px;
   font-size: 0.75rem;
   font-weight: 700;
+}
+.management-metric > .management-metric__baseline {
+  margin-top: 3px;
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 .management-metric > em {
   display: block;

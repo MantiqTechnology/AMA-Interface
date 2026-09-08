@@ -535,6 +535,29 @@ export function seedFlightOperationsData(
         blockingReason: null
       },
       {
+        id: 'fop-closed-today-revenue',
+        flightNumber: `AMA-${context.compactDate(0)}-018`,
+        flightDate: context.date(0),
+        flightType: 'CHARTER',
+        routeId: 'route-djj-wmx',
+        originStationId: 'st-djj',
+        destinationStationId: 'st-wmx',
+        customerId: 'cust-papua-logistics',
+        aircraftId: 'ac-pk-ama',
+        pilotInCommandId: 'crew-pic-valid',
+        coPilotId: 'crew-cop-valid',
+        scheduledDepartureAt: context.at(0, '05:45'),
+        scheduledArrivalAt: context.at(0, '06:40'),
+        actualDepartureAt: context.at(0, '05:49'),
+        actualArrivalAt: context.at(0, '06:46'),
+        currentStatus: 'CLOSED',
+        createdByUserId: 'USR-001',
+        approvedByUserId: 'USR-ADMIN',
+        remarks: 'Closed morning charter with finance handoff and invoice snapshot completed.',
+        isLocked: 1,
+        blockingReason: null
+      },
+      {
         id: 'fop-ticketing-passenger',
         flightNumber: `AMA-${context.compactDate(1)}-006`,
         flightDate: context.date(1),
@@ -1961,6 +1984,63 @@ export function seedFlightOperationsData(
       grossMargin: 8750000,
       currencyCode: 'IDR',
       capturedAt: context.at(-3, '14:00')
+    });
+
+    // Current-day closed charter keeps the demo management dashboard's finance state current.
+    // This is scenario seed data only; production dashboards continue to read actual snapshots.
+    seedFinance(sqlite, context, 'fop-closed-today-revenue', 'READY');
+    insertIgnore(sqlite, 'invoices', {
+      id: 'inv-closed-today-revenue',
+      customerId: 'cust-papua-logistics',
+      flightOperationId: 'fop-closed-today-revenue',
+      invoiceNumber: `AMA-INV-${context.compactDate(0)}-004`,
+      status: 'issued',
+      subtotal: 12500000,
+      tax: 1375000,
+      total: 13875000,
+      currency: 'IDR',
+      recognitionMode: 'AR_ON_ISSUE',
+      createdByUserId: 'USR-001',
+      approvedByUserId: 'USR-FINANCE-REVIEWER',
+      approvedAt: context.at(0, '08:15'),
+      issuedAt: context.at(0, '08:15'),
+      dueAt: context.at(7, '23:59'),
+      createdAt: seedNow,
+      updatedAt: seedNow
+    });
+    insertIgnore(sqlite, 'invoice_line_items', {
+      id: 'invoice-line-closed-today-charter',
+      invoiceId: 'inv-closed-today-revenue',
+      sourceType: 'CHARTER',
+      sourceId: 'fop-closed-today-revenue',
+      description: `Charter AMA-${context.compactDate(0)}-018 DJJ -> WMX`,
+      quantity: 1,
+      unitPrice: 12500000,
+      subtotal: 12500000,
+      rateCardId: 'rate-charter-djj-wmx',
+      taxCodeId: 'tax-ppn',
+      taxCode: 'PPN_11',
+      taxRateBasisPoints: 1100,
+      taxAmount: 1375000,
+      total: 13875000
+    });
+    insertIgnore(sqlite, 'invoice_finance_snapshots', {
+      id: 'invoice-snapshot-closed-today-revenue',
+      invoiceId: 'inv-closed-today-revenue',
+      flightOperationId: 'fop-closed-today-revenue',
+      ticketRevenue: 0,
+      cargoRevenue: 0,
+      charterRevenue: 12500000,
+      totalRevenue: 12500000,
+      fuelCost: 4850000,
+      stationCost: 1650000,
+      maintenanceCost: 0,
+      totalOperationalCost: 6500000,
+      taxAmount: 1375000,
+      invoiceTotal: 13875000,
+      grossMargin: 6000000,
+      currencyCode: 'IDR',
+      capturedAt: context.at(0, '08:15')
     });
 
     seedFinance(sqlite, context, 'fop-cancelled-fuel', 'VOID');

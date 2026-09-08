@@ -26,6 +26,7 @@ import type {
 import type { NeedsMyActionItemDto } from '../../shared/contracts/flight-operations';
 import type { OperationalFlightMonitorDto } from '../../shared/contracts/operations-monitoring';
 import { DomainError } from '../utils/errors';
+import { getApplicationNow } from '../utils/time';
 import type {
   ActorContext,
   FlightOperationsVerificationService
@@ -1559,7 +1560,10 @@ export class AviationDashboardService {
       .prepare(`SELECT MAX(captured_at) AS value FROM invoice_finance_snapshots`)
       .get() as { value: string | null };
     if (!latest.value) return 'NO_DATA';
-    const ageMinutes = Math.max(0, (Date.now() - new Date(latest.value).getTime()) / 60_000);
+    const ageMinutes = Math.max(
+      0,
+      (new Date(getApplicationNow()).getTime() - new Date(latest.value).getTime()) / 60_000
+    );
     return ageMinutes > 1440 ? 'STALE' : 'FRESH';
   }
 

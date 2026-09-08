@@ -465,6 +465,40 @@ describe('OperationsMonitoringService', () => {
     sqlite.close();
   });
 
+  it('keeps the demo management finance KPI current with a usable previous-period baseline', async () => {
+    const { services, sqlite } = await createSeededTestServices();
+    const currentDate = (
+      sqlite
+        .prepare(`SELECT flight_date AS value FROM flight_operations WHERE id = ?`)
+        .get('fop-closed-today-revenue') as { value: string }
+    ).value;
+    const dateFrom = new Date(`${currentDate}T00:00:00Z`);
+    dateFrom.setUTCDate(dateFrom.getUTCDate() - 6);
+    const dashboard = services.aviationDashboard.management(
+      {
+        dateFrom: dateFrom.toISOString().slice(0, 10),
+        dateTo: currentDate,
+        operationType: 'ALL',
+        comparison: 'PREVIOUS_PERIOD'
+      },
+      ['ALL']
+    );
+    const revenue = dashboard.metricGroups
+      .find((group) => group.key === 'finance')
+      ?.metrics.find((metric) => metric.key === 'REVENUE');
+
+    expect(revenue).toMatchObject({
+      dataState: 'FRESH',
+      direction: 'DOWN',
+      comparisonUnit: 'PERCENT'
+    });
+    expect(typeof revenue?.value).toBe('number');
+    expect(revenue?.previousValue).toBeTypeOf('number');
+    expect(revenue?.comparisonValue).toBeLessThan(0);
+
+    sqlite.close();
+  });
+
   it('presents lifecycle timestamp conflicts as reconciliation work instead of an extreme delay', async () => {
     const { services, sqlite } = await createSeededTestServices();
     const flight = sqlite
