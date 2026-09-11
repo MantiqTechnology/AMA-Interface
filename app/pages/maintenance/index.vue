@@ -229,7 +229,7 @@ const summaryCards = computed(() => [
     label: 'Material Blocker',
     value: data.value?.summary.partsBlockers ?? '-',
     icon: 'mdi-cube-outline',
-    color: 'purple',
+    color: 'teal',
     helper: `${waitingMaterialPackageCount.value} paket menunggu`,
     helperColor: 'warning'
   },
@@ -290,11 +290,6 @@ const releaseReadinessOptions = computed(() => ({
     }
   }
 }));
-
-const stale = computed(() => {
-  if (!data.value?.generatedAt) return false;
-  return Date.now() - new Date(data.value.generatedAt).getTime() > 10 * 60 * 1000;
-});
 
 const creationWarnings = computed(() => {
   const warnings: string[] = [];
@@ -710,10 +705,6 @@ async function createPackage() {
         />
       </div>
     </div>
-
-    <VAlert v-if="stale" type="warning" variant="tonal" class="mb-4">
-      Data ringkasan lebih lama dari 10 menit. Muat ulang sebelum melakukan tindakan teknis.
-    </VAlert>
     <VAlert v-if="error" type="error" variant="tonal" class="mb-4">
       Data maintenance dari backend belum dapat dimuat.
     </VAlert>
@@ -902,7 +893,7 @@ async function createPackage() {
                     <td>{{ formatOperationalText(item.issue) }}</td>
                     <td>
                       <VChip
-                        class="text-wrap h-full py-5 text-center justify-center content-center w-full"
+                        class="mro-table-status w-full"
                         :color="statusColor(item.status)"
                         size="small"
                         variant="tonal"
@@ -1495,8 +1486,8 @@ async function createPackage() {
   background: linear-gradient(135deg, #1d64d8, #0b4aa3);
 }
 
-.mro-kpi-card__icon--purple {
-  background: linear-gradient(135deg, #9333ea, #6d28d9);
+.mro-kpi-card__icon--teal {
+  background: linear-gradient(135deg, #0e8c8a, #086c6b);
 }
 
 .mro-kpi-card__icon--warning {
@@ -1599,6 +1590,7 @@ async function createPackage() {
 .mro-dialog-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 14px;
 }
@@ -1619,20 +1611,35 @@ async function createPackage() {
 
 .mro-panel__actions {
   display: flex;
+  flex: 1 1 520px;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
 }
 
 .mro-panel__actions :deep(.v-field) {
-  min-width: 180px;
+  min-width: min(240px, 100%);
+}
+
+.mro-panel__actions :deep(.v-btn) {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .mro-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin: 4px 0 18px;
+  padding: 10px;
+  border: 1px solid rgba(14, 140, 138, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(14, 140, 138, 0.06), rgba(244, 122, 31, 0.05));
+}
+
+.mro-chip-row :deep(.v-chip) {
+  min-height: 30px;
 }
 
 .mro-side-card__title {
@@ -1708,7 +1715,7 @@ async function createPackage() {
 }
 
 .maintenance-table :deep(table) {
-  min-width: 980px;
+  min-width: 1080px;
   table-layout: fixed;
 }
 
@@ -1716,6 +1723,7 @@ async function createPackage() {
 .maintenance-table :deep(td) {
   vertical-align: top;
   font-size: 0.8rem;
+  overflow-wrap: anywhere;
 }
 
 .maintenance-table :deep(th) {
@@ -1726,11 +1734,61 @@ async function createPackage() {
 }
 
 .maintenance-table--priority :deep(table) {
-  min-width: 1040px;
+  min-width: 1180px;
 }
 
 .maintenance-table--due :deep(table) {
   min-width: 920px;
+}
+
+.maintenance-table--priority :deep(th:nth-child(1)),
+.maintenance-table--priority :deep(td:nth-child(1)) {
+  width: 118px;
+}
+
+.maintenance-table--priority :deep(th:nth-child(2)),
+.maintenance-table--priority :deep(td:nth-child(2)) {
+  width: 132px;
+}
+
+.maintenance-table--priority :deep(th:nth-child(3)),
+.maintenance-table--priority :deep(td:nth-child(3)) {
+  width: 124px;
+}
+
+.maintenance-table--priority :deep(th:nth-child(5)),
+.maintenance-table--priority :deep(td:nth-child(5)) {
+  width: 150px;
+}
+
+.maintenance-table--priority :deep(th:nth-child(6)),
+.maintenance-table--priority :deep(td:nth-child(6)) {
+  width: 132px;
+}
+
+.maintenance-table--priority :deep(th:nth-child(7)),
+.maintenance-table--priority :deep(td:nth-child(7)) {
+  width: 148px;
+}
+
+.maintenance-table--priority :deep(th:nth-child(9)),
+.maintenance-table--priority :deep(td:nth-child(9)) {
+  width: 56px;
+}
+
+.mro-table-status {
+  max-width: 150%;
+  min-height: 28px;
+  height: auto !important;
+  white-space: normal;
+}
+
+.mro-table-status :deep(.v-chip__content) {
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.18;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .mro-dialog-grid {

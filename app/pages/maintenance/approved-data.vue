@@ -808,9 +808,14 @@ function resetFilters() {
               variant="outlined"
             />
           </div>
-          <div class="d-flex flex-wrap align-center ga-2 mb-4">
+          <div class="approved-filter-toolbar">
+            <div class="approved-filter-toolbar__label">
+              <VIcon icon="mdi-tune-variant" size="18" />
+              <span>Quick filters</span>
+            </div>
             <VBtnToggle
               v-model="quickFilter"
+              class="approved-filter-toggle"
               divided
               mandatory
               density="comfortable"
@@ -825,8 +830,8 @@ function resetFilters() {
                 {{ filter.label }}
               </VBtn>
             </VBtnToggle>
-            <VSpacer />
             <VBtn
+              class="approved-filter-toolbar__reset"
               prepend-icon="mdi-filter-remove-outline"
               variant="text"
               size="small"
@@ -1323,11 +1328,21 @@ function resetFilters() {
   color: #0f172a;
   text-align: left;
   cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.summary-filter:hover {
+  border-color: rgba(14, 140, 138, 0.38);
+  transform: translateY(-1px);
 }
 
 .summary-filter--active {
-  border-color: #003b73;
-  box-shadow: 0 0 0 2px rgba(0, 59, 115, 0.12);
+  border-color: #0e8c8a;
+  background: linear-gradient(135deg, rgba(14, 140, 138, 0.09), rgba(244, 122, 31, 0.08));
+  box-shadow: 0 0 0 2px rgba(14, 140, 138, 0.14);
 }
 
 .summary-filter__value {
@@ -1364,6 +1379,43 @@ function resetFilters() {
   display: grid;
   grid-template-columns: repeat(4, minmax(140px, 1fr));
   gap: 10px;
+}
+
+.approved-filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 24px;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.approved-filter-toolbar__label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: rgba(15, 23, 42, 0.72);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.approved-filter-toggle {
+  flex: 1 1 520px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.approved-filter-toggle :deep(.v-btn) {
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.approved-filter-toolbar__reset {
+  flex: 0 0 auto;
 }
 
 .approved-data-table th {
@@ -1494,6 +1546,15 @@ function resetFilters() {
   .summary-grid,
   .filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .approved-filter-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .approved-filter-toolbar__reset {
+    align-self: flex-start;
   }
 }
 </style>

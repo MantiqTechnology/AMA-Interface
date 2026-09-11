@@ -1137,7 +1137,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       .get(flightId) as { origin_station_id: string } | undefined;
     if (!row) throw new DomainError('NOT_FOUND', `Flight ${flightId} not found.`, 404);
     this.validateStationScope(row.origin_station_id, ctx);
-    if (!['Station Admin', 'Demo Admin'].includes(ctx.role)) {
+    if (!['Station Admin', 'Station Admin Origin', 'Demo Admin'].includes(ctx.role)) {
       throw new DomainError(
         'FLIGHT_ACTION_FORBIDDEN',
         'Only the origin Station Admin may finalize check-in or prepare a manifest.',
@@ -1269,7 +1269,12 @@ export class FlightOperationsVerificationService extends FlightOperationsService
   getManifestWorkspace(flightId: string, ctx: ActorContext) {
     this.assertFlightStationScope(flightId, ctx);
     const detail = this.detail(flightId);
-    const mayViewSensitive = ['Station Admin', 'OCC', 'Demo Admin'].includes(ctx.role);
+    const mayViewSensitive = [
+      'Station Admin',
+      'Station Admin Origin',
+      'OCC',
+      'Demo Admin'
+    ].includes(ctx.role);
     const passengers = detail.passengers.map((passenger) =>
       mayViewSensitive
         ? passenger
@@ -1281,7 +1286,7 @@ export class FlightOperationsVerificationService extends FlightOperationsService
       passengers,
       cargo: detail.cargoItems,
       permissions: {
-        mayPrepare: ['Station Admin', 'Demo Admin'].includes(ctx.role),
+        mayPrepare: ['Station Admin', 'Station Admin Origin', 'Demo Admin'].includes(ctx.role),
         mayReview: ['OCC', 'Demo Admin'].includes(ctx.role),
         mayViewSensitive
       }

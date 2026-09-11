@@ -77,6 +77,66 @@ const releases = computed(() => {
     );
   });
 });
+const releaseSummaryCards = computed(() => {
+  const all = data.value?.technicalReleases ?? [];
+  const withRestrictions = all.filter(
+    (release) => release.resultingStatus === 'SERVICEABLE_WITH_RESTRICTIONS'
+  );
+  const withSnapshot = all.filter((release) => release.signerAuthorizationSnapshot);
+  return [
+    {
+      label: 'Total releases',
+      value: all.length,
+      helper: `${releases.value.length} visible`,
+      icon: 'mdi-certificate-outline',
+      color: 'primary'
+    },
+    {
+      label: 'Serviceable',
+      value: all.filter((release) => release.resultingStatus === 'SERVICEABLE').length,
+      helper: 'clean technical return',
+      icon: 'mdi-shield-check-outline',
+      color: 'success'
+    },
+    {
+      label: 'Restricted',
+      value: withRestrictions.length,
+      helper: 'release with limitations',
+      icon: 'mdi-shield-alert-outline',
+      color: 'warning'
+    },
+    {
+      label: 'Snapshot stored',
+      value: withSnapshot.length,
+      helper: 'license and authority',
+      icon: 'mdi-account-badge-outline',
+      color: 'teal'
+    }
+  ];
+});
+const releaseWorkflowCards = computed(() => [
+  {
+    title: 'Awaiting release',
+    value: data.value?.summary.readyForRelease ?? 0,
+    note: 'Work packages ready for Certifying Staff action',
+    to: '/maintenance/work-packages',
+    icon: 'mdi-timer-sand'
+  },
+  {
+    title: 'Release blockers',
+    value: data.value?.releaseBlockers.length ?? 0,
+    note: 'Open blockers must be cleared before signature',
+    to: '/maintenance',
+    icon: 'mdi-alert-octagon-outline'
+  },
+  {
+    title: 'Audit trace',
+    value: data.value?.recentAuditRecords.length ?? 0,
+    note: 'Recent maintenance records linked to release evidence',
+    to: '/maintenance/records',
+    icon: 'mdi-history'
+  }
+]);
 
 function releaseSignerName(release: TechnicalRelease) {
   const name = release.signerAuthorizationSnapshot?.personnelName;
@@ -114,17 +174,28 @@ function openRelease(release: TechnicalRelease) {
 </script>
 
 <template>
-  <VContainer fluid>
-    <div class="d-flex flex-wrap align-center ga-3 mb-4">
+  <VContainer fluid class="release-page">
+    <div class="release-header">
       <div>
-        <h1 class="text-h4 font-weight-bold">Rilis Teknis Pesawat</h1>
-        <p class="text-body-2 text-medium-emphasis mb-0">
+        <div class="release-header__eyebrow">Technical Release Control</div>
+        <h1>Rilis Teknis Pesawat</h1>
+        <p>
           Catatan Technical Release dengan snapshot lisensi dan Wewenang PT AMA.
           <span class="text-caption">Technical Releases</span>
         </p>
       </div>
-      <VSpacer />
-      <VBtn icon="mdi-refresh" variant="text" :loading="pending" @click="refresh()" />
+      <div class="release-header__actions">
+        <VBtn prepend-icon="mdi-refresh" variant="tonal" :loading="pending" @click="refresh()">
+          Refresh
+        </VBtn>
+        <VBtn
+          prepend-icon="mdi-folder-wrench-outline"
+          color="primary"
+          to="/maintenance/work-packages"
+        >
+          Work Packages
+        </VBtn>
+      </div>
     </div>
 
     <VAlert v-if="accessRestricted" type="warning" variant="tonal" class="mb-4">
@@ -143,9 +214,51 @@ function openRelease(release: TechnicalRelease) {
       </template>
     </VAlert>
 
-    <VCard border>
+    <div class="release-summary-grid">
+      <VCard
+        v-for="card in releaseSummaryCards"
+        :key="card.label"
+        border
+        elevation="0"
+        class="release-summary-card"
+        :class="`release-summary-card--${card.color}`"
+      >
+        <VCardText>
+          <VAvatar rounded="lg" size="42" variant="tonal">
+            <VIcon :icon="card.icon" size="22" />
+          </VAvatar>
+          <div>
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <small>{{ card.helper }}</small>
+          </div>
+        </VCardText>
+      </VCard>
+    </div>
+
+    <div class="release-workflow-grid">
+      <VCard
+        v-for="item in releaseWorkflowCards"
+        :key="item.title"
+        border
+        elevation="0"
+        class="release-workflow-card"
+      >
+        <VCardText>
+          <VIcon :icon="item.icon" size="24" />
+          <div>
+            <span>{{ item.title }}</span>
+            <strong>{{ item.value }}</strong>
+            <p>{{ item.note }}</p>
+          </div>
+          <VBtn :to="item.to" size="small" variant="text">Open</VBtn>
+        </VCardText>
+      </VCard>
+    </div>
+
+    <VCard border elevation="0" class="release-table-card">
       <VCardText>
-        <div class="d-flex flex-wrap align-center ga-3 mb-4">
+        <div class="release-filter-bar">
           <VTextField
             v-model="filters.search"
             label="Cari rilis, pesawat, signer, atau paket"
@@ -196,8 +309,9 @@ function openRelease(release: TechnicalRelease) {
             hide-details
             max-width="160"
           />
-          <VSpacer />
-          <VChip variant="tonal" size="small">{{ releases.length }} hasil</VChip>
+          <VChip class="release-result-chip" variant="tonal" size="small">
+            {{ releases.length }} hasil
+          </VChip>
         </div>
         <div class="maintenance-table-wrap">
           <VTable class="maintenance-table maintenance-table--releases">
@@ -373,6 +487,27 @@ function openRelease(release: TechnicalRelease) {
               Lihat Riwayat
             </VBtn>
           </div>
+          <VDivider class="my-4" />
+          <div class="text-subtitle-2 mb-2">Evidence references</div>
+          <div class="release-evidence-list">
+            <VChip
+              v-for="reference in selectedRelease.evidenceReferences"
+              :key="reference"
+              color="primary"
+              size="small"
+              variant="tonal"
+            >
+              {{ reference }}
+            </VChip>
+            <VAlert
+              v-if="!selectedRelease.evidenceReferences.length"
+              density="compact"
+              type="warning"
+              variant="tonal"
+            >
+              Evidence reference belum tercatat di summary release ini.
+            </VAlert>
+          </div>
         </div>
       </template>
     </VNavigationDrawer>
@@ -380,6 +515,140 @@ function openRelease(release: TechnicalRelease) {
 </template>
 
 <style scoped>
+.release-page {
+  --release-navy: #082b49;
+  --release-teal: #0e8c8a;
+  --release-orange: #f47a1f;
+  --release-muted: rgba(var(--v-theme-on-surface), 0.64);
+  background:
+    linear-gradient(180deg, rgba(8, 43, 73, 0.05), transparent 340px),
+    rgb(var(--v-theme-background));
+}
+
+.release-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.release-header h1 {
+  color: var(--release-navy);
+  font-size: clamp(1.45rem, 2vw, 1.95rem);
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.release-header p {
+  margin: 6px 0 0;
+  color: var(--release-muted);
+}
+
+.release-header__eyebrow {
+  color: var(--release-teal);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.release-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.release-summary-grid,
+.release-workflow-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.release-summary-grid {
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+}
+
+.release-workflow-grid {
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+
+.release-summary-card,
+.release-workflow-card,
+.release-table-card {
+  border-radius: 8px;
+}
+
+.release-summary-card :deep(.v-card-text) {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.release-summary-card span,
+.release-summary-card small,
+.release-workflow-card span,
+.release-workflow-card p {
+  color: var(--release-muted);
+  font-size: 0.78rem;
+}
+
+.release-summary-card strong,
+.release-workflow-card strong {
+  display: block;
+  color: var(--release-navy);
+  font-size: 1.55rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.release-summary-card--teal :deep(.v-avatar),
+.release-workflow-card :deep(.v-icon) {
+  color: var(--release-teal);
+}
+
+.release-summary-card--warning :deep(.v-avatar) {
+  color: var(--release-orange);
+}
+
+.release-workflow-card :deep(.v-card-text) {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.release-workflow-card p {
+  margin: 4px 0 0;
+}
+
+.release-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid rgba(8, 43, 73, 0.1);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(14, 140, 138, 0.06), rgba(244, 122, 31, 0.05));
+}
+
+.release-filter-bar :deep(.v-input) {
+  flex: 1 1 160px;
+  min-width: 150px;
+}
+
+.release-filter-bar :deep(.v-text-field:first-child) {
+  flex-basis: 320px;
+}
+
+.release-result-chip {
+  margin-inline-start: auto;
+}
+
 .maintenance-table-wrap {
   overflow-x: auto;
 }
@@ -413,6 +682,12 @@ function openRelease(release: TechnicalRelease) {
   text-align: left;
 }
 
+.release-evidence-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .maintenance-table--releases :deep(th:nth-child(2)),
 .maintenance-table--releases :deep(td:nth-child(2)) {
   width: 180px;
@@ -426,6 +701,32 @@ function openRelease(release: TechnicalRelease) {
 .maintenance-table--releases :deep(th:nth-child(4)),
 .maintenance-table--releases :deep(td:nth-child(4)) {
   width: 180px;
+}
+
+@media (max-width: 1100px) {
+  .release-summary-grid,
+  .release-workflow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .release-header {
+    flex-direction: column;
+  }
+
+  .release-header__actions {
+    justify-content: flex-start;
+  }
+
+  .release-summary-grid,
+  .release-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .release-result-chip {
+    margin-inline-start: 0;
+  }
 }
 
 .maintenance-table--releases :deep(th:nth-child(5)),

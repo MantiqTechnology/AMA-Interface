@@ -134,6 +134,99 @@ const timelineRows = computed(() => {
   return [...rows.entries()].map(([bayId, row]) => ({ bayId, ...row }));
 });
 const apiError = computed(() => (error.value ? ui.presentError(error.value) : null));
+const planningStats = computed(() => {
+  const slots = data.value?.slots ?? [];
+  const activeSlots = slots.filter((slot) => ['BOOKED', 'IN_PROGRESS'].includes(slot.status));
+  const inProgress = slots.filter((slot) => slot.status === 'IN_PROGRESS');
+  const availableBays = timelineRows.value.filter((row) => row.slots.length === 0);
+  return [
+    {
+      label: 'Active slots',
+      value: activeSlots.length,
+      helper: `${inProgress.length} in bay`,
+      icon: 'mdi-calendar-clock',
+      tone: 'primary'
+    },
+    {
+      label: 'Available bays',
+      value: availableBays.length,
+      helper: `${timelineRows.value.length} total bays`,
+      icon: 'mdi-garage-open-variant',
+      tone: 'success'
+    },
+    {
+      label: 'Actual custody',
+      value:
+        data.value?.actualOccupancies?.filter(
+          (item) => !['HANDED_BACK', 'CANCELLED'].includes(item.status)
+        ).length ?? 0,
+      helper: 'movement tracked',
+      icon: 'mdi-airplane-marker',
+      tone: 'teal'
+    },
+    {
+      label: 'Planning conflicts',
+      value: data.value?.operationalConflicts?.length ?? 0,
+      helper: 'bay / overrun watch',
+      icon: 'mdi-alert-decagram-outline',
+      tone: (data.value?.operationalConflicts?.length ?? 0) > 0 ? 'warning' : 'muted'
+    }
+  ];
+});
+const planningInsights = computed(() => {
+  const nextOpenRow = timelineRows.value.find((row) => row.slots.length === 0);
+  const nextSlot = [...(data.value?.slots ?? [])].sort((a, b) =>
+    a.plannedStartAt.localeCompare(b.plannedStartAt)
+  )[0];
+  return [
+    {
+      title: 'Next open bay',
+      value: nextOpenRow?.bayLabel ?? 'No open bay',
+      note: nextOpenRow?.facilityLabel ?? 'Adjust filter window to find capacity',
+      icon: 'mdi-map-marker-check-outline'
+    },
+    {
+      title: 'Next scheduled movement',
+      value: nextSlot?.aircraftRegistrationNumber ?? 'No slot queued',
+      note: nextSlot
+        ? `${nextSlot.packageNumber} · ${slotTime(nextSlot)}`
+        : 'Create slot from work package',
+      icon: 'mdi-timeline-clock-outline'
+    },
+    {
+      title: 'Mock planning cue',
+      value: 'Stage GSE before move-in',
+      note: 'Demo guidance only; validate against resource readiness before execution',
+      icon: 'mdi-forklift'
+    }
+  ];
+});
+const planningActions = [
+  {
+    label: 'Book Slot',
+    to: '/maintenance/work-packages',
+    icon: 'mdi-calendar-plus',
+    color: 'primary'
+  },
+  {
+    label: 'Review Conflicts',
+    to: '/maintenance/facility-operations',
+    icon: 'mdi-alert-outline',
+    color: 'warning'
+  },
+  {
+    label: 'Open Facility Operations',
+    to: '/maintenance/facility-operations',
+    icon: 'mdi-warehouse',
+    color: 'teal'
+  },
+  {
+    label: 'Open Work Packages',
+    to: '/maintenance/work-packages',
+    icon: 'mdi-folder-wrench-outline',
+    color: 'secondary'
+  }
+];
 
 function statusColor(status: string) {
   if (status === 'BOOKED') return 'info';
@@ -166,17 +259,23 @@ function slotTime(slot: MaintenanceSlotDto) {
 </script>
 
 <template>
-  <VContainer fluid>
-    <div class="d-flex flex-wrap align-center justify-space-between ga-3 mb-4">
+  <VContainer fluid class="facility-planning-page">
+    <div class="facility-planning-header">
       <div>
-        <h1 class="text-h4 font-weight-bold">Timeline Hangar</h1>
-        <p class="text-medium-emphasis mb-0">
+        <div class="facility-planning-header__eyebrow">Facility Planning</div>
+        <h1>Timeline Hangar</h1>
+        <p>
           Occupancy fasilitas berasal dari Maintenance Slot, bukan catatan planning Work Package.
         </p>
       </div>
-      <VBtn prepend-icon="mdi-refresh" variant="tonal" :loading="pending" @click="refresh()">
-        Refresh
-      </VBtn>
+      <div class="facility-planning-header__actions">
+        <VBtn prepend-icon="mdi-refresh" variant="tonal" :loading="pending" @click="refresh()">
+          Refresh
+        </VBtn>
+        <VBtn prepend-icon="mdi-calendar-plus" color="primary" to="/maintenance/work-packages">
+          Book Slot
+        </VBtn>
+      </div>
     </div>
 
     <VAlert v-if="apiError" type="error" variant="tonal" class="mb-4">
@@ -186,7 +285,29 @@ function slotTime(slot: MaintenanceSlotDto) {
       <div v-if="apiError.requestId" class="text-caption">Referensi: {{ apiError.requestId }}</div>
     </VAlert>
 
-    <VCard border class="mb-4">
+    <div class="planning-stat-grid">
+      <VCard
+        v-for="stat in planningStats"
+        :key="stat.label"
+        border
+        elevation="0"
+        class="planning-stat-card"
+        :class="`planning-stat-card--${stat.tone}`"
+      >
+        <VCardText>
+          <VAvatar rounded="lg" size="42" variant="tonal">
+            <VIcon :icon="stat.icon" size="22" />
+          </VAvatar>
+          <div>
+            <span>{{ stat.label }}</span>
+            <strong>{{ stat.value }}</strong>
+            <small>{{ stat.helper }}</small>
+          </div>
+        </VCardText>
+      </VCard>
+    </div>
+
+    <VCard border elevation="0" class="planning-filter-card">
       <VCardText>
         <VRow>
           <VCol cols="12" md="3">
@@ -213,47 +334,264 @@ function slotTime(slot: MaintenanceSlotDto) {
       </VCardText>
     </VCard>
 
-    <VCard border>
-      <VCardText>
-        <VAlert v-if="!timelineRows.length" type="info" variant="tonal">
-          Belum ada facility/bay yang sesuai filter.
-        </VAlert>
-        <div v-else class="facility-timeline">
-          <div v-for="row in timelineRows" :key="row.bayId" class="facility-timeline__row">
-            <div class="facility-timeline__label">
-              <strong>{{ row.bayLabel }}</strong>
-              <span>{{ row.facilityLabel }}</span>
-            </div>
-            <div class="facility-timeline__slots">
-              <VAlert v-if="!row.slots.length" type="info" variant="tonal" density="compact">
-                Tersedia pada rentang filter.
-              </VAlert>
-              <VCard
-                v-for="slot in row.slots"
-                :key="slot.id"
-                border
-                class="facility-timeline__slot"
-              >
-                <VCardText>
-                  <div class="d-flex align-center justify-space-between ga-2">
-                    <strong>{{ slot.aircraftRegistrationNumber }}</strong>
-                    <VChip :color="statusColor(slot.status)" size="small" variant="tonal">
-                      {{ ui.label(slot.status) }}
-                    </VChip>
-                  </div>
-                  <div>{{ slot.packageNumber }}</div>
-                  <div class="text-caption text-medium-emphasis">{{ slotTime(slot) }}</div>
-                </VCardText>
-              </VCard>
+    <div class="planning-workspace">
+      <VCard border elevation="0">
+        <VCardTitle class="planning-section-title">
+          <div>
+            <h2>Bay Timeline</h2>
+            <p>Slot plan, vacancy, dan aircraft custody untuk window filter aktif.</p>
+          </div>
+          <VChip size="small" variant="tonal">{{ timelineRows.length }} bays</VChip>
+        </VCardTitle>
+        <VCardText>
+          <VAlert v-if="!timelineRows.length" type="info" variant="tonal">
+            Belum ada facility/bay yang sesuai filter.
+          </VAlert>
+          <div v-else class="facility-timeline">
+            <div v-for="row in timelineRows" :key="row.bayId" class="facility-timeline__row">
+              <div class="facility-timeline__label">
+                <strong>{{ row.bayLabel }}</strong>
+                <span>{{ row.facilityLabel }}</span>
+                <VChip
+                  class="mt-2"
+                  :color="row.slots.length ? 'primary' : 'success'"
+                  size="small"
+                  variant="tonal"
+                >
+                  {{ row.slots.length ? `${row.slots.length} slot` : 'Available' }}
+                </VChip>
+              </div>
+              <div class="facility-timeline__slots">
+                <VAlert v-if="!row.slots.length" type="success" variant="tonal" density="compact">
+                  Tersedia pada rentang filter.
+                </VAlert>
+                <VCard
+                  v-for="slot in row.slots"
+                  :key="slot.id"
+                  border
+                  elevation="0"
+                  class="facility-timeline__slot"
+                >
+                  <VCardText>
+                    <div class="facility-timeline__slot-head">
+                      <strong>{{ slot.aircraftRegistrationNumber }}</strong>
+                      <VChip :color="statusColor(slot.status)" size="small" variant="tonal">
+                        {{ ui.label(slot.status) }}
+                      </VChip>
+                    </div>
+                    <div class="facility-timeline__slot-package">{{ slot.packageNumber }}</div>
+                    <div class="text-caption text-medium-emphasis">{{ slotTime(slot) }}</div>
+                    <div class="facility-timeline__slot-actions">
+                      <VBtn
+                        :to="`/maintenance/work-packages/${slot.workPackageId}`"
+                        size="small"
+                        variant="text"
+                      >
+                        Open package
+                      </VBtn>
+                      <VBtn to="/maintenance/facility-operations" size="small" variant="tonal">
+                        Operations
+                      </VBtn>
+                    </div>
+                  </VCardText>
+                </VCard>
+              </div>
             </div>
           </div>
-        </div>
-      </VCardText>
-    </VCard>
+        </VCardText>
+      </VCard>
+
+      <aside class="planning-side-stack">
+        <VCard border elevation="0">
+          <VCardTitle class="planning-section-title">
+            <div>
+              <h2>Planning Actions</h2>
+              <p>Kontrol cepat untuk slot dan handoff facility.</p>
+            </div>
+          </VCardTitle>
+          <VCardText class="planning-action-list">
+            <VBtn
+              v-for="action in planningActions"
+              :key="action.label"
+              block
+              :color="action.color"
+              :prepend-icon="action.icon"
+              :to="action.to"
+              variant="tonal"
+            >
+              {{ action.label }}
+            </VBtn>
+          </VCardText>
+        </VCard>
+
+        <VCard border elevation="0">
+          <VCardTitle class="planning-section-title">
+            <div>
+              <h2>Conflict Watch</h2>
+              <p>Actual occupancy dan slot overrun yang perlu follow-up.</p>
+            </div>
+          </VCardTitle>
+          <VCardText>
+            <div v-if="data?.operationalConflicts?.length" class="planning-conflict-list">
+              <div v-for="conflict in data.operationalConflicts" :key="conflict.slotId">
+                <VIcon color="warning" icon="mdi-alert-decagram-outline" />
+                <span>
+                  <strong>{{ conflict.bayCode }} · {{ conflict.code.replaceAll('_', ' ') }}</strong>
+                  <small>{{ conflict.reason }}</small>
+                </span>
+              </div>
+            </div>
+            <VAlert v-else type="success" variant="tonal" density="compact">
+              Tidak ada conflict pada window aktif.
+            </VAlert>
+          </VCardText>
+        </VCard>
+
+        <VCard border elevation="0">
+          <VCardTitle class="planning-section-title">
+            <div>
+              <h2>Planning Insights</h2>
+              <p>Ringkasan operasional dan mock cue untuk demo.</p>
+            </div>
+          </VCardTitle>
+          <VCardText class="planning-insight-list">
+            <div v-for="item in planningInsights" :key="item.title">
+              <VAvatar rounded="lg" size="34" variant="tonal">
+                <VIcon :icon="item.icon" size="18" />
+              </VAvatar>
+              <span>
+                <strong>{{ item.value }}</strong>
+                <small>{{ item.title }} · {{ item.note }}</small>
+              </span>
+            </div>
+          </VCardText>
+        </VCard>
+      </aside>
+    </div>
   </VContainer>
 </template>
 
 <style scoped>
+.facility-planning-page {
+  --facility-navy: #082b49;
+  --facility-teal: #0e8c8a;
+  --facility-orange: #f47a1f;
+  --facility-muted: rgba(var(--v-theme-on-surface), 0.64);
+  background:
+    linear-gradient(180deg, rgba(14, 140, 138, 0.06), transparent 320px),
+    rgb(var(--v-theme-background));
+}
+
+.facility-planning-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.facility-planning-header h1 {
+  color: var(--facility-navy);
+  font-size: clamp(1.45rem, 2vw, 1.95rem);
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.facility-planning-header p {
+  margin: 6px 0 0;
+  color: var(--facility-muted);
+}
+
+.facility-planning-header__eyebrow {
+  color: var(--facility-teal);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.facility-planning-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.planning-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.planning-stat-card {
+  border-radius: 8px;
+}
+
+.planning-stat-card :deep(.v-card-text) {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.planning-stat-card span,
+.planning-stat-card small,
+.planning-section-title p {
+  color: var(--facility-muted);
+  font-size: 0.78rem;
+}
+
+.planning-stat-card strong {
+  display: block;
+  color: var(--facility-navy);
+  font-size: 1.55rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.planning-stat-card--teal :deep(.v-avatar),
+.planning-stat-card--success :deep(.v-avatar) {
+  color: var(--facility-teal);
+}
+
+.planning-stat-card--warning :deep(.v-avatar) {
+  color: var(--facility-orange);
+}
+
+.planning-filter-card {
+  margin-bottom: 18px;
+  border-radius: 8px;
+}
+
+.planning-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+.planning-side-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.planning-section-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planning-section-title h2 {
+  color: var(--facility-navy);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.planning-section-title p {
+  margin: 3px 0 0;
+}
+
 .facility-timeline {
   display: grid;
   gap: 12px;
@@ -272,6 +610,7 @@ function slotTime(slot: MaintenanceSlotDto) {
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 8px;
   padding: 12px;
+  background: linear-gradient(135deg, rgba(8, 43, 73, 0.04), rgba(14, 140, 138, 0.04));
 }
 
 .facility-timeline__label span {
@@ -282,15 +621,104 @@ function slotTime(slot: MaintenanceSlotDto) {
 .facility-timeline__slots {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
+  gap: 10px;
   min-height: 72px;
 }
 
 .facility-timeline__slot {
-  min-height: 72px;
+  min-height: 118px;
+  border-radius: 8px;
+}
+
+.facility-timeline__slot-head,
+.facility-timeline__slot-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.facility-timeline__slot-package {
+  margin-top: 6px;
+  color: var(--facility-navy);
+  font-weight: 750;
+}
+
+.facility-timeline__slot-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.planning-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.planning-action-list :deep(.v-btn__content) {
+  justify-content: flex-start;
+}
+
+.planning-conflict-list,
+.planning-insight-list {
+  display: grid;
+  gap: 10px;
+}
+
+.planning-conflict-list > div,
+.planning-insight-list > div {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.planning-conflict-list span,
+.planning-insight-list span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.planning-conflict-list strong,
+.planning-insight-list strong {
+  color: var(--facility-navy);
+  font-size: 0.84rem;
+}
+
+.planning-conflict-list small,
+.planning-insight-list small {
+  color: var(--facility-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 1200px) {
+  .planning-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-side-stack {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 800px) {
+  .facility-planning-header {
+    flex-direction: column;
+  }
+
+  .facility-planning-header__actions {
+    justify-content: flex-start;
+  }
+
+  .planning-stat-grid,
+  .planning-side-stack {
+    grid-template-columns: 1fr;
+  }
+
   .facility-timeline__row {
     grid-template-columns: 1fr;
   }

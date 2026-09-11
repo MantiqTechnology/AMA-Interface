@@ -158,6 +158,26 @@ const approvalInvalidationReason = computed(
     flight.value?.approvals.find((approval) => approval.invalidationReason)?.invalidationReason ??
     null
 );
+const approvalInvalidationMessage = computed(
+  () =>
+    approvalInvalidationReason.value ??
+    flight.value?.blockingReason ??
+    'A critical readiness source changed after approval.'
+);
+const nextRequiredAction = computed(
+  () => flight.value?.commandCenter?.nextRequiredActions[0] ?? null
+);
+const nextRequiredActionDescription = computed(
+  () => nextRequiredAction.value?.description ?? 'The Flight Order has no unresolved action.'
+);
+const nextRequiredActionOwnerStation = computed(
+  () => nextRequiredAction.value?.ownerStationCode ?? 'All-station responsibility'
+);
+const aircraftTechnicalBlockerReason = computed(
+  () =>
+    aircraftTechnicalEligibility.value?.blockers[0]?.reason ??
+    'Aircraft belum memenuhi technical eligibility maintenance.'
+);
 
 const actionPresentation: Record<string, { icon: string; color?: string }> = {
   submit: { icon: 'mdi-send-outline', color: 'secondary' },
@@ -244,6 +264,16 @@ const fuelPlanningComponents = computed(() => {
     ['Additional fuel', estimate.additionalFuelLitre],
     ['Discretionary fuel', estimate.discretionaryFuelLitre]
   ] as Array<[string, number | null]>;
+});
+const fuelPolicyLabel = computed(() => {
+  const estimate = fuelPlanning.value;
+  if (!estimate) return '-';
+  return `${estimate.regulatoryBasis} · Policy v${estimate.policyVersion ?? '-'}`;
+});
+const fuelSourceLabel = computed(() => {
+  const estimate = fuelPlanning.value;
+  if (!estimate) return '-';
+  return `Fuel source: ${estimate.calculationSources.fuelQuantitySource}`;
 });
 const blockingIssues = computed(() =>
   (flight.value?.readinessChecks ?? []).filter((item) => item.blocking)
@@ -825,13 +855,7 @@ function handleActionSuccessVisibility(open: boolean) {
       <div class="font-weight-bold">
         Reapproval required for revision {{ flight.readinessRevision }}
       </div>
-      <div>
-        {{
-          approvalInvalidationReason ??
-            flight.blockingReason ??
-            'A critical readiness source changed after approval.'
-        }}
-      </div>
+      <div>{{ approvalInvalidationMessage }}</div>
       <div class="mt-1 text-caption">
         Previous approvals remain in the audit history. Resolve blockers, then complete OCC and
         Director approval again.
@@ -1007,20 +1031,14 @@ function handleActionSuccessVisibility(open: boolean) {
           <strong>{{
             flight.commandCenter.nextRequiredActions[0]?.title ?? 'No pending action'
           }}</strong>
-          <small>{{
-            flight.commandCenter.nextRequiredActions[0]?.description ??
-              'The Flight Order has no unresolved action.'
-          }}</small>
+          <small>{{ nextRequiredActionDescription }}</small>
         </div>
         <div>
           <span>Owner</span>
           <strong>{{
             flight.commandCenter.nextRequiredActions[0]?.ownerRoleCodes.join(', ') || 'System'
           }}</strong>
-          <small>{{
-            flight.commandCenter.nextRequiredActions[0]?.ownerStationCode ??
-              'All-station responsibility'
-          }}</small>
+          <small>{{ nextRequiredActionOwnerStation }}</small>
         </div>
         <div>
           <span>Blocking issues</span>
@@ -1231,10 +1249,7 @@ function handleActionSuccessVisibility(open: boolean) {
                     type="error"
                     variant="tonal"
                   >
-                    {{
-                      aircraftTechnicalEligibility.blockers[0]?.reason ??
-                        'Aircraft belum memenuhi technical eligibility maintenance.'
-                    }}
+                    {{ aircraftTechnicalBlockerReason }}
                   </VAlert>
                   <VAlert
                     v-else-if="aircraftTechnicalEligibility.status === 'ELIGIBLE_WITH_RESTRICTIONS'"
@@ -1313,10 +1328,8 @@ function handleActionSuccessVisibility(open: boolean) {
                     </div>
                   </div>
                   <div class="fuel-advisory__meta">
-                    <span>{{ fuelPlanning.regulatoryBasis }} · Policy v{{
-                      fuelPlanning.policyVersion ?? '-'
-                    }}</span>
-                    <span>Fuel source: {{ fuelPlanning.calculationSources.fuelQuantitySource }}</span>
+                    <span>{{ fuelPolicyLabel }}</span>
+                    <span>{{ fuelSourceLabel }}</span>
                     <span>Duration: {{ fuelPlanning.calculationSources.durationSource }}</span>
                   </div>
                   <div v-if="fuelPlanning.warnings.length" class="mt-3 flex flex-wrap gap-2">
@@ -1446,31 +1459,38 @@ function handleActionSuccessVisibility(open: boolean) {
 
         <VWindowItem value="readiness">
           <section class="readiness-summary mb-4">
-            <div>
+            <div class="readiness-summary__metric">
               <span>Overall readiness</span>
               <strong>{{ readinessCompleted }} of {{ flight.readinessChecks.length }}</strong>
             </div>
-            <div>
+            <div class="readiness-summary__metric">
               <span>Status</span>
               <FlightsFlightStatusChip :status="blockingIssues.length ? 'BLOCKED' : 'READY'" />
             </div>
-            <div>
+            <div class="readiness-summary__metric">
               <span>Blocking issues</span>
               <strong class="text-error">{{ blockingIssues.length }}</strong>
             </div>
-            <div>
+            <div class="readiness-summary__metric">
               <span>Warnings</span>
               <strong class="text-warning">{{ warningIssues.length }}</strong>
             </div>
-            <div>
+            <div class="readiness-summary__metric">
               <span>Calculated</span>
               <strong>{{ formatDate(readinessCalculatedAt) }}</strong>
             </div>
-            <VSpacer />
-            <VBtn prepend-icon="mdi-refresh" variant="tonal" @click="runAction('evaluate')">
-              Refresh calculation
-            </VBtn>
-            <VAlert v-if="blockingIssues.length" density="compact" type="warning" variant="tonal">
+            <div class="readiness-summary__actions">
+              <VBtn prepend-icon="mdi-refresh" variant="tonal" @click="runAction('evaluate')">
+                Refresh calculation
+              </VBtn>
+            </div>
+            <VAlert
+              v-if="blockingIssues.length"
+              class="readiness-summary__alert"
+              density="compact"
+              type="warning"
+              variant="tonal"
+            >
               Resolve blockers before approval.
             </VAlert>
           </section>
@@ -1502,7 +1522,6 @@ function handleActionSuccessVisibility(open: boolean) {
                   <strong>{{ item.checkName }}</strong>
                   <small>{{ item.resultNote }}</small>
                 </span>
-                <FlightsFlightStatusChip :status="item.status" />
                 <VIcon icon="mdi-chevron-right" size="18" />
               </button>
               <div v-if="group.items.length === 0" class="empty-compact">No check configured.</div>
@@ -2539,8 +2558,17 @@ function handleActionSuccessVisibility(open: boolean) {
   gap: 9px;
   margin-bottom: 14px;
 }
+.panel-title > .v-icon,
+.record-head > .v-icon {
+  display: inline-grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+}
 .panel-title h2,
 .record-head h2 {
+  min-width: 0;
   font-size: 14px;
   font-weight: 700;
 }
@@ -2624,9 +2652,13 @@ function handleActionSuccessVisibility(open: boolean) {
   padding: 11px 2px;
 }
 .check-row {
-  grid-template-columns: 28px 1fr auto 20px;
-  gap: 8px;
-  padding: 10px 2px;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(106px, max-content) 20px;
+  gap: 10px;
+  padding: 12px 2px;
+}
+.alert-row > .v-icon,
+.check-row > .v-icon {
+  justify-self: center;
 }
 .alert-row span,
 .check-row span {
@@ -2640,11 +2672,22 @@ function handleActionSuccessVisibility(open: boolean) {
 }
 .alert-row small,
 .check-row small {
-  overflow: hidden;
   color: rgb(var(--v-theme-text-secondary));
   font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+}
+.alert-row small {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.check-row small {
+  overflow-wrap: anywhere;
+}
+.check-row :deep(.v-chip) {
+  justify-self: end;
+  max-width: 150px;
 }
 .empty-compact {
   display: flex;
@@ -2692,19 +2735,26 @@ function handleActionSuccessVisibility(open: boolean) {
   border-color: rgb(var(--v-theme-secondary));
 }
 .readiness-summary {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   border: 1px solid rgb(var(--v-theme-border));
   border-radius: 6px;
   background: rgb(var(--v-theme-surface));
   padding: 14px 16px;
 }
-.readiness-summary > div {
+.readiness-summary__metric {
   display: flex;
   min-width: 100px;
   flex-direction: column;
+}
+.readiness-summary__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.readiness-summary__alert {
+  grid-column: 1 / -1;
 }
 .readiness-summary strong {
   font-size: 18px;
@@ -2932,6 +2982,14 @@ function handleActionSuccessVisibility(open: boolean) {
   color: rgb(var(--v-theme-text-secondary));
 }
 @media (max-width: 1200px) {
+  .readiness-summary {
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+
+  .readiness-summary__actions {
+    justify-content: flex-start;
+  }
+
   .command-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2971,6 +3029,17 @@ function handleActionSuccessVisibility(open: boolean) {
   }
   .approval-row > div:nth-child(3) {
     display: none;
+  }
+  .check-row {
+    grid-template-columns: 28px minmax(0, 1fr) 20px;
+  }
+  .check-row :deep(.v-chip) {
+    grid-column: 2 / -1;
+    justify-self: start;
+    max-width: 100%;
+  }
+  .readiness-summary {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -134,7 +134,7 @@ const icon = computed(() => {
 
 <template>
   <VChip
-    class="font-weight-bold"
+    class="ds-status-badge font-weight-bold"
     :color="color"
     density="comfortable"
     :prepend-icon="icon"
@@ -144,3 +144,26 @@ const icon = computed(() => {
     {{ displayLabel }}
   </VChip>
 </template>
+
+<style scoped>
+.ds-status-badge {
+  max-width: 100%;
+  min-height: 26px;
+  height: auto !important;
+  align-items: center;
+  white-space: normal;
+}
+
+.ds-status-badge :deep(.v-chip__prepend) {
+  align-self: center;
+  margin-inline-end: 5px;
+}
+
+.ds-status-badge :deep(.v-chip__content) {
+  min-width: 0;
+  align-items: center;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+</style>
