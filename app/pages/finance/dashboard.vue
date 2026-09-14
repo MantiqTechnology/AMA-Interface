@@ -171,23 +171,98 @@ const recentActivities = [
   }
 ];
 
-const keyRatios = [
-  { label: 'Gross Margin', value: '68.4%', change: '2.1 pp', direction: 'up' },
-  { label: 'Operating Margin', value: '31.2%', change: '1.4 pp', direction: 'up' },
-  { label: 'AR Days Outstanding', value: '24.6 days', change: '2.3 days', direction: 'bad-up' },
-  { label: 'AP Days Outstanding', value: '38.1 days', change: '1.8 days', direction: 'down' },
-  { label: 'Cash Conversion Cycle', value: '24.1 days', change: '4.1 days', direction: 'bad-up' }
-];
+const executiveRatioCards = computed(() => {
+  const r = dashboard.value?.executiveRatios;
+  if (!r) return [];
+  return [
+    {
+      category: 'FINANCIAL_HEALTH',
+      label: 'Current Ratio (Likuiditas)',
+      value: r.currentRatio != null ? `${r.currentRatio.toFixed(2)}x` : 'N/A',
+      caption: 'Aset Lancar ÷ Liabilitas Lancar (PSAK 1)',
+      status: (r.currentRatio ?? 0) >= 1.5 ? 'Sehat (≥1.5x)' : 'Perhatian',
+      tone: (r.currentRatio ?? 0) >= 1.5 ? 'success' : 'warning',
+      icon: 'mdi-scale-balance'
+    },
+    {
+      category: 'FINANCIAL_HEALTH',
+      label: 'Debt to Equity / DER (Solvabilitas)',
+      value: r.debtToEquityRatio != null ? `${r.debtToEquityRatio.toFixed(2)}x` : 'N/A',
+      caption: 'Total Utang ÷ Ekuitas Modal',
+      status: (r.debtToEquityRatio ?? 99) <= 1.0 ? 'Aman (≤1.0x)' : 'Leveraged',
+      tone: (r.debtToEquityRatio ?? 99) <= 1.0 ? 'success' : 'warning',
+      icon: 'mdi-bank-outline'
+    },
+    {
+      category: 'PROFITABILITY',
+      label: 'Gross Profit Margin',
+      value: r.grossMarginPercent != null ? `${r.grossMarginPercent.toFixed(1)}%` : 'N/A',
+      caption: 'Laba Kotor Operasional ÷ Pendapatan',
+      status: (r.grossMarginPercent ?? 0) >= 30 ? 'Prima' : 'Ketat',
+      tone: (r.grossMarginPercent ?? 0) >= 30 ? 'success' : 'info',
+      icon: 'mdi-chart-line'
+    },
+    {
+      category: 'PROFITABILITY',
+      label: 'Net Profit Margin',
+      value: r.netMarginPercent != null ? `${r.netMarginPercent.toFixed(1)}%` : 'N/A',
+      caption: 'Laba Bersih Akhir ÷ Pendapatan',
+      status: (r.netMarginPercent ?? 0) >= 10 ? 'Menguntungkan' : 'Tipis',
+      tone: (r.netMarginPercent ?? 0) >= 10 ? 'success' : 'warning',
+      icon: 'mdi-cash-plus'
+    },
+    {
+      category: 'AVIATION_METRICS',
+      label: 'Cost per Flight Hour (CPFH)',
+      value: r.costPerFlightHourMinor != null ? compactMoney(r.costPerFlightHourMinor) : 'N/A',
+      caption: `${r.totalFlightHours} FH dari ${r.totalFlights} penerbangan`,
+      status: 'Efisiensi Ops',
+      tone: 'info',
+      icon: 'mdi-airplane-clock'
+    },
+    {
+      category: 'AVIATION_METRICS',
+      label: 'Revenue per Flight Hour (RPFH)',
+      value:
+        r.revenuePerFlightHourMinor != null ? compactMoney(r.revenuePerFlightHourMinor) : 'N/A',
+      caption: 'Yield pendapatan per jam terbang',
+      status: 'Hasil Aviasi',
+      tone: 'success',
+      icon: 'mdi-cash-fast'
+    },
+    {
+      category: 'AVIATION_METRICS',
+      label: 'Fuel Cost Ratio',
+      value: r.fuelCostRatioPercent != null ? `${r.fuelCostRatioPercent.toFixed(1)}%` : '0%',
+      caption: 'Porsi beban avtur thd biaya langsung',
+      status: (r.fuelCostRatioPercent ?? 0) <= 40 ? 'Normal (≤40%)' : 'Tinggi',
+      tone: (r.fuelCostRatioPercent ?? 0) <= 40 ? 'success' : 'warning',
+      icon: 'mdi-fuel'
+    },
+    {
+      category: 'AVIATION_METRICS',
+      label: 'Maintenance Cost Ratio',
+      value:
+        r.maintenanceCostRatioPercent != null
+          ? `${r.maintenanceCostRatioPercent.toFixed(1)}%`
+          : '0%',
+      caption: 'Porsi beban MRO thd biaya langsung',
+      status: 'MRO Service',
+      tone: 'info',
+      icon: 'mdi-wrench-clock'
+    }
+  ];
+});
 
 const selectedPeriodLabel = computed(() => {
   const period =
     dashboard.value?.period ?? periods.value?.find((item) => item.code === selectedPeriod.value);
-  return period ? `${period.code} (${period.status})` : 'Select period';
+  return period ? `${period.code} (${period.status})` : 'Pilih Periode';
 });
 
 const asOfLabel = computed(() => {
   if (!dashboard.value?.asOf) return '';
-  return new Intl.DateTimeFormat('en-GB', {
+  return new Intl.DateTimeFormat('id-ID', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -196,6 +271,30 @@ const asOfLabel = computed(() => {
     hour12: false
   }).format(new Date(dashboard.value.asOf));
 });
+
+const primaryMetrics = computed(() => {
+  const metrics = dashboard.value?.metrics ?? [];
+  const primaryKeys = ['REVENUE', 'EXPENSE', 'NET_INCOME', 'CASH'];
+  return primaryKeys
+    .map((key) => metrics.find((m) => m.key === key))
+    .filter((m): m is FinanceMetricDto => Boolean(m));
+});
+
+const workingCapitalMetrics = computed(() => {
+  const metrics = dashboard.value?.metrics ?? [];
+  const secondaryKeys = ['AR', 'AP', 'OVERDUE_AR'];
+  return secondaryKeys
+    .map((key) => metrics.find((m) => m.key === key))
+    .filter((m): m is FinanceMetricDto => Boolean(m));
+});
+
+const aviationRatios = computed(() =>
+  executiveRatioCards.value.filter((ratio) => ratio.category === 'AVIATION_METRICS')
+);
+
+const financialHealthRatios = computed(() =>
+  executiveRatioCards.value.filter((ratio) => ratio.category !== 'AVIATION_METRICS')
+);
 
 function metricValue(metrics: FinanceMetricDto[], key: FinanceMetricDto['key']) {
   return metrics.find((metric) => metric.key === key)?.valueMinor ?? 0;
@@ -228,14 +327,21 @@ function compactMoney(value: number) {
 }
 
 function metricTrendLabel(metric: FinanceMetricDto) {
-  if (metric.changePercent === null) return 'Scope baseline';
-  return `${Math.abs(metric.changePercent).toFixed(1)}% vs previous`;
+  if (metric.changePercent === null) return 'Baseline pembukuan';
+  return `${Math.abs(metric.changePercent).toFixed(1)}% vs periode lalu`;
 }
 
 function metricTrendIcon(metric: FinanceMetricDto) {
   if (metric.direction === 'UP') return 'mdi-arrow-up';
   if (metric.direction === 'DOWN') return 'mdi-arrow-down';
   return 'mdi-minus';
+}
+
+function metricTrendToneClass(metric: FinanceMetricDto) {
+  if (metric.direction === 'UP') return metric.key === 'EXPENSE' ? 'text-warning' : 'text-success';
+  if (metric.direction === 'DOWN')
+    return metric.key === 'EXPENSE' ? 'text-success' : 'text-warning';
+  return 'text-medium-emphasis';
 }
 
 function controlToneClass(status: FinanceControlDto['status']) {
@@ -245,12 +351,6 @@ function controlToneClass(status: FinanceControlDto['status']) {
   return 'control-info';
 }
 
-function controlStatusLabel(status: FinanceControlDto['status']) {
-  if (status === 'WARNING') return 'Warning';
-  if (status === 'DANGER') return 'Risk';
-  return 'Success';
-}
-
 function actionValue(item: FinanceActionDto) {
   if (item.id === 'overdue-ar') return money(Number(item.value));
   return item.value;
@@ -258,26 +358,35 @@ function actionValue(item: FinanceActionDto) {
 </script>
 
 <template>
-  <VContainer class="finance-report px-3 py-4 md:px-5" fluid>
-    <header class="report-header">
-      <div class="report-heading">
-        <h1>Finance Dashboard</h1>
-        <p>Posted GL, canonical subledgers, and finance control exceptions.</p>
+  <VContainer class="finance-overview-container px-3 py-4 md:px-5" fluid>
+    <!-- 1. Executive Header Bar -->
+    <header class="d-flex flex-wrap align-center justify-space-between ga-3 mb-5">
+      <div>
+        <div class="d-flex align-center ga-2 mb-1">
+          <h1 class="text-h5 font-weight-bold text-text-primary">Finance Overview</h1>
+          <VChip color="primary" density="compact" size="small" variant="tonal">
+            PT AMA · Executive Ledger
+          </VChip>
+        </div>
+        <p class="text-body-2 text-medium-emphasis mb-0">
+          Ringkasan eksekutif posisi keuangan, arus kas, dan kinerja operasional penerbangan
+          perintis.
+        </p>
       </div>
 
-      <div class="period-controls">
+      <div class="d-flex align-center ga-2">
         <VSelect
           v-model="selectedPeriod"
           :disabled="periodsPending"
-          density="comfortable"
+          density="compact"
           hide-details
           :items="periodOptions"
-          label="Accounting period"
+          label="Periode Pembukuan"
+          style="min-width: 220px"
           variant="outlined"
         />
         <VBtn
           aria-label="Refresh Finance dashboard"
-          class="refresh-button"
           icon="mdi-refresh"
           :loading="pending"
           variant="tonal"
@@ -296,681 +405,506 @@ function actionValue(item: FinanceActionDto) {
       {{ error?.message || periodsError?.message }}
     </VAlert>
 
-    <VSkeletonLoader v-if="pending && !dashboard" class="report-skeleton" type="card, card, card" />
+    <VSkeletonLoader v-if="pending && !dashboard" class="mb-4" type="card, card, card" />
 
     <template v-else-if="dashboard">
-      <section class="metric-grid" aria-label="Finance metrics">
-        <article
-          v-for="metric in dashboard.metrics"
-          :key="metric.key"
-          class="metric-card"
-          :class="metricToneClass[metric.tone]"
-        >
-          <div class="metric-icon">
-            <VIcon :icon="metricIcons[metric.key] ?? 'mdi-finance'" size="24" />
-          </div>
-          <div class="metric-copy">
-            <p class="metric-label">{{ metric.label }}</p>
-            <p class="metric-value">{{ money(metric.valueMinor) }}</p>
-            <p class="metric-caption">{{ metric.caption }}</p>
-            <div class="metric-trend">
-              <VIcon :icon="metricTrendIcon(metric)" size="12" />
+      <!-- 2. Primary 4 KPI Cards (Lega, Bersih, Sesuai Prinsip KISS) -->
+      <VRow class="mb-5" dense>
+        <VCol v-for="metric in primaryMetrics" :key="metric.key" cols="12" sm="6" lg="3">
+          <VCard
+            border
+            class="pa-4 fill-height d-flex flex-column justify-space-between elevation-0"
+            rounded="lg"
+          >
+            <div class="d-flex align-center justify-space-between mb-2">
+              <span
+                class="text-caption font-weight-bold text-uppercase text-medium-emphasis letter-spacing-wide"
+              >
+                {{ metric.label }}
+              </span>
+              <div class="metric-icon-wrap" :class="metricToneClass[metric.tone]">
+                <VIcon :icon="metricIcons[metric.key] ?? 'mdi-finance'" size="20" />
+              </div>
+            </div>
+
+            <div class="my-1">
+              <div class="text-h5 font-weight-bold text-text-primary">
+                {{ money(metric.valueMinor) }}
+              </div>
+              <div class="text-caption text-medium-emphasis mt-1">
+                {{ metric.caption }}
+              </div>
+            </div>
+
+            <div
+              class="d-flex align-center ga-1 pt-2 mt-2 border-t text-caption font-weight-medium"
+              :class="metricTrendToneClass(metric)"
+            >
+              <VIcon :icon="metricTrendIcon(metric)" size="14" />
               <span>{{ metricTrendLabel(metric) }}</span>
             </div>
-          </div>
-        </article>
-      </section>
+          </VCard>
+        </VCol>
+      </VRow>
 
-      <section class="report-main-grid">
-        <VCard border class="report-panel controls-panel" rounded="lg">
-          <div class="panel-heading">
-            <div>
-              <h2>Accounting Controls</h2>
-              <p>Current backend workflow and ledger state.</p>
-            </div>
-          </div>
-
-          <div class="control-grid">
-            <template v-for="control in dashboard.controls" :key="control.label">
-              <NuxtLink
-                v-if="control.route"
-                class="control-tile"
-                :class="controlToneClass(control.status)"
-                :to="control.route"
-              >
-                <div>
-                  <p>{{ control.label }}</p>
-                  <strong>{{ control.value }}</strong>
+      <!-- 3. Dua Pilar Analisis Berdampingan: Aviasi AMA vs Finansial PSAK -->
+      <VRow class="mb-5">
+        <!-- Pilar A: Kinerja Operasional Aviasi PT AMA -->
+        <VCol cols="12" lg="6">
+          <VCard border class="fill-height pa-4 elevation-0" rounded="lg">
+            <div class="d-flex align-center justify-space-between mb-4">
+              <div class="d-flex align-center ga-2">
+                <div class="section-icon-badge bg-blue-lighten-5 text-primary">
+                  <VIcon icon="mdi-airplane" size="20" />
                 </div>
-                <span class="control-state">
-                  <VIcon :icon="controlIcons[control.status]" size="22" />
-                  <small>{{ controlStatusLabel(control.status) }}</small>
-                </span>
-              </NuxtLink>
-              <div v-else class="control-tile" :class="controlToneClass(control.status)">
                 <div>
-                  <p>{{ control.label }}</p>
-                  <strong>{{ control.value }}</strong>
+                  <h2 class="text-subtitle-1 font-weight-bold mb-0">Kinerja Operasional Aviasi</h2>
+                  <p class="text-caption text-medium-emphasis mb-0">
+                    Efisiensi penerbangan dan biaya jam terbang
+                  </p>
                 </div>
-                <span class="control-state">
-                  <VIcon :icon="controlIcons[control.status]" size="22" />
-                  <small>{{ controlStatusLabel(control.status) }}</small>
-                </span>
               </div>
-            </template>
-          </div>
-        </VCard>
-
-        <VCard border class="report-panel trend-panel" rounded="lg">
-          <div class="panel-heading compact">
-            <div>
-              <h2>GL Activity Trend</h2>
-              <p>Demo trend view using the selected period's ledger totals.</p>
+              <VChip color="primary" density="compact" size="small" variant="tonal">
+                {{ dashboard.executiveRatios?.totalFlightHours ?? 0 }} FH ·
+                {{ dashboard.executiveRatios?.totalFlights ?? 0 }} Penerbangan
+              </VChip>
             </div>
-            <VSelect
-              density="compact"
-              hide-details
-              :items="['Last 6 months']"
-              model-value="Last 6 months"
-              variant="outlined"
-            />
-          </div>
 
-          <ClientOnly>
-            <FeatureApexChart
-              height="240"
-              :options="trendOptions"
-              :series="demoTrendSeries"
-              type="area"
-            />
-          </ClientOnly>
-        </VCard>
+            <VRow dense>
+              <VCol v-for="ratio in aviationRatios" :key="ratio.label" cols="12" sm="6">
+                <div class="ratio-subcard pa-3 rounded-lg border">
+                  <div class="d-flex align-center justify-space-between mb-1">
+                    <span
+                      class="text-caption font-weight-medium text-medium-emphasis d-flex align-center ga-1"
+                    >
+                      <VIcon :icon="ratio.icon" size="14" />
+                      {{ ratio.label }}
+                    </span>
+                    <VChip :color="ratio.tone" density="compact" size="x-small" variant="tonal">
+                      {{ ratio.status }}
+                    </VChip>
+                  </div>
+                  <div class="text-h6 font-weight-bold my-1 text-text-primary">
+                    {{ ratio.value }}
+                  </div>
+                  <div class="text-caption text-medium-emphasis">
+                    {{ ratio.caption }}
+                  </div>
+                </div>
+              </VCol>
+            </VRow>
+          </VCard>
+        </VCol>
 
-        <VCard border class="report-panel attention-panel" rounded="lg">
-          <div class="panel-heading">
-            <div>
-              <h2>Requires Attention</h2>
-              <p>Open finance controls with a valid destination and backend condition.</p>
+        <!-- Pilar B: Kesehatan Finansial & Standar PSAK -->
+        <VCol cols="12" lg="6">
+          <VCard border class="fill-height pa-4 elevation-0" rounded="lg">
+            <div class="d-flex align-center justify-space-between mb-4">
+              <div class="d-flex align-center ga-2">
+                <div class="section-icon-badge bg-green-lighten-5 text-success">
+                  <VIcon icon="mdi-shield-check-outline" size="20" />
+                </div>
+                <div>
+                  <h2 class="text-subtitle-1 font-weight-bold mb-0">Kesehatan Finansial & PSAK</h2>
+                  <p class="text-caption text-medium-emphasis mb-0">
+                    Likuiditas, struktur solvabilitas, dan margin laba
+                  </p>
+                </div>
+              </div>
+              <VBtn
+                color="primary"
+                density="compact"
+                prepend-icon="mdi-chart-box-outline"
+                size="small"
+                to="/finance/statements?tab=ratios"
+                variant="text"
+              >
+                Analisis Lengkap
+              </VBtn>
             </div>
-          </div>
 
-          <div v-if="dashboard.actions.length" class="attention-list">
-            <NuxtLink
-              v-for="item in dashboard.actions"
-              :key="item.id"
-              class="attention-row"
-              :to="item.route"
-            >
-              <span class="attention-icon" :class="item.tone === 'DANGER' ? 'risk' : 'warning'">
-                <VIcon :icon="actionIcons[item.id] ?? 'mdi-alert-outline'" size="22" />
-              </span>
-              <span class="attention-copy">
-                <strong>{{ item.title }}</strong>
-                <small>{{ item.detail }}</small>
-              </span>
-              <span class="attention-value" :class="item.tone === 'DANGER' ? 'risk' : 'warning'">
-                {{ actionValue(item) }}
-              </span>
-            </NuxtLink>
-          </div>
-          <VAlert v-else color="success" variant="tonal">
-            No finance control items require attention for {{ selectedPeriodLabel }}.
-          </VAlert>
-        </VCard>
+            <VRow dense>
+              <VCol v-for="ratio in financialHealthRatios" :key="ratio.label" cols="12" sm="6">
+                <div class="ratio-subcard pa-3 rounded-lg border">
+                  <div class="d-flex align-center justify-space-between mb-1">
+                    <span
+                      class="text-caption font-weight-medium text-medium-emphasis d-flex align-center ga-1"
+                    >
+                      <VIcon :icon="ratio.icon" size="14" />
+                      {{ ratio.label }}
+                    </span>
+                    <VChip :color="ratio.tone" density="compact" size="x-small" variant="tonal">
+                      {{ ratio.status }}
+                    </VChip>
+                  </div>
+                  <div class="text-h6 font-weight-bold my-1 text-text-primary">
+                    {{ ratio.value }}
+                  </div>
+                  <div class="text-caption text-medium-emphasis">
+                    {{ ratio.caption }}
+                  </div>
+                </div>
+              </VCol>
+            </VRow>
+          </VCard>
+        </VCol>
+      </VRow>
 
-        <VCard border class="report-panel activities-panel" rounded="lg">
-          <div class="panel-heading row-heading">
-            <div>
-              <h2>Recent Activities</h2>
+      <!-- 4. Grafik Tren Buku Besar & Kontrol Akuntansi / Piutang (7 : 5 Grid) -->
+      <VRow class="mb-5">
+        <!-- Kolom Kiri: Tren GL 6 Bulan -->
+        <VCol cols="12" lg="7">
+          <VCard border class="pa-4 fill-height elevation-0" rounded="lg">
+            <div class="d-flex flex-wrap align-center justify-space-between ga-2 mb-3">
+              <div>
+                <h2 class="text-subtitle-1 font-weight-bold mb-0">
+                  Tren Aktivitas Buku Besar (GL)
+                </h2>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Perbandingan pendapatan operasional, beban penerbangan, dan laba
+                </p>
+              </div>
+              <VChip density="compact" size="small" variant="outlined"> 6 Bulan Terakhir </VChip>
             </div>
-            <VBtn color="primary" size="small" variant="text">View all</VBtn>
-          </div>
-
-          <div class="activity-list">
-            <div v-for="activity in recentActivities" :key="activity.id" class="activity-row">
-              <span class="activity-icon" :class="activity.tone">
-                <VIcon :icon="activity.icon" size="19" />
-              </span>
-              <span class="activity-copy">
-                <strong>{{ activity.title }}</strong>
-                <small>{{ activity.detail }}</small>
-              </span>
-              <time>{{ activity.time }}</time>
-            </div>
-          </div>
-        </VCard>
-      </section>
-
-      <VCard border class="report-panel ratios-panel mt-4" rounded="lg">
-        <div class="panel-heading row-heading">
-          <div class="ratio-title">
-            <h2>Key Ratios</h2>
-            <span>(vs Jul 2026)</span>
-          </div>
-          <VBtn size="small" variant="tonal">View all ratios</VBtn>
-        </div>
-
-        <div class="ratio-grid">
-          <div v-for="ratio in keyRatios" :key="ratio.label" class="ratio-cell">
-            <p>{{ ratio.label }}</p>
-            <strong>{{ ratio.value }}</strong>
-            <small :class="ratio.direction === 'bad-up' ? 'ratio-bad' : 'ratio-good'">
-              <VIcon
-                :icon="ratio.direction === 'down' ? 'mdi-arrow-down' : 'mdi-arrow-up'"
-                size="12"
+            <ClientOnly>
+              <FeatureApexChart
+                height="270"
+                :options="trendOptions"
+                :series="demoTrendSeries"
+                type="area"
               />
-              {{ ratio.change }}
-            </small>
-          </div>
-        </div>
-      </VCard>
+            </ClientOnly>
+          </VCard>
+        </VCol>
 
-      <p class="as-of">
-        As of {{ asOfLabel }}
-        <VIcon class="ml-1" icon="mdi-information-outline" size="16" />
-      </p>
+        <!-- Kolom Kanan: Modal Kerja & Kontrol Akuntansi -->
+        <VCol cols="12" lg="5">
+          <VCard border class="pa-4 fill-height d-flex flex-column elevation-0" rounded="lg">
+            <div class="d-flex align-center justify-space-between mb-3">
+              <div>
+                <h2 class="text-subtitle-1 font-weight-bold mb-0">Kontrol Akuntansi & Piutang</h2>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Integritas buku besar dan saldo akun kontrol
+                </p>
+              </div>
+            </div>
+
+            <!-- Saldo Akun Kontrol Mini Strip (Piutang AR & Utang AP) -->
+            <div class="d-flex ga-2 mb-3">
+              <div
+                v-for="wc in workingCapitalMetrics"
+                :key="wc.key"
+                class="flex-1-1 pa-2 rounded-lg border bg-surface-variant-light text-center"
+              >
+                <div class="text-caption text-medium-emphasis font-weight-medium">
+                  {{ wc.label }}
+                </div>
+                <div class="text-subtitle-2 font-weight-bold text-text-primary mt-1">
+                  {{ money(wc.valueMinor) }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Daftar Kontrol & Navigasi Cepat -->
+            <div class="control-list-wrap flex-grow-1 d-flex flex-column ga-2">
+              <template v-for="control in dashboard.controls" :key="control.label">
+                <NuxtLink
+                  v-if="control.route"
+                  class="control-row-link pa-2 px-3 rounded-lg border d-flex align-center justify-space-between text-decoration-none"
+                  :class="controlToneClass(control.status)"
+                  :to="control.route"
+                >
+                  <div class="d-flex align-center ga-2">
+                    <VIcon
+                      :color="control.status === 'SUCCESS' ? 'success' : 'warning'"
+                      :icon="controlIcons[control.status]"
+                      size="18"
+                    />
+                    <span class="text-body-2 font-weight-medium text-text-primary">{{
+                      control.label
+                    }}</span>
+                  </div>
+                  <div class="d-flex align-center ga-2">
+                    <span class="text-caption font-weight-bold">{{ control.value }}</span>
+                    <VIcon class="text-medium-emphasis" icon="mdi-chevron-right" size="16" />
+                  </div>
+                </NuxtLink>
+                <div
+                  v-else
+                  class="control-row-link pa-2 px-3 rounded-lg border d-flex align-center justify-space-between"
+                  :class="controlToneClass(control.status)"
+                >
+                  <div class="d-flex align-center ga-2">
+                    <VIcon
+                      :color="control.status === 'SUCCESS' ? 'success' : 'warning'"
+                      :icon="controlIcons[control.status]"
+                      size="18"
+                    />
+                    <span class="text-body-2 font-weight-medium text-text-primary">{{
+                      control.label
+                    }}</span>
+                  </div>
+                  <span class="text-caption font-weight-bold">{{ control.value }}</span>
+                </div>
+              </template>
+            </div>
+          </VCard>
+        </VCol>
+      </VRow>
+
+      <!-- 5. Perlu Perhatian (Action Items) & Aktivitas Terakhir (Grid Seimbang) -->
+      <VRow>
+        <VCol cols="12" md="6">
+          <VCard border class="pa-4 fill-height elevation-0" rounded="lg">
+            <div class="d-flex align-center justify-space-between mb-3">
+              <div>
+                <h2 class="text-subtitle-1 font-weight-bold mb-0">
+                  Perlu Perhatian (Action Items)
+                </h2>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Pengecualian pembukuan dan tagihan tertunda
+                </p>
+              </div>
+              <VChip
+                :color="dashboard.actions.length ? 'warning' : 'success'"
+                density="compact"
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  dashboard.actions.length ? `${dashboard.actions.length} Tindakan` : 'Semua Beres'
+                }}
+              </VChip>
+            </div>
+
+            <div v-if="dashboard.actions.length" class="d-flex flex-column ga-2">
+              <NuxtLink
+                v-for="item in dashboard.actions"
+                :key="item.id"
+                class="action-item-link pa-3 rounded-lg border d-flex align-center justify-space-between text-decoration-none"
+                :to="item.route"
+              >
+                <div class="d-flex align-center ga-3 min-width-0">
+                  <div
+                    class="action-icon-circle"
+                    :class="item.tone === 'DANGER' ? 'risk' : 'warning'"
+                  >
+                    <VIcon :icon="actionIcons[item.id] ?? 'mdi-alert-outline'" size="18" />
+                  </div>
+                  <div class="min-width-0">
+                    <div class="text-body-2 font-weight-bold text-text-primary text-truncate">
+                      {{ item.title }}
+                    </div>
+                    <div class="text-caption text-medium-emphasis text-truncate">
+                      {{ item.detail }}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  class="text-caption font-weight-bold ml-2 text-no-wrap"
+                  :class="item.tone === 'DANGER' ? 'text-error' : 'text-warning'"
+                >
+                  {{ actionValue(item) }}
+                </div>
+              </NuxtLink>
+            </div>
+            <VAlert v-else color="success" density="comfortable" variant="tonal">
+              Tidak ada item pengecualian atau tindakan tertunda pada periode
+              {{ selectedPeriodLabel }}.
+            </VAlert>
+          </VCard>
+        </VCol>
+
+        <VCol cols="12" md="6">
+          <VCard border class="pa-4 fill-height elevation-0" rounded="lg">
+            <div class="d-flex align-center justify-space-between mb-3">
+              <div>
+                <h2 class="text-subtitle-1 font-weight-bold mb-0">Aktivitas Terakhir Sistem</h2>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Log pencatatan jurnal, invoice, dan rekonsiliasi
+                </p>
+              </div>
+              <VBtn color="primary" density="compact" size="small" variant="text"> Semua Log </VBtn>
+            </div>
+
+            <div class="d-flex flex-column ga-2">
+              <div
+                v-for="act in recentActivities"
+                :key="act.id"
+                class="pa-2 px-3 rounded-lg border d-flex align-center justify-space-between"
+              >
+                <div class="d-flex align-center ga-3 min-width-0">
+                  <div class="act-icon-box" :class="act.tone">
+                    <VIcon :icon="act.icon" size="16" />
+                  </div>
+                  <div class="min-width-0">
+                    <div class="text-caption font-weight-bold text-text-primary text-truncate">
+                      {{ act.title }}
+                    </div>
+                    <div class="text-caption text-medium-emphasis text-truncate">
+                      {{ act.detail }}
+                    </div>
+                  </div>
+                </div>
+                <span class="text-caption text-medium-emphasis text-no-wrap ml-2">{{
+                  act.time
+                }}</span>
+              </div>
+            </div>
+          </VCard>
+        </VCol>
+      </VRow>
+
+      <!-- Footer As Of -->
+      <footer class="d-flex justify-end align-center ga-1 mt-4 text-caption text-medium-emphasis">
+        <span>Buku Besar terintegrasi per {{ asOfLabel }}</span>
+        <VIcon icon="mdi-database-check-outline" size="14" />
+      </footer>
     </template>
   </VContainer>
 </template>
 
 <style scoped>
-.finance-report {
+.finance-overview-container {
   min-width: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 249, 250, 0.96) 280px), #f7f9fa;
   color: #102033;
 }
 
-.report-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+.letter-spacing-wide {
+  letter-spacing: 0.04em;
 }
 
-.report-heading h1 {
-  margin: 0;
-  color: #081937;
-  font-size: 1.35rem;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.2;
-}
-
-.report-heading p,
-.panel-heading p,
-.metric-caption,
-.activity-copy small,
-.attention-copy small {
-  color: #56667d;
-}
-
-.report-heading p {
-  margin: 6px 0 0;
-  font-size: 0.86rem;
-}
-
-.period-controls {
-  display: grid;
-  grid-template-columns: minmax(210px, 280px) 48px;
-  gap: 10px;
-  align-items: center;
-}
-
-.refresh-button {
-  min-width: 48px;
-}
-
-.report-skeleton {
-  border-radius: 8px;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.metric-card {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 10px;
-  min-height: 148px;
-  padding: 16px 14px;
-  border: 1px solid #dde6ee;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 22px rgba(8, 25, 55, 0.06);
-}
-
-.metric-icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 8px;
-}
-
-.metric-copy {
-  min-width: 0;
-}
-
-.metric-label,
-.metric-caption,
-.metric-trend,
-.control-tile p,
-.control-state small,
-.ratio-cell p,
-.ratio-cell small {
-  margin: 0;
-  font-size: 0.76rem;
-  line-height: 1.35;
-}
-
-.metric-label {
-  color: #43516a;
-  font-weight: 650;
-}
-
-.metric-value {
-  margin: 3px 0 4px;
-  overflow-wrap: anywhere;
-  color: #071a32;
-  font-size: 1.02rem;
-  font-weight: 780;
-  letter-spacing: 0;
-  line-height: 1.2;
-}
-
-.metric-trend {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 10px;
-  font-weight: 700;
-}
-
-.tone-success .metric-icon,
-.activity-green,
-.control-success .control-state {
-  background: #eaf8f1;
-  color: #1f9d62;
-}
-
-.tone-warning .metric-icon,
-.activity-orange,
-.control-warning .control-state {
-  background: #fff3e8;
-  color: #f47a1f;
-}
-
-.tone-danger .metric-icon,
-.control-danger .control-state {
-  background: #fdeceb;
-  color: #ce2d2d;
-}
-
-.tone-info .metric-icon,
-.activity-blue,
-.control-info .control-state {
-  background: #edf4ff;
-  color: #2f6fdd;
-}
-
-.tone-success .metric-trend {
-  color: #1f9d62;
-}
-
-.tone-warning .metric-trend {
-  color: #f47a1f;
-}
-
-.tone-danger .metric-trend {
-  color: #ce2d2d;
-}
-
-.tone-info .metric-trend {
-  color: #2f6fdd;
-}
-
-.report-main-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 1fr);
-  gap: 12px;
-}
-
-.report-panel {
-  overflow: hidden;
-  border-color: #dde6ee !important;
-  background: #ffffff !important;
-  box-shadow: 0 8px 24px rgba(8, 25, 55, 0.055);
-}
-
-.panel-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px 12px;
-}
-
-.panel-heading.compact {
-  align-items: center;
-}
-
-.panel-heading.compact :deep(.v-input) {
-  width: 150px;
-  flex: 0 0 auto;
-}
-
-.panel-heading h2 {
-  margin: 0;
-  color: #0d1c3a;
-  font-size: 1rem;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.25;
-}
-
-.panel-heading p {
-  margin: 5px 0 0;
-  font-size: 0.82rem;
-}
-
-.row-heading {
-  align-items: center;
-}
-
-.control-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  padding: 0 16px 16px;
-}
-
-.control-tile {
-  display: flex;
-  min-height: 76px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #dde6ee;
-  border-radius: 8px;
-  color: inherit;
-  text-decoration: none;
-  transition:
-    border-color 150ms ease,
-    transform 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.control-tile:hover {
-  border-color: #b9c8d7;
-  box-shadow: 0 8px 18px rgba(8, 25, 55, 0.08);
-  transform: translateY(-1px);
-}
-
-.control-tile strong {
-  display: block;
-  margin-top: 4px;
-  color: #071a32;
-  font-size: 0.93rem;
-  font-weight: 760;
-}
-
-.control-state {
-  display: grid;
-  justify-items: center;
-  gap: 3px;
-  flex: 0 0 auto;
-}
-
-.control-state small {
-  font-size: 0.68rem;
-  font-weight: 650;
-}
-
-.trend-panel :deep(.apexcharts-canvas) {
-  margin: 0 auto;
-}
-
-.attention-list,
-.activity-list {
-  padding: 0 18px 14px;
-}
-
-.attention-row,
-.activity-row {
-  display: grid;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 12px 0;
-  border-top: 1px solid #edf1f5;
-}
-
-.attention-row {
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  color: inherit;
-  text-decoration: none;
-}
-
-.attention-icon,
-.activity-icon {
+.metric-icon-wrap {
   display: grid;
   width: 36px;
   height: 36px;
   place-items: center;
-  border-radius: 50%;
-  flex: 0 0 auto;
+  border-radius: 8px;
 }
 
-.attention-icon.warning {
+.tone-success {
+  background: #eaf8f1;
+  color: #1f9d62;
+}
+
+.tone-warning {
   background: #fff3e8;
   color: #f47a1f;
 }
 
-.attention-icon.risk {
+.tone-danger {
   background: #fdeceb;
   color: #ce2d2d;
 }
 
-.attention-copy,
-.activity-copy {
+.tone-info {
+  background: #edf4ff;
+  color: #2f6fdd;
+}
+
+.section-icon-badge {
   display: grid;
-  min-width: 0;
-  gap: 3px;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
 }
 
-.attention-copy strong,
-.activity-copy strong {
-  overflow: hidden;
-  color: #17223c;
-  font-size: 0.84rem;
-  font-weight: 720;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.ratio-subcard {
+  background: #fcfdfe;
+  transition: border-color 0.15s ease;
 }
 
-.attention-value {
-  max-width: 150px;
-  overflow-wrap: anywhere;
-  border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 0.75rem;
-  font-weight: 720;
-  text-align: right;
+.ratio-subcard:hover {
+  border-color: #cbd5e1;
 }
 
-.attention-value.warning {
+.bg-surface-variant-light {
+  background: #f8fafc;
+}
+
+.control-row-link {
+  transition: all 0.15s ease;
+  background: #ffffff;
+}
+
+.control-row-link:hover {
+  background: #f8fafc;
+  border-color: #94a3b8 !important;
+  transform: translateX(2px);
+}
+
+.control-success {
+  border-left: 3px solid #1f9d62 !important;
+}
+
+.control-warning {
+  border-left: 3px solid #f47a1f !important;
+}
+
+.control-danger {
+  border-left: 3px solid #ce2d2d !important;
+}
+
+.control-info {
+  border-left: 3px solid #2f6fdd !important;
+}
+
+.action-item-link {
+  background: #ffffff;
+  transition: all 0.15s ease;
+}
+
+.action-item-link:hover {
+  background: #f8fafc;
+  border-color: #94a3b8 !important;
+}
+
+.action-icon-circle {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.action-icon-circle.warning {
   background: #fff3e8;
-  color: #d7620f;
+  color: #f47a1f;
 }
 
-.attention-value.risk {
+.action-icon-circle.risk {
   background: #fdeceb;
   color: #ce2d2d;
 }
 
-.activity-row {
-  grid-template-columns: 36px minmax(0, 1fr) minmax(96px, auto);
+.act-icon-box {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.activity-green {
+  background: #eaf8f1;
+  color: #1f9d62;
+}
+
+.activity-orange {
+  background: #fff3e8;
+  color: #f47a1f;
+}
+
+.activity-blue {
+  background: #edf4ff;
+  color: #2f6fdd;
 }
 
 .activity-purple {
   background: #f0ebff;
   color: #7c4bd9;
-}
-
-.activity-row time {
-  color: #56667d;
-  font-size: 0.78rem;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.ratio-title {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.ratio-title span {
-  color: #56667d;
-  font-size: 0.8rem;
-}
-
-.ratio-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding: 0 18px 18px;
-}
-
-.ratio-cell {
-  min-width: 0;
-  padding: 4px 18px;
-  border-left: 1px solid #dde6ee;
-}
-
-.ratio-cell:first-child {
-  border-left: 0;
-}
-
-.ratio-cell p {
-  color: #56667d;
-  font-weight: 560;
-}
-
-.ratio-cell strong {
-  display: block;
-  margin: 5px 0 6px;
-  color: #071a32;
-  font-size: 1.05rem;
-  font-weight: 780;
-}
-
-.ratio-cell small {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 720;
-}
-
-.ratio-good {
-  color: #1f9d62;
-}
-
-.ratio-bad {
-  color: #ce2d2d;
-}
-
-.as-of {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin: 14px 0 0;
-  color: #56667d;
-  font-size: 0.78rem;
-}
-
-@media (max-width: 1320px) {
-  .metric-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 980px) {
-  .report-main-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .control-grid,
-  .ratio-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ratio-cell {
-    border-left: 0;
-    border-top: 1px solid #dde6ee;
-  }
-}
-
-@media (max-width: 680px) {
-  .report-header,
-  .panel-heading,
-  .panel-heading.compact {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .panel-heading.row-heading {
-    align-items: center;
-    flex-direction: row;
-  }
-
-  .period-controls {
-    grid-template-columns: minmax(0, 1fr) 48px;
-    width: 100%;
-  }
-
-  .metric-grid,
-  .control-grid,
-  .ratio-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .metric-card {
-    min-height: auto;
-  }
-
-  .panel-heading.compact :deep(.v-input) {
-    width: 100%;
-  }
-
-  .attention-row {
-    grid-template-columns: 36px minmax(0, 1fr);
-  }
-
-  .attention-value {
-    grid-column: 2;
-    justify-self: start;
-    max-width: 100%;
-  }
-
-  .activity-row {
-    grid-template-columns: 36px minmax(0, 1fr);
-  }
-
-  .activity-row time {
-    grid-column: 2;
-    text-align: left;
-  }
-
-  .ratio-cell {
-    padding-inline: 0;
-  }
 }
 </style>

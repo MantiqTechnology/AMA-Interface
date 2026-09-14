@@ -4,6 +4,7 @@ import type {
   AviationProfitabilityEvidenceDto,
   AviationProfitabilityUnitDto,
   BalanceSheetDto,
+  ExecutiveRatioDto,
   FinanceActionDto,
   FinanceBusinessLineDto,
   FinanceDashboardDto,
@@ -152,15 +153,113 @@ export class FinanceReportingService {
     const assets = accounts.filter((line) => line.accountType === 'ASSET');
     const liabilities = accounts.filter((line) => line.accountType === 'LIABILITY');
     const equityAccounts = accounts.filter((line) => line.accountType === 'EQUITY');
-    const assetsMinor = assets.reduce((sum, line) => sum + line.amountMinor, 0);
-    const liabilitiesMinor = liabilities.reduce((sum, line) => sum + line.amountMinor, 0);
+
+    // PSAK 1 Classification
+    // Current Assets: accounts 1000-1299, 1400 (Cash/Bank, Receivables, Parts Inventory, Prepaids)
+    // Non-Current Assets: accounts 1300, 1500+ (Aircraft Components, Accumulated Depreciation)
+    const currentAssetsAccounts = assets.filter(
+      (line) => line.accountCode < '1300' || line.accountCode === '1400'
+    );
+    const nonCurrentAssetsAccounts = assets.filter(
+      (line) => line.accountCode >= '1300' && line.accountCode !== '1400'
+    );
+
+    // Current Liabilities: accounts 2000-2699 (AP, Tax, Unearned Revenue PSAK 72, Refund, Accrued, Payroll)
+    // Non-Current Liabilities: accounts >= 2700 (Aircraft Lease, Long-term loans)
+    const currentLiabilitiesAccounts = liabilities.filter((line) => line.accountCode < '2700');
+    const nonCurrentLiabilitiesAccounts = liabilities.filter((line) => line.accountCode >= '2700');
+
+    const currentAssetsMinor = currentAssetsAccounts.reduce(
+      (sum, line) => sum + line.amountMinor,
+      0
+    );
+    const nonCurrentAssetsMinor = nonCurrentAssetsAccounts.reduce(
+      (sum, line) => sum + line.amountMinor,
+      0
+    );
+    const assetsMinor = currentAssetsMinor + nonCurrentAssetsMinor;
+
+    const currentLiabilitiesMinor = currentLiabilitiesAccounts.reduce(
+      (sum, line) => sum + line.amountMinor,
+      0
+    );
+    const nonCurrentLiabilitiesMinor = nonCurrentLiabilitiesAccounts.reduce(
+      (sum, line) => sum + line.amountMinor,
+      0
+    );
+    const liabilitiesMinor = currentLiabilitiesMinor + nonCurrentLiabilitiesMinor;
+
     const equityMinor =
       equityAccounts.reduce((sum, line) => sum + line.amountMinor, 0) + currentEarningsMinor;
     const differenceMinor = assetsMinor - liabilitiesMinor - equityMinor;
+
+    // Financial Ratios calculation
+    // Inventory (1200 series) for Quick Ratio: Quick Assets = Current Assets - Inventory
+    const inventoryMinor = currentAssetsAccounts
+      .filter((line) => line.accountCode.startsWith('12'))
+      .reduce((sum, line) => sum + line.amountMinor, 0);
+    const quickAssetsMinor = currentAssetsMinor - inventoryMinor;
+
+    const currentRatio =
+      currentLiabilitiesMinor > 0
+        ? Math.round((currentAssetsMinor / currentLiabilitiesMinor) * 100) / 100
+        : null;
+
+    const quickRatio =
+      currentLiabilitiesMinor > 0
+        ? Math.round((quickAssetsMinor / currentLiabilitiesMinor) * 100) / 100
+        : null;
+
+    const debtToEquityRatio =
+      equityMinor > 0 ? Math.round((liabilitiesMinor / equityMinor) * 100) / 100 : null;
+
+    const debtToAssetRatio =
+      assetsMinor > 0 ? Math.round((liabilitiesMinor / assetsMinor) * 100) / 100 : null;
+
+    const classifiedSections = {
+      currentAssets: {
+        code: 'CURRENT_ASSETS' as const,
+        label: 'Aset Lancar (Current Assets)',
+        amountMinor: currentAssetsMinor,
+        accounts: currentAssetsAccounts
+      },
+      nonCurrentAssets: {
+        code: 'NON_CURRENT_ASSETS' as const,
+        label: 'Aset Tidak Lancar (Non-Current Assets)',
+        amountMinor: nonCurrentAssetsMinor,
+        accounts: nonCurrentAssetsAccounts
+      },
+      currentLiabilities: {
+        code: 'CURRENT_LIABILITIES' as const,
+        label: 'Liabilitas Jangka Pendek (Current Liabilities)',
+        amountMinor: currentLiabilitiesMinor,
+        accounts: currentLiabilitiesAccounts
+      },
+      nonCurrentLiabilities: {
+        code: 'NON_CURRENT_LIABILITIES' as const,
+        label: 'Liabilitas Jangka Panjang (Non-Current Liabilities)',
+        amountMinor: nonCurrentLiabilitiesMinor,
+        accounts: nonCurrentLiabilitiesAccounts
+      },
+      equity: {
+        code: 'EQUITY' as const,
+        label: 'Ekuitas (Equity)',
+        amountMinor: equityMinor,
+        accounts: equityAccounts
+      }
+    };
+
     return {
       period,
       currencyCode: 'IDR',
       currentEarningsMinor,
+      classifiedSections,
+      ratios: {
+        currentRatio,
+        quickRatio,
+        debtToEquityRatio,
+        debtToAssetRatio
+      },
       sections: [
         { code: 'ASSETS', label: 'Assets', amountMinor: assetsMinor, accounts: assets },
         {
@@ -173,7 +272,11 @@ export class FinanceReportingService {
       ],
       totals: {
         assetsMinor,
+        currentAssetsMinor,
+        nonCurrentAssetsMinor,
         liabilitiesMinor,
+        currentLiabilitiesMinor,
+        nonCurrentLiabilitiesMinor,
         equityMinor,
         differenceMinor,
         balanced: differenceMinor === 0
@@ -590,10 +693,81 @@ export class FinanceReportingService {
       }
     ];
 
+    // Executive & Aviation Ratios calculation
+    const balanceSheet = this.balanceSheet({ period: period.code });
+    const pnl = this.profitAndLoss({ period: period.code });
+
+    const flightStats = this.sqlite
+      .prepare(
+        `SELECT COUNT(*) AS totalFlights,
+                COALESCE(SUM((julianday(actual_arrival_at) - julianday(actual_departure_at)) * 24), 0) AS totalFlightHours
+         FROM flight_operations
+         WHERE actual_departure_at IS NOT NULL AND actual_arrival_at IS NOT NULL
+           AND flight_date BETWEEN @startDate AND @endDate`
+      )
+      .get({
+        startDate: period.startDate,
+        endDate: period.endDate
+      }) as { totalFlights: number; totalFlightHours: number } | undefined;
+
+    const totalFlightHours = Math.round(Number(flightStats?.totalFlightHours ?? 0) * 10) / 10;
+    const totalFlights = Number(flightStats?.totalFlights ?? 0);
+
+    const revenueMinor = currentActivity.revenue;
+    const expenseMinor = currentActivity.expense;
+    const directOperatingExpense =
+      pnl.sections.find((s) => s.code === 'DIRECT_OPERATING_EXPENSE')?.amountMinor ?? expenseMinor;
+
+    const costPerFlightHourMinor =
+      totalFlightHours > 0 ? Math.round(directOperatingExpense / totalFlightHours) : null;
+    const revenuePerFlightHourMinor =
+      totalFlightHours > 0 ? Math.round(revenueMinor / totalFlightHours) : null;
+
+    const fuelExpenseMinor = pnl.lines
+      .filter((line) => line.accountCode === '5100')
+      .reduce((sum, line) => sum + line.amountMinor, 0);
+
+    const mroExpenseMinor = pnl.lines
+      .filter((line) => line.accountCode === '5400')
+      .reduce((sum, line) => sum + line.amountMinor, 0);
+
+    const fuelCostRatioPercent =
+      directOperatingExpense > 0
+        ? Math.round((fuelExpenseMinor / directOperatingExpense) * 1000) / 10
+        : null;
+
+    const maintenanceCostRatioPercent =
+      directOperatingExpense > 0
+        ? Math.round((mroExpenseMinor / directOperatingExpense) * 1000) / 10
+        : null;
+
+    const grossMarginPercent =
+      revenueMinor > 0
+        ? Math.round(((revenueMinor - directOperatingExpense) / revenueMinor) * 1000) / 10
+        : null;
+
+    const netIncomeMinor = revenueMinor - expenseMinor;
+    const netMarginPercent =
+      revenueMinor > 0 ? Math.round((netIncomeMinor / revenueMinor) * 1000) / 10 : null;
+
+    const executiveRatios: ExecutiveRatioDto = {
+      currentRatio: balanceSheet.ratios.currentRatio,
+      debtToEquityRatio: balanceSheet.ratios.debtToEquityRatio,
+      grossMarginPercent,
+      netMarginPercent,
+      costPerFlightHourMinor,
+      revenuePerFlightHourMinor,
+      fuelCostRatioPercent,
+      maintenanceCostRatioPercent,
+      totalFlightHours,
+      totalFlights
+    };
+
     return {
       period,
       currencyCode: 'IDR',
       metrics,
+      executiveRatios,
       controls,
       profitability: profitability.lines,
       busiestRoutes: routes.slice(0, 5).map((row, index) => ({ ...row, rank: index + 1 })),
