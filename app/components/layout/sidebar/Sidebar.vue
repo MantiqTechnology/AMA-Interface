@@ -540,6 +540,12 @@ const navItems = computed<NavItem[]>(() =>
       visible: true,
       children: [
         {
+          label: t('nav.dashboard'),
+          to: '/ticketing',
+          icon: 'mdi-view-dashboard-outline',
+          visible: true
+        },
+        {
           label: t('nav.passengerSalesCheckIn'),
           to: '/ticketing/passenger',
           icon: 'mdi-account-multiple-outline',
