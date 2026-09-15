@@ -781,7 +781,7 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.recruitment'),
           to: '/hris/recruitment',
           icon: 'mdi-account-plus-outline',
-          visible: can('hris.recruitment.manage').allowed
+          visible: can('hris.recruitment.read').allowed || can('hris.recruitment.manage').allowed
         },
         {
           label: t('nav.careerPortal'),

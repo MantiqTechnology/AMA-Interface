@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canApproveOvertime = computed(() => can('hris.overtime.approve').allowed);
+
 const searchQuery = ref('');
 const selectedStatus = ref<string>('ALL');
 
@@ -120,7 +123,7 @@ function statusColor(s: string) {
         </template>
         <template #item.actions="{ item }">
           <VBtn
-            v-if="item.status === 'PENDING'"
+            v-if="canApproveOvertime && item.status === 'PENDING'"
             size="small"
             color="success"
             variant="flat"

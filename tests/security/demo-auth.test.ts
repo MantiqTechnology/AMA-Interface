@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { demoAccounts, authenticateDemoAccount } from '../../server/utils/demo-accounts';
-import { createDemoSessionToken, verifyDemoSessionToken } from '../../server/utils/auth';
+import {
+  createDemoSessionToken,
+  createEmployeeSessionToken,
+  verifyDemoSessionToken,
+  verifyEmployeeSessionToken
+} from '../../server/utils/auth';
 
 describe('controlled demo authentication', () => {
   it('authenticates every declared operational demo account', () => {
@@ -20,5 +25,18 @@ describe('controlled demo authentication', () => {
     const [payload, signature] = token.split('.');
     expect(verifyDemoSessionToken(`${payload}x.${signature}`, issuedAt + 1_000)).toBeNull();
     expect(verifyDemoSessionToken(token, issuedAt + 9 * 60 * 60 * 1000)).toBeNull();
+  });
+
+  it('signs employee portal sessions and rejects forged employee identities', () => {
+    const issuedAt = Date.parse('2026-08-24T00:00:00.000Z');
+    const token = createEmployeeSessionToken('emp-001', issuedAt);
+    expect(verifyEmployeeSessionToken(token, issuedAt + 1_000)).toBe('emp-001');
+
+    const [payload, tokenSignature] = token.split('.');
+    expect(
+      verifyEmployeeSessionToken(`${payload}x.${tokenSignature}`, issuedAt + 1_000)
+    ).toBeNull();
+    expect(verifyEmployeeSessionToken('emp-002', issuedAt + 1_000)).toBeNull();
+    expect(verifyEmployeeSessionToken(token, issuedAt + 8 * 24 * 60 * 60 * 1000)).toBeNull();
   });
 });

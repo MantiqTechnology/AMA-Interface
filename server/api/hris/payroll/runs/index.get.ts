@@ -1,9 +1,11 @@
 import { payrollRunQuerySchema } from '../../../../../shared/features/hris';
 import { getHrisService } from '../../../../features/hris';
 import { defineApiEventHandler } from '../../../../utils/api-response';
+import { requireDemoPermission } from '../../../../utils/auth';
 import { parseQuery } from '../../../../utils/validation';
 
 export default defineApiEventHandler((event) => {
+  requireDemoPermission(event, 'hris.payroll.read');
   const query = parseQuery(event, payrollRunQuerySchema);
   return getHrisService().listPayrollRuns(query);
 });

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canManageEmployees = computed(() => can('hris.employee.manage').allowed);
+const canImportEmployees = computed(() => can('hris.employee.import').allowed);
+
 const search = ref('');
 const statusFilter = ref<string | null>(null);
 
@@ -113,10 +117,20 @@ async function handleSaveSingleEmployee() {
         </p>
       </div>
       <div class="d-flex ga-2">
-        <VBtn prepend-icon="mdi-account-plus" color="primary" @click="openCreateEmployeeDialog()">
+        <VBtn
+          v-if="canManageEmployees"
+          prepend-icon="mdi-account-plus"
+          color="primary"
+          @click="openCreateEmployeeDialog()"
+        >
           Tambah Karyawan Baru
         </VBtn>
-        <VBtn prepend-icon="mdi-file-upload-outline" variant="outlined" to="/hris/employees/import">
+        <VBtn
+          v-if="canImportEmployees"
+          prepend-icon="mdi-file-upload-outline"
+          variant="outlined"
+          to="/hris/employees/import"
+        >
           Import CSV / Excel
         </VBtn>
         <VBtn prepend-icon="mdi-refresh" variant="text" @click="refresh()">Refresh</VBtn>
@@ -207,7 +221,7 @@ async function handleSaveSingleEmployee() {
     </VCard>
 
     <!-- Modal Form Create Single Employee -->
-    <VDialog v-model="createDialog" max-width="700" scrollable>
+    <VDialog v-if="canManageEmployees" v-model="createDialog" max-width="700" scrollable>
       <VCard title="Tambah Karyawan Baru">
         <VDivider />
         <VCardText class="pa-4">

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { canDemoRoleAccessPath, safeDemoRoleRedirectPath } from '../app/utils/demoRouteAccess';
+import {
+  canDemoRoleAccessPath,
+  demoRoleHasPermission,
+  safeDemoRoleRedirectPath
+} from '../app/utils/demoRouteAccess';
 
 describe('demo route access', () => {
   it('allows public and dashboard routes for scoped roles', () => {
@@ -33,6 +37,49 @@ describe('demo route access', () => {
     expect(safeDemoRoleRedirectPath('Inventory Controller', '/uploads')).toBeNull();
     expect(safeDemoRoleRedirectPath('HR Staff', '/careers')).toBeNull();
     expect(safeDemoRoleRedirectPath('OCC', '/careers')).toBeNull();
+  });
+
+  it('gives Director read-only visibility across every HRIS submenu', () => {
+    const readPermissions = [
+      'hris.employee.read',
+      'hris.org.read',
+      'hris.certification.read',
+      'hris.attendance.read',
+      'hris.leave.read',
+      'hris.schedule.read',
+      'hris.payroll.read',
+      'hris.allowance.read',
+      'hris.recruitment.read',
+      'hris.kpi.read',
+      'hris.self_service.read'
+    ];
+
+    expect(
+      readPermissions.every((permission) => demoRoleHasPermission('Director', permission))
+    ).toBe(true);
+    const mutationPermissions = [
+      'hris.employee.manage',
+      'hris.employee.import',
+      'hris.certification.manage',
+      'hris.attendance.manage',
+      'hris.attendance.checkin',
+      'hris.leave.request',
+      'hris.leave.approve',
+      'hris.overtime.request',
+      'hris.overtime.approve',
+      'hris.schedule.manage',
+      'hris.payroll.manage',
+      'hris.payroll.calculate',
+      'hris.payroll.approve',
+      'hris.payroll.journal',
+      'hris.allowance.manage',
+      'hris.recruitment.manage',
+      'hris.kpi.manage',
+      'hris.kpi.assess'
+    ];
+    expect(
+      mutationPermissions.every((permission) => !demoRoleHasPermission('Director', permission))
+    ).toBe(true);
   });
 
   it('keeps Corporate Assets scoped by asset permissions', () => {

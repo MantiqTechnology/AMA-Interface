@@ -1,4 +1,8 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canManageKpi = computed(() => can('hris.kpi.manage').allowed);
+const canAssessKpi = computed(() => can('hris.kpi.assess').allowed);
+
 const activeTab = ref<'assessments' | 'templates'>('assessments');
 
 const { data: periodData } = await useAsyncData('kpi-periods', () =>
@@ -392,6 +396,7 @@ function refreshAll() {
 
       <div class="d-flex ga-2">
         <VBtn
+          v-if="canManageKpi"
           prepend-icon="mdi-format-list-checks"
           color="primary"
           @click="openNewTemplateDialog()"
@@ -399,7 +404,12 @@ function refreshAll() {
           Master Template KPI Baru
         </VBtn>
 
-        <VBtn prepend-icon="mdi-account-plus" color="success" @click="openAssignKpiDialog()">
+        <VBtn
+          v-if="canManageKpi"
+          prepend-icon="mdi-account-plus"
+          color="success"
+          @click="openAssignKpiDialog()"
+        >
           Assign KPI Karyawan
         </VBtn>
 
@@ -515,6 +525,7 @@ function refreshAll() {
           <template #item.actions="{ item }">
             <div class="d-flex ga-1">
               <VBtn
+                v-if="canAssessKpi"
                 size="small"
                 variant="outlined"
                 color="primary"
@@ -525,6 +536,7 @@ function refreshAll() {
                 Evaluasi
               </VBtn>
               <VBtn
+                v-if="canManageKpi"
                 size="small"
                 variant="text"
                 color="error"
@@ -604,7 +616,7 @@ function refreshAll() {
               </VList>
             </div>
 
-            <div class="mt-4 pt-2 border-t d-flex justify-end ga-2">
+            <div v-if="canManageKpi" class="mt-4 pt-2 border-t d-flex justify-end ga-2">
               <VBtn
                 size="small"
                 variant="outlined"

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canManagePayroll = computed(() => can('hris.payroll.manage').allowed);
+const canManageAllowances = computed(() => can('hris.allowance.manage').allowed);
+
 const { data: compData, refresh: refreshComponents } = await useAsyncData(
   'payroll-components',
   () => fetchApi<any[]>('/api/hris/payroll/components')
@@ -213,7 +217,13 @@ const compHeaders = [
           </div>
         </template>
         <template #append>
-          <VBtn prepend-icon="mdi-plus" color="primary" size="small" @click="openAddRateModal()">
+          <VBtn
+            v-if="canManageAllowances"
+            prepend-icon="mdi-plus"
+            color="primary"
+            size="small"
+            @click="openAddRateModal()"
+          >
             Add Position Rate
           </VBtn>
         </template>
@@ -233,7 +243,7 @@ const compHeaders = [
           <span>{{ item.ratePerMonth ? formatCurrency(item.ratePerMonth) : '—' }}</span>
         </template>
         <template #item.actions="{ item }">
-          <div class="d-flex ga-1">
+          <div v-if="canManageAllowances" class="d-flex ga-1">
             <VBtn
               size="small"
               variant="text"
@@ -263,7 +273,13 @@ const compHeaders = [
           </div>
         </template>
         <template #append>
-          <VBtn prepend-icon="mdi-plus" color="primary" size="small" @click="openAddCompModal()">
+          <VBtn
+            v-if="canManagePayroll"
+            prepend-icon="mdi-plus"
+            color="primary"
+            size="small"
+            @click="openAddCompModal()"
+          >
             Add Component
           </VBtn>
         </template>
@@ -292,7 +308,7 @@ const compHeaders = [
           <span>{{ item.isTaxable ? 'Taxable (PPh 21 TER)' : 'Tax Exempt' }}</span>
         </template>
         <template #item.actions="{ item }">
-          <div class="d-flex ga-1">
+          <div v-if="canManagePayroll" class="d-flex ga-1">
             <VBtn
               size="small"
               variant="text"
@@ -313,7 +329,7 @@ const compHeaders = [
     </VCard>
 
     <!-- Position Allowance Rate Modal -->
-    <VDialog v-model="rateDialog" max-width="500">
+    <VDialog v-if="canManageAllowances" v-model="rateDialog" max-width="500">
       <VCard :title="editingRate ? 'Edit Position Allowance Rate' : 'Add Position Allowance Rate'">
         <VDivider />
         <VCardText class="pa-4">
@@ -374,7 +390,7 @@ const compHeaders = [
     </VDialog>
 
     <!-- Component Modal -->
-    <VDialog v-model="compDialog" max-width="500">
+    <VDialog v-if="canManagePayroll" v-model="compDialog" max-width="500">
       <VCard :title="editingComp ? 'Edit Payroll Component' : 'Add Payroll Component'">
         <VDivider />
         <VCardText class="pa-4">

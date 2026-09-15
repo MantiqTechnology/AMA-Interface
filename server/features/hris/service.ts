@@ -130,8 +130,8 @@ export class HrisService {
   rejectLeaveRequest(id: string, reason: string) {
     return this.leaveMod.rejectLeaveRequest(id, reason);
   }
-  cancelLeaveRequest(id: string) {
-    return this.leaveMod.cancelLeaveRequest(id);
+  cancelLeaveRequest(id: string, employeeId: string) {
+    return this.leaveMod.cancelLeaveRequest(id, employeeId);
   }
 
   // ── Overtime Module ──────────────────────────────────────────────────
