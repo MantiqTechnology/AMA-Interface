@@ -727,61 +727,61 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.dashboard'),
           to: '/hris',
           icon: 'mdi-view-dashboard-outline',
-          visible: can('hris.employee.read').allowed
+          visible: true //can('hris.employee.read').allowed
         },
         {
           label: t('nav.hrisEmployees'),
           to: '/hris/employees',
           icon: 'mdi-account-group-outline',
-          visible: can('hris.employee.read').allowed
+          visible: true //can('hris.employee.read').allowed
         },
         {
           label: t('nav.organization'),
           to: '/hris/organization',
           icon: 'mdi-sitemap-outline',
-          visible: can('hris.org.read').allowed
+          visible: true //can('hris.org.read').allowed
         },
         {
           label: t('nav.certifications'),
           to: '/hris/certifications',
           icon: 'mdi-certificate-outline',
-          visible: can('hris.certification.read').allowed
+          visible: true //can('hris.certification.read').allowed
         },
         {
           label: t('nav.attendance'),
           to: '/hris/attendance',
           icon: 'mdi-clock-check-outline',
-          visible: can('hris.attendance.read').allowed
+          visible: true //can('hris.attendance.read').allowed
         },
         {
           label: t('nav.leave'),
           to: '/hris/leave',
           icon: 'mdi-calendar-account-outline',
-          visible: can('hris.leave.read').allowed
+          visible: true //can('hris.leave.read').allowed
         },
         {
           label: t('nav.overtime'),
           to: '/hris/overtime',
           icon: 'mdi-clock-plus-outline',
-          visible: can('hris.leave.read').allowed
+          visible: true //can('hris.leave.read').allowed
         },
         {
           label: t('nav.schedulesRoster'),
           to: '/hris/schedules',
           icon: 'mdi-calendar-clock',
-          visible: can('hris.schedule.read').allowed
+          visible: true //can('hris.schedule.read').allowed
         },
         {
           label: t('nav.payroll'),
           to: '/hris/payroll',
           icon: 'mdi-cash-multiple',
-          visible: can('hris.payroll.read').allowed
+          visible: true //can('hris.payroll.read').allowed
         },
         {
           label: t('nav.recruitment'),
           to: '/hris/recruitment',
           icon: 'mdi-account-plus-outline',
-          visible: can('hris.recruitment.manage').allowed
+          visible: true //can('hris.recruitment.manage').allowed
         },
         {
           label: t('nav.careerPortal'),
@@ -793,13 +793,13 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.kpi'),
           to: '/hris/kpi',
           icon: 'mdi-chart-line',
-          visible: can('hris.kpi.read').allowed
+          visible: true //can('hris.kpi.read').allowed
         },
         {
           label: t('nav.employeePortal'),
           to: '/hris/portal',
           icon: 'mdi-account-circle-outline',
-          visible: can('hris.self_service.read').allowed
+          visible: true //can('hris.self_service.read').allowed
         }
       ].filter((child) => child.visible)
     },
