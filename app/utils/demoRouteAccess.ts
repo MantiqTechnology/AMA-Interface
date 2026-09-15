@@ -4,17 +4,11 @@ type RouteAccessRule = {
   prefix: string;
   all?: string[];
   any?: string[];
-  denied?: boolean;
 };
 
 const routeAccessRules: RouteAccessRule[] = [
   { prefix: '/asset-management/finance', all: ['asset.finance.read'] },
   { prefix: '/asset-management', all: ['asset.read'] },
-  { prefix: '/careers', denied: true },
-  { prefix: '/crm-marketing', denied: true },
-  { prefix: '/hris', denied: true },
-  { prefix: '/ticketing', denied: true },
-  { prefix: '/uploads', denied: true },
   { prefix: '/capability-preview', all: ['capability.preview.read'] },
   { prefix: '/admin/access-demo', all: ['platform.module.manage'] },
   { prefix: '/finance', all: ['finance.accounting.read'] },
@@ -62,7 +56,6 @@ export function canDemoRoleAccessPath(role: DemoRole, path: string) {
 
   const rule = routeAccessRules.find((candidate) => pathMatchesPrefix(path, candidate.prefix));
   if (!rule) return true;
-  if (rule.denied) return false;
 
   const allAllowed = rule.all?.every((permissionId) => demoRoleHasPermission(role, permissionId));
   const anyAllowed = rule.any?.some((permissionId) => demoRoleHasPermission(role, permissionId));

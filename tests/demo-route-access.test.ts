@@ -25,12 +25,14 @@ describe('demo route access', () => {
     expect(safeDemoRoleRedirectPath('Inventory Controller', '/ops')).toBe('/dashboard');
   });
 
-  it('blocks excluded and frontend-only demo modules regardless of broad permissions', () => {
-    expect(safeDemoRoleRedirectPath('Demo Admin', '/ticketing/passenger')).toBe('/dashboard');
-    expect(safeDemoRoleRedirectPath('Station Admin', '/crm-marketing/leads')).toBe('/dashboard');
-    expect(safeDemoRoleRedirectPath('HR Manager', '/hris')).toBe('/dashboard');
-    expect(safeDemoRoleRedirectPath('Inventory Controller', '/uploads')).toBe('/dashboard');
-    expect(safeDemoRoleRedirectPath('HR Staff', '/careers')).toBe('/dashboard');
+  it('allows the restored demo modules', () => {
+    expect(safeDemoRoleRedirectPath('Demo Admin', '/ticketing/passenger')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Station Admin', '/crm-marketing/leads')).toBeNull();
+    expect(safeDemoRoleRedirectPath('HR Manager', '/hris')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Inventory Controller', '/hris')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Inventory Controller', '/uploads')).toBeNull();
+    expect(safeDemoRoleRedirectPath('HR Staff', '/careers')).toBeNull();
+    expect(safeDemoRoleRedirectPath('OCC', '/careers')).toBeNull();
   });
 
   it('keeps Corporate Assets scoped by asset permissions', () => {

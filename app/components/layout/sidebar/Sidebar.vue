@@ -44,7 +44,9 @@ const commercialVisible = computed(
   () => masterDataVisible.value || can('commercial.contract.read').allowed
 );
 const corporateAssetsVisible = computed(() => can('asset.read').allowed);
-const excludedDemoModuleVisible = false;
+const hrisVisible = computed(
+  () => can('hris.employee.read').allowed || can('hris.self_service.read').allowed
+);
 
 const navItems = computed<NavItem[]>(() =>
   [
@@ -431,49 +433,49 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'CRM & Marketing',
       icon: 'mdi-account-heart-outline',
-      visible: excludedDemoModuleVisible,
+      visible: true,
       children: [
         {
           label: 'Overview',
           to: '/crm-marketing/dashboard-crm',
           icon: 'mdi-view-dashboard-outline',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: 'Leads',
           to: '/crm-marketing/leads',
           icon: 'mdi-account-plus-outline',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: 'Customers',
           to: '/crm-marketing/customers',
           icon: 'mdi-domain',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: 'Tender',
           to: '/crm-marketing/tender',
           icon: 'mdi-gavel',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: 'Promotion',
           to: '/crm-marketing/promotion',
           icon: 'mdi-bullhorn-outline',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: 'Opportunities',
           to: '/crm-marketing/opportunities',
           icon: 'mdi-target',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: 'Activities',
           to: '/crm-marketing/activities',
           icon: 'mdi-calendar-check-outline',
-          visible: excludedDemoModuleVisible
+          visible: true
         }
       ].filter((child) => child.visible)
     },
@@ -535,19 +537,19 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: t('nav.ticketing'),
       icon: 'mdi-ticket-confirmation-outline',
-      visible: excludedDemoModuleVisible,
+      visible: true,
       children: [
         {
           label: t('nav.passengerSalesCheckIn'),
           to: '/ticketing/passenger',
           icon: 'mdi-account-multiple-outline',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: t('nav.cargoTracking'),
           to: '/ticketing/cargo',
           icon: 'mdi-package-variant',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: t('nav.salesManagement'),
@@ -559,7 +561,7 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.operationalLedger'),
           to: '/ticketing/finance',
           icon: 'mdi-cash-register',
-          visible: excludedDemoModuleVisible
+          visible: true
         }
       ].filter((child) => child.visible)
     },
@@ -719,7 +721,7 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: t('nav.hris'),
       icon: 'mdi-account-tie',
-      visible: excludedDemoModuleVisible,
+      visible: hrisVisible.value,
       children: [
         {
           label: t('nav.dashboard'),
@@ -785,7 +787,7 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.careerPortal'),
           to: '/careers',
           icon: 'mdi-briefcase-search-outline',
-          visible: excludedDemoModuleVisible
+          visible: true
         },
         {
           label: t('nav.kpi'),
@@ -884,7 +886,7 @@ const navItems = computed<NavItem[]>(() =>
       label: t('nav.uploads'),
       to: '/uploads',
       icon: 'mdi-file-upload-outline',
-      visible: excludedDemoModuleVisible
+      visible: true
     },
     {
       label: t('nav.access'),
