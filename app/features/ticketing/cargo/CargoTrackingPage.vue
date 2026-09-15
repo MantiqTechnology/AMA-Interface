@@ -4,6 +4,10 @@ import type { TicketRefundRequestDto } from '#shared/features/ticketing/refunds'
 import { downloadCargoWaybill } from '../booking/ticketDocument';
 import { formatTicketingCurrency, formatTicketingDateTime } from '../formatters';
 
+const { can } = useAuthorization();
+const canUpdateTicketingOperations = computed(() => can('ticketing.operation.update').allowed);
+const canDecideTicketingRefunds = computed(() => can('ticketing.refund.decide').allowed);
+
 const search = ref('');
 const paymentStatus = ref<'UNPAID' | 'PAID' | undefined>();
 const bookingStatus = ref<'BOOKED' | 'DELIVERED' | undefined>();
@@ -219,7 +223,8 @@ async function submitDecision(booking: CargoBookingDto, nextDecision: 'APPROVE' 
                   v-if="booking.status === 'BOOKED'"
                   aria-label="Record proof of delivery"
                   :disabled="
-                    booking.paymentStatus !== 'PAID' ||
+                    !canUpdateTicketingOperations ||
+                      booking.paymentStatus !== 'PAID' ||
                       ['REQUESTED', 'APPROVED'].includes(booking.refundRequest?.status ?? '')
                   "
                   icon="mdi-package-variant-closed-check"
@@ -232,6 +237,7 @@ async function submitDecision(booking: CargoBookingDto, nextDecision: 'APPROVE' 
                   :action="() => submitDecision(booking, 'APPROVE')"
                   aria-label="Approve cargo refund"
                   color="success"
+                  :disabled="!canDecideTicketingRefunds"
                   :confirm-disabled="decisionNote.trim().length < 3"
                   confirm-icon="mdi-check-circle-outline"
                   confirm-text="Approve refund"
@@ -282,6 +288,7 @@ async function submitDecision(booking: CargoBookingDto, nextDecision: 'APPROVE' 
                   :action="() => submitDecision(booking, 'REJECT')"
                   aria-label="Reject cargo refund"
                   color="error"
+                  :disabled="!canDecideTicketingRefunds"
                   :confirm-disabled="decisionNote.trim().length < 3"
                   confirm-icon="mdi-close-circle-outline"
                   confirm-text="Reject refund"
@@ -339,7 +346,7 @@ async function submitDecision(booking: CargoBookingDto, nextDecision: 'APPROVE' 
       </VCardText>
     </VCard>
 
-    <VDialog v-model="deliveryOpen" max-width="520">
+    <VDialog v-if="canUpdateTicketingOperations" v-model="deliveryOpen" max-width="520">
       <VCard>
         <VCardTitle>Record proof of delivery</VCardTitle><VDivider />
         <VCardText>

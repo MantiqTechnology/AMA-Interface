@@ -34,11 +34,11 @@ const activityEmpty = computed(() =>
     series.points.every((point) => point.value === 0)
   )
 );
-const hasForeignCostExposure = computed(() =>
-  (dashboard.value?.financial.pendingCostExposureByCurrency ?? []).some(
-    (item) => !item.includedInIdrTotal
-  )
-);
+// const hasForeignCostExposure = computed(() =>
+//   (dashboard.value?.financial.pendingCostExposureByCurrency ?? []).some(
+//     (item) => !item.includedInIdrTotal
+//   )
+// );
 const activitySeries = computed<ApexAxisChartSeries>(() =>
   (dashboard.value?.performance.activity ?? []).map((series) => ({
     name: series.label,
@@ -411,7 +411,7 @@ function severityLabel(severity: StationNetworkAttention['severity']) {
                     </span>
                   </div>
                 </div>
-
+                <!--
                 <VAlert
                   class="network-finance-note"
                   color="primary"
@@ -423,7 +423,7 @@ function severityLabel(severity: StationNetworkAttention['severity']) {
                   <span v-if="hasForeignCostExposure">
                     Mata uang non-IDR ditampilkan terpisah dan belum dikonversi.
                   </span>
-                </VAlert>
+                </VAlert> -->
               </section>
             </div>
           </VWindowItem>

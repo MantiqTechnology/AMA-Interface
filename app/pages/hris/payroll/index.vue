@@ -1,4 +1,8 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canCalculatePayroll = computed(() => can('hris.payroll.calculate').allowed);
+const canManagePayroll = computed(() => can('hris.payroll.manage').allowed);
+
 const searchQuery = ref('');
 const selectedStatus = ref<string>('ALL');
 const selectedRunType = ref<string>('ALL');
@@ -230,7 +234,12 @@ function statusColor(s: string) {
         <VBtn prepend-icon="mdi-cog-outline" variant="outlined" to="/hris/payroll/components">
           Allowance Rates & Components
         </VBtn>
-        <VBtn prepend-icon="mdi-plus" color="primary" @click="createDialog = true">
+        <VBtn
+          v-if="canCalculatePayroll"
+          prepend-icon="mdi-plus"
+          color="primary"
+          @click="createDialog = true"
+        >
           Generate New Payroll Period
         </VBtn>
       </div>
@@ -342,7 +351,7 @@ function statusColor(s: string) {
               :to="`/hris/payroll/${item.id}`"
             />
             <VBtn
-              v-if="item.status === 'DRAFT' || item.status === 'CALCULATED'"
+              v-if="canManagePayroll && (item.status === 'DRAFT' || item.status === 'CALCULATED')"
               size="small"
               variant="text"
               color="error"

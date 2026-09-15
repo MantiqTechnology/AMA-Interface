@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canApproveLeave = computed(() => can('hris.leave.approve').allowed);
+
 const { data: leaveData, refresh } = await useAsyncData('leave-requests', () =>
   fetchApi<any[]>('/api/hris/leave/requests')
 );
@@ -72,7 +75,7 @@ function statusColor(s: string) {
           </VChip>
         </template>
         <template #item.actions="{ item }">
-          <div v-if="item.status === 'PENDING'" class="d-flex ga-1">
+          <div v-if="canApproveLeave && item.status === 'PENDING'" class="d-flex ga-1">
             <VBtn size="small" color="success" variant="flat" @click="approve(item.id)">
               Approve
             </VBtn>

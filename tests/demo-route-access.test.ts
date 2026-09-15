@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { canDemoRoleAccessPath, safeDemoRoleRedirectPath } from '../app/utils/demoRouteAccess';
+import {
+  canDemoRoleAccessPath,
+  demoRoleHasPermission,
+  safeDemoRoleRedirectPath
+} from '../app/utils/demoRouteAccess';
 
 describe('demo route access', () => {
   it('allows public and dashboard routes for scoped roles', () => {
@@ -33,6 +37,64 @@ describe('demo route access', () => {
     expect(safeDemoRoleRedirectPath('Inventory Controller', '/uploads')).toBeNull();
     expect(safeDemoRoleRedirectPath('HR Staff', '/careers')).toBeNull();
     expect(safeDemoRoleRedirectPath('OCC', '/careers')).toBeNull();
+  });
+
+  it('gives Director read-only visibility across every HRIS submenu', () => {
+    const readPermissions = [
+      'hris.employee.read',
+      'hris.org.read',
+      'hris.certification.read',
+      'hris.attendance.read',
+      'hris.leave.read',
+      'hris.schedule.read',
+      'hris.payroll.read',
+      'hris.allowance.read',
+      'hris.recruitment.read',
+      'hris.kpi.read',
+      'hris.self_service.read'
+    ];
+
+    expect(
+      readPermissions.every((permission) => demoRoleHasPermission('Director', permission))
+    ).toBe(true);
+    const mutationPermissions = [
+      'hris.employee.manage',
+      'hris.employee.import',
+      'hris.certification.manage',
+      'hris.attendance.manage',
+      'hris.attendance.checkin',
+      'hris.leave.request',
+      'hris.leave.approve',
+      'hris.overtime.request',
+      'hris.overtime.approve',
+      'hris.schedule.manage',
+      'hris.payroll.manage',
+      'hris.payroll.calculate',
+      'hris.payroll.approve',
+      'hris.payroll.journal',
+      'hris.allowance.manage',
+      'hris.recruitment.manage',
+      'hris.kpi.manage',
+      'hris.kpi.assess'
+    ];
+    expect(
+      mutationPermissions.every((permission) => !demoRoleHasPermission('Director', permission))
+    ).toBe(true);
+  });
+
+  it('keeps Director ticketing oversight read-only except for refund decisions', () => {
+    expect(safeDemoRoleRedirectPath('Director', '/ticketing/booking')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Director', '/ticketing/management')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Director', '/master-data/rates')).toBeNull();
+    expect(demoRoleHasPermission('Director', 'master_data.read')).toBe(true);
+    expect(demoRoleHasPermission('Director', 'ticketing.management.read')).toBe(true);
+    expect(demoRoleHasPermission('Director', 'ticketing.refund.decide')).toBe(true);
+    expect(demoRoleHasPermission('Director', 'platform.module.manage')).toBe(false);
+    expect(demoRoleHasPermission('Director', 'ticketing.sales.open')).toBe(false);
+    expect(demoRoleHasPermission('Director', 'ticketing.operation.update')).toBe(false);
+    expect(safeDemoRoleRedirectPath('HR Manager', '/ticketing/management')).toBe('/dashboard');
+    expect(safeDemoRoleRedirectPath('OCC', '/ticketing/management')).toBeNull();
+    expect(safeDemoRoleRedirectPath('OCC', '/master-data/rates')).toBeNull();
   });
 
   it('keeps Corporate Assets scoped by asset permissions', () => {

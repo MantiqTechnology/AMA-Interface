@@ -294,19 +294,34 @@ export class LeaveModule {
     return this.listLeaveRequests({}).find((r) => r.id === id)!;
   }
 
-  cancelLeaveRequest(id: string) {
+  cancelLeaveRequest(id: string, employeeId: string) {
     const req = this.listLeaveRequests({}).find((r) => r.id === id);
     if (!req) throw notFound('Leave Request', id);
+    if (req.employeeId !== employeeId) {
+      throw new DomainError('FORBIDDEN', 'You can only cancel your own leave request.', 403, {
+        leaveRequestId: id,
+        employeeId
+      });
+    }
 
     const timestamp = now();
     if (req.status === 'APPROVED') {
       const currentYear = Number(req.startDate.slice(0, 4));
-      this.sqlite
-        .prepare(
-          `UPDATE hris_leave_balances SET used_days = MAX(0, used_days - ?), updated_at = ?
-           WHERE employee_id = ? AND leave_type_id = ? AND year = ?`
-        )
-        .run(req.totalDays, timestamp, req.employeeId, req.leaveTypeId, currentYear);
+      try {
+        this.sqlite
+          .prepare(
+            `UPDATE hris_leave_balances SET used_days = MAX(0, used_days - ?), updated_at = ?
+             WHERE employee_id = ? AND leave_type_id = ? AND period_year = ?`
+          )
+          .run(req.totalDays, timestamp, req.employeeId, req.leaveTypeId, currentYear);
+      } catch {
+        this.sqlite
+          .prepare(
+            `UPDATE hris_leave_balances SET used_days = MAX(0, used_days - ?), updated_at = ?
+             WHERE employee_id = ? AND leave_type_id = ? AND year = ?`
+          )
+          .run(req.totalDays, timestamp, req.employeeId, req.leaveTypeId, currentYear);
+      }
     }
 
     this.sqlite

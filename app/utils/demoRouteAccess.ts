@@ -20,7 +20,9 @@ const routeAccessRules: RouteAccessRule[] = [
     any: ['commercial.contract.read', 'platform.module.manage']
   },
   { prefix: '/master-data/routes', any: ['master_data.read', 'platform.module.manage'] },
+  { prefix: '/master-data/rates', any: ['rate.read', 'platform.module.manage'] },
   { prefix: '/master-data', all: ['platform.module.manage'] },
+  { prefix: '/ticketing/management', all: ['ticketing.management.read'] },
   { prefix: '/ops', all: ['flight.read'] },
   { prefix: '/ops/flight-following', all: ['flight.read'] },
   { prefix: '/ops/flights', all: ['flight.read'] },

@@ -9,7 +9,7 @@ const querySchema = z.object({
 });
 
 export default defineApiEventHandler((event) => {
-  requireDemoPermission(event, 'hris.recruitment.manage');
+  requireDemoPermission(event, 'hris.recruitment.read');
   const query = parseQuery(event, querySchema);
   return getHrisService().listApplicants(query.jobPostingId);
 });

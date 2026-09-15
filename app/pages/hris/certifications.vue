@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canManageCertifications = computed(() => can('hris.certification.manage').allowed);
+
 const { data: certsData, refresh: refreshCerts } = await useAsyncData('certifications', () =>
   fetchApi<any[]>('/api/hris/certifications')
 );
@@ -188,7 +191,12 @@ function refreshAll() {
         </p>
       </div>
       <div class="d-flex ga-2">
-        <VBtn prepend-icon="mdi-certificate-plus" color="primary" @click="openNewCertDialog()">
+        <VBtn
+          v-if="canManageCertifications"
+          prepend-icon="mdi-certificate-plus"
+          color="primary"
+          @click="openNewCertDialog()"
+        >
           Tambah / Upload Sertifikat
         </VBtn>
         <VBtn prepend-icon="mdi-refresh" variant="outlined" @click="refreshAll()">Refresh</VBtn>
@@ -229,6 +237,7 @@ function refreshAll() {
               </div>
 
               <VBtn
+                v-if="canManageCertifications"
                 size="x-small"
                 color="warning"
                 variant="flat"
@@ -388,7 +397,7 @@ function refreshAll() {
 
         <!-- Actions -->
         <template #item.actions="{ item }">
-          <div class="d-flex ga-1">
+          <div v-if="canManageCertifications" class="d-flex ga-1">
             <VBtn
               size="small"
               variant="outlined"

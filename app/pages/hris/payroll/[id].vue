@@ -1,6 +1,11 @@
 <script setup lang="ts">
 const route = useRoute();
 const id = route.params.id as string;
+const { can } = useAuthorization();
+const canManagePayroll = computed(() => can('hris.payroll.manage').allowed);
+const canCalculatePayroll = computed(() => can('hris.payroll.calculate').allowed);
+const canApprovePayroll = computed(() => can('hris.payroll.approve').allowed);
+const canPostPayrollJournal = computed(() => can('hris.payroll.journal').allowed);
 
 interface PayrollRun {
   id: string;
@@ -331,7 +336,7 @@ const headers = [
 
       <div class="d-flex ga-2">
         <VBtn
-          v-if="run.status === 'DRAFT' || run.status === 'CALCULATED'"
+          v-if="canManagePayroll && (run.status === 'DRAFT' || run.status === 'CALCULATED')"
           prepend-icon="mdi-account-plus"
           color="primary"
           @click="addStaffDialog = true"
@@ -340,7 +345,7 @@ const headers = [
         </VBtn>
 
         <VBtn
-          v-if="run.status === 'DRAFT' || run.status === 'CALCULATED'"
+          v-if="canCalculatePayroll && (run.status === 'DRAFT' || run.status === 'CALCULATED')"
           prepend-icon="mdi-calculator"
           color="warning"
           :loading="calculating"
@@ -350,7 +355,7 @@ const headers = [
         </VBtn>
 
         <VBtn
-          v-if="run.status === 'CALCULATED' || run.status === 'DRAFT'"
+          v-if="canApprovePayroll && (run.status === 'CALCULATED' || run.status === 'DRAFT')"
           prepend-icon="mdi-check-decagram"
           color="success"
           :loading="approving"
@@ -360,7 +365,7 @@ const headers = [
         </VBtn>
 
         <VBtn
-          v-if="run.status === 'APPROVED'"
+          v-if="canPostPayrollJournal && run.status === 'APPROVED'"
           prepend-icon="mdi-book-open-page-variant"
           color="info"
           :loading="postingJournal"
@@ -446,7 +451,7 @@ const headers = [
         <template #item.actions="{ item }">
           <div class="d-flex ga-1">
             <VBtn
-              v-if="run.status === 'DRAFT' || run.status === 'CALCULATED'"
+              v-if="canManagePayroll && (run.status === 'DRAFT' || run.status === 'CALCULATED')"
               size="small"
               variant="text"
               icon="mdi-pencil-outline"
@@ -455,7 +460,7 @@ const headers = [
               @click="openAdjustModal(item)"
             />
             <VBtn
-              v-if="run.status === 'DRAFT' || run.status === 'CALCULATED'"
+              v-if="canManagePayroll && (run.status === 'DRAFT' || run.status === 'CALCULATED')"
               size="small"
               variant="text"
               icon="mdi-account-remove-outline"

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canManageEmployees = computed(() => can('hris.employee.manage').allowed);
+
 const route = useRoute();
 const id = route.params.id as string;
 
@@ -182,7 +185,9 @@ async function savePin() {
           Certifications & Lisensi
         </VTab>
         <VTab value="leave" prepend-icon="mdi-calendar-account-outline">Hak & Saldo Cuti</VTab>
-        <VTab value="pin" prepend-icon="mdi-lock-outline">Set Self-Service PIN</VTab>
+        <VTab v-if="canManageEmployees" value="pin" prepend-icon="mdi-lock-outline">
+          Set Self-Service PIN
+        </VTab>
       </VTabs>
       <VDivider />
 
@@ -190,176 +195,182 @@ async function savePin() {
         <VWindow v-model="activeTab">
           <!-- Tab 1: Biodata -->
           <VWindowItem value="biodata">
-            <VRow>
-              <VCol cols="12" md="6">
-                <VTextField
-                  v-model="editForm.phone"
-                  label="Nomor Telepon / WhatsApp"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="6">
-                <VTextField
-                  v-model="editForm.email"
-                  label="Alamat Email"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12">
-                <VTextarea
-                  v-model="editForm.address"
-                  label="Alamat Domisili Lengkap"
-                  variant="outlined"
-                  rows="3"
-                />
-              </VCol>
-            </VRow>
-            <div class="d-flex justify-end mt-4">
-              <VBtn color="primary" :loading="saving" @click="saveBiodata()">
-                Simpan Perubahan Biodata
-              </VBtn>
-            </div>
+            <fieldset :disabled="!canManageEmployees" class="border-0 pa-0 ma-0 w-100">
+              <VRow>
+                <VCol cols="12" md="6">
+                  <VTextField
+                    v-model="editForm.phone"
+                    label="Nomor Telepon / WhatsApp"
+                    variant="outlined"
+                    density="comfortable"
+                  />
+                </VCol>
+                <VCol cols="12" md="6">
+                  <VTextField
+                    v-model="editForm.email"
+                    label="Alamat Email"
+                    variant="outlined"
+                    density="comfortable"
+                  />
+                </VCol>
+                <VCol cols="12">
+                  <VTextarea
+                    v-model="editForm.address"
+                    label="Alamat Domisili Lengkap"
+                    variant="outlined"
+                    rows="3"
+                  />
+                </VCol>
+              </VRow>
+              <div v-if="canManageEmployees" class="d-flex justify-end mt-4">
+                <VBtn color="primary" :loading="saving" @click="saveBiodata()">
+                  Simpan Perubahan Biodata
+                </VBtn>
+              </div>
+            </fieldset>
           </VWindowItem>
 
           <!-- Tab 2: Bank, Tax & Salary Management -->
           <VWindowItem value="payroll">
-            <!-- Salary & Compensation Management Form -->
-            <VCard border class="pa-4 mb-6 bg-surface" elevation="1">
-              <h3 class="text-subtitle-1 font-weight-bold text-primary mb-3">
-                💵 Pengaturan Komponen Gaji Karyawan (Manage Base Salary)
-              </h3>
+            <fieldset :disabled="!canManageEmployees" class="border-0 pa-0 ma-0 w-100">
+              <!-- Salary & Compensation Management Form -->
+              <VCard border class="pa-4 mb-6 bg-surface" elevation="1">
+                <h3 class="text-subtitle-1 font-weight-bold text-primary mb-3">
+                  💵 Pengaturan Komponen Gaji Karyawan (Manage Base Salary)
+                </h3>
+                <VRow>
+                  <VCol cols="12" sm="4">
+                    <VTextField
+                      v-model.number="editForm.basicSalary"
+                      label="Gaji Pokok (Basic Salary) *"
+                      type="number"
+                      prefix="Rp"
+                      variant="outlined"
+                      density="comfortable"
+                    />
+                  </VCol>
+                  <VCol cols="12" sm="4">
+                    <VTextField
+                      v-model.number="editForm.positionAllowance"
+                      label="Tunjangan Jabatan *"
+                      type="number"
+                      prefix="Rp"
+                      variant="outlined"
+                      density="comfortable"
+                    />
+                  </VCol>
+                  <VCol cols="12" sm="4">
+                    <VTextField
+                      v-model.number="editForm.flightRatePerHour"
+                      label="Rate Allowance Terbang / Jam"
+                      type="number"
+                      prefix="Rp"
+                      suffix="/ jam"
+                      variant="outlined"
+                      density="comfortable"
+                    />
+                  </VCol>
+                </VRow>
+
+                <VAlert type="info" variant="tonal" class="mt-2 text-caption">
+                  Total Gaji Tetap (Basic + Tunjangan Jabatan):
+                  <span class="font-weight-bold text-primary text-subtitle-2 ml-1">
+                    {{
+                      formatCurrency(
+                        (editForm.basicSalary || 0) + (editForm.positionAllowance || 0)
+                      )
+                    }}
+                  </span>
+                </VAlert>
+              </VCard>
+
+              <!-- Bank & Tax Details -->
               <VRow>
-                <VCol cols="12" sm="4">
-                  <VTextField
-                    v-model.number="editForm.basicSalary"
-                    label="Gaji Pokok (Basic Salary) *"
-                    type="number"
-                    prefix="Rp"
+                <VCol cols="12" md="4">
+                  <VSelect
+                    v-model="editForm.bankName"
+                    label="Nama Bank"
+                    :items="['Bank Mandiri', 'BCA', 'BRI', 'BNI', 'Bank Papua', 'Lainnya']"
                     variant="outlined"
                     density="comfortable"
                   />
                 </VCol>
-                <VCol cols="12" sm="4">
+                <VCol cols="12" md="4">
                   <VTextField
-                    v-model.number="editForm.positionAllowance"
-                    label="Tunjangan Jabatan *"
-                    type="number"
-                    prefix="Rp"
+                    v-model="editForm.bankAccountNumber"
+                    label="Nomor Rekening Bank"
                     variant="outlined"
                     density="comfortable"
                   />
                 </VCol>
-                <VCol cols="12" sm="4">
+                <VCol cols="12" md="4">
                   <VTextField
-                    v-model.number="editForm.flightRatePerHour"
-                    label="Rate Allowance Terbang / Jam"
-                    type="number"
-                    prefix="Rp"
-                    suffix="/ jam"
+                    v-model="editForm.bankAccountName"
+                    label="Nama Pemilik Rekening"
+                    variant="outlined"
+                    density="comfortable"
+                  />
+                </VCol>
+                <VCol cols="12" md="4">
+                  <VTextField
+                    v-model="editForm.taxIdNumber"
+                    label="NPWP (Tax ID)"
+                    variant="outlined"
+                    density="comfortable"
+                  />
+                </VCol>
+                <VCol cols="12" md="4">
+                  <VSelect
+                    v-model="editForm.ptkpStatus"
+                    label="Kategori PTKP Pajak"
+                    :items="['TK/0', 'TK/1', 'TK/2', 'TK/3', 'K/0', 'K/1', 'K/2', 'K/3']"
+                    variant="outlined"
+                    density="comfortable"
+                  />
+                </VCol>
+                <VCol cols="12" md="4">
+                  <VSelect
+                    v-model="editForm.maritalStatus"
+                    label="Status Pernikahan"
+                    :items="['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED']"
+                    variant="outlined"
+                    density="comfortable"
+                  />
+                </VCol>
+                <VCol cols="12" md="6">
+                  <VTextField
+                    v-model="editForm.bpjsKesehatanNumber"
+                    label="No. BPJS Kesehatan"
+                    variant="outlined"
+                    density="comfortable"
+                  />
+                </VCol>
+                <VCol cols="12" md="6">
+                  <VTextField
+                    v-model="editForm.bpjsTkNumber"
+                    label="No. BPJS Ketenagakerjaan"
                     variant="outlined"
                     density="comfortable"
                   />
                 </VCol>
               </VRow>
 
-              <VAlert type="info" variant="tonal" class="mt-2 text-caption">
-                Total Gaji Tetap (Basic + Tunjangan Jabatan):
-                <span class="font-weight-bold text-primary text-subtitle-2 ml-1">
-                  {{
-                    formatCurrency((editForm.basicSalary || 0) + (editForm.positionAllowance || 0))
-                  }}
-                </span>
+              <VAlert v-if="saveSuccess" type="success" variant="tonal" class="mt-4">
+                Pengaturan gaji, bank, dan pajak karyawan berhasil diperbarui!
               </VAlert>
-            </VCard>
 
-            <!-- Bank & Tax Details -->
-            <VRow>
-              <VCol cols="12" md="4">
-                <VSelect
-                  v-model="editForm.bankName"
-                  label="Nama Bank"
-                  :items="['Bank Mandiri', 'BCA', 'BRI', 'BNI', 'Bank Papua', 'Lainnya']"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="4">
-                <VTextField
-                  v-model="editForm.bankAccountNumber"
-                  label="Nomor Rekening Bank"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="4">
-                <VTextField
-                  v-model="editForm.bankAccountName"
-                  label="Nama Pemilik Rekening"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="4">
-                <VTextField
-                  v-model="editForm.taxIdNumber"
-                  label="NPWP (Tax ID)"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="4">
-                <VSelect
-                  v-model="editForm.ptkpStatus"
-                  label="Kategori PTKP Pajak"
-                  :items="['TK/0', 'TK/1', 'TK/2', 'TK/3', 'K/0', 'K/1', 'K/2', 'K/3']"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="4">
-                <VSelect
-                  v-model="editForm.maritalStatus"
-                  label="Status Pernikahan"
-                  :items="['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED']"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="6">
-                <VTextField
-                  v-model="editForm.bpjsKesehatanNumber"
-                  label="No. BPJS Kesehatan"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-              <VCol cols="12" md="6">
-                <VTextField
-                  v-model="editForm.bpjsTkNumber"
-                  label="No. BPJS Ketenagakerjaan"
-                  variant="outlined"
-                  density="comfortable"
-                />
-              </VCol>
-            </VRow>
-
-            <VAlert v-if="saveSuccess" type="success" variant="tonal" class="mt-4">
-              Pengaturan gaji, bank, dan pajak karyawan berhasil diperbarui!
-            </VAlert>
-
-            <div class="d-flex justify-end mt-4">
-              <VBtn
-                color="primary"
-                size="large"
-                prepend-icon="mdi-check-all"
-                :loading="saving"
-                @click="saveBiodata()"
-              >
-                Simpan Perubahan Gaji & Bank
-              </VBtn>
-            </div>
+              <div v-if="canManageEmployees" class="d-flex justify-end mt-4">
+                <VBtn
+                  color="primary"
+                  size="large"
+                  prepend-icon="mdi-check-all"
+                  :loading="saving"
+                  @click="saveBiodata()"
+                >
+                  Simpan Perubahan Gaji & Bank
+                </VBtn>
+              </div>
+            </fieldset>
           </VWindowItem>
 
           <!-- Tab 3: Certifications & Lisensi Penerbangan -->
@@ -368,7 +379,13 @@ async function savePin() {
               <h3 class="text-subtitle-1 font-weight-bold text-primary">
                 📜 Lisensi & Sertifikasi Karyawan
               </h3>
-              <VBtn size="small" prepend-icon="mdi-plus" color="primary" to="/hris/certifications">
+              <VBtn
+                v-if="canManageEmployees"
+                size="small"
+                prepend-icon="mdi-plus"
+                color="primary"
+                to="/hris/certifications"
+              >
                 Kelola Master Sertifikat
               </VBtn>
             </div>
@@ -488,7 +505,7 @@ async function savePin() {
           </VWindowItem>
 
           <!-- Tab 5: Set PIN -->
-          <VWindowItem value="pin">
+          <VWindowItem v-if="canManageEmployees" value="pin">
             <div class="max-w-md">
               <p class="text-body-2 text-secondary mb-4">
                 Configure 6-digit PIN for Employee Portal Self-Service authentication.

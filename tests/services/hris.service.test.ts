@@ -127,5 +127,14 @@ describe('HrisService Unit & Engine Tests', () => {
     const updatedBalances = hris.getLeaveBalance(empId, currentYear);
     const annualUpdated = updatedBalances.find((b) => b.leaveCode === 'ANNUAL')!;
     expect(annualUpdated.usedDays).toBe(annualInitial.usedDays + 3);
+
+    expect(() => hris.cancelLeaveRequest(req.id, 'emp-002')).toThrowError(
+      'You can only cancel your own leave request.'
+    );
+    expect(hris.cancelLeaveRequest(req.id, empId)).toEqual({ success: true });
+
+    const restoredBalances = hris.getLeaveBalance(empId, currentYear);
+    const annualRestored = restoredBalances.find((b) => b.leaveCode === 'ANNUAL')!;
+    expect(annualRestored.usedDays).toBe(annualInitial.usedDays);
   });
 });

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 const route = useRoute();
 const id = route.params.id as string;
+const { can } = useAuthorization();
+const canManageRecruitment = computed(() => can('hris.recruitment.manage').allowed);
 
 const { data: jobData, refresh: refreshJob } = await useAsyncData(`job-detail-${id}`, () =>
   fetchApi<any>(`/api/hris/recruitment/postings/${id}`)
@@ -258,6 +260,7 @@ function formatStageLabel(s: string) {
             </td>
             <td>
               <VBtn
+                v-if="canManageRecruitment"
                 size="small"
                 variant="outlined"
                 color="primary"

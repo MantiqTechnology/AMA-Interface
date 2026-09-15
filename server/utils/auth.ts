@@ -255,28 +255,68 @@ export function hasDemoPermission(event: H3Event, permissionId: string) {
 }
 
 const employeeCookieName = 'ama_employee_id';
+const EMPLOYEE_SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
+
+type EmployeeSessionPayload = {
+  version: 1;
+  employeeId: string;
+  issuedAt: number;
+  expiresAt: number;
+};
+
+export function createEmployeeSessionToken(employeeId: string, issuedAt = Date.now()) {
+  const payload: EmployeeSessionPayload = {
+    version: 1,
+    employeeId,
+    issuedAt,
+    expiresAt: issuedAt + EMPLOYEE_SESSION_DURATION_SECONDS * 1000
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${encodedPayload}.${signature(`employee:${encodedPayload}`)}`;
+}
+
+export function verifyEmployeeSessionToken(token: string, now = Date.now()): string | null {
+  const [encodedPayload, suppliedSignature, extra] = token.split('.');
+  if (!encodedPayload || !suppliedSignature || extra) return null;
+  if (!safelyEqual(suppliedSignature, signature(`employee:${encodedPayload}`))) return null;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString()
+    ) as Partial<EmployeeSessionPayload>;
+    if (
+      payload.version !== 1 ||
+      typeof payload.employeeId !== 'string' ||
+      !payload.employeeId.trim() ||
+      typeof payload.issuedAt !== 'number' ||
+      typeof payload.expiresAt !== 'number' ||
+      payload.issuedAt > now + 60_000 ||
+      payload.expiresAt <= now
+    ) {
+      return null;
+    }
+    return payload.employeeId;
+  } catch {
+    return null;
+  }
+}
 
 export function getEmployeeSessionId(event: H3Event): string | null {
-  const id = getCookie(event, employeeCookieName);
-  return id && id.trim().length > 0 ? id : null;
+  const token = getCookie(event, employeeCookieName);
+  return token ? verifyEmployeeSessionToken(token) : null;
 }
 
 export function setEmployeeSession(event: H3Event, employeeId: string) {
-  setCookie(event, employeeCookieName, employeeId, {
-    httpOnly: false,
-    sameSite: 'lax',
+  setCookie(event, employeeCookieName, createEmployeeSessionToken(employeeId), {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production' && !isLoopbackRequest(event),
     path: '/',
-    maxAge: 60 * 60 * 24 * 7
+    maxAge: EMPLOYEE_SESSION_DURATION_SECONDS
   });
 }
 
 export function clearEmployeeSession(event: H3Event) {
-  setCookie(event, employeeCookieName, '', {
-    httpOnly: false,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0
-  });
+  deleteCookie(event, employeeCookieName, { path: '/' });
 }
 
 export function requireEmployeeAuth(event: H3Event): string {

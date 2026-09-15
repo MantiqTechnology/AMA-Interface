@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canManageRecruitment = computed(() => can('hris.recruitment.manage').allowed);
+
 const { data: postData, refresh: refreshPostings } = await useAsyncData(
   'recruitment-postings',
   () => fetchApi<any[]>('/api/hris/recruitment/postings')
@@ -247,7 +250,12 @@ function refreshAll() {
         >
           Portal Karir Publik (Apply)
         </VBtn>
-        <VBtn prepend-icon="mdi-briefcase-plus" color="primary" @click="openNewPostingDialog()">
+        <VBtn
+          v-if="canManageRecruitment"
+          prepend-icon="mdi-briefcase-plus"
+          color="primary"
+          @click="openNewPostingDialog()"
+        >
           Buat Lowongan Pekerjaan Baru
         </VBtn>
         <VBtn prepend-icon="mdi-refresh" variant="outlined" @click="refreshAll()">Refresh</VBtn>
@@ -321,6 +329,7 @@ function refreshAll() {
                     Detail Pipeline
                   </VBtn>
                   <VBtn
+                    v-if="canManageRecruitment"
                     size="small"
                     variant="text"
                     color="primary"
@@ -328,6 +337,7 @@ function refreshAll() {
                     @click="openEditPostingDialog(item)"
                   />
                   <VBtn
+                    v-if="canManageRecruitment"
                     size="small"
                     variant="text"
                     color="error"
@@ -383,6 +393,7 @@ function refreshAll() {
               <template #item.actions="{ item }">
                 <div class="d-flex ga-1">
                   <VBtn
+                    v-if="canManageRecruitment"
                     size="small"
                     color="primary"
                     variant="outlined"

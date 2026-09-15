@@ -6,6 +6,9 @@ import { formatTicketingCurrency, formatTicketingDateTime } from '../formatters'
 import PassengerRescheduleDialog from '../passenger/PassengerRescheduleDialog.vue';
 import { downloadCargoWaybill, downloadPassengerTicket } from './ticketDocument';
 
+const { can } = useAuthorization();
+const canUpdateTicketingOperations = computed(() => can('ticketing.operation.update').allowed);
+
 const mode = ref<'PASSENGER' | 'CARGO'>('PASSENGER');
 const referenceNumber = ref('');
 const passengerTicket = ref<PassengerTicketDto | null>(null);
@@ -228,6 +231,7 @@ function onRescheduled(ticket: PassengerTicketDto) {
           </VBtn>
           <VBtn
             v-if="canRequestPassengerRefund"
+            :disabled="!canUpdateTicketingOperations"
             prepend-icon="mdi-calendar-sync"
             variant="tonal"
             @click="rescheduleOpen = true"
@@ -374,6 +378,7 @@ function onRescheduled(ticket: PassengerTicketDto) {
     </VDialog>
 
     <PassengerRescheduleDialog
+      v-if="canUpdateTicketingOperations"
       v-model="rescheduleOpen"
       :ticket="passengerTicket"
       @rescheduled="onRescheduled"

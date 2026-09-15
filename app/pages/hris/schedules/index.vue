@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const { can } = useAuthorization();
+const canManageSchedules = computed(() => can('hris.schedule.manage').allowed);
+
 const { data: shiftData, refresh: refreshShifts } = await useAsyncData('shift-patterns', () =>
   fetchApi<any[]>('/api/hris/schedules/shifts')
 );
@@ -320,10 +323,16 @@ function refreshAll() {
         </p>
       </div>
       <div class="d-flex ga-2">
-        <VBtn prepend-icon="mdi-clock-plus-outline" color="primary" @click="openNewShiftDialog()">
+        <VBtn
+          v-if="canManageSchedules"
+          prepend-icon="mdi-clock-plus-outline"
+          color="primary"
+          @click="openNewShiftDialog()"
+        >
           Master Shift Baru
         </VBtn>
         <VBtn
+          v-if="canManageSchedules"
           prepend-icon="mdi-account-switch-outline"
           color="success"
           @click="openAssignShiftDialog()"
@@ -391,7 +400,7 @@ function refreshAll() {
 
             <VDivider class="my-2" />
 
-            <div class="d-flex justify-end ga-1">
+            <div v-if="canManageSchedules" class="d-flex justify-end ga-1">
               <VBtn
                 size="x-small"
                 variant="text"
@@ -505,7 +514,7 @@ function refreshAll() {
         </template>
 
         <template #item.actions="{ item }">
-          <div class="d-flex ga-1">
+          <div v-if="canManageSchedules" class="d-flex ga-1">
             <VBtn
               size="small"
               variant="outlined"
