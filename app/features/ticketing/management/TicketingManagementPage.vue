@@ -9,6 +9,11 @@ import type {
 import RouteFormDialog from '../../operations/routes/RouteFormDialog.vue';
 import { formatTicketingCurrency, formatTicketingDateTime } from '../formatters';
 
+const { can } = useAuthorization();
+const canManageRoutes = computed(() => can('master_data.manage').allowed);
+const canManageRates = computed(() => can('rate.manage').allowed);
+const canOpenTicketingSales = computed(() => can('ticketing.sales.open').allowed);
+
 const activeTab = ref<'tariffs' | 'sales'>('tariffs');
 const routeDialog = ref(false);
 const openingId = ref('');
@@ -93,7 +98,12 @@ async function routeSaved() {
         <p class="text-text-secondary">Commercial route tariffs and OCC flight sales activation.</p>
       </div>
       <VSpacer />
-      <VBtn prepend-icon="mdi-cash-multiple" to="/master-data/rates" variant="tonal">
+      <VBtn
+        :disabled="!canManageRates"
+        prepend-icon="mdi-cash-multiple"
+        to="/master-data/rates"
+        variant="tonal"
+      >
         Manage rate cards
       </VBtn>
     </div>
@@ -108,7 +118,12 @@ async function routeSaved() {
         <VWindow v-model="activeTab">
           <VWindowItem value="tariffs">
             <div class="mb-4 d-flex justify-end">
-              <VBtn color="primary" prepend-icon="mdi-plus" @click="routeDialog = true">
+              <VBtn
+                color="primary"
+                :disabled="!canManageRoutes"
+                prepend-icon="mdi-plus"
+                @click="routeDialog = true"
+              >
                 Add route
               </VBtn>
             </div>
@@ -157,6 +172,7 @@ async function routeSaved() {
                     <DsTooltipIconButton
                       v-if="routeRate(route, 'PASSENGER')"
                       aria-label="Edit passenger rate"
+                      :disabled="!canManageRates"
                       icon="mdi-account-cash-outline"
                       :to="`/master-data/rates/${routeRate(route, 'PASSENGER')!.id}`"
                       tooltip="Edit passenger rate"
@@ -165,6 +181,7 @@ async function routeSaved() {
                     <DsTooltipIconButton
                       v-if="routeRate(route, 'CARGO')"
                       aria-label="Edit cargo rate"
+                      :disabled="!canManageRates"
                       icon="mdi-package-variant-closed-edit"
                       :to="`/master-data/rates/${routeRate(route, 'CARGO')!.id}`"
                       tooltip="Edit cargo rate"
@@ -233,7 +250,7 @@ async function routeSaved() {
                     <VBtn
                       v-if="!flight.sales"
                       color="primary"
-                      :disabled="!flight.canOpenSales"
+                      :disabled="!canOpenTicketingSales || !flight.canOpenSales"
                       :loading="openingId === flight.flightOperationId"
                       prepend-icon="mdi-store-check-outline"
                       size="small"
@@ -249,7 +266,7 @@ async function routeSaved() {
         </VWindow>
       </VCardText>
     </VCard>
-    <RouteFormDialog v-model="routeDialog" @saved="routeSaved" />
+    <RouteFormDialog v-if="canManageRoutes" v-model="routeDialog" @saved="routeSaved" />
   </VContainer>
 </template>
 

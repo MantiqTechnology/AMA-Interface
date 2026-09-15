@@ -82,6 +82,21 @@ describe('demo route access', () => {
     ).toBe(true);
   });
 
+  it('keeps Director ticketing oversight read-only except for refund decisions', () => {
+    expect(safeDemoRoleRedirectPath('Director', '/ticketing/booking')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Director', '/ticketing/management')).toBeNull();
+    expect(safeDemoRoleRedirectPath('Director', '/master-data/rates')).toBeNull();
+    expect(demoRoleHasPermission('Director', 'master_data.read')).toBe(true);
+    expect(demoRoleHasPermission('Director', 'ticketing.management.read')).toBe(true);
+    expect(demoRoleHasPermission('Director', 'ticketing.refund.decide')).toBe(true);
+    expect(demoRoleHasPermission('Director', 'platform.module.manage')).toBe(false);
+    expect(demoRoleHasPermission('Director', 'ticketing.sales.open')).toBe(false);
+    expect(demoRoleHasPermission('Director', 'ticketing.operation.update')).toBe(false);
+    expect(safeDemoRoleRedirectPath('HR Manager', '/ticketing/management')).toBe('/dashboard');
+    expect(safeDemoRoleRedirectPath('OCC', '/ticketing/management')).toBeNull();
+    expect(safeDemoRoleRedirectPath('OCC', '/master-data/rates')).toBeNull();
+  });
+
   it('keeps Corporate Assets scoped by asset permissions', () => {
     expect(safeDemoRoleRedirectPath('OCC', '/asset-management/overview')).toBe('/dashboard');
     expect(safeDemoRoleRedirectPath('OCC', '/asset-management/assets/asset-gse-gpu-01')).toBe(

@@ -5,6 +5,10 @@ import { downloadPassengerTicket } from '../booking/ticketDocument';
 import { formatTicketingCurrency, formatTicketingDateTime } from '../formatters';
 import PassengerRescheduleDialog from './PassengerRescheduleDialog.vue';
 
+const { can } = useAuthorization();
+const canUpdateTicketingOperations = computed(() => can('ticketing.operation.update').allowed);
+const canDecideTicketingRefunds = computed(() => can('ticketing.refund.decide').allowed);
+
 const search = ref('');
 const paymentStatus = ref<'UNPAID' | 'PAID' | undefined>();
 const checkInStatus = ref<'PENDING' | 'CHECKED_IN' | undefined>();
@@ -214,7 +218,8 @@ async function onRescheduled() {
                   confirm-icon="mdi-account-check-outline"
                   confirm-text="Check in"
                   :disabled="
-                    ticket.paymentStatus !== 'PAID' ||
+                    !canUpdateTicketingOperations ||
+                      ticket.paymentStatus !== 'PAID' ||
                       ['REQUESTED', 'APPROVED'].includes(ticket.refundRequest?.status ?? '')
                   "
                   icon="mdi-account-check-outline"
@@ -233,6 +238,7 @@ async function onRescheduled() {
                       !['REQUESTED', 'APPROVED'].includes(ticket.refundRequest?.status ?? '')
                   "
                   aria-label="Reschedule passenger ticket"
+                  :disabled="!canUpdateTicketingOperations"
                   icon="mdi-calendar-sync"
                   tooltip="Reschedule passenger ticket"
                   variant="text"
@@ -243,6 +249,7 @@ async function onRescheduled() {
                   :action="() => submitDecision(ticket, 'APPROVE')"
                   aria-label="Approve refund"
                   color="success"
+                  :disabled="!canDecideTicketingRefunds"
                   :confirm-disabled="decisionNote.trim().length < 3"
                   confirm-icon="mdi-check-circle-outline"
                   confirm-text="Approve refund"
@@ -295,6 +302,7 @@ async function onRescheduled() {
                   :action="() => submitDecision(ticket, 'REJECT')"
                   aria-label="Reject refund"
                   color="error"
+                  :disabled="!canDecideTicketingRefunds"
                   :confirm-disabled="decisionNote.trim().length < 3"
                   confirm-icon="mdi-close-circle-outline"
                   confirm-text="Reject refund"

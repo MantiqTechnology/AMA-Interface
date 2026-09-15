@@ -540,6 +540,12 @@ const navItems = computed<NavItem[]>(() =>
       visible: true,
       children: [
         {
+          label: t('nav.bookingPortal'),
+          to: '/ticketing/booking',
+          icon: 'mdi-ticket-outline',
+          visible: true
+        },
+        {
           label: t('nav.passengerSalesCheckIn'),
           to: '/ticketing/passenger',
           icon: 'mdi-account-multiple-outline',
@@ -555,7 +561,7 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.salesManagement'),
           to: '/ticketing/management',
           icon: 'mdi-store-cog-outline',
-          visible: masterDataVisible.value
+          visible: can('ticketing.management.read').allowed
         },
         {
           label: t('nav.operationalLedger'),

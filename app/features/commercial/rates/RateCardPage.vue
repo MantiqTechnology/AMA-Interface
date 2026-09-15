@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { RateCardDto } from '#shared/features/commercial/rates';
 import RateCardFormDialog from './RateCardFormDialog.vue';
+
+const { can } = useAuthorization();
+const canManageRates = computed(() => can('rate.manage').allowed);
+const canActivateRates = computed(() => can('rate.activate').allowed);
+
 const active = ref<'active' | 'inactive' | 'all'>('active');
 const search = ref('');
 const dialog = ref(false);
@@ -51,7 +56,14 @@ async function toggle(record: RateCardDto) {
           Demo passenger, cargo, and charter rates for future billing references.
         </p>
       </div>
-      <VSpacer /><VBtn color="primary" prepend-icon="mdi-plus" @click="add">Add data</VBtn>
+      <VSpacer /><VBtn
+        color="primary"
+        :disabled="!canManageRates"
+        prepend-icon="mdi-plus"
+        @click="add"
+      >
+        Add data
+      </VBtn>
     </div>
     <VCard border>
       <VCardText>
@@ -109,6 +121,7 @@ async function toggle(record: RateCardDto) {
                     variant="text"
                   />
                   <DsTooltipIconButton
+                    :disabled="!canManageRates"
                     icon="mdi-pencil-outline"
                     tooltip="Edit"
                     variant="text"
@@ -116,6 +129,7 @@ async function toggle(record: RateCardDto) {
                   />
                   <DsConfirmIconButton
                     :action="() => toggle(record)"
+                    :disabled="record.isActive ? !canManageRates : !canActivateRates"
                     :confirm-icon="
                       record.isActive
                         ? 'mdi-toggle-switch-off-outline'
@@ -143,6 +157,11 @@ async function toggle(record: RateCardDto) {
           </VTable>
         </div>
       </VCardText>
-    </VCard><RateCardFormDialog v-model="dialog" :record="editing" @saved="refresh" />
+    </VCard><RateCardFormDialog
+      v-if="canManageRates"
+      v-model="dialog"
+      :record="editing"
+      @saved="refresh"
+    />
   </VContainer>
 </template>
