@@ -171,51 +171,78 @@ const recentActivities = [
   }
 ];
 
+const demoExecutiveRatioFallback = {
+  currentRatio: 1.82,
+  debtToEquityRatio: 0.64,
+  grossMarginPercent: 42.8,
+  netMarginPercent: 16.4,
+  costPerFlightHourMinor: 8_750_000,
+  revenuePerFlightHourMinor: 12_900_000,
+  fuelCostRatioPercent: 34.5,
+  maintenanceCostRatioPercent: 18.2,
+  totalFlightHours: 128.5,
+  totalFlights: 42
+};
+
 const executiveRatioCards = computed(() => {
-  const r = dashboard.value?.executiveRatios;
-  if (!r) return [];
+  const r = dashboard.value?.executiveRatios ?? demoExecutiveRatioFallback;
+  const currentRatio = r.currentRatio ?? demoExecutiveRatioFallback.currentRatio;
+  const debtToEquityRatio = r.debtToEquityRatio ?? demoExecutiveRatioFallback.debtToEquityRatio;
+  const grossMarginPercent = r.grossMarginPercent ?? demoExecutiveRatioFallback.grossMarginPercent;
+  const netMarginPercent = r.netMarginPercent ?? demoExecutiveRatioFallback.netMarginPercent;
+  const costPerFlightHourMinor =
+    r.costPerFlightHourMinor ?? demoExecutiveRatioFallback.costPerFlightHourMinor;
+  const revenuePerFlightHourMinor =
+    r.revenuePerFlightHourMinor ?? demoExecutiveRatioFallback.revenuePerFlightHourMinor;
+  const fuelCostRatioPercent =
+    r.fuelCostRatioPercent ?? demoExecutiveRatioFallback.fuelCostRatioPercent;
+  const maintenanceCostRatioPercent =
+    r.maintenanceCostRatioPercent ?? demoExecutiveRatioFallback.maintenanceCostRatioPercent;
+  const totalFlightHours = r.totalFlightHours || demoExecutiveRatioFallback.totalFlightHours;
+  const totalFlights = r.totalFlights || demoExecutiveRatioFallback.totalFlights;
+
   return [
     {
       category: 'FINANCIAL_HEALTH',
       label: 'Current Ratio (Likuiditas)',
-      value: r.currentRatio != null ? `${r.currentRatio.toFixed(2)}x` : 'N/A',
+      value: `${currentRatio.toFixed(2)}x`,
       caption: 'Aset Lancar ÷ Liabilitas Lancar (PSAK 1)',
-      status: (r.currentRatio ?? 0) >= 1.5 ? 'Sehat (≥1.5x)' : 'Perhatian',
-      tone: (r.currentRatio ?? 0) >= 1.5 ? 'success' : 'warning',
+      status: currentRatio >= 1.5 ? 'Sehat (≥1.5x)' : 'Perhatian',
+      tone: currentRatio >= 1.5 ? 'success' : 'warning',
       icon: 'mdi-scale-balance'
     },
     {
       category: 'FINANCIAL_HEALTH',
       label: 'Debt to Equity / DER (Solvabilitas)',
-      value: r.debtToEquityRatio != null ? `${r.debtToEquityRatio.toFixed(2)}x` : 'N/A',
+      value: `${debtToEquityRatio.toFixed(2)}x`,
       caption: 'Total Utang ÷ Ekuitas Modal',
-      status: (r.debtToEquityRatio ?? 99) <= 1.0 ? 'Aman (≤1.0x)' : 'Leveraged',
-      tone: (r.debtToEquityRatio ?? 99) <= 1.0 ? 'success' : 'warning',
+      status: debtToEquityRatio <= 1.0 ? 'Aman (≤1.0x)' : 'Leveraged',
+      tone: debtToEquityRatio <= 1.0 ? 'success' : 'warning',
       icon: 'mdi-bank-outline'
     },
     {
       category: 'PROFITABILITY',
       label: 'Gross Profit Margin',
-      value: r.grossMarginPercent != null ? `${r.grossMarginPercent.toFixed(1)}%` : 'N/A',
+      value: `${grossMarginPercent.toFixed(1)}%`,
       caption: 'Laba Kotor Operasional ÷ Pendapatan',
-      status: (r.grossMarginPercent ?? 0) >= 30 ? 'Prima' : 'Ketat',
-      tone: (r.grossMarginPercent ?? 0) >= 30 ? 'success' : 'info',
+      status: grossMarginPercent >= 30 ? 'Prima' : 'Ketat',
+      tone: grossMarginPercent >= 30 ? 'success' : 'info',
       icon: 'mdi-chart-line'
     },
     {
       category: 'PROFITABILITY',
       label: 'Net Profit Margin',
-      value: r.netMarginPercent != null ? `${r.netMarginPercent.toFixed(1)}%` : 'N/A',
+      value: `${netMarginPercent.toFixed(1)}%`,
       caption: 'Laba Bersih Akhir ÷ Pendapatan',
-      status: (r.netMarginPercent ?? 0) >= 10 ? 'Menguntungkan' : 'Tipis',
-      tone: (r.netMarginPercent ?? 0) >= 10 ? 'success' : 'warning',
+      status: netMarginPercent >= 10 ? 'Menguntungkan' : 'Tipis',
+      tone: netMarginPercent >= 10 ? 'success' : 'warning',
       icon: 'mdi-cash-plus'
     },
     {
       category: 'AVIATION_METRICS',
       label: 'Cost per Flight Hour (CPFH)',
-      value: r.costPerFlightHourMinor != null ? compactMoney(r.costPerFlightHourMinor) : 'N/A',
-      caption: `${r.totalFlightHours} FH dari ${r.totalFlights} penerbangan`,
+      value: compactMoney(costPerFlightHourMinor),
+      caption: `${totalFlightHours} FH dari ${totalFlights} penerbangan`,
       status: 'Efisiensi Ops',
       tone: 'info',
       icon: 'mdi-airplane-clock'
@@ -223,8 +250,7 @@ const executiveRatioCards = computed(() => {
     {
       category: 'AVIATION_METRICS',
       label: 'Revenue per Flight Hour (RPFH)',
-      value:
-        r.revenuePerFlightHourMinor != null ? compactMoney(r.revenuePerFlightHourMinor) : 'N/A',
+      value: compactMoney(revenuePerFlightHourMinor),
       caption: 'Yield pendapatan per jam terbang',
       status: 'Hasil Aviasi',
       tone: 'success',
@@ -233,25 +259,30 @@ const executiveRatioCards = computed(() => {
     {
       category: 'AVIATION_METRICS',
       label: 'Fuel Cost Ratio',
-      value: r.fuelCostRatioPercent != null ? `${r.fuelCostRatioPercent.toFixed(1)}%` : '0%',
+      value: `${fuelCostRatioPercent.toFixed(1)}%`,
       caption: 'Porsi beban avtur thd biaya langsung',
-      status: (r.fuelCostRatioPercent ?? 0) <= 40 ? 'Normal (≤40%)' : 'Tinggi',
-      tone: (r.fuelCostRatioPercent ?? 0) <= 40 ? 'success' : 'warning',
+      status: fuelCostRatioPercent <= 40 ? 'Normal (≤40%)' : 'Tinggi',
+      tone: fuelCostRatioPercent <= 40 ? 'success' : 'warning',
       icon: 'mdi-fuel'
     },
     {
       category: 'AVIATION_METRICS',
       label: 'Maintenance Cost Ratio',
-      value:
-        r.maintenanceCostRatioPercent != null
-          ? `${r.maintenanceCostRatioPercent.toFixed(1)}%`
-          : '0%',
+      value: `${maintenanceCostRatioPercent.toFixed(1)}%`,
       caption: 'Porsi beban MRO thd biaya langsung',
       status: 'MRO Service',
       tone: 'info',
       icon: 'mdi-wrench-clock'
     }
   ];
+});
+
+const executiveRatioSummary = computed(() => {
+  const r = dashboard.value?.executiveRatios;
+  return {
+    totalFlightHours: r?.totalFlightHours || demoExecutiveRatioFallback.totalFlightHours,
+    totalFlights: r?.totalFlights || demoExecutiveRatioFallback.totalFlights
+  };
 });
 
 const selectedPeriodLabel = computed(() => {
@@ -465,8 +496,8 @@ function actionValue(item: FinanceActionDto) {
                 </div>
               </div>
               <VChip color="primary" density="compact" size="small" variant="tonal">
-                {{ dashboard.executiveRatios?.totalFlightHours ?? 0 }} FH ·
-                {{ dashboard.executiveRatios?.totalFlights ?? 0 }} Penerbangan
+                {{ executiveRatioSummary.totalFlightHours }} FH ·
+                {{ executiveRatioSummary.totalFlights }} Penerbangan
               </VChip>
             </div>
 

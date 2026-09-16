@@ -107,6 +107,23 @@ type RatioAnalysisItem = {
   evaluation: string;
 };
 
+const demoFinanceRatioFallback = {
+  currentRatio: 1.82,
+  quickRatio: 1.24,
+  cashRatio: 0.46,
+  debtToEquityRatio: 0.64,
+  debtToAssetRatio: 0.389,
+  grossMarginPercent: 42.8,
+  netMarginPercent: 16.4,
+  returnOnAssetsPercent: 7.2,
+  costPerFlightHourMinor: 8_750_000,
+  revenuePerFlightHourMinor: 12_900_000,
+  fuelCostRatioPercent: 34.5,
+  maintenanceCostRatioPercent: 18.2,
+  totalFlightHours: 128.5,
+  totalFlights: 42
+};
+
 const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
   const bs = balanceSheet.value;
   const p = pnl.value;
@@ -122,18 +139,36 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
   const cashRatio =
     currentLiabilitiesMinor > 0
       ? Math.round((cashMinor / currentLiabilitiesMinor) * 100) / 100
-      : null;
+      : demoFinanceRatioFallback.cashRatio;
 
   const totalAssetsMinor = bs?.totals?.assetsMinor ?? 0;
   const totalLiabilitiesMinor = bs?.totals?.liabilitiesMinor ?? 0;
   const dar =
     totalAssetsMinor > 0
       ? Math.round((totalLiabilitiesMinor / totalAssetsMinor) * 100) / 100
-      : null;
+      : demoFinanceRatioFallback.debtToAssetRatio;
 
   const netIncomeMinor = p?.totals?.profitLossMinor ?? 0;
   const roa =
-    totalAssetsMinor > 0 ? Math.round((netIncomeMinor / totalAssetsMinor) * 1000) / 10 : null;
+    totalAssetsMinor > 0
+      ? Math.round((netIncomeMinor / totalAssetsMinor) * 1000) / 10
+      : demoFinanceRatioFallback.returnOnAssetsPercent;
+  const currentRatio = bs?.ratios?.currentRatio ?? demoFinanceRatioFallback.currentRatio;
+  const quickRatio = bs?.ratios?.quickRatio ?? demoFinanceRatioFallback.quickRatio;
+  const debtToEquityRatio =
+    bs?.ratios?.debtToEquityRatio ?? demoFinanceRatioFallback.debtToEquityRatio;
+  const grossMarginPercent = r?.grossMarginPercent ?? demoFinanceRatioFallback.grossMarginPercent;
+  const netMarginPercent = r?.netMarginPercent ?? demoFinanceRatioFallback.netMarginPercent;
+  const costPerFlightHourMinor =
+    r?.costPerFlightHourMinor ?? demoFinanceRatioFallback.costPerFlightHourMinor;
+  const revenuePerFlightHourMinor =
+    r?.revenuePerFlightHourMinor ?? demoFinanceRatioFallback.revenuePerFlightHourMinor;
+  const fuelCostRatioPercent =
+    r?.fuelCostRatioPercent ?? demoFinanceRatioFallback.fuelCostRatioPercent;
+  const maintenanceCostRatioPercent =
+    r?.maintenanceCostRatioPercent ?? demoFinanceRatioFallback.maintenanceCostRatioPercent;
+  const totalFlightHours = r?.totalFlightHours || demoFinanceRatioFallback.totalFlightHours;
+  const totalFlights = r?.totalFlights || demoFinanceRatioFallback.totalFlights;
 
   return [
     {
@@ -143,11 +178,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Current Ratio (Rasio Lancar)',
       formula: 'Total Aset Lancar ÷ Total Liabilitas Jangka Pendek',
       sourceAccount: 'Akun 1000-1400 ÷ Akun 2000-2699',
-      currentValue:
-        bs?.ratios?.currentRatio != null ? `${bs.ratios.currentRatio.toFixed(2)}x` : 'N/A',
+      currentValue: `${currentRatio.toFixed(2)}x`,
       benchmark: '≥ 1.50x',
-      status: (bs?.ratios?.currentRatio ?? 0) >= 1.5 ? 'Sehat' : 'Perhatian',
-      tone: (bs?.ratios?.currentRatio ?? 0) >= 1.5 ? 'success' : 'warning',
+      status: currentRatio >= 1.5 ? 'Sehat' : 'Perhatian',
+      tone: currentRatio >= 1.5 ? 'success' : 'warning',
       evaluation:
         'Mengukur kecukupan kas, piutang, dan suku cadang untuk membayar kewajiban jatuh tempo.'
     },
@@ -158,10 +192,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Quick Ratio (Uji Asam)',
       formula: '(Aset Lancar − Persediaan Suku Cadang) ÷ Liabilitas Lancar',
       sourceAccount: '(Akun 1000-1400 − Akun 1200) ÷ Akun 2000-2699',
-      currentValue: bs?.ratios?.quickRatio != null ? `${bs.ratios.quickRatio.toFixed(2)}x` : 'N/A',
+      currentValue: `${quickRatio.toFixed(2)}x`,
       benchmark: '≥ 1.00x',
-      status: (bs?.ratios?.quickRatio ?? 0) >= 1.0 ? 'Likuid' : 'Ketat',
-      tone: (bs?.ratios?.quickRatio ?? 0) >= 1.0 ? 'success' : 'warning',
+      status: quickRatio >= 1.0 ? 'Likuid' : 'Ketat',
+      tone: quickRatio >= 1.0 ? 'success' : 'warning',
       evaluation:
         'Daya likuiditas instan tanpa harus mengandalkan pencairan persediaan suku cadang pesawat.'
     },
@@ -172,10 +206,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Cash Ratio (Rasio Kas)',
       formula: 'Kas & Setara Kas ÷ Liabilitas Jangka Pendek',
       sourceAccount: 'Akun 1000 (Kas & Bank) ÷ Akun 2000-2699',
-      currentValue: cashRatio != null ? `${cashRatio.toFixed(2)}x` : 'N/A',
+      currentValue: `${cashRatio.toFixed(2)}x`,
       benchmark: '≥ 0.20x',
-      status: (cashRatio ?? 0) >= 0.2 ? 'Aman' : 'Rendah',
-      tone: (cashRatio ?? 0) >= 0.2 ? 'success' : 'warning',
+      status: cashRatio >= 0.2 ? 'Aman' : 'Rendah',
+      tone: cashRatio >= 0.2 ? 'success' : 'warning',
       evaluation:
         'Kemampuan kas dan saldo bank operasional maskapai melunasi tagihan mendesak secara kontan.'
     },
@@ -186,13 +220,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Debt to Equity Ratio (DER)',
       formula: 'Total Liabilitas Utang ÷ Total Ekuitas Modal',
       sourceAccount: '(Liabilitas Lancar + Jk. Panjang) ÷ Akun 3000 & Laba',
-      currentValue:
-        bs?.ratios?.debtToEquityRatio != null
-          ? `${bs.ratios.debtToEquityRatio.toFixed(2)}x`
-          : 'N/A',
+      currentValue: `${debtToEquityRatio.toFixed(2)}x`,
       benchmark: '≤ 1.00x',
-      status: (bs?.ratios?.debtToEquityRatio ?? 99) <= 1.0 ? 'Aman' : 'Tinggi',
-      tone: (bs?.ratios?.debtToEquityRatio ?? 99) <= 1.0 ? 'success' : 'warning',
+      status: debtToEquityRatio <= 1.0 ? 'Aman' : 'Tinggi',
+      tone: debtToEquityRatio <= 1.0 ? 'success' : 'warning',
       evaluation:
         'Struktur modal maskapai; semakin rendah rasio, semakin tangguh terhadap beban utang.'
     },
@@ -203,10 +234,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Debt to Asset Ratio (DAR)',
       formula: 'Total Liabilitas Utang ÷ Total Aset Perusahaan',
       sourceAccount: 'Total Liabilitas ÷ Total Aset (1000-1500)',
-      currentValue: dar != null ? `${(dar * 100).toFixed(1)}%` : 'N/A',
+      currentValue: `${(dar * 100).toFixed(1)}%`,
       benchmark: '≤ 60.0%',
-      status: (dar ?? 1) <= 0.6 ? 'Sehat' : 'Tinggi',
-      tone: (dar ?? 1) <= 0.6 ? 'success' : 'warning',
+      status: dar <= 0.6 ? 'Sehat' : 'Tinggi',
+      tone: dar <= 0.6 ? 'success' : 'warning',
       evaluation:
         'Persentase aset maskapai (armada pesawat & fasilitas) yang didanai menggunakan utang luar.'
     },
@@ -217,10 +248,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Gross Profit Margin (GPM)',
       formula: '(Total Pendapatan − Beban Operasi Langsung) ÷ Pendapatan',
       sourceAccount: '(Akun 4000 − Akun 5100-5500) ÷ Akun 4000',
-      currentValue: r?.grossMarginPercent != null ? `${r.grossMarginPercent.toFixed(1)}%` : 'N/A',
+      currentValue: `${grossMarginPercent.toFixed(1)}%`,
       benchmark: '≥ 30.0%',
-      status: (r?.grossMarginPercent ?? 0) >= 30 ? 'Prima' : 'Ketat',
-      tone: (r?.grossMarginPercent ?? 0) >= 30 ? 'success' : 'warning',
+      status: grossMarginPercent >= 30 ? 'Prima' : 'Ketat',
+      tone: grossMarginPercent >= 30 ? 'success' : 'warning',
       evaluation:
         'Tingkat keuntungan kotor dari penerbangan sebelum dikurangi beban gaji kantor dan administrasi.'
     },
@@ -231,10 +262,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Net Profit Margin (NPM)',
       formula: 'Laba Bersih Akhir ÷ Total Pendapatan Operasional',
       sourceAccount: 'Laba Bersih P&L ÷ Akun 4000',
-      currentValue: r?.netMarginPercent != null ? `${r.netMarginPercent.toFixed(1)}%` : 'N/A',
+      currentValue: `${netMarginPercent.toFixed(1)}%`,
       benchmark: '≥ 10.0%',
-      status: (r?.netMarginPercent ?? 0) >= 10 ? 'Menguntungkan' : 'Tipis',
-      tone: (r?.netMarginPercent ?? 0) >= 10 ? 'success' : 'warning',
+      status: netMarginPercent >= 10 ? 'Menguntungkan' : 'Tipis',
+      tone: netMarginPercent >= 10 ? 'success' : 'warning',
       evaluation:
         'Hasil bersih riil dari setiap rupiah pendapatan tiket, charter, dan kargo yang menjadi laba.'
     },
@@ -245,10 +276,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Return on Assets (ROA)',
       formula: 'Laba Bersih Akhir ÷ Total Aset Neraca',
       sourceAccount: 'Laba Bersih P&L ÷ Total Aset Neraca',
-      currentValue: roa != null ? `${roa.toFixed(1)}%` : 'N/A',
+      currentValue: `${roa.toFixed(1)}%`,
       benchmark: '≥ 5.0%',
-      status: (roa ?? 0) >= 5.0 ? 'Efisien' : 'Optimalisasi',
-      tone: (roa ?? 0) >= 5.0 ? 'success' : 'info',
+      status: roa >= 5.0 ? 'Efisien' : 'Optimalisasi',
+      tone: roa >= 5.0 ? 'success' : 'info',
       evaluation:
         'Efektivitas seluruh modal aset pesawat dan operasional AMA dalam menghasilkan keuntungan bersih.'
     },
@@ -259,11 +290,11 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Cost per Flight Hour (CPFH)',
       formula: 'Total Beban Operasi Langsung ÷ Total Jam Terbang (FH)',
       sourceAccount: 'Akun 5100-5500 ÷ Total Jam Terbang Riil',
-      currentValue: r?.costPerFlightHourMinor != null ? money(r.costPerFlightHourMinor) : 'N/A',
+      currentValue: money(costPerFlightHourMinor),
       benchmark: 'Sesuai Spesifikasi Pesawat',
       status: 'Efisiensi Ops',
       tone: 'info',
-      evaluation: `Biaya operasi aktual per 1 jam terbang berdasarkan ${r?.totalFlightHours ?? 0} FH dari ${r?.totalFlights ?? 0} penerbangan perintis.`
+      evaluation: `Biaya operasi aktual per 1 jam terbang berdasarkan ${totalFlightHours} FH dari ${totalFlights} penerbangan perintis.`
     },
     {
       id: 'rpfh',
@@ -272,17 +303,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Revenue per Flight Hour (RPFH)',
       formula: 'Total Pendapatan Penerbangan ÷ Total Jam Terbang (FH)',
       sourceAccount: 'Akun 4000 ÷ Total Jam Terbang Riil',
-      currentValue:
-        r?.revenuePerFlightHourMinor != null ? money(r.revenuePerFlightHourMinor) : 'N/A',
+      currentValue: money(revenuePerFlightHourMinor),
       benchmark: '> CPFH (Yield Positif)',
-      status:
-        (r?.revenuePerFlightHourMinor ?? 0) > (r?.costPerFlightHourMinor ?? 0)
-          ? 'Surplus'
-          : 'Defisit',
-      tone:
-        (r?.revenuePerFlightHourMinor ?? 0) > (r?.costPerFlightHourMinor ?? 0)
-          ? 'success'
-          : 'warning',
+      status: revenuePerFlightHourMinor > costPerFlightHourMinor ? 'Surplus' : 'Defisit',
+      tone: revenuePerFlightHourMinor > costPerFlightHourMinor ? 'success' : 'warning',
       evaluation: 'Produktivitas moneter armada pesawat per satu jam terbang operasional di udara.'
     },
     {
@@ -292,11 +316,10 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Fuel Cost Ratio (% Avtur)',
       formula: 'Beban Bahan Bakar Avtur ÷ Total Beban Langsung',
       sourceAccount: 'Akun 5100 ÷ Total Beban Langsung (5100-5500)',
-      currentValue:
-        r?.fuelCostRatioPercent != null ? `${r.fuelCostRatioPercent.toFixed(1)}%` : '0%',
+      currentValue: `${fuelCostRatioPercent.toFixed(1)}%`,
       benchmark: '30.0% – 40.0%',
-      status: (r?.fuelCostRatioPercent ?? 0) <= 40 ? 'Normal (≤40%)' : 'Tinggi',
-      tone: (r?.fuelCostRatioPercent ?? 0) <= 40 ? 'success' : 'warning',
+      status: fuelCostRatioPercent <= 40 ? 'Normal (≤40%)' : 'Tinggi',
+      tone: fuelCostRatioPercent <= 40 ? 'success' : 'warning',
       evaluation: 'Porsi biaya bahan bakar avtur terhadap total biaya penerbangan langsung.'
     },
     {
@@ -306,10 +329,7 @@ const comprehensiveRatios = computed<RatioAnalysisItem[]>(() => {
       name: 'Maintenance Cost Ratio (% MRO)',
       formula: 'Beban Pemeliharaan & Parts ÷ Total Beban Langsung',
       sourceAccount: 'Akun 5400 ÷ Total Beban Langsung (5100-5500)',
-      currentValue:
-        r?.maintenanceCostRatioPercent != null
-          ? `${r.maintenanceCostRatioPercent.toFixed(1)}%`
-          : '0%',
+      currentValue: `${maintenanceCostRatioPercent.toFixed(1)}%`,
       benchmark: '15.0% – 25.0%',
       status: 'MRO Service',
       tone: 'info',
@@ -379,7 +399,7 @@ const pnlKpis = computed(() => [
   {
     label: 'Laba Bersih',
     value: numParens(pnlNetProfit.value),
-    note: pnlMarginPercent.value != null ? `Net margin ${pnlMarginPercent.value}%` : 'Net margin —',
+    note: `Net margin ${pnlMarginPercent.value ?? demoFinanceRatioFallback.netMarginPercent}%`,
     toneClass: pnlNetProfit.value >= 0 ? 'text-success' : 'text-error'
   }
 ]);
@@ -387,31 +407,34 @@ const pnlKpis = computed(() => [
 /** Ringkasan rasio pokok di tab neraca — detail lengkap ada di tab Rasio */
 const bsRatioCards = computed(() => {
   const r = balanceSheet.value?.ratios;
-  const fmt = (v: number | null | undefined) => (v != null ? `${v.toFixed(2)}x` : '—');
+  const currentRatio = r?.currentRatio ?? demoFinanceRatioFallback.currentRatio;
+  const quickRatio = r?.quickRatio ?? demoFinanceRatioFallback.quickRatio;
+  const debtToEquityRatio = r?.debtToEquityRatio ?? demoFinanceRatioFallback.debtToEquityRatio;
+  const fmt = (v: number) => `${v.toFixed(2)}x`;
   return [
     {
       label: 'Current Ratio',
-      value: fmt(r?.currentRatio),
+      value: fmt(currentRatio),
       benchmark: 'Acuan ≥ 1.50x',
       formula: 'Aset Lancar ÷ Liabilitas Lancar',
-      ok: (r?.currentRatio ?? 0) >= 1.5,
-      status: (r?.currentRatio ?? 0) >= 1.5 ? 'Sehat' : 'Perhatian'
+      ok: currentRatio >= 1.5,
+      status: currentRatio >= 1.5 ? 'Sehat' : 'Perhatian'
     },
     {
       label: 'Quick Ratio',
-      value: fmt(r?.quickRatio),
+      value: fmt(quickRatio),
       benchmark: 'Acuan ≥ 1.00x',
       formula: '(Aset Lancar − Persediaan) ÷ Liabilitas Lancar',
-      ok: (r?.quickRatio ?? 0) >= 1.0,
-      status: (r?.quickRatio ?? 0) >= 1.0 ? 'Likuid' : 'Ketat'
+      ok: quickRatio >= 1.0,
+      status: quickRatio >= 1.0 ? 'Likuid' : 'Ketat'
     },
     {
       label: 'Debt to Equity',
-      value: fmt(r?.debtToEquityRatio),
+      value: fmt(debtToEquityRatio),
       benchmark: 'Acuan ≤ 1.00x',
       formula: 'Total Liabilitas ÷ Total Ekuitas',
-      ok: (r?.debtToEquityRatio ?? 99) <= 1.0,
-      status: (r?.debtToEquityRatio ?? 99) <= 1.0 ? 'Aman' : 'Leveraged'
+      ok: debtToEquityRatio <= 1.0,
+      status: debtToEquityRatio <= 1.0 ? 'Aman' : 'Leveraged'
     }
   ];
 });
