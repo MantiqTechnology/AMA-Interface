@@ -7,7 +7,12 @@ const { can } = useAuthorization();
 const route = useRoute();
 const { mdAndUp } = useDisplay();
 const { t } = useI18n();
+const { overdueCount } = useSmsMockData();
+const isEmergencyModalOpen = ref(false);
 
+function bukaModalEmergency() {
+  isEmergencyModalOpen.value = true;
+}
 const openedGroups = ref<string[]>([]);
 
 const drawerOpen = computed({
@@ -22,15 +27,95 @@ type NavChild = {
   to: string;
   icon: string;
   visible: boolean;
+  badge?: string | null;
+  badgeColor?: string;
+  pulse?: boolean;
 };
 
 type NavItem = {
   label: string;
-  to?: string;
+  to?: string;  
   icon: string;
   visible: boolean;
   children?: NavChild[];
 };
+
+// Interface Telemetri Radar Pesawat
+interface FlightRadarTelemetry {
+  id: string;
+  callsign: string;
+  registration: string;
+  lastLat: number;
+  lastLng: number;
+  lastPingTime: Date;
+  lastPingMinutesAgo: number;
+  lastKnownSector: string;
+}
+
+// Mock Data Penerbangan Aktif (Disimulasikan mengambil dari Radar/ADS-B BE)
+const activeFlights = ref<FlightRadarTelemetry[]>([
+  { 
+    id: 'FL-001', 
+    callsign: 'AMA1264', 
+    registration: 'PK-RCW',
+    lastLat: -3.8042, 
+    lastLng: 138.8351, 
+    lastPingTime: new Date(Date.now() - 12 * 60 * 1000), // 12 menit lalu
+    lastPingMinutesAgo: 12,
+    lastKnownSector: 'Wamena-Enarotali Corridor'
+  },
+  { 
+    id: 'FL-002', 
+    callsign: 'AMA1280', 
+    registration: 'PK-RBA',
+    lastLat: -2.5337, 
+    lastLng: 140.7181, 
+    lastPingTime: new Date(Date.now() - 3 * 60 * 1000), // 3 menit lalu
+    lastPingMinutesAgo: 3,
+    lastKnownSector: 'Jayapura Approach'
+  }
+]);
+
+// Hitung berapa pesawat yang masuk kriteria peringatan darurat (hilang sinyal 10 - 15 menit)
+const activeWarningCount = computed(() => {
+  return activeFlights.value.filter(
+    (flight) => flight.lastPingMinutesAgo >= 10
+  ).length;
+});
+
+
+// Simulasi mengambil data posisi pesawat dari Radar API
+const fetchRadarPositions = async () => {
+  try {
+    const now = Date.now();
+    activeFlights.value = activeFlights.value.map(flight => {
+      const diffMinutes = Math.floor((now - flight.lastPingTime.getTime()) / (1000 * 60));
+      return {
+        ...flight,
+        lastPingMinutesAgo: diffMinutes
+      };
+    });
+  } catch (error) {
+    console.error('Gagal memperbarui telemetri radar:', error);
+  }
+};
+
+// Auto Polling setiap 5 Menit (300.000 ms)
+let radarPollingInterval: ReturnType<typeof setInterval> | null = null;
+
+onMounted(() => {
+  fetchRadarPositions();
+  
+  radarPollingInterval = setInterval(() => {
+    fetchRadarPositions();
+  }, 5 * 60 * 1000);
+});
+
+onUnmounted(() => {
+  if (radarPollingInterval) {
+    clearInterval(radarPollingInterval);
+  }
+});
 
 const masterDataVisible = computed(() => can('platform.module.manage').allowed);
 const routeMasterDataVisible = computed(
@@ -43,10 +128,8 @@ const financeVisible = computed(
 const commercialVisible = computed(
   () => masterDataVisible.value || can('commercial.contract.read').allowed
 );
-const corporateAssetsVisible = computed(() => can('asset.read').allowed);
-const hrisVisible = computed(
-  () => can('hris.employee.read').allowed || can('hris.self_service.read').allowed
-);
+
+const crmMarketingVisible = computed(() => true);
 
 const navItems = computed<NavItem[]>(() =>
   [
@@ -55,12 +138,6 @@ const navItems = computed<NavItem[]>(() =>
       to: '/dashboard',
       icon: 'mdi-view-dashboard-outline',
       visible: true
-    },
-    {
-      label: 'Capability Preview',
-      to: '/capability-preview',
-      icon: 'mdi-radar',
-      visible: can('capability.preview.read').allowed
     },
     {
       label: t('nav.ops'),
@@ -172,12 +249,6 @@ const navItems = computed<NavItem[]>(() =>
       icon: 'mdi-airport',
       visible: can('station.task.view').allowed,
       children: [
-        {
-          label: 'Network Dashboard',
-          to: '/flights/station-operations/network',
-          icon: 'mdi-chart-box-outline',
-          visible: can('station.network_dashboard.view').allowed
-        },
         {
           label: t('nav.overview'),
           to: '/flights/station-operations',
@@ -327,76 +398,21 @@ const navItems = computed<NavItem[]>(() =>
       ].filter((child) => child.visible)
     },
     {
-      label: 'Procurement',
-      icon: 'mdi-cart-outline',
-      visible: true,
-      children: [
-        {
-          label: 'Overview',
-          to: '/procurement',
-          icon: 'mdi-view-dashboard-outline',
-          visible: true
-        },
-        {
-          label: 'Suppliers & Vendors',
-          to: '/procurement/suppliers',
-          icon: 'mdi-domain',
-          visible: true
-        },
-        {
-          label: 'Purchase Requisition',
-          to: '/procurement/requisitions',
-          icon: 'mdi-clipboard-text-outline',
-          visible: true
-        },
-        {
-          label: 'Sourcing & Tender',
-          to: '/procurement/sourcing',
-          icon: 'mdi-gavel',
-          visible: true
-        },
-        {
-          label: 'Purchase Orders',
-          to: '/procurement/purchase-orders',
-          icon: 'mdi-file-sign',
-          visible: true
-        },
-        {
-          label: 'Receiving & Returns',
-          to: '/procurement/receiving',
-          icon: 'mdi-truck-check-outline',
-          visible: true
-        },
-        {
-          label: 'Vendor Performance',
-          to: '/procurement/vendor-performance',
-          icon: 'mdi-chart-line',
-          visible: true
-        },
-        {
-          label: 'Approval & Control',
-          to: '/procurement/approval-control',
-          icon: 'mdi-shield-check-outline',
-          visible: true
-        }
-      ].filter((child) => child.visible)
-    },
-    {
-      label: 'Corporate Asset',
+      label: t('nav.corporateAssets'),
       icon: 'mdi-toolbox-outline',
-      visible: corporateAssetsVisible.value,
+      visible: true,
       children: [
         {
           label: t('nav.overview'),
           to: '/asset-management/overview',
           icon: 'mdi-view-dashboard-outline',
-          visible: corporateAssetsVisible.value
+          visible: true
         },
         {
           label: t('nav.assetRegister'),
           to: '/asset-management/register',
           icon: 'mdi-clipboard-list-outline',
-          visible: corporateAssetsVisible.value
+          visible: true
         },
         {
           label: t('nav.assignments'),
@@ -433,7 +449,7 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: 'CRM & Marketing',
       icon: 'mdi-account-heart-outline',
-      visible: true,
+      visible: crmMarketingVisible.value,
       children: [
         {
           label: 'Overview',
@@ -486,50 +502,150 @@ const navItems = computed<NavItem[]>(() =>
       children: [
         {
           label: 'Safety Dashboard',
-          to: '/sms/Dashboard', // ➔ Mengarah ke Dashboard.vue
+          to: '/sms/Dashboard', 
           icon: 'mdi-view-dashboard-variant-outline',
           visible: true
         },
         {
           label: 'Hazard Reporting',
-          to: '/sms/Reporting', // ➔ Mengarah ke Reporting.vue
+          to: '/sms/Reporting', 
           icon: 'mdi-file-document-edit-outline',
           visible: true
         },
         {
           label: 'Flight Risk (FRAT)',
-          to: '/sms/Frat', // ➔ Mengarah ke Frat.vue
+          to: '/sms/Frat', 
           icon: 'mdi-calculator-variant-outline',
           visible: true
         },
         {
           label: 'CAPA Management',
-          to: '/sms/Capa', // ➔ Mengarah ke Capa.vue
+          to: '/sms/Capa', 
           icon: 'mdi-clipboard-check-multiple-outline',
           visible: true
         },
         {
           label: 'Emergency & Response',
-          to: '/sms/EmergencyResponse', // ➔ Mengarah ke EmergencyResponse.vue
+          to: '/sms/EmergencyResponse', 
           icon: 'mdi-ambulance',
-          visible: true
+          visible: true,
+          badge: overdueCount.value > 0 ? `${overdueCount.value} Overdue` : null,
+          badgeColor: overdueCount.value > 0 ? 'error' : 'success',
+          pulse: overdueCount.value > 0
         },
         {
           label: 'Safety Assurance',
-          to: '/sms/SafetyAssurance', // ➔ Mengarah ke SafetyAssurance.vue
+          to: '/sms/SafetyAssurance', 
           icon: 'mdi-shield-check-outline',
           visible: true
         },
         {
           label: 'SPI & Analytics',
-          to: '/sms/SpiAnalytics', // ➔ Kita akan buat file SpiAnalytics.vue
+          to: '/sms/SpiAnalytics', 
           icon: 'mdi-chart-box-outline',
           visible: true
         },
         {
           label: 'Safety Communication',
-          to: '/sms/Communication', // ➔ Mengarah ke Communication.vue
+          to: '/sms/Communication', 
           icon: 'mdi-message-alert-outline',
+          visible: true
+        },
+        {
+          label: 'Regulatory Compliance',
+          to: '/sms/Regulatory',
+          icon: 'mdi-gavel',
+          visible: true
+        },
+        {
+          label: 'Training & Governance',
+          to: '/sms/SafetyTraining',
+          icon: 'mdi-school-outline',
+          visible: true
+        }
+      ].filter((child) => child.visible)
+    },
+    {
+      label: 'Avtur Fuel Management',
+      icon: 'mdi-gas-station',
+      visible: true,
+      children: [
+        {
+          label: 'Dashboard',
+          to: '/avtur-monitoring/dashboard',
+          icon: 'mdi-chart-box-outline',
+          visible: true
+        },
+        {
+          label: 'Master Data',
+          to: '/avtur-monitoring/master-data',
+          icon: 'mdi-database-outline',
+          visible: true
+        },
+        {
+          label: 'Stock Monitoring',
+          to: '/avtur-monitoring/avtur-stock-monitoring-view',
+          icon: 'mdi-water-check-outline',
+          visible: true
+        },
+        {
+          label: 'Hardware Integration',
+          to: '/avtur-monitoring/hardware-integration',
+          icon: 'mdi-expansion-card',
+          visible: true
+        },
+        {
+          label: 'Rugged Tablet App',
+          to: '/avtur-monitoring/rugged-tablet-app',
+          icon: 'mdi-tablet-dashboard',
+          visible: true
+        },
+        {
+          label: 'Synchronization',
+          to: '/avtur-monitoring/synchronization',
+          icon: 'mdi-sync',
+          visible: true
+        },
+        {
+          label: 'Fuel Transaction',
+          to: '/avtur-monitoring/fuel-transactions',
+          icon: 'mdi-swap-horizontal-circle-outline',
+          visible: true
+        },
+        {
+          label: 'Fuel Burn Analysis',
+          to: '/avtur-monitoring/fuel-burn-audit-analysis-view',
+          icon: 'mdi-fire',
+          visible: true
+        },
+        {
+          label: 'Costing Finance',
+          to: '/avtur-monitoring/fuel-costing-finance-view',
+          icon: 'mdi-cash-multiple',
+          visible: true
+        },
+        {
+          label: 'Fuel Reconciliation',
+          to: '/avtur-monitoring/fuel-reconciliation-view',
+          icon: 'mdi-scale-balance',
+          visible: true
+        },
+        {
+          label: 'Fuel Quality Control',
+          to: '/avtur-monitoring/avtur-quality-control-view',
+          icon: 'mdi-shield-check-outline',
+          visible: true
+        },
+        {
+          label: 'Fuel Alert Notification Engine',
+          to: '/avtur-monitoring/fuel-alert-notification-engine-view',
+          icon: 'mdi-bell-alert-outline',
+          visible: true
+        },
+        {
+          label: 'Fuel Analytics Audit Trail',
+          to: '/avtur-monitoring/fuel-analysis-audit-trail-view',
+          icon: 'mdi-file-document-check-outline',
           visible: true
         }
       ].filter((child) => child.visible)
@@ -539,12 +655,6 @@ const navItems = computed<NavItem[]>(() =>
       icon: 'mdi-ticket-confirmation-outline',
       visible: true,
       children: [
-        {
-          label: t('nav.bookingPortal'),
-          to: '/ticketing/booking',
-          icon: 'mdi-ticket-outline',
-          visible: true
-        },
         {
           label: t('nav.passengerSalesCheckIn'),
           to: '/ticketing/passenger',
@@ -561,7 +671,7 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.salesManagement'),
           to: '/ticketing/management',
           icon: 'mdi-store-cog-outline',
-          visible: can('ticketing.management.read').allowed
+          visible: masterDataVisible.value
         },
         {
           label: t('nav.operationalLedger'),
@@ -727,67 +837,67 @@ const navItems = computed<NavItem[]>(() =>
     {
       label: t('nav.hris'),
       icon: 'mdi-account-tie',
-      visible: hrisVisible.value,
+      visible: can('hris.employee.read').allowed || can('hris.self_service.read').allowed,
       children: [
         {
           label: t('nav.dashboard'),
           to: '/hris',
           icon: 'mdi-view-dashboard-outline',
-          visible: true //can('hris.employee.read').allowed
+          visible: can('hris.employee.read').allowed
         },
         {
           label: t('nav.hrisEmployees'),
           to: '/hris/employees',
           icon: 'mdi-account-group-outline',
-          visible: true //can('hris.employee.read').allowed
+          visible: can('hris.employee.read').allowed
         },
         {
           label: t('nav.organization'),
           to: '/hris/organization',
           icon: 'mdi-sitemap-outline',
-          visible: true //can('hris.org.read').allowed
+          visible: can('hris.org.read').allowed
         },
         {
           label: t('nav.certifications'),
           to: '/hris/certifications',
           icon: 'mdi-certificate-outline',
-          visible: true //can('hris.certification.read').allowed
+          visible: can('hris.certification.read').allowed
         },
         {
           label: t('nav.attendance'),
           to: '/hris/attendance',
           icon: 'mdi-clock-check-outline',
-          visible: true //can('hris.attendance.read').allowed
+          visible: can('hris.attendance.read').allowed
         },
         {
           label: t('nav.leave'),
           to: '/hris/leave',
           icon: 'mdi-calendar-account-outline',
-          visible: true //can('hris.leave.read').allowed
+          visible: can('hris.leave.read').allowed
         },
         {
           label: t('nav.overtime'),
           to: '/hris/overtime',
           icon: 'mdi-clock-plus-outline',
-          visible: true //can('hris.leave.read').allowed
+          visible: can('hris.leave.read').allowed
         },
         {
           label: t('nav.schedulesRoster'),
           to: '/hris/schedules',
           icon: 'mdi-calendar-clock',
-          visible: true //can('hris.schedule.read').allowed
+          visible: can('hris.schedule.read').allowed
         },
         {
           label: t('nav.payroll'),
           to: '/hris/payroll',
           icon: 'mdi-cash-multiple',
-          visible: true //can('hris.payroll.read').allowed
+          visible: can('hris.payroll.read').allowed
         },
         {
           label: t('nav.recruitment'),
           to: '/hris/recruitment',
           icon: 'mdi-account-plus-outline',
-          visible: true //can('hris.recruitment.manage').allowed
+          visible: can('hris.recruitment.manage').allowed
         },
         {
           label: t('nav.careerPortal'),
@@ -799,47 +909,47 @@ const navItems = computed<NavItem[]>(() =>
           label: t('nav.kpi'),
           to: '/hris/kpi',
           icon: 'mdi-chart-line',
-          visible: true //can('hris.kpi.read').allowed
+          visible: can('hris.kpi.read').allowed
         },
         {
           label: t('nav.employeePortal'),
           to: '/hris/portal',
           icon: 'mdi-account-circle-outline',
-          visible: true //can('hris.self_service.read').allowed
+          visible: can('hris.self_service.read').allowed
         }
       ].filter((child) => child.visible)
     },
     {
-      label: t('nav.maintenanceOperations'),
+      label: 'Maintenance Pesawat',
       icon: 'mdi-airplane-cog',
       visible: can('maintenance.package.read').allowed,
       children: [
         {
-          label: t('nav.maintenanceOverview'),
+          label: 'Ringkasan Maintenance',
           to: '/maintenance',
           icon: 'mdi-view-dashboard-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: t('nav.myWork'),
+          label: 'Pekerjaan Saya',
           to: '/maintenance/my-work',
           icon: 'mdi-account-hard-hat',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: t('nav.aircraft'),
+          label: 'Pesawat',
           to: '/maintenance/aircraft',
           icon: 'mdi-airplane-check',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: t('nav.defects'),
+          label: 'Temuan',
           to: '/maintenance/defects',
           icon: 'mdi-alert-octagon-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: t('nav.workPackages'),
+          label: 'Paket Pekerjaan',
           to: '/maintenance/work-packages',
           icon: 'mdi-clipboard-list-outline',
           visible: can('maintenance.package.read').allowed
@@ -851,19 +961,19 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: t('nav.approvedMaintenanceData'),
+          label: 'Data Perawatan Terkendali',
           to: '/maintenance/approved-data',
           icon: 'mdi-file-certificate-outline',
           visible: can('maintenance.approved_data.read').allowed
         },
         {
-          label: t('nav.dueControl'),
+          label: 'Jatuh Tempo Perawatan',
           to: '/maintenance/due-control',
           icon: 'mdi-calendar-alert',
           visible: can('maintenance.due.read').allowed
         },
         {
-          label: t('nav.facilityPlanning'),
+          label: 'Timeline Hangar',
           to: '/maintenance/facility-planning',
           icon: 'mdi-calendar-clock',
           visible: can('maintenance.package.read').allowed
@@ -875,25 +985,26 @@ const navItems = computed<NavItem[]>(() =>
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: t('nav.technicalReleases'),
+          label: 'Simulasi Quality & Safety',
+          to: '/maintenance/quality',
+          icon: 'mdi-shield-check-outline',
+          visible: can('maintenance.quality.read').allowed
+        },
+        {
+          label: 'Rilis Teknis',
           to: '/maintenance/releases',
           icon: 'mdi-certificate-outline',
           visible: can('maintenance.package.read').allowed
         },
         {
-          label: t('nav.maintenanceRecords'),
+          label: 'Riwayat Aktivitas',
           to: '/maintenance/records',
           icon: 'mdi-history',
           visible: can('maintenance.audit.read').allowed
         }
       ].filter((child) => child.visible)
     },
-    {
-      label: t('nav.uploads'),
-      to: '/uploads',
-      icon: 'mdi-file-upload-outline',
-      visible: true
-    },
+    { label: t('nav.uploads'), to: '/uploads', icon: 'mdi-file-upload-outline', visible: true },
     {
       label: t('nav.access'),
       to: '/admin/access-demo',
@@ -973,7 +1084,7 @@ function closeMobileOnNavigate() {
     :temporary="!mdAndUp"
     width="272"
   >
-    <div class="flex flex-col">
+    <div class="flex flex-col h-full">
       <div
         :class="
           rail
@@ -1014,7 +1125,7 @@ function closeMobileOnNavigate() {
 
       <VDivider />
 
-      <VList v-model:opened="openedGroups" class="px-2 py-4 nav-list" density="comfortable" nav>
+      <VList v-model:opened="openedGroups" class="px-2 py-4 nav-list overflow-y-auto" density="comfortable" nav>
         <template v-for="item in navItems" :key="item.to ?? item.label">
           <!-- Item WITH children -->
           <VListGroup v-if="item.children?.length && !(mdAndUp && rail)" :value="groupKey(item)">
@@ -1046,13 +1157,28 @@ function closeMobileOnNavigate() {
               color="primary"
               :prepend-icon="child.icon"
               rounded="lg"
-              :title="child.label"
               :to="child.to"
               @click="closeMobileOnNavigate"
-            />
+            >
+              <template #title>
+                <div class="d-flex align-center justify-space-between w-100 ga-1">
+                  <span class="text-truncate">{{ child.label }}</span>
+                  
+                  <VChip
+                    v-if="child.badge"
+                    :color="child.badgeColor || 'error'"
+                    size="x-small"
+                    class="font-weight-bold flex-shrink-0 ml-1"
+                    :class="{ 'animate-pulse': child.pulse }"
+                  >
+                    {{ child.badge }}
+                  </VChip>
+                </div>
+              </template>
+            </VListItem>
           </VListGroup>
 
-          <!-- Item WITHOUT children (or collapsed rail: fall back to first child link) -->
+          <!-- Item WITHOUT children -->
           <VListItem
             v-else-if="item.to"
             :active="isActiveTop(item.to)"
@@ -1079,19 +1205,72 @@ function closeMobileOnNavigate() {
       </VList>
 
       <div class="mt-auto border-t border-border-default p-3">
+        <template v-if="!rail">
+          <div class="mb-2 text-xs font-semibold uppercase text-text-secondary">
+            {{ t('topbar.demoPersona') }}
+          </div>
+          <div class="px-3 pb-3">
+            <VBtn
+              block
+              color="error"
+              prepend-icon="mdi-alarm-light"
+              variant="flat"
+              class="font-weight-bold animate-pulse"
+              @click="bukaModalEmergency"
+            >
+              DECLARE EMERGENCY
+            </VBtn>
+          </div>
+          <DemoPersonaSwitcher />
+        </template>
+
         <VBtn
-          :aria-label="rail ? 'Switch demo account' : undefined"
+          v-else
+          :aria-label="t('actions.expandToSwitchDemoPersona')"
           block
           color="primary"
-          :icon="rail ? 'mdi-logout-variant' : undefined"
-          :prepend-icon="rail ? undefined : 'mdi-logout-variant'"
+          icon="mdi-account-switch-outline"
           variant="tonal"
-          @click="useDemoSession().logout()"
-        >
-          <span v-if="!rail">Switch demo account</span>
-        </VBtn>
+          @click="rail = false"
+        />
       </div>
     </div>
+    <!-- Modal Declare Emergency -->
+<VDialog v-model="isEmergencyModalOpen" max-width="600" persistent>
+  <VCard>
+    <VCardTitle class="bg-error text-white d-flex align-center py-3">
+      <VIcon icon="mdi-alarm-light" class="mr-2" />
+      Deklarasi Darurat Penerbangan
+    </VCardTitle>
+    
+    <VCardText class="pt-4">
+      <VRow density="comfortable">
+        <VCol cols="12">
+          <p class="mb-2">Tarik data pesawat yang hilang kontak:</p>
+          <!-- Nanti dropdown / integrasi posisi pesawat ditaruh di sini -->
+          <VSelect
+            :items="activeFlights"
+            item-title="callsign"
+            item-value="id"
+            label="Pilih Pesawat"
+            variant="outlined"
+            density="compact"
+          ></VSelect>
+        </VCol>
+      </VRow>
+    </VCardText>
+
+    <VCardActions class="px-4 pb-4">
+      <VSpacer />
+      <VBtn color="grey-darken-1" variant="text" @click="isEmergencyModalOpen = false">
+        Batal
+      </VBtn>
+      <VBtn color="error" variant="flat">
+        Konfirmasi Darurat
+      </VBtn>
+    </VCardActions>
+  </VCard>
+</VDialog>
   </VNavigationDrawer>
 </template>
 
@@ -1108,9 +1287,22 @@ function closeMobileOnNavigate() {
   transform: rotate(180deg);
 }
 
-/* --- MODIFIKASI SCROLLBAR --- */
+.animate-pulse {
+  animation: pulse-warning 1.5s infinite ease-in-out;
+}
 
-/* 1. Untuk Chrome, Safari, dan Edge (Webkit) */
+@keyframes pulse-warning {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.05);
+  }
+}
+
+/* Custom Scrollbar */
 :deep(.v-navigation-drawer__content::-webkit-scrollbar) {
   width: 6px;
 }
@@ -1129,7 +1321,6 @@ function closeMobileOnNavigate() {
   background-color: #455a64;
 }
 
-/* 2. Untuk Firefox */
 :deep(.v-navigation-drawer__content) {
   scrollbar-width: thin;
   scrollbar-color: #607d8b transparent;

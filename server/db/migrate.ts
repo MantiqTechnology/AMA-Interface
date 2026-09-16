@@ -28,6 +28,7 @@ import {
 } from './migrations/corporate-assets';
 import { maintenanceDropStatements, maintenanceStatements } from './migrations/maintenance';
 import { hrisDropStatements, hrisStatements } from './migrations/hris';
+import { avturStatements, avturDropStatements } from './migrations/avtur';
 import { migrateVerificationData } from './migrations/operations/verification-migration';
 import { migrateManifestAssuranceData } from './migrations/operations/manifest-assurance-migration';
 
@@ -211,17 +212,17 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['REJECTED', 'Rejected']
     ]
   },
-  {
-    table: 'fuel_workflow_statuses',
-    idPrefix: 'fuel-workflow-status',
-    values: [
-      ['REQUESTED', 'Requested'],
-      ['APPROVED', 'Approved'],
-      ['UPLIFTED', 'Uplifted'],
-      ['POSTED', 'Posted'],
-      ['REJECTED', 'Rejected']
-    ]
-  },
+  // {
+  //   table: 'fuel_workflow_statuses',
+  //   idPrefix: 'fuel-workflow-status',
+  //   values: [
+  //     ['REQUESTED', 'Requested'],
+  //     ['APPROVED', 'Approved'],
+  //     ['UPLIFTED', 'Uplifted'],
+  //     ['POSTED', 'Posted'],
+  //     ['REJECTED', 'Rejected']
+  //   ]
+  // },
   {
     table: 'station_service_types',
     idPrefix: 'station-service-type',
@@ -263,6 +264,20 @@ const flightOperationLookupSeeds: FlightOperationLookupSeed[] = [
       ['SERVICEABLE_WITH_RESTRICTIONS', 'Serviceable With Restrictions'],
       ['MAINTENANCE_DUE', 'Maintenance Due'],
       ['UNSERVICEABLE', 'Unserviceable']
+    ]
+  },
+  {
+    table: 'fuel_workflow_statuses',
+    idPrefix: 'fuel-workflow-status',
+    values: [
+      ['REQUESTED', 'Requested'],
+      ['APPROVED', 'Approved'],
+      ['UPLIFTED', 'Uplifted'],
+      ['POSTED', 'Posted'],
+      ['REJECTED', 'Rejected'],
+      // ➕ TAMBAHKAN DI SINI jika butuh tahapan Avtur spesifik:
+      ['QUALITY_CHECKED', 'Quality Checked'],
+      ['DISPENSED', 'Dispensed']
     ]
   },
   {
@@ -317,6 +332,7 @@ const createStatements = [
   ...financeMasterDataStatements,
   ...commercialMasterDataStatements,
   ...cargoMasterDataStatements,
+  ...avturStatements,
   `CREATE TABLE IF NOT EXISTS invoices (
     id TEXT PRIMARY KEY,
     customer_id TEXT NOT NULL REFERENCES customers(id),
@@ -1505,10 +1521,19 @@ const createStatements = [
   `CREATE INDEX IF NOT EXISTS idx_flight_readiness_verifications_flight ON flight_readiness_verifications(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_operational_audit_flight ON flight_operational_audit(flight_id)`,
   `CREATE INDEX IF NOT EXISTS idx_flight_operational_audit_actor ON flight_operational_audit(actor_user_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_flight_actual_reconciliations_flight ON flight_actual_reconciliations(flight_id)`
+  `CREATE INDEX IF NOT EXISTS idx_flight_actual_reconciliations_flight ON flight_actual_reconciliations(flight_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_regulatory_reports_status ON regulatory_compliance_reports(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_company_certs_status ON company_certificates(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_ops_manuals_status ON operations_manuals(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_authority_inbox_status ON authority_correspondences(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_safety_comp_status ON safety_personnel_competencies(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_crr_status ON corporate_risk_register(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_safety_policies_status ON safety_governance_policies(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_just_culture_decision ON just_culture_assessments(decision_path)`
 ];
 
 const dropStatements = [
+  ...avturDropStatements,
   ...maintenanceDropStatements,
   ...hrisDropStatements,
   ...corporateAssetDropStatements,
@@ -1890,6 +1915,8 @@ export function runMigrations(sqlite: Database.Database) {
     );
     seedFlightOperationLookups(sqlite);
     ensureColumn(sqlite, 'flight_operations', 'order_number', "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, 'flight_operations', 'sms_risk_level', 'TEXT');
+    ensureColumn(sqlite, 'flight_operations', 'sms_frat_score', 'INTEGER');
     ensureColumn(
       sqlite,
       'flight_station_service_requests',

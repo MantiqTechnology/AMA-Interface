@@ -1,14 +1,24 @@
 <template>
   <VCard border>
-    <VCardItem>
+    <VCardItem class="pa-4 border-b">
       <template #title>
-        <span class="text-subtitle-1 font-weight-bold">Top Safety Findings / Actions Requiring Attention</span>
+        <span class="text-subtitle-1 font-weight-bold">Top Safety Findings</span>
       </template>
       <template #append>
-        <VBtn color="primary" variant="flat" size="small">View All Findings</VBtn>
+        <div class="d-flex ga-2 align-center">
+          <VBtn
+            variant="text"
+            color="primary"
+            class="text-none font-weight-bold"
+            @click="$emit('click:view-all')"
+          >
+            View All Reports
+          </VBtn>
+          <slot name="actions" />
+        </div>
       </template>
     </VCardItem>
-    <VTable>
+    <VTable hover density="compact">
       <thead>
         <tr>
           <th>Priority</th>
@@ -22,22 +32,25 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="item in items" :key="item.id">
-          <td class="font-weight-medium" :class="priorityClass(item.priority)">
-            {{ item.priority }}
-          </td>
-          <td>{{ item.id }}</td>
-          <td>{{ item.finding }}</td>
+        <tr
+          v-for="item in items"
+          :key="item.id"
+          style="cursor: pointer"
+          @click="$emit('click:row', item)"
+        >
+          <td class="font-weight-medium" :class="priorityClass(item.priority)">{{ item.priority }}</td>
+          <td class="font-weight-bold text-caption">{{ item.id }}</td>
+          <td>{{ item.finding || item.title }}</td>
           <td>{{ item.station }}</td>
           <td>
-            <VChip :color="riskColor(item.riskLevel)" size="small" variant="tonal">
+            <VChip :color="riskColor(item.riskLevel)" size="x-small" class="font-weight-bold" variant="tonal">
               {{ item.riskLevel }}
             </VChip>
           </td>
           <td>{{ item.owner }}</td>
-          <td>{{ item.dueDate }}</td>
+          <td class="text-caption">{{ item.dueDate || item.date }}</td>
           <td>
-            <VChip :color="statusColor(item.status)" size="small">{{ item.status }}</VChip>
+            <VChip :color="statusColor(item.status)" size="x-small">{{ item.status }}</VChip>
           </td>
         </tr>
       </tbody>
@@ -47,21 +60,20 @@
 
 <script setup>
 defineProps({
-  items: { type: Array, required: true }
-});
+  items: { type: Array, required: true },
+})
+
+defineEmits(['click:view-all', 'click:row'])
 
 function priorityClass(priority) {
-  return priority === 'High' ? 'text-error' : priority === 'Medium' ? 'text-warning' : '';
+  return priority === 'High' ? 'text-error' : priority === 'Medium' ? 'text-warning' : ''
 }
 
 function riskColor(level) {
-  return { Low: 'success', Medium: 'warning', High: 'error', Critical: 'error' }[level] || 'grey';
+  return { Low: 'success', Medium: 'warning', High: 'error', Critical: 'purple', Extreme: 'purple' }[level] || 'grey'
 }
 
 function statusColor(status) {
-  return (
-    { Overdue: 'error', Open: 'warning', 'Due Soon': 'warning', Closed: 'success' }[status] ||
-    'grey'
-  );
+  return { Overdue: 'error', Open: 'warning', 'Due Soon': 'warning', Closed: 'success' }[status] || 'grey'
 }
 </script>

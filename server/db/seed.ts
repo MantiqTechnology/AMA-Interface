@@ -7,7 +7,7 @@ import { createDemoSeedContext, type DemoSeedContext } from './seeds/context';
 import { seedSmsData } from './seeds/sms';
 
 import { seedHrisData } from './seeds/hris';
-
+import { seedAvturData } from './seeds/avtur';
 export async function seedDemoData(
   db: AppDatabase,
   context: DemoSeedContext = createDemoSeedContext()
@@ -18,4 +18,5 @@ export async function seedDemoData(
   await seedCargoMasterData(db, context);
   await seedHrisData(db, context);
   await seedSmsData(db, context);
+  await seedAvturData(db, context);
 }

@@ -1,4 +1,13 @@
-import type { SmsFilter, Kpi, ChartSegment, ChartRow, Finding } from '../types/sms';
+import type { SmsFilter, Kpi, ChartSegment, ChartRow, Finding } from '../types/sms'
+// Kalo lu butuh nambahin import computed/ref, pastiin udah ke-cover auto-import Nuxt
+
+export interface PostEventAction {
+  id: string
+  title: string
+  assignedTo: string
+  dueDate: string
+  done: boolean
+}
 
 // ---------------------------------------------------------------------
 // MODULE-SCOPE STATE (Shared across components)
@@ -7,10 +16,10 @@ const filters = reactive<SmsFilter>({
   dateRange: '01 – 21 Aug 2026',
   station: 'All Station',
   aircraft: 'All Aircraft',
-  riskLevel: 'All Risk Level'
-});
+  riskLevel: 'All Risk Level',
+})
 
-const lastUpdated = ref<string>('21 Aug 2026 10:30 WIB');
+const lastUpdated = ref<string>('21 Aug 2026 10:30 WIB')
 
 const kpis = ref<Kpi[]>([
   {
@@ -19,7 +28,7 @@ const kpis = ref<Kpi[]>([
     value: '42',
     icon: 'mdi-shield-alert-outline',
     color: 'info',
-    trend: { icon: 'mdi-arrow-up-thin', text: '16% vs last year', tone: 'neutral' }
+    trend: { icon: 'mdi-arrow-up-thin', text: '16% vs last year', tone: 'neutral' },
   },
   {
     key: 'openCapa',
@@ -27,7 +36,7 @@ const kpis = ref<Kpi[]>([
     value: '5',
     icon: 'mdi-clipboard-text-outline',
     color: 'warning',
-    trend: { icon: 'mdi-arrow-up-thin', text: '1 vs last period', tone: 'bad' }
+    trend: { icon: 'mdi-arrow-up-thin', text: '1 vs last period', tone: 'bad' },
   },
   {
     key: 'overdueCapa',
@@ -35,7 +44,7 @@ const kpis = ref<Kpi[]>([
     value: '2',
     icon: 'mdi-clock-alert-outline',
     color: 'error',
-    trend: { icon: 'mdi-arrow-down-thin', text: '1 vs last period', tone: 'good' }
+    trend: { icon: 'mdi-arrow-down-thin', text: '1 vs last period', tone: 'good' },
   },
   {
     key: 'spiIndex',
@@ -43,7 +52,7 @@ const kpis = ref<Kpi[]>([
     value: '0.98',
     icon: 'mdi-chart-line',
     color: 'success',
-    target: 'Target: > 0.95'
+    target: 'Target: > 0.95',
   },
   {
     key: 'highRiskFlights',
@@ -51,7 +60,7 @@ const kpis = ref<Kpi[]>([
     value: '3',
     icon: 'mdi-airplane-alert',
     color: 'error',
-    trend: { icon: 'mdi-arrow-up-thin', text: '1 vs yesterday', tone: 'bad' }
+    trend: { icon: 'mdi-arrow-up-thin', text: '1 vs yesterday', tone: 'bad' },
   },
   {
     key: 'blockedFlights',
@@ -59,7 +68,7 @@ const kpis = ref<Kpi[]>([
     value: '1',
     icon: 'mdi-cancel',
     color: 'error',
-    trend: { icon: 'mdi-minus', text: 'vs yesterday', tone: 'neutral' }
+    trend: { icon: 'mdi-minus', text: 'vs yesterday', tone: 'neutral' },
   },
   {
     key: 'fratCompliance',
@@ -67,18 +76,18 @@ const kpis = ref<Kpi[]>([
     value: '100%',
     icon: 'mdi-check-decagram-outline',
     color: 'success',
-    target: 'Target: 100%'
-  }
-]);
+    target: 'Target: 100%',
+  },
+])
 
 const hazardTrend = ref({
   categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
   series: [
     { name: 'Hazard', color: '#1E88E5', data: [18, 22, 19, 26, 24, 30, 27, 42] },
     { name: 'Occurrence', color: '#43A047', data: [6, 8, 7, 9, 8, 10, 9, 18] },
-    { name: 'Technical Finding', color: '#8E24AA', data: [3, 4, 4, 5, 4, 6, 5, 9] }
-  ]
-});
+    { name: 'Technical Finding', color: '#8E24AA', data: [3, 4, 4, 5, 4, 6, 5, 9] },
+  ],
+})
 
 const hazardByRiskLevel = ref({
   total: 42,
@@ -88,9 +97,9 @@ const hazardByRiskLevel = ref({
     { label: 'Low', value: 22, percent: 52, color: '#43A047' },
     { label: 'Medium', value: 12, percent: 29, color: '#FB8C00' },
     { label: 'High', value: 6, percent: 14, color: '#E53935' },
-    { label: 'Critical', value: 2, percent: 5, color: '#B71C1C' }
-  ] as ChartSegment[]
-});
+    { label: 'Critical', value: 2, percent: 5, color: '#B71C1C' },
+  ] as ChartSegment[],
+})
 
 const hazardBySource = ref({
   footnote: 'Based on open hazards',
@@ -100,9 +109,9 @@ const hazardBySource = ref({
     { label: 'Station Operations', value: 7, percent: 47, color: '#FB8C00' },
     { label: 'Ground Handling', value: 5, percent: 33, color: '#8E24AA' },
     { label: 'Airstrip / Aerodrome', value: 4, percent: 27, color: '#00ACC1' },
-    { label: 'Weather', value: 2, percent: 13, color: '#757575' }
-  ] as ChartRow[]
-});
+    { label: 'Weather', value: 2, percent: 13, color: '#757575' },
+  ] as ChartRow[],
+})
 
 const hazardByStation = ref({
   footnote: 'Based on open hazards',
@@ -112,9 +121,9 @@ const hazardByStation = ref({
     { label: 'Timika (TIM)', value: 6, percent: 55, color: '#FB8C00' },
     { label: 'Dekai (DKI)', value: 4, percent: 36, color: '#8E24AA' },
     { label: 'Mulia (MII)', value: 3, percent: 27, color: '#00ACC1' },
-    { label: 'Other', value: 10, percent: 91, color: '#757575' }
-  ] as ChartRow[]
-});
+    { label: 'Other', value: 10, percent: 91, color: '#757575' },
+  ] as ChartRow[],
+})
 
 const fratSummary = ref({
   total: 24,
@@ -123,9 +132,9 @@ const fratSummary = ref({
   segments: [
     { label: 'Low Risk', value: 18, percent: 75, color: '#43A047' },
     { label: 'Medium Risk', value: 4, percent: 17, color: '#FB8C00' },
-    { label: 'High Risk', value: 2, percent: 8, color: '#E53935' }
-  ] as ChartSegment[]
-});
+    { label: 'High Risk', value: 2, percent: 8, color: '#E53935' },
+  ] as ChartSegment[],
+})
 
 const capaStatus = ref({
   total: 27,
@@ -135,9 +144,9 @@ const capaStatus = ref({
     { label: 'Open', value: 5, percent: 19, color: '#1E88E5' },
     { label: 'Due Soon', value: 2, percent: 7, color: '#FB8C00' },
     { label: 'Overdue', value: 2, percent: 7, color: '#E53935' },
-    { label: 'Closed (This Month)', value: 18, percent: 67, color: '#43A047' }
-  ] as ChartSegment[]
-});
+    { label: 'Closed (This Month)', value: 18, percent: 67, color: '#43A047' },
+  ] as ChartSegment[],
+})
 
 const capaAging = ref({
   footnote: 'Based on open CAPA',
@@ -145,9 +154,9 @@ const capaAging = ref({
     { label: '0 – 7 days', value: 7, percent: 100, color: '#43A047' },
     { label: '8 – 30 days', value: 4, percent: 57, color: '#FB8C00' },
     { label: '31 – 60 days', value: 2, percent: 29, color: '#FB8C00' },
-    { label: '> 60 days', value: 2, percent: 29, color: '#E53935' }
-  ] as ChartRow[]
-});
+    { label: '> 60 days', value: 2, percent: 29, color: '#E53935' },
+  ] as ChartRow[],
+})
 
 const spiIndicators = ref({
   footnote: 'Based on current period',
@@ -156,9 +165,9 @@ const spiIndicators = ref({
     { label: 'Hazard Closure Rate', value: '94%', percent: 94, color: '#43A047' },
     { label: 'CAPA On-Time', value: '86%', percent: 86, color: '#FB8C00' },
     { label: 'Reporter Feedback', value: '100%', percent: 100, color: '#43A047' },
-    { label: 'Training Compliance', value: '92%', percent: 92, color: '#43A047' }
-  ] as ChartRow[]
-});
+    { label: 'Training Compliance', value: '92%', percent: 92, color: '#43A047' },
+  ] as ChartRow[],
+})
 
 const findings = ref<Finding[]>([
   {
@@ -169,7 +178,7 @@ const findings = ref<Finding[]>([
     riskLevel: 'High',
     owner: 'Station Manager WMX',
     dueDate: '18 Aug 2026',
-    status: 'Overdue'
+    status: 'Overdue',
   },
   {
     priority: 'High',
@@ -179,9 +188,32 @@ const findings = ref<Finding[]>([
     riskLevel: 'High',
     owner: 'Station Manager DKI',
     dueDate: '24 Aug 2026',
-    status: 'Open'
+    status: 'Open',
+  },
+])
+
+// --- ANAK BARU MULAI DI SINI ---
+const postEventActions = ref<PostEventAction[]>([
+  {
+    id: 'ACT-001',
+    title: 'Conduct Emergency Drill Debrief with Wamena Base',
+    assignedTo: 'Capt. Herman',
+    dueDate: '2026-03-10',
+    done: false
+  },
+  {
+    id: 'ACT-002',
+    title: 'Review Fuel Emergency Shutoff Valve Procedures',
+    assignedTo: 'Budi Santoso',
+    dueDate: '2026-03-12',
+    done: true
   }
-]);
+])
+
+const overdueCount = computed(() => {
+  return postEventActions.value.filter(action => !action.done).length
+})
+// --- ANAK BARU SELESAI DI SINI ---
 
 export function useSmsMockData() {
   function refresh() {
@@ -191,8 +223,16 @@ export function useSmsMockData() {
         month: 'short',
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
-      }) + ' WIB';
+        minute: '2-digit',
+      }) + ' WIB'
+  }
+
+  // Fungsi toggle buat ngubah status task
+  function toggleActionStatus(actionId: string) {
+    const target = postEventActions.value.find(item => item.id === actionId)
+    if (target) {
+      target.done = !target.done
+    }
   }
 
   return {
@@ -208,6 +248,9 @@ export function useSmsMockData() {
     capaAging,
     spiIndicators,
     findings,
-    refresh
-  };
+    refresh,
+    postEventActions,
+    overdueCount,
+    toggleActionStatus
+  }
 }

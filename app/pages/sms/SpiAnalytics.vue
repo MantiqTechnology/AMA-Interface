@@ -3,25 +3,15 @@
     <!-- Header & Sub-menu -->
     <div class="mb-2">
       <h1 class="text-h5 font-weight-bold">SPI & Analytics</h1>
-      <div class="text-caption text-medium-emphasis">
-        Safety Performance Indicators & Trend Analysis
-      </div>
+      <div class="text-caption text-medium-emphasis">Safety Performance Indicators & Trend Analysis</div>
     </div>
 
-    <!-- Sub-menu Navigation (Sudah disesuaikan dengan PascalCase routing Anda) -->
+    <!-- Sub-menu Navigation -->
     <VTabs v-model="activeTab" color="primary">
-      <VTab
-        value="overview"
-        to="/sms/Dashboard"
-        class="text-none font-weight-medium text-medium-emphasis"
-      >
+      <VTab value="overview" to="/sms/Dashboard" class="text-none font-weight-medium text-medium-emphasis">
         <VIcon icon="mdi-view-dashboard-variant-outline" size="18" class="mr-2" /> Overview
       </VTab>
-      <VTab
-        value="hazard"
-        to="/sms/Reporting"
-        class="text-none font-weight-medium text-medium-emphasis"
-      >
+      <VTab value="hazard" to="/sms/Reporting" class="text-none font-weight-medium text-medium-emphasis">
         <VIcon icon="mdi-weather-windy" size="18" class="mr-2" /> Hazard Reporting
       </VTab>
       <VTab value="frat" to="/sms/Frat" class="text-none font-weight-medium text-medium-emphasis">
@@ -30,82 +20,48 @@
       <VTab value="capa" to="/sms/Capa" class="text-none font-weight-medium text-medium-emphasis">
         <VIcon icon="mdi-clipboard-check-multiple-outline" size="18" class="mr-2" /> CAPA
       </VTab>
-      <VTab
-        value="emergency"
-        to="/sms/EmergencyResponse"
-        class="text-none font-weight-medium text-medium-emphasis"
-      >
+      <VTab value="emergency" to="/sms/EmergencyResponse" class="text-none font-weight-medium text-medium-emphasis">
         <VIcon icon="mdi-fire-alert" size="18" class="mr-2" /> Emergency & Response
       </VTab>
-      <VTab
-        value="assurance"
-        to="/sms/SafetyAssurance"
-        class="text-none font-weight-medium text-medium-emphasis"
-      >
+      <VTab value="assurance" to="/sms/SafetyAssurance" class="text-none font-weight-medium text-medium-emphasis">
         <VIcon icon="mdi-shield-check-outline" size="18" class="mr-2" /> Safety Assurance
       </VTab>
       <VTab value="spi" to="/sms/SpiAnalytics" class="text-none font-weight-bold">
         <VIcon icon="mdi-chart-line" size="18" class="mr-2" /> SPI & Analytics
       </VTab>
-      <VTab
-        value="communication"
-        to="/sms/Communication"
-        class="text-none font-weight-medium text-medium-emphasis"
-      >
+      <VTab value="communication" to="/sms/Communication" class="text-none font-weight-medium text-medium-emphasis">
         <VIcon icon="mdi-message-alert-outline" size="18" class="mr-2" /> Communication
+      </VTab>
+      <VTab value="regulatory" to="/sms/Regulatory" class="text-none font-weight-medium text-medium-emphasis">
+        <VIcon icon="mdi-gavel" size="18" class="mr-2" /> Regulatory
+      </VTab>
+      <VTab value="governance" to="/sms/SafetyTraining" class="text-none font-weight-medium text-medium-emphasis">
+        <VIcon icon="mdi-school-outline" size="18" class="mr-2" /> Governance
       </VTab>
     </VTabs>
 
     <!-- Toolbar & Filter -->
     <VCard border class="pa-3 mb-4">
       <div class="d-flex align-center flex-wrap ga-3">
-        <VSelect
-          v-model="filters.period"
-          label="Reporting Period"
-          :items="['Q1 2026', 'Q2 2026', 'Q3 2026', 'YTD 2026', '12-Month Rolling']"
-          variant="outlined"
-          density="compact"
-          hide-details
-          style="max-width: 200px"
-        />
-        <VSelect
-          v-model="filters.fleet"
-          label="Fleet Category"
-          :items="['All Fleets', 'Cessna 208B (Caravan)', 'Pilatus PC-6', 'Twin Otter']"
-          variant="outlined"
-          density="compact"
-          hide-details
-          style="max-width: 220px"
-        />
+        <VSelect v-model="filters.period" label="Reporting Period"
+          :items="['Q1 2026', 'Q2 2026', 'Q3 2026', 'YTD 2026', '12-Month Rolling']" variant="outlined"
+          density="compact" hide-details style="max-width: 200px" />
+        <VSelect v-model="filters.fleet" label="Fleet Category"
+          :items="['All Fleets', 'Cessna 208B (Caravan)', 'Pilatus PC-6', 'Twin Otter']" variant="outlined"
+          density="compact" hide-details style="max-width: 220px" />
         <VSpacer />
         <span class="text-caption text-medium-emphasis mr-3">Data Refreshed: {{ lastUpdated }}</span>
-        <VBtn
-          variant="outlined"
-          color="primary"
-          density="compact"
-          prepend-icon="mdi-refresh"
-          class="text-none font-weight-bold"
-          style="background-color: #f0f4ff; border-color: #d0d9f5"
-          @click="handleRefresh"
-        >
+        
+        <VBtn variant="outlined" color="primary" density="compact" prepend-icon="mdi-refresh" 
+          @click="handleRefresh" :loading="isRefreshing"
+          class="text-none font-weight-bold" style="background-color: #f0f4ff; border-color: #d0d9f5">
           Refresh Data
         </VBtn>
-        <VBtn
-          variant="outlined"
-          color="primary"
-          density="compact"
-          prepend-icon="mdi-download"
-          class="text-none mr-2"
-        >
+        <VBtn variant="outlined" color="primary" density="compact" prepend-icon="mdi-download" class="text-none mr-2" @click="exportReport">
           Export Report
         </VBtn>
-        <VBtn
-          color="primary"
-          variant="elevated"
-          prepend-icon="mdi-presentation"
-          class="text-none font-weight-bold shadow-lg"
-          density="compact"
-        >
+        <VBtn color="primary" variant="elevated" prepend-icon="mdi-presentation"
+          class="text-none font-weight-bold shadow-lg" density="compact" @click="generatePresentation">
           SRB PRESENTATION
         </VBtn>
       </div>
@@ -117,75 +73,42 @@
     <VRow>
       <!-- Executive KPI Scorecards -->
       <VCol cols="12" md="3">
-        <SmsKpiCard
-          title="Total Safety Reports"
-          value="142"
-          icon="mdi-file-chart-outline"
-          color="primary"
-          :trend="{ icon: 'mdi-arrow-up', text: '+12% vs Last Qtr' }"
-        />
+        <SmsKpiCard title="Total Safety Reports" value="142" icon="mdi-file-chart-outline" color="primary"
+          :trend="{ icon: 'mdi-arrow-up', text: '+12% vs Last Qtr' }" />
       </VCol>
       <VCol cols="12" md="3">
-        <SmsKpiCard
-          title="Incident Rate / 10k Hrs"
-          value="1.8"
-          icon="mdi-airplane-alert"
-          color="warning"
-          target="ALoSP Target: < 2.5"
-        />
+        <SmsKpiCard title="Incident Rate / 10k Hrs" value="1.8" icon="mdi-airplane-alert" color="warning"
+          target="ALoSP Target: < 2.5" />
       </VCol>
       <VCol cols="12" md="3">
-        <SmsKpiCard
-          title="Avg CAPA Closure (Days)"
-          value="18"
-          icon="mdi-timer-sand"
-          color="info"
-          :trend="{ icon: 'mdi-arrow-down', text: 'Improved (Target 21)' }"
-        />
+        <SmsKpiCard title="Avg CAPA Closure (Days)" value="18" icon="mdi-timer-sand" color="info"
+          :trend="{ icon: 'mdi-arrow-down', text: 'Improved (Target 21)' }" />
       </VCol>
       <VCol cols="12" md="3">
-        <SmsKpiCard
-          title="Safety Culture Score"
-          value="4.2/5"
-          icon="mdi-star-circle"
-          color="success"
-          target="Based on latest survey"
-        />
+        <SmsKpiCard title="Safety Culture Score" value="4.2/5" icon="mdi-star-circle" color="success"
+          target="Based on latest survey" />
       </VCol>
 
-      <!-- SPI Tracking Table (The Core of ICAO Annex 19) -->
+      <!-- SPI Tracking Table -->
       <VCol cols="12" md="8">
         <VCard border class="h-100 d-flex flex-column">
-          <div
-            class="pa-4 pb-2 border-b bg-grey-lighten-5 d-flex justify-space-between align-center"
-          >
+          <div class="pa-4 pb-2 border-b bg-grey-lighten-5 d-flex justify-space-between align-center">
             <div>
-              <div class="text-subtitle-2 font-weight-bold">
-                Safety Performance Indicators (SPI) Matrix
-              </div>
-              <div class="text-caption text-medium-emphasis">
-                Tracking against Acceptable Level of Safety Performance (ALoSP)
-              </div>
+              <div class="text-subtitle-2 font-weight-bold">Safety Performance Indicators (SPI) Matrix</div>
+              <div class="text-caption text-medium-emphasis">Tracking against Acceptable Level of Safety Performance
+                (ALoSP)</div>
             </div>
-            <VIcon icon="mdi-help-circle-outline" color="medium-emphasis" size="small" />
+            <VBtn icon="mdi-help-circle-outline" variant="text" size="small" color="medium-emphasis" @click="showSpiHelp" />
           </div>
 
           <div class="flex-grow-1 overflow-y-auto pa-0">
             <VTable density="compact" class="bg-transparent">
               <thead>
                 <tr>
-                  <th class="text-caption font-weight-bold text-uppercase px-4">
-                    Performance Indicator
-                  </th>
-                  <th class="text-caption font-weight-bold text-uppercase text-center px-2">
-                    Target
-                  </th>
-                  <th class="text-caption font-weight-bold text-uppercase text-center px-2">
-                    Alert Lvl
-                  </th>
-                  <th class="text-caption font-weight-bold text-uppercase text-center px-2">
-                    Current
-                  </th>
+                  <th class="text-caption font-weight-bold text-uppercase px-4">Performance Indicator</th>
+                  <th class="text-caption font-weight-bold text-uppercase text-center px-2">Target</th>
+                  <th class="text-caption font-weight-bold text-uppercase text-center px-2">Alert Lvl</th>
+                  <th class="text-caption font-weight-bold text-uppercase text-center px-2">Current</th>
                   <th class="text-caption font-weight-bold text-uppercase px-4">Status / Trend</th>
                 </tr>
               </thead>
@@ -196,23 +119,15 @@
                     <div class="text-caption text-medium-emphasis">{{ spi.measure }}</div>
                   </td>
                   <td class="text-center px-2 text-caption font-weight-bold">{{ spi.target }}</td>
-                  <td class="text-center px-2 text-caption font-weight-bold text-error">
-                    {{ spi.alert }}
-                  </td>
+                  <td class="text-center px-2 text-caption font-weight-bold text-error">{{ spi.alert }}</td>
                   <td class="text-center px-2">
-                    <VChip size="small" :color="spi.color" class="font-weight-bold" variant="flat">
-                      {{ spi.current }}
+                    <VChip size="small" :color="spi.color" class="font-weight-bold" variant="flat">{{ spi.current }}
                     </VChip>
                   </td>
                   <td class="px-4">
                     <div class="d-flex align-center">
-                      <VProgressLinear
-                        :model-value="(spi.currentValue / spi.alertValue) * 100"
-                        :color="spi.color"
-                        height="6"
-                        rounded
-                        class="mr-2"
-                      />
+                      <VProgressLinear :model-value="(spi.currentValue / spi.alertValue) * 100" :color="spi.color"
+                        height="6" rounded class="mr-2" />
                       <VIcon :icon="spi.trendIcon" :color="spi.trendColor" size="small" />
                     </div>
                   </td>
@@ -227,47 +142,31 @@
       <VCol cols="12" md="4">
         <VCard border class="h-100 d-flex flex-column pa-4">
           <div class="text-subtitle-2 font-weight-bold mb-1">Residual Risk Profile</div>
-          <div class="text-caption text-medium-emphasis mb-4">
-            Distribution of reports by Risk Matrix
-          </div>
+          <div class="text-caption text-medium-emphasis mb-4">Distribution of reports by Risk Matrix</div>
 
           <div class="flex-grow-1 d-flex flex-column justify-center align-center">
-            <!-- Simulated Risk Matrix Grid -->
             <div class="risk-matrix">
-              <!-- Y Axis Label -->
-              <div class="axis-label-y text-caption text-medium-emphasis text-center">
-                Likelihood (Freq)
-              </div>
-              <!-- Grid -->
+              <div class="axis-label-y text-caption text-medium-emphasis text-center">Likelihood (Freq)</div>
               <div class="grid-container">
-                <div
-                  v-for="cell in riskGrid"
-                  :key="cell.id"
-                  class="risk-cell d-flex justify-center align-center font-weight-bold"
-                  :class="cell.colorClass"
-                >
+                <div v-for="cell in riskGrid" :key="cell.id"
+                  class="risk-cell d-flex justify-center align-center font-weight-bold" :class="cell.colorClass"
+                  @click="drillDownRisk(cell.id)">
                   {{ cell.count > 0 ? cell.count : '' }}
                 </div>
               </div>
-              <!-- X Axis Label -->
-              <div class="axis-label-x text-caption text-medium-emphasis text-center mt-2">
-                Severity (Impact)
-              </div>
+              <div class="axis-label-x text-caption text-medium-emphasis text-center mt-2">Severity (Impact)</div>
             </div>
           </div>
 
           <div class="d-flex justify-space-between mt-4 px-2">
             <div class="d-flex align-center">
-              <VIcon icon="mdi-circle" color="success" size="12" class="mr-1" />
-              <span class="text-caption">Low (78)</span>
+              <VIcon icon="mdi-circle" color="success" size="12" class="mr-1" /> <span class="text-caption">Low (78)</span>
             </div>
             <div class="d-flex align-center">
-              <VIcon icon="mdi-circle" color="warning" size="12" class="mr-1" />
-              <span class="text-caption">Med (12)</span>
+              <VIcon icon="mdi-circle" color="warning" size="12" class="mr-1" /> <span class="text-caption">Med (12)</span>
             </div>
             <div class="d-flex align-center">
-              <VIcon icon="mdi-circle" color="error" size="12" class="mr-1" />
-              <span class="text-caption">High (2)</span>
+              <VIcon icon="mdi-circle" color="error" size="12" class="mr-1" /> <span class="text-caption">High (2)</span>
             </div>
           </div>
         </VCard>
@@ -278,7 +177,7 @@
         <VCard border class="pa-4 h-100">
           <div class="text-subtitle-2 font-weight-bold mb-4">Top 5 Hazard/Incident Categories</div>
 
-          <div v-for="item in categoryBreakdown" :key="item.name" class="mb-3">
+          <div v-for="(item, i) in categoryBreakdown" :key="item.name" class="mb-3">
             <div class="d-flex justify-space-between align-center mb-1">
               <span class="text-body-2 font-weight-medium">{{ item.name }}</span>
               <span class="text-caption font-weight-bold">{{ item.value }} ({{ item.percent }}%)</span>
@@ -292,37 +191,25 @@
       <VCol cols="12" md="6">
         <VCard border class="pa-4 h-100 bg-blue-grey-lighten-5">
           <div class="d-flex align-center mb-4">
-            <VIcon
-              icon="mdi-calculator-variant-outline"
-              color="blue-grey-darken-2"
-              size="large"
-              class="mr-3"
-            />
+            <VIcon icon="mdi-calculator-variant-outline" color="blue-grey-darken-2" size="large" class="mr-3" />
             <div>
-              <div class="text-subtitle-2 font-weight-bold text-blue-grey-darken-3">
-                Pre-Flight Risk (FRAT) Anomalies
+              <div class="text-subtitle-2 font-weight-bold text-blue-grey-darken-3">Pre-Flight Risk (FRAT) Anomalies
               </div>
-              <div class="text-caption text-medium-emphasis">
-                Flights released with High/Red Risk Score (Overridden)
+              <div class="text-caption text-medium-emphasis">Flights released with High/Red Risk Score (Overridden)
               </div>
             </div>
           </div>
 
           <VList density="compact" class="bg-transparent pa-0">
-            <VListItem
-              v-for="frat in overrideTrends"
-              :key="frat.route"
-              class="px-2 py-2 mb-2 rounded hover-bg bg-white border"
-            >
-              <template #prepend>
+            <VListItem v-for="frat in overrideTrends" :key="frat.route"
+              class="px-2 py-2 mb-2 rounded hover-bg bg-white border">
+              <template v-slot:prepend>
                 <VIcon icon="mdi-alert-octagon" color="error" size="small" class="mr-3" />
               </template>
               <VListItemTitle class="text-body-2 font-weight-bold">{{ frat.route }}</VListItemTitle>
-              <VListItemSubtitle class="text-caption mt-1">
-                Avg Score: <strong>{{ frat.avgScore }}</strong> | Overrides:
-                <strong>{{ frat.count }}x</strong>
-              </VListItemSubtitle>
-              <template #append>
+              <VListItemSubtitle class="text-caption mt-1">Avg Score: <strong>{{ frat.avgScore }}</strong> | Overrides:
+                <strong>{{ frat.count }}x</strong></VListItemSubtitle>
+              <template v-slot:append>
                 <div class="text-caption text-right">
                   <div class="text-medium-emphasis">Main Factor</div>
                   <div class="font-weight-bold text-error">{{ frat.factor }}</div>
@@ -331,119 +218,159 @@
             </VListItem>
           </VList>
           <div class="text-center mt-2">
-            <VBtn variant="text" size="small" color="primary" class="text-none">
+            <VBtn variant="text" size="small" color="primary" class="text-none font-weight-bold" @click="analyzeFratData">
               Analyze FRAT Data
             </VBtn>
           </div>
         </VCard>
       </VCol>
     </VRow>
+
+    <!-- Risk Matrix Drill-Down Dialog -->
+    <VDialog v-model="isRiskDialogOpen" max-width="600">
+      <VCard>
+        <VCardTitle class="d-flex justify-space-between align-center border-b pa-4">
+          <span class="text-h6 font-weight-bold">Risk Matrix Log: Sector {{ selectedRiskCell }}</span>
+          <VBtn icon="mdi-close" variant="text" size="small" @click="isRiskDialogOpen = false" />
+        </VCardTitle>
+        <VCardText class="pa-4 bg-grey-lighten-5">
+          <div class="text-body-2 mb-4 text-medium-emphasis">
+            Displaying incident/hazard reports classified under risk level <strong>{{ selectedRiskCell }}</strong>.
+          </div>
+          <VList density="compact" class="border rounded bg-white pa-0 overflow-y-auto" style="max-height: 300px;">
+            <VListItem v-for="n in selectedRiskCount" :key="n" class="border-b px-3 py-3 hover-bg">
+              <template v-slot:prepend>
+                <VIcon icon="mdi-file-document-alert-outline" size="small" color="primary" class="mr-3" />
+              </template>
+              <VListItemTitle class="font-weight-medium">Report SMS-{{ Math.floor(Math.random() * 8000) + 1000 }}</VListItemTitle>
+              <VListItemSubtitle class="mt-1">Filed Date: {{ Math.floor(Math.random() * 28) + 1 }} Aug 2026</VListItemSubtitle>
+              <template v-slot:append>
+                <VBtn variant="text" size="small" color="primary" class="text-none font-weight-bold" to="/sms/Reporting">
+                  Review
+                </VBtn>
+              </template>
+            </VListItem>
+          </VList>
+        </VCardText>
+        <VCardActions class="border-t pa-3">
+          <VSpacer />
+          <VBtn color="primary" variant="flat" class="text-none" @click="isRiskDialogOpen = false">Close Viewer</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+    
+    <!-- Toast Feedback for UI Clicks -->
+    <VSnackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000" location="bottom right">
+      {{ snackbar.text }}
+      <template v-slot:actions>
+        <VBtn variant="text" icon="mdi-close" @click="snackbar.show = false" />
+      </template>
+    </VSnackbar>
   </VContainer>
 </template>
 
 <script setup lang="ts">
-// Nuxt 3 auto-imports
+// import { ref, reactive } from 'vue'
+// import { useRouter } from 'vue-router'
 
-const activeTab = ref('spi');
-const lastUpdated = ref('22 Aug 2026 14:00 WIB');
+const router = useRouter()
+const activeTab = ref('spi')
+const lastUpdated = ref('14 Sep 2026 01:40 WIB')
+const isRefreshing = ref(false)
 
-function handleRefresh() {
-  lastUpdated.value =
-    new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) + ' WIB';
-}
+// Dialog State
+const isRiskDialogOpen = ref(false)
+const selectedRiskCell = ref('')
+const selectedRiskCount = ref(0)
 
 const filters = reactive({
   period: 'YTD 2026',
   fleet: 'All Fleets'
-});
+})
 
-// Data Mock: SPI Matrix (Parameter Wajib ICAO Annex 19)
-const spiList = ref([
-  {
-    id: 'SPI-01',
-    name: 'Runway Excursions',
-    measure: 'Rate per 10,000 movements',
-    target: '0',
-    alert: '> 1.0',
-    current: '0',
-    currentValue: 0,
-    alertValue: 1.0,
-    color: 'success',
-    trendIcon: 'mdi-minus',
-    trendColor: 'success'
-  },
-  {
-    id: 'SPI-02',
-    name: 'Hard Landings (> 2.0G)',
-    measure: 'Rate per 10,000 flight hours',
-    target: '< 1.5',
-    alert: '> 3.0',
-    current: '1.2',
-    currentValue: 1.2,
-    alertValue: 3.0,
-    color: 'success',
-    trendIcon: 'mdi-arrow-down-right',
-    trendColor: 'success'
-  },
-  {
-    id: 'SPI-03',
-    name: 'Bird Strikes (Damaging)',
-    measure: 'Rate per 10,000 movements',
-    target: '< 2.0',
-    alert: '> 5.0',
-    current: '3.8',
-    currentValue: 3.8,
-    alertValue: 5.0,
-    color: 'warning',
-    trendIcon: 'mdi-arrow-up-right',
-    trendColor: 'warning'
-  },
-  {
-    id: 'SPI-04',
-    name: 'Unstable Approaches',
-    measure: 'Percent of total approaches',
-    target: '< 3%',
-    alert: '> 5%',
-    current: '4.1%',
-    currentValue: 4.1,
-    alertValue: 5.0,
-    color: 'warning',
-    trendIcon: 'mdi-minus',
-    trendColor: 'warning'
-  },
-  {
-    id: 'SPI-05',
-    name: 'Ground Handling Damage',
-    measure: 'Incidents per month',
-    target: '0',
-    alert: '> 2',
-    current: '3',
-    currentValue: 3,
-    alertValue: 2,
-    color: 'error',
-    trendIcon: 'mdi-arrow-up-bold',
-    trendColor: 'error'
+const snackbar = reactive({ show: false, text: '', color: 'success' })
+const showToast = (msg: string, color = 'info') => {
+  snackbar.text = msg
+  snackbar.color = color
+  snackbar.show = true
+}
+
+const handleRefresh = async () => {
+  isRefreshing.value = true
+  try {
+    await new Promise(resolve => setTimeout(resolve, 800)) 
+    const now = new Date()
+    lastUpdated.value = `${now.getDate()} Sep 2026 ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} WIB`
+    showToast('Dashboard successfully synced with latest data.', 'success')
+  } catch (error) {
+    console.error("Failed to fetch data:", error)
+    showToast('Failed to refresh data.', 'error')
+  } finally {
+    isRefreshing.value = false
   }
-]);
+}
 
-// Data Mock: Risk Matrix Heatmap (5x5 grid disederhanakan)
+const exportReport = () => {
+  let csvContent = "data:text/csv;charset=utf-8,Indicator,Target,Current Status,Alert Level\n"
+  
+  spiList.value.forEach(spi => {
+    const row = `"${spi.name}","${spi.target}","${spi.current}","${spi.alert}"`
+    csvContent += row + "\n"
+  })
+
+  const encodedUri = encodeURI(csvContent)
+  const link = document.createElement("a")
+  link.setAttribute("href", encodedUri)
+  link.setAttribute("download", `SPI_Report_${filters.period.replace(/ /g, '_')}.csv`)
+  
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const analyzeFratData = () => {
+  router.push({ path: '/sms/Frat', query: { view: 'analytics-deep-dive' } })
+}
+
+const generatePresentation = () => {
+  window.print() 
+}
+
+const showSpiHelp = () => {
+  showToast('SPIs track acceptable levels of safety performance (ALoSP) per ICAO Annex 19.', 'blue-grey')
+}
+
+// Functionality to open the matrix logs
+const drillDownRisk = (cellId: string) => {
+  const cellData = riskGrid.value.find(c => c.id === cellId)
+  
+  if (cellData && cellData.count > 0) {
+    selectedRiskCell.value = cellId
+    selectedRiskCount.value = cellData.count
+    isRiskDialogOpen.value = true
+  } else {
+    // Keeps the toast only for empty cells where a modal is unnecessary
+    showToast(`No incidents recorded in sector ${cellId}.`, 'info')
+  }
+}
+
+// Data Mock: SPI Matrix
+const spiList = ref([
+  { id: 'SPI-01', name: 'Runway Excursions', measure: 'Rate per 10,000 movements', target: '0', alert: '> 1.0', current: '0', currentValue: 0, alertValue: 1.0, color: 'success', trendIcon: 'mdi-minus', trendColor: 'success' },
+  { id: 'SPI-02', name: 'Hard Landings (> 2.0G)', measure: 'Rate per 10,000 flight hours', target: '< 1.5', alert: '> 3.0', current: '1.2', currentValue: 1.2, alertValue: 3.0, color: 'success', trendIcon: 'mdi-arrow-down-right', trendColor: 'success' },
+  { id: 'SPI-03', name: 'Bird Strikes (Damaging)', measure: 'Rate per 10,000 movements', target: '< 2.0', alert: '> 5.0', current: '3.8', currentValue: 3.8, alertValue: 5.0, color: 'warning', trendIcon: 'mdi-arrow-up-right', trendColor: 'warning' },
+  { id: 'SPI-04', name: 'Unstable Approaches', measure: 'Percent of total approaches', target: '< 3%', alert: '> 5%', current: '4.1%', currentValue: 4.1, alertValue: 5.0, color: 'warning', trendIcon: 'mdi-minus', trendColor: 'warning' },
+  { id: 'SPI-05', name: 'Ground Handling Damage', measure: 'Incidents per month', target: '0', alert: '> 2', current: '3', currentValue: 3, alertValue: 2, color: 'error', trendIcon: 'mdi-arrow-up-bold', trendColor: 'error' },
+])
+
+// Data Mock: Risk Matrix Heatmap
 const riskGrid = ref([
-  { id: '5A', count: 0, colorClass: 'bg-yellow-lighten-2' },
-  { id: '5B', count: 0, colorClass: 'bg-orange-lighten-2' },
-  { id: '5C', count: 2, colorClass: 'bg-red-lighten-1 text-white' },
-  { id: '4A', count: 5, colorClass: 'bg-light-green-lighten-3' },
-  { id: '4B', count: 4, colorClass: 'bg-yellow-lighten-2' },
-  { id: '4C', count: 0, colorClass: 'bg-orange-lighten-2' },
-  { id: '3A', count: 42, colorClass: 'bg-light-green-lighten-3' },
-  { id: '3B', count: 8, colorClass: 'bg-yellow-lighten-2' },
-  { id: '3C', count: 0, colorClass: 'bg-orange-lighten-2' },
-  { id: '2A', count: 21, colorClass: 'bg-green-lighten-2' },
-  { id: '2B', count: 0, colorClass: 'bg-light-green-lighten-3' },
-  { id: '2C', count: 0, colorClass: 'bg-yellow-lighten-2' },
-  { id: '1A', count: 10, colorClass: 'bg-green-lighten-2' },
-  { id: '1B', count: 0, colorClass: 'bg-green-lighten-2' },
-  { id: '1C', count: 0, colorClass: 'bg-light-green-lighten-3' }
-]);
+  { id: '5A', count: 0, colorClass: 'bg-yellow-lighten-2' }, { id: '5B', count: 0, colorClass: 'bg-orange-lighten-2' }, { id: '5C', count: 2, colorClass: 'bg-red-lighten-1 text-white' },
+  { id: '4A', count: 5, colorClass: 'bg-light-green-lighten-3' }, { id: '4B', count: 4, colorClass: 'bg-yellow-lighten-2' }, { id: '4C', count: 0, colorClass: 'bg-orange-lighten-2' },
+  { id: '3A', count: 42, colorClass: 'bg-light-green-lighten-3' }, { id: '3B', count: 8, colorClass: 'bg-yellow-lighten-2' }, { id: '3C', count: 0, colorClass: 'bg-orange-lighten-2' },
+  { id: '2A', count: 21, colorClass: 'bg-green-lighten-2' }, { id: '2B', count: 0, colorClass: 'bg-light-green-lighten-3' }, { id: '2C', count: 0, colorClass: 'bg-yellow-lighten-2' },
+  { id: '1A', count: 10, colorClass: 'bg-green-lighten-2' }, { id: '1B', count: 0, colorClass: 'bg-green-lighten-2' }, { id: '1C', count: 0, colorClass: 'bg-light-green-lighten-3' },
+])
 
 // Data Mock: Incident Breakdown
 const categoryBreakdown = ref([
@@ -451,31 +378,22 @@ const categoryBreakdown = ref([
   { name: 'Ground Operations & Cargo Handling', value: 32, percent: 27, color: 'warning' },
   { name: 'Aircraft System / Maintenance Defect', value: 21, percent: 18, color: 'deep-purple' },
   { name: 'Flight Crew / Operational Procedure', value: 14, percent: 12, color: 'error' },
-  { name: 'Security / Cabin Load', value: 6, percent: 5, color: 'blue-grey' }
-]);
+  { name: 'Security / Cabin Load', value: 6, percent: 5, color: 'blue-grey' },
+])
 
 // Data Mock: FRAT Trends
 const overrideTrends = ref([
-  {
-    route: 'Wamena (WMX) - Oksibil (OKS)',
-    avgScore: 125,
-    count: 14,
-    factor: 'Weather (Downdraft)'
-  },
+  { route: 'Wamena (WMX) - Oksibil (OKS)', avgScore: 125, count: 14, factor: 'Weather (Downdraft)' },
   { route: 'Sentani (DJJ) - Dekai (DEX)', avgScore: 110, count: 8, factor: 'Airstrip Condition' },
-  {
-    route: 'Timika (TIM) - Agats (EWE)',
-    avgScore: 105,
-    count: 5,
-    factor: 'Crew Fatigue / Scheduling'
-  }
-]);
+  { route: 'Timika (TIM) - Agats (EWE)', avgScore: 105, count: 5, factor: 'Crew Fatigue / Scheduling' }
+])
 </script>
 
 <style scoped>
 .hover-bg {
   transition: background-color 0.2s ease;
 }
+
 .hover-bg:hover {
   background-color: rgba(var(--v-theme-on-surface), 0.04) !important;
 }
@@ -484,21 +402,24 @@ const overrideTrends = ref([
 .overflow-y-auto::-webkit-scrollbar {
   width: 6px;
 }
+
 .overflow-y-auto::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background-color: #e0e0e0;
+  background-color: #E0E0E0;
   border-radius: 4px;
 }
 
-/* CSS Grid untuk Risk Matrix 3x5 (Sederhana) */
+/* CSS Grid untuk Risk Matrix */
 .risk-matrix {
   position: relative;
   width: 100%;
   max-width: 250px;
   padding-left: 20px;
 }
+
 .axis-label-y {
   position: absolute;
   left: -40px;
@@ -506,6 +427,7 @@ const overrideTrends = ref([
   transform: translateY(-50%) rotate(-90deg);
   white-space: nowrap;
 }
+
 .grid-container {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -514,13 +436,16 @@ const overrideTrends = ref([
   background-color: #eee;
   border: 1px solid #ccc;
 }
+
 .risk-cell {
   height: 40px;
   font-size: 0.85rem;
   transition: opacity 0.2s ease;
 }
+
 .risk-cell:hover {
   opacity: 0.8;
   cursor: pointer;
+  border: 1px solid #333;
 }
 </style>
