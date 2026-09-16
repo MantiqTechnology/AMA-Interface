@@ -233,7 +233,9 @@ export function requireDemoFlightStationAccess(
 export function requireDemoPermission(event: H3Event, permissionId: string) {
   const role = getDemoRole(event);
   const permissions = demoRolePermissions[role];
-  if (!permissions.includes('*') && !permissions.includes(permissionId)) {
+  const isDirectorHrisBypass = role === 'Director' && permissionId.startsWith('hris.');
+
+  if (!permissions.includes('*') && !permissions.includes(permissionId) && !isDirectorHrisBypass) {
     throw new DomainError(
       'FORBIDDEN',
       `${role} does not have permission to perform this action.`,
@@ -247,7 +249,9 @@ export function requireDemoPermission(event: H3Event, permissionId: string) {
 export function hasDemoPermission(event: H3Event, permissionId: string) {
   const role = getDemoRole(event);
   const permissions = demoRolePermissions[role];
-  return permissions.includes('*') || permissions.includes(permissionId);
+  const isDirectorHrisBypass = role === 'Director' && permissionId.startsWith('hris.');
+
+  return permissions.includes('*') || permissions.includes(permissionId) || isDirectorHrisBypass;
 }
 
 const employeeCookieName = 'ama_employee_id';
