@@ -99,6 +99,25 @@ export type ProfitAndLossDto = {
   asOf: string;
 };
 
+export type BalanceSheetSubsectionDto = {
+  code:
+    | 'CURRENT_ASSETS'
+    | 'NON_CURRENT_ASSETS'
+    | 'CURRENT_LIABILITIES'
+    | 'NON_CURRENT_LIABILITIES'
+    | 'EQUITY';
+  label: string;
+  amountMinor: number;
+  accounts: FinancialStatementAccountDto[];
+};
+
+export type BalanceSheetRatiosDto = {
+  currentRatio: number | null;
+  quickRatio: number | null;
+  debtToEquityRatio: number | null;
+  debtToAssetRatio: number | null;
+};
+
 export type BalanceSheetDto = {
   period: FinanceReportingPeriodDto;
   currencyCode: 'IDR';
@@ -108,10 +127,22 @@ export type BalanceSheetDto = {
     amountMinor: number;
     accounts: FinancialStatementAccountDto[];
   }>;
+  classifiedSections: {
+    currentAssets: BalanceSheetSubsectionDto;
+    nonCurrentAssets: BalanceSheetSubsectionDto;
+    currentLiabilities: BalanceSheetSubsectionDto;
+    nonCurrentLiabilities: BalanceSheetSubsectionDto;
+    equity: BalanceSheetSubsectionDto;
+  };
+  ratios: BalanceSheetRatiosDto;
   currentEarningsMinor: number;
   totals: {
     assetsMinor: number;
+    currentAssetsMinor: number;
+    nonCurrentAssetsMinor: number;
     liabilitiesMinor: number;
+    currentLiabilitiesMinor: number;
+    nonCurrentLiabilitiesMinor: number;
     equityMinor: number;
     differenceMinor: number;
     balanced: boolean;
@@ -167,10 +198,24 @@ export type AviationProfitabilityDto = {
   asOf: string;
 };
 
+export type ExecutiveRatioDto = {
+  currentRatio: number | null;
+  debtToEquityRatio: number | null;
+  grossMarginPercent: number | null;
+  netMarginPercent: number | null;
+  costPerFlightHourMinor: number | null;
+  revenuePerFlightHourMinor: number | null;
+  fuelCostRatioPercent: number | null;
+  maintenanceCostRatioPercent: number | null;
+  totalFlightHours: number;
+  totalFlights: number;
+};
+
 export type FinanceDashboardDto = {
   period: FinanceReportingPeriodDto;
   currencyCode: 'IDR';
   metrics: FinanceMetricDto[];
+  executiveRatios: ExecutiveRatioDto;
   controls: FinanceControlDto[];
   profitability: FinanceBusinessLineDto[];
   busiestRoutes: FinanceRouteRevenueDto[];
