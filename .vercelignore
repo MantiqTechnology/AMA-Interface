@@ -1,0 +1,28 @@
+# Development-only and audit material is not needed to build or run the Nuxt app.
+# Keeping it out of the deployment upload reduces Vercel build setup time.
+artifacts/
+docs/
+obsidian/
+tests/
+playwright/
+test-results/
+playwright-report/
+coverage/
+
+# Local runtime state and generated outputs.
+data/
+.nuxt/
+.nuxt-*/
+.output/
+.vercel/
+.pnpm-store/
+node_modules/
+dist/
+.atl/
+.pi/
+
+# Local-only configuration and editor metadata.
+.env
+.env.*
+.idea/
+.vscode/
