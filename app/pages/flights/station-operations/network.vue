@@ -36,7 +36,7 @@ const activityEmpty = computed(() =>
 );
 // const hasForeignCostExposure = computed(() =>
 //   (dashboard.value?.financial.pendingCostExposureByCurrency ?? []).some(
-//     (item) => !item.includedInIdrTotal
+//     (item) => !item.includedInIdrTotalw
 //   )
 // );
 const activitySeries = computed<ApexAxisChartSeries>(() =>
