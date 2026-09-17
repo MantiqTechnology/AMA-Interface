@@ -9,7 +9,7 @@ export const smsStatements = [
     flight_operation_id TEXT REFERENCES flight_operations(id),
     description TEXT NOT NULL,
     is_anonymous INTEGER NOT NULL DEFAULT 0 CHECK (is_anonymous IN (0, 1)),
-    reported_by_user_id TEXT REFERENCES crews(id),
+    reported_by_user_id TEXT REFERENCES employees(id),
     evidence_ids_json TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'SUBMITTED' CHECK (status IN ('SUBMITTED', 'UNDER_INVESTIGATION', 'CAPA_ISSUED', 'CLOSED')),
     created_at TEXT NOT NULL,
@@ -49,10 +49,10 @@ export const smsStatements = [
     description TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'NEW' CHECK (status IN ('NEW', 'INVESTIGATION', 'ACTION', 'VERIFIED', 'CLOSED')),
     priority TEXT NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
-    assigned_to_user_id TEXT REFERENCES crews(id),
+    assigned_to_user_id TEXT REFERENCES employees(id),
     due_date TEXT NOT NULL,
     is_overdue_escalated INTEGER NOT NULL DEFAULT 0 CHECK (is_overdue_escalated IN (0, 1)),
-    escalated_to_user_id TEXT REFERENCES crews(id),
+    escalated_to_user_id TEXT REFERENCES employees(id),
     resolved_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -93,7 +93,7 @@ export const smsStatements = [
   `CREATE TABLE IF NOT EXISTS safety_meeting_attendees (
     id TEXT PRIMARY KEY,
     meeting_id TEXT NOT NULL REFERENCES safety_meetings(id) ON DELETE CASCADE,
-    employee_id TEXT NOT NULL REFERENCES crews(id),
+    employee_id TEXT NOT NULL REFERENCES employees(id),
     attendance_status TEXT NOT NULL DEFAULT 'INVITED' CHECK (attendance_status IN ('INVITED', 'ATTENDED', 'ABSENT')),
     UNIQUE (meeting_id, employee_id)
   )`,
@@ -220,7 +220,7 @@ export const smsStatements = [
   // ── 14. Safety Competency Matrix & Certifications ─────────────────────
   `CREATE TABLE IF NOT EXISTS safety_personnel_competencies (
     id TEXT PRIMARY KEY,
-    personnel_id TEXT NOT NULL REFERENCES crews(id) ON DELETE CASCADE,
+    personnel_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     competency_type TEXT NOT NULL CHECK (competency_type IN ('SMS_INITIAL', 'CRM_HF', 'DANGEROUS_GOODS', 'CFIT_ALAR', 'MOUNTAIN_VALLEY_CHECK')),
     certificate_number TEXT,
     issued_at TEXT NOT NULL,

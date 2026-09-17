@@ -7,7 +7,6 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
   const now = ctx.now;
 
   const seed = sqlite.transaction(() => {
-    sqlite.prepare('PRAGMA foreign_keys = OFF').run();
     // ============================================================================
     // 1. SAFETY COMMUNICATIONS & AWARENESS (Bulletins, Flash, Lessons Learned)
     // ============================================================================
@@ -102,7 +101,8 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         report_number: 'OCC-2026-102',
         report_category: 'OCCURRENCE',
         station_id: 'st-wmx',
-        aircraft_id: 'ac-pk-mra',
+        // Aircraft scenario data is seeded after baseline SMS data.
+        aircraft_id: null,
         flight_operation_id: null,
         description:
           'Hard landing akibat windshear mendadak di Wamena. Pesawat mendarat aman namun butuh inspeksi struktural.',
@@ -132,8 +132,9 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         id: 'srep-004',
         report_number: 'TEC-2026-012',
         report_category: 'TECHNICAL_FINDING',
-        station_id: 'st-nab',
-        aircraft_id: 'ac-pk-mrb',
+        station_id: 'st-nbx',
+        // Aircraft scenario data is seeded after baseline SMS data.
+        aircraft_id: null,
         flight_operation_id: null,
         description: 'Repetitive defect pada sistem komunikasi VHF-2 di Nabire.',
         is_anonymous: 0,
@@ -198,7 +199,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
           'Melaksanakan inspeksi sesuai manual MRO paska laporan hard landing di Wamena.',
         status: 'VERIFIED',
         priority: 'CRITICAL',
-        assigned_to_user_id: 'crew-maintenance-manager',
+        assigned_to_user_id: 'emp-006',
         due_date: ctx.date(2),
         is_overdue_escalated: 0,
         escalated_to_user_id: null,
@@ -302,7 +303,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
       if (existingFlights[2]) {
         sqlite
           .prepare(
-            `INSERT OR REPLACE INTO frat_assessments (id, flight_operation_id, pic_employee_id, crew_fatigue_score, weather_risk_score, airstrip_rating_score, total_risk_score, risk_zone, is_hard_locked, override_signoff_by_user_id, override_reason, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT OR REPLACE INTO frat_assessments (id, flight_operation_id, pic_employee_id, crew_fatigue_score, weather_risk_score, airstrip_rating_score, total_risk_score, risk_zone, is_hard_locked, override_signoff_by_user_id, override_reason, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             'frat-003',
@@ -314,7 +315,7 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
             140,
             'RED',
             1,
-            'emp-001',
+            existingFlights[2].pilot_in_command_id,
             'Payload dikurangi 20% sebagai mitigasi darurat logistik rintis.',
             'OVERRIDDEN',
             now,
@@ -377,7 +378,8 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
         'erp-001',
         'SAR-AMA-2026-001A',
         null,
-        'ac-pk-mra',
+        // Aircraft scenario data is seeded after baseline SMS data.
+        null,
         'st-wmx',
         'ALERFA',
         'Weather Emergency (Severe Windshear)',
@@ -518,17 +520,61 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     // 9. REGULATORY COMPLIANCE REPORTS (MOR, SDR, ASR)
     // ============================================================================
     const regulatoryReports = [
-      { id: 'reg-001', ref: 'MOR-2026-048', source: 'srep-002', type: 'MOR', authority: 'DKUPPU & KNKT', status: 'PENDING_APPROVAL', receipt: null },
-      { id: 'reg-002', ref: 'SDR-2026-021', source: 'srep-004', type: 'SDR', authority: 'DKUPPU', status: 'DRAFT', receipt: null },
-      { id: 'reg-003', ref: 'MOR-2026-047', source: 'srep-001', type: 'MOR', authority: 'DKUPPU', status: 'ACKNOWLEDGED', receipt: 'DGCA-REC-9988' },
-      { id: 'reg-004', ref: 'ASR-2026-092', source: null, type: 'ASR', authority: 'Otban Wilayah X', status: 'SUBMITTED', receipt: 'OTB10-26-092' }
+      {
+        id: 'reg-001',
+        ref: 'MOR-2026-048',
+        source: 'srep-002',
+        type: 'MOR',
+        authority: 'DKUPPU & KNKT',
+        status: 'PENDING_APPROVAL',
+        receipt: null
+      },
+      {
+        id: 'reg-002',
+        ref: 'SDR-2026-021',
+        source: 'srep-004',
+        type: 'SDR',
+        authority: 'DKUPPU',
+        status: 'DRAFT',
+        receipt: null
+      },
+      {
+        id: 'reg-003',
+        ref: 'MOR-2026-047',
+        source: 'srep-001',
+        type: 'MOR',
+        authority: 'DKUPPU',
+        status: 'ACKNOWLEDGED',
+        receipt: 'DGCA-REC-9988'
+      },
+      {
+        id: 'reg-004',
+        ref: 'ASR-2026-092',
+        source: null,
+        type: 'ASR',
+        authority: 'Otban Wilayah X',
+        status: 'SUBMITTED',
+        receipt: 'OTB10-26-092'
+      }
     ];
     for (const reg of regulatoryReports) {
       sqlite
-        .prepare(`INSERT OR REPLACE INTO regulatory_compliance_reports (id, reference_number, source_report_id, report_type, target_authority, generated_by_user_id, generated_at, submitted_at, authority_receipt_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .prepare(
+          `INSERT OR REPLACE INTO regulatory_compliance_reports (id, reference_number, source_report_id, report_type, target_authority, generated_by_user_id, generated_at, submitted_at, authority_receipt_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
         .run(
-          reg.id, reg.ref, reg.source, reg.type, reg.authority, 'emp-001', ctx.at(-1, '09:00'), 
-          reg.status === 'DRAFT' ? null : ctx.at(-1, '11:00'), reg.receipt, reg.status, now, now
+          reg.id,
+          reg.ref,
+          reg.source,
+          reg.type,
+          reg.authority,
+          'emp-001',
+          ctx.at(-1, '09:00'),
+          reg.status === 'DRAFT' ? null : ctx.at(-1, '11:00'),
+          reg.receipt,
+          reg.status,
+          now,
+          now
         );
     }
 
@@ -536,14 +582,44 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     // 10. COMPANY CERTIFICATES (AOC, AMO, OpsSpecs)
     // ============================================================================
     const certificates = [
-      { id: 'cert-1', num: 'AOC 135-0XX', name: 'Air Operator Cert (AOC 135)', desc: 'CASR Part 135 Commuter & Charter', exp: '2027-06-04', status: 'VALID' },
-      { id: 'cert-2', num: 'OPS-2024-R4', name: 'Operations Specs (OpsSpecs)', desc: 'Authorized Areas of Operations', exp: '2027-06-04', status: 'VALID' },
-      { id: 'cert-3', num: 'AMO-145-088', name: 'Approved Maintenance Org (AMO)', desc: 'CASR Part 145 Base & Line Maint.', exp: '2026-12-12', status: 'VALID' },
-      { id: 'cert-4', num: 'COA-PK-AMA', name: 'C of A (PK-AMA, AMB, AMC)', desc: 'Certificate of Airworthiness for Fleet', exp: '2026-09-15', status: 'EXPIRING_SOON' }
+      {
+        id: 'cert-1',
+        num: 'AOC 135-0XX',
+        name: 'Air Operator Cert (AOC 135)',
+        desc: 'CASR Part 135 Commuter & Charter',
+        exp: '2027-06-04',
+        status: 'VALID'
+      },
+      {
+        id: 'cert-2',
+        num: 'OPS-2024-R4',
+        name: 'Operations Specs (OpsSpecs)',
+        desc: 'Authorized Areas of Operations',
+        exp: '2027-06-04',
+        status: 'VALID'
+      },
+      {
+        id: 'cert-3',
+        num: 'AMO-145-088',
+        name: 'Approved Maintenance Org (AMO)',
+        desc: 'CASR Part 145 Base & Line Maint.',
+        exp: '2026-12-12',
+        status: 'VALID'
+      },
+      {
+        id: 'cert-4',
+        num: 'COA-PK-AMA',
+        name: 'C of A (PK-AMA, AMB, AMC)',
+        desc: 'Certificate of Airworthiness for Fleet',
+        exp: '2026-09-15',
+        status: 'EXPIRING_SOON'
+      }
     ];
     for (const cert of certificates) {
       sqlite
-        .prepare(`INSERT OR REPLACE INTO company_certificates (id, cert_number, name, description, expiry_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .prepare(
+          `INSERT OR REPLACE INTO company_certificates (id, cert_number, name, description, expiry_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
         .run(cert.id, cert.num, cert.name, cert.desc, cert.exp, cert.status, now, now);
     }
 
@@ -551,15 +627,47 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     // 11. OPERATIONS MANUALS (CASR 135)
     // ============================================================================
     const manuals = [
-      { id: 'man-1', name: 'Company Operations Manual (OM-A)', rev: '12.4', date: '01 Aug 2026', status: 'APPROVED' },
-      { id: 'man-2', name: 'Aircraft Operating Manual (OM-B) C208B', rev: '09.1', date: '10 Aug 2026', status: 'APPROVED' },
-      { id: 'man-3', name: 'Route & Aerodrome Manual (OM-C) Papua', rev: '15.0', date: '20 Aug 2026', status: 'PENDING_DKUPPU' },
-      { id: 'man-4', name: 'Safety Management System (SMS) Manual', rev: '05.1', date: '15 Aug 2026', status: 'PENDING_DKUPPU' },
-      { id: 'man-5', name: 'Dangerous Goods Manual (OM-D)', rev: '08.2', date: '19 Aug 2026', status: 'UNDER_REVISION' }
+      {
+        id: 'man-1',
+        name: 'Company Operations Manual (OM-A)',
+        rev: '12.4',
+        date: '01 Aug 2026',
+        status: 'APPROVED'
+      },
+      {
+        id: 'man-2',
+        name: 'Aircraft Operating Manual (OM-B) C208B',
+        rev: '09.1',
+        date: '10 Aug 2026',
+        status: 'APPROVED'
+      },
+      {
+        id: 'man-3',
+        name: 'Route & Aerodrome Manual (OM-C) Papua',
+        rev: '15.0',
+        date: '20 Aug 2026',
+        status: 'PENDING_DKUPPU'
+      },
+      {
+        id: 'man-4',
+        name: 'Safety Management System (SMS) Manual',
+        rev: '05.1',
+        date: '15 Aug 2026',
+        status: 'PENDING_DKUPPU'
+      },
+      {
+        id: 'man-5',
+        name: 'Dangerous Goods Manual (OM-D)',
+        rev: '08.2',
+        date: '19 Aug 2026',
+        status: 'UNDER_REVISION'
+      }
     ];
     for (const man of manuals) {
       sqlite
-        .prepare(`INSERT OR REPLACE INTO operations_manuals (id, document_name, revision, updated_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .prepare(
+          `INSERT OR REPLACE INTO operations_manuals (id, document_name, revision, updated_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
         .run(man.id, man.name, man.rev, man.date, man.status, now, now);
     }
 
@@ -567,13 +675,39 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     // 12. AUTHORITY CORRESPONDENCE (INBOX)
     // ============================================================================
     const inbox = [
-      { id: 'msg-1', ref: 'DKUPPU-REC-47', auth: 'DKUPPU (DGCA)', subj: 'Receipt Acknowledged: MOR-2026-047', msg: 'The report regarding windshear at Oksibil has been reviewed and accepted.', date: '2026-08-24T10:15:00Z', status: 'READ' },
-      { id: 'msg-2', ref: 'OTB10-NOT-01', auth: 'Otban Wilayah X', subj: 'Notice: Temporary Closure of Elelim Airstrip', msg: 'Elelim airstrip is closed for 3 days due to tribal conflict around the perimeter. Please divert flights.', date: '2026-08-23T14:00:00Z', status: 'UNREAD' },
-      { id: 'msg-3', ref: 'KNKT-RFI-126', auth: 'KNKT', subj: 'Request for Information: AMA126 Borme', msg: 'Please provide crew manifests and weather briefing documents for the runway excursion incident at Borme.', date: '2026-08-22T09:30:00Z', status: 'ACTION_REQUIRED' }
+      {
+        id: 'msg-1',
+        ref: 'DKUPPU-REC-47',
+        auth: 'DKUPPU (DGCA)',
+        subj: 'Receipt Acknowledged: MOR-2026-047',
+        msg: 'The report regarding windshear at Oksibil has been reviewed and accepted.',
+        date: '2026-08-24T10:15:00Z',
+        status: 'READ'
+      },
+      {
+        id: 'msg-2',
+        ref: 'OTB10-NOT-01',
+        auth: 'Otban Wilayah X',
+        subj: 'Notice: Temporary Closure of Elelim Airstrip',
+        msg: 'Elelim airstrip is closed for 3 days due to tribal conflict around the perimeter. Please divert flights.',
+        date: '2026-08-23T14:00:00Z',
+        status: 'UNREAD'
+      },
+      {
+        id: 'msg-3',
+        ref: 'KNKT-RFI-126',
+        auth: 'KNKT',
+        subj: 'Request for Information: AMA126 Borme',
+        msg: 'Please provide crew manifests and weather briefing documents for the runway excursion incident at Borme.',
+        date: '2026-08-22T09:30:00Z',
+        status: 'ACTION_REQUIRED'
+      }
     ];
     for (const mail of inbox) {
       sqlite
-        .prepare(`INSERT OR REPLACE INTO authority_correspondences (id, message_ref, authority, subject, message, received_at, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .prepare(
+          `INSERT OR REPLACE INTO authority_correspondences (id, message_ref, authority, subject, message, received_at, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
         .run(mail.id, mail.ref, mail.auth, mail.subj, mail.msg, mail.date, mail.status, now);
     }
 
@@ -581,15 +715,57 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     // 13. SAFETY PERSONNEL COMPETENCIES (Training Matrix)
     // ============================================================================
     const competencies = [
-      { id: 'comp-1', emp: 'emp-001', type: 'SMS_INITIAL', cert: 'SMS-2024-001', issued: ctx.date(-300), exp: ctx.date(300), status: 'VALID' },
-      { id: 'comp-2', emp: 'emp-001', type: 'CRM_HF', cert: 'CRM-2025-112', issued: ctx.date(-100), exp: ctx.date(265), status: 'VALID' },
-      { id: 'comp-3', emp: 'emp-003', type: 'DANGEROUS_GOODS', cert: 'DGR-2023-88', issued: ctx.date(-800), exp: ctx.date(-10), status: 'EXPIRED' },
-      { id: 'comp-4', emp: 'emp-003', type: 'CFIT_ALAR', cert: 'CFIT-2024-09', issued: ctx.date(-400), exp: ctx.date(200), status: 'VALID' },
-      { id: 'comp-5', emp: 'emp-004', type: 'CRM_HF', cert: 'CRM-2024-44', issued: ctx.date(-350), exp: ctx.date(15), status: 'EXPIRING_SOON' }
+      {
+        id: 'comp-1',
+        emp: 'emp-001',
+        type: 'SMS_INITIAL',
+        cert: 'SMS-2024-001',
+        issued: ctx.date(-300),
+        exp: ctx.date(300),
+        status: 'VALID'
+      },
+      {
+        id: 'comp-2',
+        emp: 'emp-001',
+        type: 'CRM_HF',
+        cert: 'CRM-2025-112',
+        issued: ctx.date(-100),
+        exp: ctx.date(265),
+        status: 'VALID'
+      },
+      {
+        id: 'comp-3',
+        emp: 'emp-003',
+        type: 'DANGEROUS_GOODS',
+        cert: 'DGR-2023-88',
+        issued: ctx.date(-800),
+        exp: ctx.date(-10),
+        status: 'EXPIRED'
+      },
+      {
+        id: 'comp-4',
+        emp: 'emp-003',
+        type: 'CFIT_ALAR',
+        cert: 'CFIT-2024-09',
+        issued: ctx.date(-400),
+        exp: ctx.date(200),
+        status: 'VALID'
+      },
+      {
+        id: 'comp-5',
+        emp: 'emp-004',
+        type: 'CRM_HF',
+        cert: 'CRM-2024-44',
+        issued: ctx.date(-350),
+        exp: ctx.date(15),
+        status: 'EXPIRING_SOON'
+      }
     ];
     for (const c of competencies) {
       sqlite
-        .prepare(`INSERT OR REPLACE INTO safety_personnel_competencies (id, personnel_id, competency_type, certificate_number, issued_at, expires_at, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .prepare(
+          `INSERT OR REPLACE INTO safety_personnel_competencies (id, personnel_id, competency_type, certificate_number, issued_at, expires_at, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
         .run(c.id, c.emp, c.type, c.cert, c.issued, c.exp, c.status, now, now);
     }
 
@@ -597,27 +773,120 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     // 14. CORPORATE RISK REGISTER (CRR)
     // ============================================================================
     const risks = [
-      { id: 'crr-1', code: 'CRR-001', title: 'CFIT in Central Highlands', desc: 'VFR flight into IMC in narrow valleys.', iSev: '5', iLik: 'A', iIdx: '5A', iLvl: 'CRITICAL', mit: 'TAWS/EGPWS, FRAT limits.', rSev: '3', rLik: 'C', rIdx: '3C', rLvl: 'MEDIUM', owner: 'Dir. of Ops', status: 'ACTIVE' },
-      { id: 'crr-2', code: 'CRR-002', title: 'Runway Excursion', desc: 'Slippery unpaved strips.', iSev: '4', iLik: 'B', iIdx: '4B', iLvl: 'HIGH', mit: 'Visual inspection, MTOW reduction.', rSev: '2', rLik: 'D', rIdx: '2D', rLvl: 'LOW', owner: 'Chief Pilot', status: 'ACTIVE' },
-      { id: 'crr-3', code: 'CRR-003', title: 'Avtur Contamination', desc: 'Water condensation in 200L drums.', iSev: '5', iLik: 'B', iIdx: '5B', iLvl: 'CRITICAL', mit: 'SWD & Millipore testing.', rSev: '2', rLik: 'C', rIdx: '2C', rLvl: 'LOW', owner: 'QA', status: 'ACTIVE' }
+      {
+        id: 'crr-1',
+        code: 'CRR-001',
+        title: 'CFIT in Central Highlands',
+        desc: 'VFR flight into IMC in narrow valleys.',
+        iSev: '5',
+        iLik: 'A',
+        iIdx: '5A',
+        iLvl: 'CRITICAL',
+        mit: 'TAWS/EGPWS, FRAT limits.',
+        rSev: '3',
+        rLik: 'C',
+        rIdx: '3C',
+        rLvl: 'MEDIUM',
+        owner: 'Dir. of Ops',
+        status: 'ACTIVE'
+      },
+      {
+        id: 'crr-2',
+        code: 'CRR-002',
+        title: 'Runway Excursion',
+        desc: 'Slippery unpaved strips.',
+        iSev: '4',
+        iLik: 'B',
+        iIdx: '4B',
+        iLvl: 'HIGH',
+        mit: 'Visual inspection, MTOW reduction.',
+        rSev: '2',
+        rLik: 'D',
+        rIdx: '2D',
+        rLvl: 'LOW',
+        owner: 'Chief Pilot',
+        status: 'ACTIVE'
+      },
+      {
+        id: 'crr-3',
+        code: 'CRR-003',
+        title: 'Avtur Contamination',
+        desc: 'Water condensation in 200L drums.',
+        iSev: '5',
+        iLik: 'B',
+        iIdx: '5B',
+        iLvl: 'CRITICAL',
+        mit: 'SWD & Millipore testing.',
+        rSev: '2',
+        rLik: 'C',
+        rIdx: '2C',
+        rLvl: 'LOW',
+        owner: 'QA',
+        status: 'ACTIVE'
+      }
     ];
     for (const r of risks) {
       sqlite
-        .prepare(`INSERT OR REPLACE INTO corporate_risk_register (id, risk_code, title, hazard_description, initial_severity, initial_likelihood, initial_risk_index, initial_risk_level, mitigation_barriers, residual_severity, residual_likelihood, residual_risk_index, residual_risk_level, risk_owner_role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(r.id, r.code, r.title, r.desc, r.iSev, r.iLik, r.iIdx, r.iLvl, r.mit, r.rSev, r.rLik, r.rIdx, r.rLvl, r.owner, now, now);
+        .prepare(
+          `INSERT OR REPLACE INTO corporate_risk_register (id, risk_code, title, hazard_description, initial_severity, initial_likelihood, initial_risk_index, initial_risk_level, mitigation_barriers, residual_severity, residual_likelihood, residual_risk_index, residual_risk_level, risk_owner_role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          r.id,
+          r.code,
+          r.title,
+          r.desc,
+          r.iSev,
+          r.iLik,
+          r.iIdx,
+          r.iLvl,
+          r.mit,
+          r.rSev,
+          r.rLik,
+          r.rIdx,
+          r.rLvl,
+          r.owner,
+          now,
+          now
+        );
     }
 
     // ============================================================================
     // 15. SAFETY GOVERNANCE POLICIES
     // ============================================================================
     const policies = [
-      { id: 'pol-1', code: 'POL-SMS-001', title: 'Safety & Quality Policy', rev: '05.0', signee: 'CEO', eff: '2025-01-01', exp: '2027-12-31' },
-      { id: 'pol-2', code: 'POL-SMS-002', title: 'Just Culture Policy', rev: '04.2', signee: 'Safety Manager', eff: '2025-02-01', exp: '2027-12-31' },
-      { id: 'pol-3', code: 'POL-SMS-003', title: 'FRMS Policy', rev: '03.1', signee: 'Director of Ops', eff: '2024-06-01', exp: '2027-06-01' }
+      {
+        id: 'pol-1',
+        code: 'POL-SMS-001',
+        title: 'Safety & Quality Policy',
+        rev: '05.0',
+        signee: 'CEO',
+        eff: '2025-01-01',
+        exp: '2027-12-31'
+      },
+      {
+        id: 'pol-2',
+        code: 'POL-SMS-002',
+        title: 'Just Culture Policy',
+        rev: '04.2',
+        signee: 'Safety Manager',
+        eff: '2025-02-01',
+        exp: '2027-12-31'
+      },
+      {
+        id: 'pol-3',
+        code: 'POL-SMS-003',
+        title: 'FRMS Policy',
+        rev: '03.1',
+        signee: 'Director of Ops',
+        eff: '2024-06-01',
+        exp: '2027-06-01'
+      }
     ];
     for (const p of policies) {
       sqlite
-        .prepare(`INSERT OR REPLACE INTO safety_governance_policies (id, policy_code, title, revision, signee_role, effective_from, valid_until, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .prepare(
+          `INSERT OR REPLACE INTO safety_governance_policies (id, policy_code, title, revision, signee_role, effective_from, valid_until, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
         .run(p.id, p.code, p.title, p.rev, p.signee, p.eff, p.exp, now, now);
     }
 
@@ -625,9 +894,20 @@ export async function seedSmsData(db: AppDatabase, ctx: DemoSeedContext) {
     // 16. JUST CULTURE ASSESSMENTS
     // ============================================================================
     sqlite
-      .prepare(`INSERT OR REPLACE INTO just_culture_assessments (id, source_report_id, decision_path, action_type, is_non_punitive_protected, justification_notes, assessed_by_user_id, assessed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run('jc-1', 'srep-002', 'HUMAN_ERROR', 'SYSTEM_FIX_TRAINING', 1, 'Hard landing disebabkan oleh windshear yang tidak terprediksi, bukan kesengajaan manuver. Rilis bulletin kewaspadaan windshear.', 'emp-001', ctx.date(-1), now);
-
+      .prepare(
+        `INSERT OR REPLACE INTO just_culture_assessments (id, source_report_id, decision_path, action_type, is_non_punitive_protected, justification_notes, assessed_by_user_id, assessed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        'jc-1',
+        'srep-002',
+        'HUMAN_ERROR',
+        'SYSTEM_FIX_TRAINING',
+        1,
+        'Hard landing disebabkan oleh windshear yang tidak terprediksi, bukan kesengajaan manuver. Rilis bulletin kewaspadaan windshear.',
+        'emp-001',
+        ctx.date(-1),
+        now
+      );
   });
 
   seed.immediate();

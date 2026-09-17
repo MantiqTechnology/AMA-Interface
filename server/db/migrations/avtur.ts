@@ -1,4 +1,55 @@
 export const avturStatements = [
+  // ── Current Avtur hardware, CoC, and telemetry model ──────────────────
+  // These tables back server/db/schema/avtur.ts and its demo seed.
+  `CREATE TABLE IF NOT EXISTS avtur_assets (
+    id TEXT PRIMARY KEY,
+    asset_code TEXT NOT NULL UNIQUE,
+    asset_name TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('SKID_ASSEMBLY', 'FLOWMETER_BLE', 'SOLENOID_VALVE', 'RFID_TAG', 'EFB_TABLET')),
+    brand_model TEXT,
+    serial_number_physical TEXT NOT NULL,
+    serial_number_coc TEXT NOT NULL,
+    ex_rating TEXT,
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    coc_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (coc_status IN ('PENDING', 'OK', 'REJECT')),
+    operational_status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (operational_status IN ('ACTIVE', 'INSPECTION_DUE', 'QUARANTINE', 'DECOMMISSIONED')),
+    installed_at TEXT,
+    last_calibrated_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_avtur_assets_station ON avtur_assets(station_id)`,
+  `CREATE TABLE IF NOT EXISTS avtur_coc_verifications (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL REFERENCES avtur_assets(id) ON DELETE CASCADE,
+    verified_by TEXT NOT NULL,
+    physical_sn_input TEXT NOT NULL,
+    coc_document_sn_input TEXT NOT NULL,
+    verification_result TEXT NOT NULL CHECK (verification_result IN ('MATCH_OK', 'MISMATCH_REJECT')),
+    notes TEXT,
+    verified_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS avtur_transactions (
+    id TEXT PRIMARY KEY,
+    transaction_no TEXT NOT NULL UNIQUE,
+    workflow_type TEXT NOT NULL CHECK (workflow_type IN ('DPPU_TO_AIRCRAFT', 'DPPU_TO_DRUM', 'DRUM_TRANSFER', 'DRUM_TO_AIRCRAFT', 'CONSOLIDATION')),
+    source_asset_id TEXT NOT NULL REFERENCES avtur_assets(id),
+    target_asset_id TEXT REFERENCES avtur_assets(id),
+    flight_mission_id TEXT,
+    aircraft_tail_no TEXT,
+    flowmeter_start_kg REAL NOT NULL,
+    flowmeter_end_kg REAL NOT NULL,
+    total_volume_liters REAL NOT NULL,
+    density_measured REAL NOT NULL,
+    temperature_celsius REAL NOT NULL,
+    grounding_verified INTEGER NOT NULL CHECK (grounding_verified IN (0, 1)),
+    swd_test_passed INTEGER NOT NULL CHECK (swd_test_passed IN (0, 1)),
+    seal_intact INTEGER NOT NULL CHECK (seal_intact IN (0, 1)),
+    settling_time_passed INTEGER NOT NULL CHECK (settling_time_passed IN (0, 1)),
+    solenoid_cutoff_triggered INTEGER NOT NULL DEFAULT 0 CHECK (solenoid_cutoff_triggered IN (0, 1)),
+    operator_id TEXT NOT NULL,
+    synced_from_device INTEGER NOT NULL DEFAULT 0 CHECK (synced_from_device IN (0, 1)),
+    created_timestamp TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_avtur_transactions_created ON avtur_transactions(created_timestamp)`,
   // ── 1. Avtur Skids & Fuel Distribution Stations ────────────────────────
   `CREATE TABLE IF NOT EXISTS avtur_skids (
     id TEXT PRIMARY KEY,
@@ -144,6 +195,9 @@ export const avturStatements = [
 ];
 
 export const avturDropStatements = [
+  'DROP TABLE IF EXISTS avtur_transactions',
+  'DROP TABLE IF EXISTS avtur_coc_verifications',
+  'DROP TABLE IF EXISTS avtur_assets',
   'DROP TRIGGER IF EXISTS trg_avtur_audit_log_no_delete',
   'DROP TRIGGER IF EXISTS trg_avtur_audit_log_no_update',
   'DROP TABLE IF EXISTS avtur_audit_logs',
