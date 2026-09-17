@@ -50,6 +50,12 @@ export default defineNuxtConfig({
   modules: ['vuetify-nuxt-module'],
   srcDir: 'app',
   serverDir: 'server',
+  components: [
+    {
+      path: '~/components',
+      pathPrefix: false,
+    },
+  ],
   alias: {
     '#shared': fileURLToPath(new URL('./shared', import.meta.url)),
     '#server': fileURLToPath(new URL('./server', import.meta.url))

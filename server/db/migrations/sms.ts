@@ -120,7 +120,7 @@ export const smsStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_emergency_activations_status ON emergency_activations(status)`,
 
-  // ── 7. Safety Assurance: Audits & Inspections (Baru) ──────────────────
+  // ── 7. Safety Assurance: Audits & Inspections ─────────────────────────
   `CREATE TABLE IF NOT EXISTS safety_audits (
     id TEXT PRIMARY KEY,
     audit_number TEXT NOT NULL UNIQUE,
@@ -136,7 +136,7 @@ export const smsStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_safety_audits_status ON safety_audits(status)`,
 
-  // ── 8. Safety Assurance: Management of Change / MOC (Baru) ────────────
+  // ── 8. Safety Assurance: Management of Change / MOC ───────────────────
   `CREATE TABLE IF NOT EXISTS safety_mocs (
     id TEXT PRIMARY KEY,
     moc_number TEXT NOT NULL UNIQUE,
@@ -149,23 +149,58 @@ export const smsStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_safety_mocs_status ON safety_mocs(status)`,
 
-  // ── 9. Regulatory Compliance Reports (MOR) ────────────────────────────
+  // ── 9. Regulatory Compliance Reports (MOR/SDR) ────────────────────────
   `CREATE TABLE IF NOT EXISTS regulatory_compliance_reports (
     id TEXT PRIMARY KEY,
     reference_number TEXT NOT NULL UNIQUE,
     source_report_id TEXT REFERENCES safety_reports(id),
-    report_type TEXT NOT NULL DEFAULT 'MOR' CHECK (report_type IN ('MOR', 'SDR', 'OTHER')),
+    report_type TEXT NOT NULL DEFAULT 'MOR' CHECK (report_type IN ('MOR', 'SDR', 'ASR', 'INC', 'VHR')),
     target_authority TEXT NOT NULL DEFAULT 'DKUPPU',
     generated_by_user_id TEXT NOT NULL,
     generated_at TEXT NOT NULL,
     submitted_at TEXT,
     authority_receipt_number TEXT,
-    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'GENERATED', 'SUBMITTED', 'ACKNOWLEDGED')),
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'GENERATED', 'PENDING_APPROVAL', 'SUBMITTED', 'ACKNOWLEDGED', 'NEED_REVISION')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
 
-  // ── 10. SMS Audit Logs & Immutability Triggers ────────────────────────
+  // ── 10. Company Certificates (AOC, OpsSpec) ───────────────────────────
+  `CREATE TABLE IF NOT EXISTS company_certificates (
+    id TEXT PRIMARY KEY,
+    cert_number TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    expiry_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'VALID' CHECK (status IN ('VALID', 'EXPIRING_SOON', 'EXPIRED')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+
+  // ── 11. Operations Manuals (CASR 135) ─────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS operations_manuals (
+    id TEXT PRIMARY KEY,
+    document_name TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    updated_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'APPROVED' CHECK (status IN ('APPROVED', 'PENDING_DKUPPU', 'UNDER_REVISION')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+
+  // ── 12. Authority Correspondences (Inbox) ─────────────────────────────
+  `CREATE TABLE IF NOT EXISTS authority_correspondences (
+    id TEXT PRIMARY KEY,
+    message_ref TEXT NOT NULL UNIQUE,
+    authority TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'UNREAD' CHECK (status IN ('UNREAD', 'READ', 'ACTION_REQUIRED')),
+    created_at TEXT NOT NULL
+  )`,
+
+  // ── 13. SMS Audit Logs & Immutability Triggers ────────────────────────
   `CREATE TABLE IF NOT EXISTS sms_audit_logs (
     id TEXT PRIMARY KEY,
     entity_type TEXT NOT NULL,
@@ -182,7 +217,81 @@ export const smsStatements = [
   `CREATE INDEX IF NOT EXISTS idx_sms_audit_entity ON sms_audit_logs(entity_type, entity_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sms_audit_occurred ON sms_audit_logs(occurred_at)`,
 
-  // Trigger untuk menjamin Immutable Audit Trail (Wajib untuk kepatuhan hukum)
+  // ── 14. Safety Competency Matrix & Certifications ─────────────────────
+  `CREATE TABLE IF NOT EXISTS safety_personnel_competencies (
+    id TEXT PRIMARY KEY,
+    personnel_id TEXT NOT NULL REFERENCES crews(id) ON DELETE CASCADE,
+    competency_type TEXT NOT NULL CHECK (competency_type IN ('SMS_INITIAL', 'CRM_HF', 'DANGEROUS_GOODS', 'CFIT_ALAR', 'MOUNTAIN_VALLEY_CHECK')),
+    certificate_number TEXT,
+    issued_at TEXT NOT NULL,
+    expires_at TEXT,
+    status TEXT NOT NULL DEFAULT 'VALID' CHECK (status IN ('VALID', 'EXPIRING_SOON', 'EXPIRED', 'NOT_APPLICABLE')),
+    document_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (personnel_id, competency_type)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_safety_comp_status ON safety_personnel_competencies(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_safety_comp_expiry ON safety_personnel_competencies(expires_at)`,
+
+  // ── 15. Corporate Safety Risk Register (CRR) ─────────────────────────
+  `CREATE TABLE IF NOT EXISTS corporate_risk_register (
+    id TEXT PRIMARY KEY,
+    risk_code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    hazard_description TEXT NOT NULL,
+    initial_severity TEXT NOT NULL CHECK (initial_severity IN ('1', '2', '3', '4', '5')),
+    initial_likelihood TEXT NOT NULL CHECK (initial_likelihood IN ('A', 'B', 'C', 'D', 'E')),
+    initial_risk_index TEXT NOT NULL,
+    initial_risk_level TEXT NOT NULL CHECK (initial_risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    mitigation_barriers TEXT NOT NULL,
+    residual_severity TEXT NOT NULL CHECK (residual_severity IN ('1', '2', '3', '4', '5')),
+    residual_likelihood TEXT NOT NULL CHECK (residual_likelihood IN ('A', 'B', 'C', 'D', 'E')),
+    residual_risk_index TEXT NOT NULL,
+    residual_risk_level TEXT NOT NULL CHECK (residual_risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    risk_owner_role TEXT NOT NULL,
+    review_frequency TEXT NOT NULL DEFAULT 'QUARTERLY' CHECK (review_frequency IN ('MONTHLY', 'BI_MONTHLY', 'QUARTERLY', 'ANNUAL')),
+    last_reviewed_at TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'MITIGATED', 'CLOSED')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_crr_status ON corporate_risk_register(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_crr_risk_level ON corporate_risk_register(residual_risk_level)`,
+
+  // ── 16. Safety Governance Policies ────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS safety_governance_policies (
+    id TEXT PRIMARY KEY,
+    policy_code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    signee_role TEXT NOT NULL,
+    effective_from TEXT NOT NULL,
+    valid_until TEXT NOT NULL,
+    document_id TEXT,
+    acknowledgement_required INTEGER NOT NULL DEFAULT 1 CHECK (acknowledgement_required IN (0, 1)),
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'UNDER_REVISION', 'SUPERSEDED')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_safety_policies_status ON safety_governance_policies(status)`,
+
+  // ── 17. Just Culture Assessment Records (James Reason Model) ──────────
+  `CREATE TABLE IF NOT EXISTS just_culture_assessments (
+    id TEXT PRIMARY KEY,
+    source_report_id TEXT NOT NULL REFERENCES safety_reports(id) ON DELETE CASCADE,
+    decision_path TEXT NOT NULL CHECK (decision_path IN ('HUMAN_ERROR', 'AT_RISK_BEHAVIOR', 'RECKLESS_CONDUCT')),
+    action_type TEXT NOT NULL CHECK (action_type IN ('SYSTEM_FIX_TRAINING', 'COACHING_COUNSELING', 'DISCIPLINARY')),
+    is_non_punitive_protected INTEGER NOT NULL DEFAULT 1 CHECK (is_non_punitive_protected IN (0, 1)),
+    justification_notes TEXT NOT NULL,
+    assessed_by_user_id TEXT NOT NULL,
+    assessed_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (source_report_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_just_culture_decision ON just_culture_assessments(decision_path)`,
+
+  // Trigger untuk menjamin Immutable Audit Trail
   `CREATE TRIGGER IF NOT EXISTS trg_sms_audit_log_no_update
     BEFORE UPDATE ON sms_audit_logs
     BEGIN
@@ -199,6 +308,13 @@ export const smsDropStatements = [
   'DROP TRIGGER IF EXISTS trg_sms_audit_log_no_delete',
   'DROP TRIGGER IF EXISTS trg_sms_audit_log_no_update',
   'DROP TABLE IF EXISTS sms_audit_logs',
+  'DROP TABLE IF EXISTS just_culture_assessments',
+  'DROP TABLE IF EXISTS safety_governance_policies',
+  'DROP TABLE IF EXISTS corporate_risk_register',
+  'DROP TABLE IF EXISTS safety_personnel_competencies',
+  'DROP TABLE IF EXISTS authority_correspondences',
+  'DROP TABLE IF EXISTS operations_manuals',
+  'DROP TABLE IF EXISTS company_certificates',
   'DROP TABLE IF EXISTS regulatory_compliance_reports',
   'DROP TABLE IF EXISTS safety_mocs',
   'DROP TABLE IF EXISTS safety_audits',
