@@ -37,6 +37,10 @@ function patchVuetifySwitchPostcss() {
 }
 
 export default defineNuxtConfig({
+  // This authenticated operations console does not need HTML SEO rendering.
+  // Building its complete SSR graph exceeds Vercel's 8 GB build container;
+  // APIs continue to run through Nitro while Vercel serves the SPA shell.
+  ssr: process.env.VERCEL ? false : true,
   // Tambahkan blok devServer ini agar bisa diakses di Docker
   devServer: {
     host: '0.0.0.0',
@@ -53,8 +57,8 @@ export default defineNuxtConfig({
   components: [
     {
       path: '~/components',
-      pathPrefix: false,
-    },
+      pathPrefix: false
+    }
   ],
   alias: {
     '#shared': fileURLToPath(new URL('./shared', import.meta.url)),
