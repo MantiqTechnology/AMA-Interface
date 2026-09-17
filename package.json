@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "nuxt dev --host 0.0.0.0",
     "build": "NODE_OPTIONS=--max-old-space-size=6144 nuxt build",
-    "build:vercel": "NODE_OPTIONS=--max-old-space-size=6144 nuxt build",
+    "build:vercel": "NODE_OPTIONS=--max-old-space-size=7168 nuxt build",
     "preview": "nuxt preview",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
