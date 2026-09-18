@@ -37,10 +37,10 @@ function patchVuetifySwitchPostcss() {
 }
 
 export default defineNuxtConfig({
-  // This authenticated operations console does not need HTML SEO rendering.
-  // Building its complete SSR graph exceeds Vercel's 8 GB build container;
-  // APIs continue to run through Nitro while Vercel serves the SPA shell.
-  ssr: process.env.VERCEL ? false : true,
+  // Flight Control and Station Operation load their authenticated data during
+  // server rendering. Keeping SSR enabled prevents an empty SPA shell when a
+  // client-side API request is delayed or fails during initialization.
+  ssr: true,
   // Tambahkan blok devServer ini agar bisa diakses di Docker
   devServer: {
     host: '0.0.0.0',
@@ -58,6 +58,49 @@ export default defineNuxtConfig({
     {
       path: '~/components',
       pathPrefix: false
+    },
+    // The Flight module was authored with Nuxt's historical folder-prefixed
+    // component names. Keep those aliases while retaining unprefixed names
+    // required by the newer Avtur and SMS views.
+    {
+      path: '~/components/flights',
+      pathPrefix: false,
+      prefix: 'Flights'
+    },
+    {
+      path: '~/components/shell',
+      pathPrefix: false,
+      prefix: 'Shell'
+    },
+    {
+      path: '~/components/services',
+      pathPrefix: false,
+      prefix: 'Services'
+    },
+    {
+      path: '~/components/costs',
+      pathPrefix: false,
+      prefix: 'Costs'
+    },
+    {
+      path: '~/components/verification',
+      pathPrefix: false,
+      prefix: 'Verification'
+    },
+    {
+      path: '~/components/dashboard',
+      pathPrefix: false,
+      prefix: 'Dashboard'
+    },
+    {
+      path: '~/components/ds',
+      pathPrefix: false,
+      prefix: 'Ds'
+    },
+    {
+      path: '~/components/crm',
+      pathPrefix: false,
+      prefix: 'Crm'
     }
   ],
   alias: {

@@ -37,6 +37,9 @@ Copy `.env.example` to `.env` for local development.
 ```env
 DEMO_MODE=true
 AMA_DB_PATH=./data/ama-demo.sqlite
+# Optional Neon tooling; the application runtime still uses SQLite.
+DATABASE_URL=postgresql://<user>:<password>@<project>-pooler.<region>.aws.neon.tech/neondb?sslmode=verify-full
+DATABASE_URL_UNPOOLED=postgresql://<user>:<password>@<project>.<region>.aws.neon.tech/neondb?sslmode=verify-full
 ```
 
 Local SQLite databases and generated demo exports under `data/` are ignored by git.
@@ -46,7 +49,10 @@ Local SQLite databases and generated demo exports under `data/` are ignored by g
 - `pnpm dev`: run Nuxt locally.
 - `pnpm build`: build the Nuxt app.
 - `pnpm preview`: preview the production build.
-- `pnpm db:migrate`: create the SQLite schema.
+- `pnpm db:migrate`: create/update the SQLite application schema.
+- `pnpm db:neon:check`: verify the configured Neon database and Flight/Station baseline.
+- `pnpm db:neon:verify-baseline`: assert the immutable v2 demo data counts before preview cutover.
+- `pnpm db:neon:migrate`: apply versioned PostgreSQL migrations through the direct Neon connection.
 - `pnpm db:seed`: seed fictional PT AMA data.
 - `pnpm demo:reset`: drop/recreate the demo DB and reseed.
 - `pnpm demo:export`: export demo tables to JSON.

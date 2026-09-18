@@ -34,7 +34,7 @@ type NavChild = {
 
 type NavItem = {
   label: string;
-  to?: string;  
+  to?: string;
   icon: string;
   visible: boolean;
   children?: NavChild[];
@@ -54,41 +54,33 @@ interface FlightRadarTelemetry {
 
 // Mock Data Penerbangan Aktif (Disimulasikan mengambil dari Radar/ADS-B BE)
 const activeFlights = ref<FlightRadarTelemetry[]>([
-  { 
-    id: 'FL-001', 
-    callsign: 'AMA1264', 
+  {
+    id: 'FL-001',
+    callsign: 'AMA1264',
     registration: 'PK-RCW',
-    lastLat: -3.8042, 
-    lastLng: 138.8351, 
+    lastLat: -3.8042,
+    lastLng: 138.8351,
     lastPingTime: new Date(Date.now() - 12 * 60 * 1000), // 12 menit lalu
     lastPingMinutesAgo: 12,
     lastKnownSector: 'Wamena-Enarotali Corridor'
   },
-  { 
-    id: 'FL-002', 
-    callsign: 'AMA1280', 
+  {
+    id: 'FL-002',
+    callsign: 'AMA1280',
     registration: 'PK-RBA',
-    lastLat: -2.5337, 
-    lastLng: 140.7181, 
+    lastLat: -2.5337,
+    lastLng: 140.7181,
     lastPingTime: new Date(Date.now() - 3 * 60 * 1000), // 3 menit lalu
     lastPingMinutesAgo: 3,
     lastKnownSector: 'Jayapura Approach'
   }
 ]);
 
-// Hitung berapa pesawat yang masuk kriteria peringatan darurat (hilang sinyal 10 - 15 menit)
-const activeWarningCount = computed(() => {
-  return activeFlights.value.filter(
-    (flight) => flight.lastPingMinutesAgo >= 10
-  ).length;
-});
-
-
 // Simulasi mengambil data posisi pesawat dari Radar API
 const fetchRadarPositions = async () => {
   try {
     const now = Date.now();
-    activeFlights.value = activeFlights.value.map(flight => {
+    activeFlights.value = activeFlights.value.map((flight) => {
       const diffMinutes = Math.floor((now - flight.lastPingTime.getTime()) / (1000 * 60));
       return {
         ...flight,
@@ -105,10 +97,13 @@ let radarPollingInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
   fetchRadarPositions();
-  
-  radarPollingInterval = setInterval(() => {
-    fetchRadarPositions();
-  }, 5 * 60 * 1000);
+
+  radarPollingInterval = setInterval(
+    () => {
+      fetchRadarPositions();
+    },
+    5 * 60 * 1000
+  );
 });
 
 onUnmounted(() => {
@@ -249,6 +244,12 @@ const navItems = computed<NavItem[]>(() =>
       icon: 'mdi-airport',
       visible: can('station.task.view').allowed,
       children: [
+        {
+          label: 'Network Dashboard',
+          to: '/flights/station-operations/network',
+          icon: 'mdi-chart-box-outline',
+          visible: can('station.network_dashboard.view').allowed
+        },
         {
           label: t('nav.overview'),
           to: '/flights/station-operations',
@@ -502,31 +503,31 @@ const navItems = computed<NavItem[]>(() =>
       children: [
         {
           label: 'Safety Dashboard',
-          to: '/sms/Dashboard', 
+          to: '/sms/Dashboard',
           icon: 'mdi-view-dashboard-variant-outline',
           visible: true
         },
         {
           label: 'Hazard Reporting',
-          to: '/sms/Reporting', 
+          to: '/sms/Reporting',
           icon: 'mdi-file-document-edit-outline',
           visible: true
         },
         {
           label: 'Flight Risk (FRAT)',
-          to: '/sms/Frat', 
+          to: '/sms/Frat',
           icon: 'mdi-calculator-variant-outline',
           visible: true
         },
         {
           label: 'CAPA Management',
-          to: '/sms/Capa', 
+          to: '/sms/Capa',
           icon: 'mdi-clipboard-check-multiple-outline',
           visible: true
         },
         {
           label: 'Emergency & Response',
-          to: '/sms/EmergencyResponse', 
+          to: '/sms/EmergencyResponse',
           icon: 'mdi-ambulance',
           visible: true,
           badge: overdueCount.value > 0 ? `${overdueCount.value} Overdue` : null,
@@ -535,19 +536,19 @@ const navItems = computed<NavItem[]>(() =>
         },
         {
           label: 'Safety Assurance',
-          to: '/sms/SafetyAssurance', 
+          to: '/sms/SafetyAssurance',
           icon: 'mdi-shield-check-outline',
           visible: true
         },
         {
           label: 'SPI & Analytics',
-          to: '/sms/SpiAnalytics', 
+          to: '/sms/SpiAnalytics',
           icon: 'mdi-chart-box-outline',
           visible: true
         },
         {
           label: 'Safety Communication',
-          to: '/sms/Communication', 
+          to: '/sms/Communication',
           icon: 'mdi-message-alert-outline',
           visible: true
         },
@@ -1125,7 +1126,12 @@ function closeMobileOnNavigate() {
 
       <VDivider />
 
-      <VList v-model:opened="openedGroups" class="px-2 py-4 nav-list overflow-y-auto" density="comfortable" nav>
+      <VList
+        v-model:opened="openedGroups"
+        class="px-2 py-4 nav-list overflow-y-auto"
+        density="comfortable"
+        nav
+      >
         <template v-for="item in navItems" :key="item.to ?? item.label">
           <!-- Item WITH children -->
           <VListGroup v-if="item.children?.length && !(mdAndUp && rail)" :value="groupKey(item)">
@@ -1163,7 +1169,7 @@ function closeMobileOnNavigate() {
               <template #title>
                 <div class="d-flex align-center justify-space-between w-100 ga-1">
                   <span class="text-truncate">{{ child.label }}</span>
-                  
+
                   <VChip
                     v-if="child.badge"
                     :color="child.badgeColor || 'error'"
@@ -1236,41 +1242,39 @@ function closeMobileOnNavigate() {
       </div>
     </div>
     <!-- Modal Declare Emergency -->
-<VDialog v-model="isEmergencyModalOpen" max-width="600" persistent>
-  <VCard>
-    <VCardTitle class="bg-error text-white d-flex align-center py-3">
-      <VIcon icon="mdi-alarm-light" class="mr-2" />
-      Deklarasi Darurat Penerbangan
-    </VCardTitle>
-    
-    <VCardText class="pt-4">
-      <VRow density="comfortable">
-        <VCol cols="12">
-          <p class="mb-2">Tarik data pesawat yang hilang kontak:</p>
-          <!-- Nanti dropdown / integrasi posisi pesawat ditaruh di sini -->
-          <VSelect
-            :items="activeFlights"
-            item-title="callsign"
-            item-value="id"
-            label="Pilih Pesawat"
-            variant="outlined"
-            density="compact"
-          ></VSelect>
-        </VCol>
-      </VRow>
-    </VCardText>
+    <VDialog v-model="isEmergencyModalOpen" max-width="600" persistent>
+      <VCard>
+        <VCardTitle class="bg-error text-white d-flex align-center py-3">
+          <VIcon icon="mdi-alarm-light" class="mr-2" />
+          Deklarasi Darurat Penerbangan
+        </VCardTitle>
 
-    <VCardActions class="px-4 pb-4">
-      <VSpacer />
-      <VBtn color="grey-darken-1" variant="text" @click="isEmergencyModalOpen = false">
-        Batal
-      </VBtn>
-      <VBtn color="error" variant="flat">
-        Konfirmasi Darurat
-      </VBtn>
-    </VCardActions>
-  </VCard>
-</VDialog>
+        <VCardText class="pt-4">
+          <VRow density="comfortable">
+            <VCol cols="12">
+              <p class="mb-2">Tarik data pesawat yang hilang kontak:</p>
+              <!-- Nanti dropdown / integrasi posisi pesawat ditaruh di sini -->
+              <VSelect
+                :items="activeFlights"
+                item-title="callsign"
+                item-value="id"
+                label="Pilih Pesawat"
+                variant="outlined"
+                density="compact"
+              />
+            </VCol>
+          </VRow>
+        </VCardText>
+
+        <VCardActions class="px-4 pb-4">
+          <VSpacer />
+          <VBtn color="grey-darken-1" variant="text" @click="isEmergencyModalOpen = false">
+            Batal
+          </VBtn>
+          <VBtn color="error" variant="flat"> Konfirmasi Darurat </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </VNavigationDrawer>
 </template>
 
@@ -1292,7 +1296,8 @@ function closeMobileOnNavigate() {
 }
 
 @keyframes pulse-warning {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
