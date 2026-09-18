@@ -37,10 +37,10 @@ function patchVuetifySwitchPostcss() {
 }
 
 export default defineNuxtConfig({
-  // Flight Control and Station Operation load their authenticated data during
-  // server rendering. Keeping SSR enabled prevents an empty SPA shell when a
-  // client-side API request is delayed or fails during initialization.
-  ssr: true,
+  // The complete SSR/Nitro graph exceeds Vercel's 8 GB build worker. Vercel
+  // therefore serves the client application shell, while its Nitro API routes
+  // remain available for Flight, Station, Avtur, and SMS data requests.
+  ssr: process.env.VERCEL ? false : true,
   // Tambahkan blok devServer ini agar bisa diakses di Docker
   devServer: {
     host: '0.0.0.0',
