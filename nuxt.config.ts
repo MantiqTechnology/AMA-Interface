@@ -143,6 +143,10 @@ export default defineNuxtConfig({
     }
   },
   vite: {
+    optimizeDeps: {
+      // Keep MapLibre's module worker out of Vite's optimized-dependency cache.
+      exclude: ['maplibre-gl']
+    },
     build: {
       cssMinify: 'lightningcss'
     },

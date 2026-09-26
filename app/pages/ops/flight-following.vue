@@ -114,6 +114,11 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
   if (urgency === 'warning') return 'warning';
   return 'success';
 }
+
+function fitTrackedFlights() {
+  const map = mapRef.value;
+  if (map && typeof map.fitFleet === 'function') map.fitFleet();
+}
 </script>
 <template>
   <VContainer class="flight-following-page" fluid>
@@ -249,7 +254,7 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
                 icon="mdi-crosshairs-gps"
                 size="small"
                 variant="tonal"
-                @click="mapRef?.fitFleet()"
+                @click="fitTrackedFlights"
               />
             </template>
           </VTooltip>
@@ -258,7 +263,7 @@ function urgencyColor(urgency: OperationalFlightMonitorDto['urgency']) {
 
       <div class="tracking-layout">
         <div class="map-shell">
-          <OperationsFlightFollowingMap
+          <FlightFollowingMap
             ref="mapRef"
             :flights="flights"
             :selected-flight-id="selectedFlightId"

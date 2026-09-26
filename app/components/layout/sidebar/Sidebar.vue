@@ -1282,7 +1282,6 @@ function closeMobileOnNavigate() {
               DECLARE EMERGENCY
             </VBtn>
           </div>
-          <DemoPersonaSwitcher />
         </template>
 
         <VBtn
