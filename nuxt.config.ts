@@ -1,9 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 
-const defaultDbPath =
-  process.env.AMA_DB_PATH ??
-  (process.env.VERCEL ? '/tmp/ama-demo.sqlite' : './data/ama-demo.sqlite');
+// Vercel functions mount the deployment at /var/task, which is read-only.
+// This check intentionally precedes AMA_DB_PATH because Nuxt loads .env at
+// build time and its local SQLite path must not be embedded in a Vercel build.
+const defaultDbPath = process.env.VERCEL
+  ? '/tmp/ama-demo.sqlite'
+  : (process.env.AMA_DB_PATH ?? './data/ama-demo.sqlite');
 
 function patchVuetifySwitchCss() {
   return {
